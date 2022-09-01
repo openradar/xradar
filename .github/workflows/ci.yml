@@ -34,7 +34,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: xradar-${{github.event.number}}
+          name: xradar-0-${{github.event.number}}
           path: dist/xradar.gz
 
   test_build_distribution2:
@@ -64,5 +64,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: xradar-${{github.event.number}}
+          name: xradar-1-${{github.event.number}}
           path: dist/xradar.gz
