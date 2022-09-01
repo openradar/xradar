@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+  workflow_dispatch:
+
+jobs:
+  test_build_distribution:
+    name: test build distribution
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build setuptools wheel
+      - name: Package
+        run: |
+          python -m build
+          cp dist/xradar*.gz dist/xradar0.gz
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: xradar-0-${{github.event.number}}
+          path: dist/xradar0.gz
+
+  test_build_distribution2:
+    name: test build distribution for testpypi
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build setuptools wheel twine
+      - name: Package
+        run: |
+          echo 'local_scheme =  "no-local-version"' >> pyproject.toml
+          git update-index --assume-unchanged pyproject.toml
+          python -m build
+          cp dist/xradar*.gz dist/xradar1.gz
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: xradar-1-${{github.event.number}}
+          path: dist/xradar1.gz
