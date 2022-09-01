@@ -30,7 +30,7 @@ jobs:
       - name: Package
         run: |
           python -m build
-          cp xradar*.gz xradar0.gz
+          cp dist/xradar*.gz dist/xradar0.gz
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
