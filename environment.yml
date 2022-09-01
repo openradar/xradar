@@ -1,0 +1,19 @@
+name: xradar-dev
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.9
+  - pydata-sphinx-theme
+  - pip
+  - pip:
+    - bump2version
+    - wheel
+    - watchdog
+    - flake8
+    - coverage
+    - Sphinx
+    - twine
+
+    - pytest
+    - black
