@@ -15,8 +15,10 @@ requirements = [ ]
 test_requirements = ['pytest>=3', ]
 
 setup(
-    author="Maxwell Grover",
-    author_email='mgroverwx@gmail.com',
+    author=["Maxwell Grover",
+            "Kai Muehlbauer"],
+    author_email=['mgroverwx@gmail.com',
+                  "kai.muehlbauer@uni-bonn.de"],
     python_requires='>=3.6',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
@@ -38,7 +40,7 @@ setup(
     packages=find_packages(include=['xradar', 'xradar.*']),
     test_suite='tests',
     tests_require=test_requirements,
-    url='https://github.com/mgrover1/xradar',
+    url='https://github.com/openradar/xradar',
     version='0.1.0',
     zip_safe=False,
 )
