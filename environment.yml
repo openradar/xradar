@@ -6,14 +6,15 @@ dependencies:
   - python>=3.9
   - pydata-sphinx-theme
   - pip
+  - myst-parser
+  - sphinx
+  - sphinx-copybutton
   - pip:
     - bump2version
     - wheel
     - watchdog
     - flake8
     - coverage
-    - Sphinx
     - twine
-
     - pytest
     - black
