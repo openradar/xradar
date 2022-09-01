@@ -1,5 +1,5 @@
 Welcome to xradar's documentation!
-======================================
+==================================
 
 .. toctree::
    :maxdepth: 2
