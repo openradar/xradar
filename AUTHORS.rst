@@ -6,6 +6,7 @@ Development Lead
 ----------------
 
 * Maxwell Grover <mgroverwx@gmail.com>
+* Kai Mühlbauer <kai.muehlbauer@uni-bonn.de>
 
 Contributors
 ------------
