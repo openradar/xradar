@@ -32,7 +32,7 @@ jobs:
           python -m build
 
   test_build_distribution2:
-    name: deploy to testpypi
+    name: test build distribution for testpypi
     runs-on: ubuntu-latest
     defaults:
       run:
