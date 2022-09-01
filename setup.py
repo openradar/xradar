@@ -17,16 +17,18 @@ test_requirements = ['pytest>=3', ]
 setup(
     author=["Maxwell Grover, Kai Muehlbauer, Zachary Sherman"],
     author_email="mgrover@anl.gov",
-    python_requires='>=3.6',
+    python_requires='>=3.7',
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+
     ],
     description="Xradar includes all the tools to get your weather radar into the xarray data model.",
     install_requires=requirements,
@@ -39,6 +41,5 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/openradar/xradar',
-    version='0.0.0',
     zip_safe=False,
 )
