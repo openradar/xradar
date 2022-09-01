@@ -30,12 +30,12 @@ jobs:
       - name: Package
         run: |
           python -m build
-          cp xradar*.gz xradar.gz
+          cp xradar*.gz xradar0.gz
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: xradar-0-${{github.event.number}}
-          path: dist/xradar.gz
+          path: dist/xradar0.gz
 
   test_build_distribution2:
     name: test build distribution for testpypi
@@ -60,9 +60,9 @@ jobs:
           echo 'local_scheme =  "no-local-version"' >> pyproject.toml
           git update-index --assume-unchanged pyproject.toml
           python -m build
-          cp dist/xradar*.gz dist/xradar.gz
+          cp dist/xradar*.gz dist/xradar1.gz
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: xradar-1-${{github.event.number}}
-          path: dist/xradar.gz
+          path: dist/xradar1.gz
