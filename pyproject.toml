@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "setuptools>=42",
+    "setuptools>=45",
     "wheel",
     "setuptools_scm[toml]>=6.2",
     "setuptools_scm_git_archive",
@@ -9,5 +9,5 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 write_to = "xradar/version.py"
-version_scheme = "release-branch-semver"
+version_scheme = "guess-next-dev"
 fallback_version = "999"
