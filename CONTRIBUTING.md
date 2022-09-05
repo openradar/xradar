@@ -114,5 +114,5 @@ To run a subset of tests:
 ## Deploying
 
 A reminder for the maintainers on how to deploy.
-Make sure all your changes are committed (including an entry in [HISTORY.md](HISTORY.md)).
+Make sure all your changes are committed (including an entry in [HISTORY.md](https://github.com/openradar/xradar/blob/main/HISTORY.md)).
 Then just create a release in the GitHub workflow. GHA will then deploy to PyPI if tests pass.
