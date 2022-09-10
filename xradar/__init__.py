@@ -12,6 +12,7 @@ except Exception:
     __version__ = "999"
 
 # import subpackages
+from . import io  # noqa
 from . import model  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

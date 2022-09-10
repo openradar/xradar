@@ -39,6 +39,11 @@ setup(
     keywords='xradar',
     name='xradar',
     packages=find_packages(include=['xradar', 'xradar.*']),
+    entry_points={
+        "xarray.backends": [
+            "cfradial1 = xradar.io.backends:CfRadial1BackendEntrypoint",
+        ]
+    },
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/openradar/xradar',
