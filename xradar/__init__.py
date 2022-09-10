@@ -11,3 +11,7 @@ except Exception:
     # Disable minimum version checks on downstream libraries.
     __version__ = "999"
 
+# import subpackages
+from . import model  # noqa
+
+__all__ = [s for s in dir() if not s.startswith("_")]
