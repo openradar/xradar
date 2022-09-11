@@ -15,6 +15,12 @@ Example:
     dtree = xd.io.open_cfradial1_datatree(fname)
     ```
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated/
+
+   {}
+
 """
 
 __all__ = [
