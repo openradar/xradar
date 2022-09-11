@@ -5,9 +5,6 @@
 import pytest
 
 
-from xradar import xradar
-
-
 @pytest.fixture
 def response():
     """Sample pytest fixture.

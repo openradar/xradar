@@ -6,51 +6,54 @@ import numpy as np
 
 from xradar import model
 
+
 # todo: possibly use fixtures here
 def test_create_sweep_dataset():
     # default setup (360, 1000)
     # azimuth-res 1deg, fixed elevation 1deg, range-res 100m, time-res 0.25s
     ds = model.create_sweep_dataset()
-    assert ds.azimuth.shape == (360, )
-    assert ds.elevation.shape == (360, )
-    assert ds.time.shape == (360, )
-    assert ds.range.shape == (1000, )
-    assert ds.dims == {'time': 360, 'range': 1000}
-    assert np.unique(ds.elevation) == [1.]
-    assert ds.azimuth[0] == 0.5
-    assert ds.azimuth[-1] == 359.5
-    assert ds.range[0] == 50
-    assert ds.range[-1] == 99950
-    assert ds.time[0].values == np.datetime64('2022-08-27T10:00:00.000000000')
-    assert ds.time[-1].values == np.datetime64('2022-08-27T10:01:29.750000000')
-
-    # provide azimuth- and time-resolution and fixed elevation
-    ds = model.create_sweep_dataset(azimuth=1., elevation=5., time=1)
     assert ds.azimuth.shape == (360,)
     assert ds.elevation.shape == (360,)
     assert ds.time.shape == (360,)
     assert ds.range.shape == (1000,)
-    assert ds.dims == {'time': 360, 'range': 1000}
-    print(ds.elevation)
-    assert np.unique(ds.elevation) == [5.]
+    assert ds.dims == {"time": 360, "range": 1000}
+    assert np.unique(ds.elevation) == [1.0]
     assert ds.azimuth[0] == 0.5
     assert ds.azimuth[-1] == 359.5
-    assert ds.time[0].values == np.datetime64('2022-08-27T10:00:00.000000000')
-    assert ds.time[-1].values == np.datetime64('2022-08-27T10:05:59.000000000')
+    assert ds.range[0] == 50
+    assert ds.range[-1] == 99950
+    assert ds.time[0].values == np.datetime64("2022-08-27T10:00:00.000000000")
+    assert ds.time[-1].values == np.datetime64("2022-08-27T10:01:29.750000000")
+
+    # provide azimuth- and time-resolution and fixed elevation
+    ds = model.create_sweep_dataset(azimuth=1.0, elevation=5.0, time=1)
+    assert ds.azimuth.shape == (360,)
+    assert ds.elevation.shape == (360,)
+    assert ds.time.shape == (360,)
+    assert ds.range.shape == (1000,)
+    assert ds.dims == {"time": 360, "range": 1000}
+    print(ds.elevation)
+    assert np.unique(ds.elevation) == [5.0]
+    assert ds.azimuth[0] == 0.5
+    assert ds.azimuth[-1] == 359.5
+    assert ds.time[0].values == np.datetime64("2022-08-27T10:00:00.000000000")
+    assert ds.time[-1].values == np.datetime64("2022-08-27T10:05:59.000000000")
 
     # provide shape and range-res, fixed-elevation
-    ds = model.create_sweep_dataset(shape=(180, 100), rng=50., elevation=5.)
-    assert ds.dims == {'time': 180, 'range': 100}
+    ds = model.create_sweep_dataset(shape=(180, 100), rng=50.0, elevation=5.0)
+    assert ds.dims == {"time": 180, "range": 100}
     assert ds.range[-1] == 4975
-    assert ds.time[-1].values == np.datetime64('2022-08-27T10:00:44.750000000')
-    assert np.unique(ds.elevation) == [5.]
+    assert ds.time[-1].values == np.datetime64("2022-08-27T10:00:44.750000000")
+    assert np.unique(ds.elevation) == [5.0]
 
     # provide shape and range-res, fixed-elevation, RHI
-    ds = model.create_sweep_dataset(shape=(90, 100), rng=50., azimuth=205., sweep="RHI")
-    assert ds.dims == {'time': 90, 'range': 100}
+    ds = model.create_sweep_dataset(
+        shape=(90, 100), rng=50.0, azimuth=205.0, sweep="RHI"
+    )
+    assert ds.dims == {"time": 90, "range": 100}
     assert ds.range[-1] == 4975
-    assert ds.time[-1].values == np.datetime64('2022-08-27T10:00:22.250000000')
-    assert np.unique(ds.azimuth) == [205.]
+    assert ds.time[-1].values == np.datetime64("2022-08-27T10:00:22.250000000")
+    assert np.unique(ds.azimuth) == [205.0]
 
 
 def test_get_range_dataarray():
@@ -69,7 +72,7 @@ def test_get_range_dataarray():
 
 def test_get_azimuth_dataarray():
     # provide resolution
-    azi = model.get_azimuth_dataarray(1.)
+    azi = model.get_azimuth_dataarray(1.0)
     assert azi[0] == 0.5
     assert azi[-1] == 359.5
     attrs = azi.attrs
@@ -80,8 +83,8 @@ def test_get_azimuth_dataarray():
     assert attrs["a1gate"] == 0
 
     # provide constant value and number of rays
-    azi = model.get_azimuth_dataarray(1., nrays=360)
-    assert np.unique(azi) == [1.]
+    azi = model.get_azimuth_dataarray(1.0, nrays=360)
+    assert np.unique(azi) == [1.0]
 
 
 def test_get_elevation_dataarray():
@@ -96,8 +99,8 @@ def test_get_elevation_dataarray():
     assert attrs["axis"] == "radial_elevation_coordinate"
 
     # provide constant value and number of rays
-    ele = model.get_elevation_dataarray(1., nrays=360)
-    assert np.unique(ele) == [1.]
+    ele = model.get_elevation_dataarray(1.0, nrays=360)
+    assert np.unique(ele) == [1.0]
 
 
 def test_get_time_dataarray():
@@ -110,13 +113,11 @@ def test_get_time_dataarray():
 
 
 def test_get_sweep_dataarray():
-    da = model.get_sweep_dataarray((360, 100), "DBZH", fill=42.)
+    da = model.get_sweep_dataarray((360, 100), "DBZH", fill=42.0)
     assert da.dims == ("time", "range")
-    assert np.unique(da) == [42.]
+    assert np.unique(da) == [42.0]
     attrs = da.attrs
     attrs["standard_name"] == "radar_equivalent_reflectivity_factor_h"
     attrs["long_name"] == "Equivalent reflectivity factor H"
     attrs["short_name"] == "DBZH"
     attrs["units"] == "dBZ"
-
-
