@@ -12,6 +12,7 @@ Welcome to xradar's documentation!
    contributing
    authors
    history
+   modules
 
 Indices and tables
 ==================
