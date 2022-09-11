@@ -1,0 +1,16 @@
+name: wradlib-unittests
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.7
+  - dask
+  - netCDF4
+  - numpy
+  - pip
+  - pytest
+  - pytest-doctestplus
+  - pytest-sugar
+  - pytest-xdist
+  - setuptools
+  - xarray
+  - xarray-datatree
