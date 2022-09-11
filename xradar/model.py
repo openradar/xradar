@@ -30,8 +30,6 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-from typing import Dict
-
 import numpy as np
 from xarray import DataArray, Dataset, decode_cf
 
@@ -709,7 +707,9 @@ def create_sweep_dataset(**kwargs):
         azimuth = kwargs.pop("azimuth", None)
         elevation = kwargs.pop("elevation", None)
         if azimuth is not None and elevation is not None:
-            raise ValueError("Either `shape` or `azimuth` and `elevation` can be specified.")
+            raise ValueError(
+                "Either `shape` or `azimuth` and `elevation` can be specified."
+            )
         if sweep == "PPI":
             if elevation is None:
                 raise ValueError("elevation need to be specified for PPI sweep")

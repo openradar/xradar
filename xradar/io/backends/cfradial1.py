@@ -48,8 +48,7 @@ def _maybe_decode(attr):
 
 
 def _get_required_root_dataset(ds):
-    """Extract Root Dataset.
-    """
+    """Extract Root Dataset."""
     # keep only mandatory variables
     var = ds.variables.keys()
     remove_root = var ^ required_root_vars
@@ -139,8 +138,7 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
 
 
 def _attach_sweep_groups(dtree, sweeps):
-    """Attach sweep groups to DataTree.
-    """
+    """Attach sweep groups to DataTree."""
     for i, sw in enumerate(sweeps):
         DataTree(sw, name=f"sweep_{i}", parent=dtree)
     return dtree
@@ -202,7 +200,9 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     # create datatree root node with required data
     dtree = DataTree(data=_get_required_root_dataset(ds), name="root")
     # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, _get_sweep_groups(ds, sweep=sweep, first_dim=first_dim))
+    return _attach_sweep_groups(
+        dtree, _get_sweep_groups(ds, sweep=sweep, first_dim=first_dim)
+    )
 
 
 class CfRadial1BackendEntrypoint(BackendEntrypoint):
