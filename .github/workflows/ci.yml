@@ -61,7 +61,7 @@ jobs:
         python -c "import xradar; print(xradar.version.version)"
     - name: Test with pytest
       run: |
-        pytest -n auto --dist loadfile --verbose --doctest-modules --doctest-plus --durations=15 --pyargs xradar
+        pytest -n auto --dist loadfile --verbose --durations=15 --pyargs tests
 
   test_build_distribution:
     name: test build distribution
