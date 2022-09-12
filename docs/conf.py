@@ -59,6 +59,14 @@ extensions = [
     "sphinx_copybutton",
 ]
 
+extlinks = {
+    "issue": ("https://github.com/openradar/xradar/issues/%s", "GH"),
+    "pull": ("https://github.com/openradar/xradar/pull/%s", "PR"),
+}
+
+mathjax_path = ("https://cdn.mathjax.org/mathjax/latest/MathJax.js?"
+                "config=TeX-AMS-MML_HTMLorMML")
+
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
