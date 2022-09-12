@@ -56,7 +56,7 @@ from xarray import DataArray, Dataset, decode_cf
 # This is a temporary setup, since CfRadial2.1 and FM301 are not yet finalized.
 # Todo: adhere to standards when they are published
 
-# required global attributes (root-group)
+#: required global attributes (root-group)
 required_global_attrs = dict(
     [
         ("Conventions", "Cf/Radial"),

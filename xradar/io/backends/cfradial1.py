@@ -174,8 +174,8 @@ def _assign_data_radial(root, sweep="sweep_0", first_dim="time"):
 def open_cfradial1_datatree(filename_or_obj, **kwargs):
     """Open CfRadial1 dataset as xradar Datatree.
 
-    Parameter
-    ---------
+    Parameters
+    ----------
     filename_or_obj : str, Path, file-like or DataStore
         Strings and Path objects are interpreted as a path to a local or remote
         radar file

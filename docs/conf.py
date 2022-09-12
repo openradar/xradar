@@ -21,6 +21,7 @@ import glob
 import os
 import subprocess
 import sys
+import warnings
 from importlib.metadata import version
 
 sys.path.insert(0, os.path.abspath(".."))
@@ -89,7 +90,6 @@ import xradar  # noqa
 
 modules = []
 for k, v in xradar.__dict__.items():
-    print(k)
     if isinstance(v, types.ModuleType):
         if k not in ["_warnings", "version"]:
             modules.append(k)
@@ -158,11 +158,61 @@ copybutton_prompt_is_regexp = True
 html_theme = "pydata_sphinx_theme"
 html_logo = "_static/xradar_logo.svg"
 
+
+# Tell the theme where the code lives
+# adapted from https://github.com/vispy/vispy
+def _custom_edit_url(
+    github_user,
+    github_repo,
+    github_version,
+    docpath,
+    filename,
+    default_edit_page_url_template,
+):
+    """Create custom 'edit' URLs for API modules since they are dynamically generated."""
+    if filename.startswith("generated/"):
+        # this is a dynamically generated API page, link to actual Python source
+        modpath = os.sep.join(
+            os.path.splitext(filename)[0].split("/")[-1].split(".")[:-1]
+        )
+        if modpath == "modules":
+            # main package listing
+            modpath = "xradar"
+        rel_modpath = os.path.join("..", modpath)
+        if os.path.isdir(rel_modpath):
+            docpath = modpath + "/"
+            filename = "__init__.py"
+        elif os.path.isfile(rel_modpath + ".py"):
+            docpath = os.path.dirname(modpath)
+            filename = os.path.basename(modpath) + ".py"
+        else:
+            warnings.warn(f"Not sure how to generate the API URL for: {filename}")
+    return default_edit_page_url_template.format(
+        github_user=github_user,
+        github_repo=github_repo,
+        github_version=github_version,
+        docpath=docpath,
+        filename=filename,
+    )
+
+html_context = {
+    "github_url": "https://github.com",  # or your GitHub Enterprise site
+    "github_user": "openradar",
+    "github_repo": "xradar",
+    "github_version": "main",
+    "doc_path": "docs",
+    "edit_page_url_template": "{{ xradar_custom_edit_url(github_user, github_repo, github_version, doc_path, file_name, default_edit_page_url_template) }}",
+    "default_edit_page_url_template": "https://github.com/{github_user}/{github_repo}/edit/{github_version}/{docpath}/{filename}",
+    "xradar_custom_edit_url": _custom_edit_url,
+}
+
+
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
 # documentation.
 #
 html_theme_options = {
+    "announcement": "<p>xradar is in an early stage of development, please report any issues <a href='https://github.com/openradar/xradar/issues'>here!</a></p>",
     "github_url": "https://github.com/openradar/xradar",
     "favicons": [
         {
@@ -190,6 +240,7 @@ html_theme_options = {
         },
     ],
     "navbar_end": ["theme-switcher", "icon-links.html"],
+    "use_edit_page_button": True,
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
