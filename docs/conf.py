@@ -195,6 +195,7 @@ def _custom_edit_url(
         filename=filename,
     )
 
+
 html_context = {
     "github_url": "https://github.com",  # or your GitHub Enterprise site
     "github_user": "openradar",
