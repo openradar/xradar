@@ -12,6 +12,6 @@ Radar Data IO
 .. automodule:: xradar.io.backends
 
 """
-from . backends import *  # noqa
+from .backends import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

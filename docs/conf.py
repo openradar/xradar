@@ -59,9 +59,9 @@ extensions = [
 ]
 
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3/', None),
-    'numpy': ('https://numpy.org/doc/stable/', None),
-    'xarray': ('https://xarray.pydata.org/en/stable/', None),
+    "python": ("https://docs.python.org/3/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "xarray": ("https://xarray.pydata.org/en/stable/", None),
 }
 
 # Add any paths that contain templates here, relative to this directory.
@@ -81,19 +81,20 @@ copyright = "2022, Open Radar Community"
 author = "Open Radar Community"
 
 
+# get xradar modules and create automodule rst-files
+import types
+
 # get xradar version
 import xradar  # noqa
 
-# get xradar modules and create automodule rst-files
-import types
 modules = []
 for k, v in xradar.__dict__.items():
     print(k)
-    if type(v) is types.ModuleType:
-        if not k in ['_warnings', 'version']:
+    if isinstance(v, types.ModuleType):
+        if k not in ["_warnings", "version"]:
             modules.append(k)
-            file = open('{0}.rst'.format(k), mode='w')
-            file.write('.. automodule:: xradar.{}\n'.format(k))
+            file = open("{0}.rst".format(k), mode="w")
+            file.write(".. automodule:: xradar.{}\n".format(k))
             file.close()
 
 # create API/Library reference rst-file
@@ -105,16 +106,16 @@ Library Reference
    :maxdepth: 4
 """
 
-file = open('reference.rst', mode='w')
-file.write('{}\n'.format(reference))
+file = open("reference.rst", mode="w")
+file.write("{}\n".format(reference))
 for mod in sorted(modules):
-    file.write('   {}\n'.format(mod))
+    file.write("   {}\n".format(mod))
 file.close()
 
 # get all rst files, do it manually
-rst_files = glob.glob('*.rst')
+rst_files = glob.glob("*.rst")
 autosummary_generate = rst_files
-autoclass_content = 'both'
+autoclass_content = "both"
 
 # The version info for the project you're documenting, acts as replacement
 # for |version| and |release|, also used in various other places throughout
@@ -138,7 +139,7 @@ language = "en"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", 'links.rst']
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "links.rst"]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"
@@ -187,7 +188,6 @@ html_theme_options = {
             "url": "https://openradarscience.org",
             "icon": "_static/openradar_micro.svg",
         },
-
     ],
     "navbar_end": ["theme-switcher", "icon-links.html"],
 }
@@ -273,6 +273,5 @@ texinfo_documents = [
 # make rst_epilog a variable, so you can add other epilog parts to it
 rst_epilog = ""
 # Read link all targets from file
-with open('links.rst') as f:
-     rst_epilog += f.read()
-
+with open("links.rst") as f:
+    rst_epilog += f.read()
