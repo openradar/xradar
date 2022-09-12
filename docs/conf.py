@@ -113,12 +113,35 @@ copybutton_prompt_is_regexp = True
 # a list of builtin themes.
 #
 html_theme = "pydata_sphinx_theme"
+html_logo = "_static/xradar_logo.svg"
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {
+    "navbar_end": ["theme-switcher", "icon-links.html"],
+    "favicons": [
+        {
+            "rel": "icon",
+            "sizes": "16x16",
+            "href": "openradar_micro.svg",
+        },
+        {
+            "rel": "icon",
+            "sizes": "32x32",
+            "href": "openradar_micro.svg",
+        },
+    ],
+    "icon_links": [
+        {
+            "type": "local",
+            "name": "OpenRadarScience",
+            "url": "https://openradarscience.org",
+            "icon": "_static/openradar_micro.svg",
+        },
+    ],
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
