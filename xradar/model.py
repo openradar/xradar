@@ -2,21 +2,41 @@
 # Copyright (c) 2022, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
-"""XRadar Data Model Structure
+"""
+XRadar Data Model
+=================
 
 The data model for the different xradar DataArrays, Datasets and DataTrees is based on NetCDF4/CfRadial2.1.
 It will be aligned to the upcoming WMO standard FM301.
 
+This module contains several helper functions to create minimal DataArrays and Datasets, as well as Datatrees.
+
 Must read:
 
-- [CfRadial](https://github.com/NCAR/CfRadial)
-- [WMO CF-extensions](https://community.wmo.int/activity-areas/wis/wmo-cf-extensions)
-- [OPERA/ODIM_H5](https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/)
+* `CfRadial`_
+* `WMO CF extensions`_
+* `OPERA/ODIM_H5`_
 
 Code ported from wradlib.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated/
+
+   {}
 """
 
 __all__ = [
+    "create_sweep_dataset",
+    "get_azimuth_attrs",
+    "get_elevation_attrs",
+    "get_moment_attrs",
+    "get_range_attrs",
+    "get_azimuth_dataarray",
+    "get_elevation_dataarray",
+    "get_range_dataarray",
+    "get_sweep_dataarray",
+    "get_time_dataarray",
     "required_global_attrs",
     "optional_root_attrs",
     "required_root_vars",
@@ -36,6 +56,7 @@ from xarray import DataArray, Dataset, decode_cf
 # This is a temporary setup, since CfRadial2.1 and FM301 are not yet finalized.
 # Todo: adhere to standards when they are published
 
+# required global attributes (root-group)
 required_global_attrs = dict(
     [
         ("Conventions", "Cf/Radial"),
@@ -54,6 +75,7 @@ required_global_attrs = dict(
     ]
 )
 
+# optional global attributes (root-group)
 optional_root_attrs = [
     ("site_name", "name of site where data were gathered"),
     ("scan_name", "name of scan strategy used, if applicable"),
@@ -75,6 +97,7 @@ optional_root_attrs = [
     ),
 ]
 
+# required global variables (root-group)
 required_root_vars = {
     "volume_number",
     "time_coverage_start",
@@ -86,18 +109,21 @@ required_root_vars = {
     "instrument_type",
 }
 
+# optional global attributes (root-group)
 optional_root_vars = {
     "altitude_agl",
     "primary_axis",
     "status_str",
 }
 
+# sweep-group coordinate variables
 sweep_coordinate_vars = {
     "time",
     "range",
     "frequency",
 }
 
+# required sweep-group metadata variables
 required_sweep_metadata_vars = {
     "sweep_number",
     "sweep_mode",
@@ -108,6 +134,7 @@ required_sweep_metadata_vars = {
     "elevation",
 }
 
+# optional sweep-group metadata variables
 optional_sweep_metadata_vars = {
     "polarization_mode",
     "polarization_sequence",
@@ -128,6 +155,7 @@ optional_sweep_metadata_vars = {
     "n_samples",
 }
 
+# sweep dataset variable names
 sweep_dataset_vars = {
     "DBZH",
     "DBZV",
@@ -168,11 +196,13 @@ sweep_dataset_vars = {
     "REC",
 }
 
+# non-standard sweep dataset variable names
 non_standard_sweep_dataset_vars = {
     "DBZ",
     "VEL",
 }
 
+# required range attributes
 range_attrs = {
     "units": "meters",
     "standard_name": "projection_range_coordinate",
@@ -183,18 +213,20 @@ range_attrs = {
     "meters_between_gates": "{}",
 }
 
+# required time attributes
 time_attrs = {
     "standard_name": "time",
     "units": "seconds since {}",
 }
 
+# required frequency attributes
 frequency_attrs = {
     "standard_name": "",
     "units": "s-1",
 }
 
-# CfRadial 2.1 / FM301 / ODIM_H5 mapping
 # todo: align this with sweep_dataset_vars
+# CfRadial 2.1 / FM301 / ODIM_H5 mapping
 sweep_vars_mapping = {
     "DBZH": {
         "standard_name": "radar_equivalent_reflectivity_factor_h",

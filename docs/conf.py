@@ -17,6 +17,7 @@
 # relative to the documentation root, use os.path.abspath to make it
 # absolute, like shown here.
 #
+import glob
 import os
 import subprocess
 import sys
@@ -34,7 +35,6 @@ if on_rtd:
     # install xradar from checked out source
     subprocess.check_call(["python", "-m", "pip", "install", "--no-deps", "../."])
 
-import xradar
 
 # -- General configuration ---------------------------------------------
 
@@ -58,6 +58,12 @@ extensions = [
     "sphinx_copybutton",
 ]
 
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'xarray': ('https://xarray.pydata.org/en/stable/', None),
+}
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
@@ -73,6 +79,42 @@ master_doc = "index"
 project = "xradar"
 copyright = "2022, Open Radar Community"
 author = "Open Radar Community"
+
+
+# get xradar version
+import xradar  # noqa
+
+# get xradar modules and create automodule rst-files
+import types
+modules = []
+for k, v in xradar.__dict__.items():
+    print(k)
+    if type(v) is types.ModuleType:
+        if not k in ['_warnings', 'version']:
+            modules.append(k)
+            file = open('{0}.rst'.format(k), mode='w')
+            file.write('.. automodule:: xradar.{}\n'.format(k))
+            file.close()
+
+# create API/Library reference rst-file
+reference = """
+Library Reference
+=================
+
+.. toctree::
+   :maxdepth: 4
+"""
+
+file = open('reference.rst', mode='w')
+file.write('{}\n'.format(reference))
+for mod in sorted(modules):
+    file.write('   {}\n'.format(mod))
+file.close()
+
+# get all rst files, do it manually
+rst_files = glob.glob('*.rst')
+autosummary_generate = rst_files
+autoclass_content = 'both'
 
 # The version info for the project you're documenting, acts as replacement
 # for |version| and |release|, also used in various other places throughout
@@ -96,7 +138,7 @@ language = "en"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", 'links.rst']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"
@@ -120,7 +162,7 @@ html_logo = "_static/xradar_logo.svg"
 # documentation.
 #
 html_theme_options = {
-    "navbar_end": ["theme-switcher", "icon-links.html"],
+    "github_url": "https://github.com/openradar/xradar",
     "favicons": [
         {
             "rel": "icon",
@@ -135,12 +177,19 @@ html_theme_options = {
     ],
     "icon_links": [
         {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/xradar",
+            "icon": "fas fa-box",
+        },
+        {
             "type": "local",
             "name": "OpenRadarScience",
             "url": "https://openradarscience.org",
             "icon": "_static/openradar_micro.svg",
         },
+
     ],
+    "navbar_end": ["theme-switcher", "icon-links.html"],
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
@@ -153,6 +202,22 @@ html_static_path = ["_static"]
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = "xradardoc"
+
+# -- Napoleon settings for docstring processing -------------------------------
+napoleon_google_docstring = False
+napoleon_numpy_docstring = True
+napoleon_include_special_with_doc = False
+napoleon_use_param = False
+napoleon_use_rtype = False
+napoleon_preprocess_types = True
+napoleon_type_aliases = {
+    "scalar": ":term:`scalar`",
+    "sequence": ":term:`sequence`",
+    "callable": ":py:func:`callable`",
+    "file-like": ":term:`file-like <file-like object>`",
+    "array-like": ":term:`array-like <array_like>`",
+    "Path": "~~pathlib.Path",
+}
 
 # -- Options for LaTeX output ------------------------------------------
 
@@ -204,3 +269,10 @@ texinfo_documents = [
         "Miscellaneous",
     ),
 ]
+
+# make rst_epilog a variable, so you can add other epilog parts to it
+rst_epilog = ""
+# Read link all targets from file
+with open('links.rst') as f:
+     rst_epilog += f.read()
+

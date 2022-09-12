@@ -1,4 +1,10 @@
-"""Top-level package for xradar."""
+"""
+xradar
+======
+
+Top-level package for xradar.
+
+"""
 
 __author__ = """Maxwell Grover"""
 __email__ = "mgroverwx@gmail.com"

@@ -2,18 +2,19 @@
 # Copyright (c) 2022, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
-"""CfRadial1
+"""
+
+CfRadial1
+=========
 
 CfRadial1 Backend for reading CfRadial1-based radar data into Xarray structures.
 
 Code ported from wradlib.
 
-Example:
+Example::
 
-    ```python
     import xradar as xd
-    dtree = xd.io.open_cfradial1_datatree(fname)
-    ```
+    dtree = xd.io.open_cfradial1_datatree(filename)
 
 .. autosummary::
    :nosignatures:
