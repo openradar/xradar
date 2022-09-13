@@ -200,6 +200,7 @@ sweep_dataset_vars = {
 non_standard_sweep_dataset_vars = {
     "DBZ",
     "VEL",
+    "VR",
 }
 
 # required range attributes

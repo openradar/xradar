@@ -139,6 +139,19 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
                 ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
 
+        # reassign azimuth/elevation coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
+
+        # assign geo-coords
+        ds = ds.assign_coords(
+            {
+                "latitude": root.latitude,
+                "longitude": root.longitude,
+                "altitude": root.altitude,
+            }
+        )
+
         sweep_groups.append(ds)
 
     return sweep_groups
