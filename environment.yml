@@ -9,6 +9,8 @@ dependencies:
   - myst-parser
   - sphinx
   - sphinx-copybutton
+  - xarray
+  - xarray-datatree
   - pip:
     - bump2version
     - wheel

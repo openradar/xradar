@@ -1,7 +1,13 @@
-"""Top-level package for xradar."""
+"""
+xradar
+======
+
+Top-level package for xradar.
+
+"""
 
 __author__ = """Maxwell Grover"""
-__email__ = 'mgroverwx@gmail.com'
+__email__ = "mgroverwx@gmail.com"
 
 # versioning
 try:
@@ -11,3 +17,8 @@ except Exception:
     # Disable minimum version checks on downstream libraries.
     __version__ = "999"
 
+# import subpackages
+from . import io  # noqa
+from . import model  # noqa
+
+__all__ = [s for s in dir() if not s.startswith("_")]
