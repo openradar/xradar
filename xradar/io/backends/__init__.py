@@ -10,6 +10,7 @@ Xarray Backends
     :maxdepth: 4
 
 .. automodule:: xradar.io.backends.cfradial1
+.. automodule:: xradar.io.backends.odim
 
 """
 
