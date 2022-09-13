@@ -45,13 +45,7 @@ from ...model import (
     sweep_coordinate_vars,
     sweep_dataset_vars,
 )
-
-
-def _maybe_decode(attr):
-    try:
-        return attr.decode()
-    except AttributeError:
-        return attr
+from .common import _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds):
@@ -155,13 +149,6 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
         sweep_groups.append(ds)
 
     return sweep_groups
-
-
-def _attach_sweep_groups(dtree, sweeps):
-    """Attach sweep groups to DataTree."""
-    for i, sw in enumerate(sweeps):
-        DataTree(sw, name=f"sweep_{i}", parent=dtree)
-    return dtree
 
 
 def _assign_data_radial(root, sweep="sweep_0", first_dim="time"):

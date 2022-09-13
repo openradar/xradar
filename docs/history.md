@@ -3,6 +3,7 @@
 ## Development version
 
 * Data Model, CfRadial1 Backend ({pull}`13`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* ODIM_H5 Backend ({pull}`14`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.4.0 (2022-09-01)
 

@@ -9,6 +9,9 @@ dependencies:
   - myst-parser
   - sphinx
   - sphinx-copybutton
+  - h5netcdf
+  - h5py
+  - netCDF4
   - xarray
   - xarray-datatree
   - pip:
