@@ -91,7 +91,7 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
     if isinstance(sweep, str):
         sweep = [sweep]
     elif isinstance(sweep, int):
-        sweep = [f"dataset{sweep}"]
+        sweep = [f"sweep_{sweep}"]
 
     # iterate over sweeps
     for i in range(root.dims["sweep"]):
