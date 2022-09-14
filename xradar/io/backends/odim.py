@@ -281,7 +281,7 @@ class _OdimH5NetCDFMetadata:
             import warnings
 
             warnings.warn(
-                "WRADLIB: Equal ODIM `starttime` and `endtime` "
+                "xradar: Equal ODIM `starttime` and `endtime` "
                 "values. Can't determine correct sweep start-, "
                 "end- and raytimes.",
                 UserWarning,
@@ -775,7 +775,7 @@ def _get_h5group_names(filename, engine):
     elif engine == "cfradial2":
         groupname = "sweep"
     else:
-        raise ValueError(f"wradlib: unknown engine `{engine}`.")
+        raise ValueError(f"xradar: unknown engine `{engine}`.")
     with h5netcdf.File(filename, "r", decode_vlen_strings=True) as fh:
         groups = ["/".join(["", grp]) for grp in fh.groups if groupname in grp.lower()]
     if isinstance(filename, io.BytesIO):
@@ -827,7 +827,7 @@ def _assign_root(sweeps):
             "references": "None",
             "source": "None",
             "history": "None",
-            "comment": "im/exported using wradlib",
+            "comment": "im/exported using xradar",
             "instrument_name": "None",
         }
     )
