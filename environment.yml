@@ -9,6 +9,7 @@ dependencies:
   - myst-parser
   - sphinx
   - sphinx-copybutton
+  - nbsphinx
   - h5netcdf
   - h5py
   - netCDF4
