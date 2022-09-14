@@ -661,7 +661,24 @@ class OdimStore(AbstractDataStore):
 
 
 class OdimBackendEntrypoint(BackendEntrypoint):
-    """Xarray BackendEntrypoint for ODIM data."""
+    """Xarray BackendEntrypoint for ODIM data.
+
+    Keyword Arguments
+    -----------------
+    first_dim : str
+        Default to 'time' as first dimension. If set to 'auto', first dimension will
+        be either 'azimuth' or 'elevation' depending on type of sweep.
+    keep_elevation : bool
+        For PPI only. Keep original elevation data if True. If False,
+        fixes erroneous elevation data. Defaults to True.
+    keep_azimuth : bool
+        For RHI only. Keep original azimuth data if True. If False,
+        fixes erroneous azimuth data. Defaults to True.
+    reindex_angle : bool or float
+        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
+        given a floating point number, it is used as tolerance.
+        Only invoked if `decode_coord=True`.
+    """
 
     def open_dataset(
         self,
@@ -679,9 +696,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         invalid_netcdf=None,
         phony_dims="access",
         decode_vlen_strings=True,
-        keep_elevation=False,
-        keep_azimuth=False,
-        reindex_angle=None,
+        keep_elevation=True,
+        keep_azimuth=True,
+        reindex_angle=False,
         first_dim="time",
     ):
 
@@ -837,6 +854,16 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     sweep : int, list of int, optional
         Sweep number(s) to extract, default to first sweep. If None, all sweeps are
         extracted into a list.
+    keep_elevation : bool
+        For PPI only. Keep original elevation data if True. If False,
+        fixes erroneous elevation data. Defaults to True.
+    keep_azimuth : bool
+        For RHI only. Keep original azimuth data if True. If False,
+        fixes erroneous azimuth data. Defaults to True.
+    reindex_angle : bool or float
+        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
+        given a floating point number, it is used as tolerance.
+        Only invoked if `decode_coord=True`.
     kwargs :  kwargs
         Additional kwargs are fed to `xr.open_dataset`.
 
@@ -848,14 +875,19 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
     # first_dim = backend_kwargs.pop("first_dim", None)
-    sweep = backend_kwargs.pop("sweep", None)
+    sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
 
     if isinstance(sweep, str):
         sweeps = [sweep]
+    elif isinstance(sweep, int):
+        sweeps = [f"dataset{sweep}"]
     elif isinstance(sweep, list):
-        pass
+        if isinstance(sweep[0], int):
+            sweeps = [f"dataset{i+1}" for i in sweep]
+        else:
+            sweeps.extend(sweep)
     else:
         sweeps = _get_h5group_names(filename_or_obj, "odim")
 
