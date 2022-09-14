@@ -57,6 +57,7 @@ extensions = [
     "sphinx.ext.todo",
     "myst_parser",
     "sphinx_copybutton",
+    "nbsphinx",
 ]
 
 extlinks = {
@@ -148,7 +149,13 @@ language = "en"
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "links.rst"]
+exclude_patterns = [
+    "_build",
+    "Thumbs.db",
+    ".DS_Store",
+    "links.rst",
+    "**.ipynb_checkpoints",
+]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = "sphinx"
@@ -158,6 +165,11 @@ todo_include_todos = False
 
 copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
 copybutton_prompt_is_regexp = True
+
+# -- nbsphinx specifics --
+# always execute notebooks while building docs
+nbsphinx_execute = "always"
+subprocess.check_call(["cp", "-rp", "../examples/notebooks", "."])
 
 # -- Options for HTML output -------------------------------------------
 

@@ -19,6 +19,12 @@
   <defs
      id="defs2">
     <rect
+       x="-3.9687498"
+       y="-6.6145834"
+       width="78.052083"
+       height="51.59375"
+       id="rect3325" />
+    <rect
        x="348.57275"
        y="-30.504217"
        width="49.640038"
@@ -50,16 +56,16 @@
      borderopacity="1.0"
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
-     inkscape:zoom="4.360255"
-     inkscape:cx="91.309572"
-     inkscape:cy="85.263014"
+     inkscape:zoom="1.7648651"
+     inkscape:cx="136.71433"
+     inkscape:cy="140.90689"
      inkscape:document-units="mm"
-     inkscape:current-layer="layer1"
+     inkscape:current-layer="g3321"
      inkscape:document-rotation="0"
      showgrid="true"
      inkscape:window-width="1920"
-     inkscape:window-height="1171"
-     inkscape:window-x="1920"
+     inkscape:window-height="1135"
+     inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1">
     <inkscape:grid
@@ -132,9 +138,9 @@
        id="text74"
        style="font-style:normal;font-weight:normal;font-size:10.5833px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect76);fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;" />
     <g
-       id="g1057">
+       id="g3321">
       <g
-         id="g1005">
+         id="g3341">
         <path
            id="path56"
            style="fill:none;fill-opacity:1;stroke:#0099ff;stroke-width:2.123;stroke-linecap:round;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
@@ -162,28 +168,27 @@
            y="30.227085" />
         <text
            xml:space="preserve"
-           id="text1580"
-           style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:10.5833px;line-height:125%;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect1582);fill:#0099ff;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;"
-           transform="translate(7.6015366,-17.910311)"><tspan
-             x="-1.3222656"
-             y="33.544061"><tspan
-               style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:sans-serif;-inkscape-font-specification:sans-serif;fill:#0099ff;fill-opacity:1">OR</tspan></tspan></text>
-      </g>
-      <text
-         xml:space="preserve"
-         style="font-style:normal;font-weight:normal;font-size:11.2889px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-         x="23.484545"
-         y="32.083317"
-         id="text1029"><tspan
-           sodipodi:role="line"
-           id="tspan1027"
+           style="font-style:normal;font-weight:normal;font-size:11.2889px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
            x="23.484545"
            y="32.083317"
-           style="font-size:11.2889px;stroke-width:0.264583px"><tspan
-             style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11.2889px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Italic';fill:#0099ff;fill-opacity:1"
-             id="tspan1035">X</tspan><tspan
-             style="font-size:11.2889px;fill:#0099ff;fill-opacity:1"
-             id="tspan1043">radar</tspan></tspan></text>
+           id="text1029"><tspan
+             sodipodi:role="line"
+             id="tspan1027"
+             x="23.484545"
+             y="32.083317"
+             style="font-size:11.2889px;stroke-width:0.264583px"><tspan
+               style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11.2889px;font-family:sans-serif;-inkscape-font-specification:'sans-serif Italic';fill:#0099ff;fill-opacity:1;stroke:#0099ff;stroke-opacity:1"
+               id="tspan1035">X</tspan><tspan
+               style="font-size:11.2889px;fill:#0099ff;fill-opacity:1;stroke:#0099ff;stroke-opacity:1"
+               id="tspan1043">radar</tspan></tspan></text>
+      </g>
+      <g
+         id="g3331">
+        <text
+           xml:space="preserve"
+           id="text3323"
+           style="fill:black;stroke:none;stroke-opacity:1;stroke-width:0.26458333px;stroke-linejoin:miter;stroke-linecap:butt;fill-opacity:1;font-family:sans-serif;font-style:normal;font-weight:normal;font-size:10.58333333px;line-height:125%;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect3325);" />
+      </g>
     </g>
   </g>
 </svg>

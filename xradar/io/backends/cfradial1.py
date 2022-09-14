@@ -45,13 +45,7 @@ from ...model import (
     sweep_coordinate_vars,
     sweep_dataset_vars,
 )
-
-
-def _maybe_decode(attr):
-    try:
-        return attr.decode()
-    except AttributeError:
-        return attr
+from .common import _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds):
@@ -96,10 +90,13 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
     sweep_groups = []
     if isinstance(sweep, str):
         sweep = [sweep]
+    elif isinstance(sweep, int):
+        sweep = [f"sweep_{sweep}"]
+
     # iterate over sweeps
     for i in range(root.dims["sweep"]):
         sw = f"sweep_{i}"
-        if sweep is not None and sw not in sweep:
+        if sweep is not None and not (sw in sweep or i in sweep):
             continue
 
         # slice time and sweep dimension
@@ -157,13 +154,6 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
     return sweep_groups
 
 
-def _attach_sweep_groups(dtree, sweeps):
-    """Attach sweep groups to DataTree."""
-    for i, sw in enumerate(sweeps):
-        DataTree(sw, name=f"sweep_{i}", parent=dtree)
-    return dtree
-
-
 def _assign_data_radial(root, sweep="sweep_0", first_dim="time"):
     """Assign from CfRadial1 data structure.
 
@@ -210,10 +200,8 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         DataTree
     """
     # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    first_dim = backend_kwargs.pop("first_dim", None)
-    sweep = backend_kwargs.pop("sweep", None)
-    kwargs["backend_kwargs"] = backend_kwargs
+    first_dim = kwargs.get("first_dim", None)
+    sweep = kwargs.pop("sweep", None)
 
     # open root group, cfradial1 only has one group
     ds = open_dataset(filename_or_obj, engine="cfradial1", **kwargs)
@@ -227,6 +215,12 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
 
 class CfRadial1BackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for CfRadial1 data.
+
+    Keyword Arguments
+    -----------------
+    first_dim : str
+        Default to 'time' as first dimension. If set to 'auto', first dimension will
+        be either 'azimuth' or 'elevation' depending on type of sweep.
 
     Ported from wradlib.
     """

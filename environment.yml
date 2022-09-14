@@ -9,14 +9,13 @@ dependencies:
   - myst-parser
   - sphinx
   - sphinx-copybutton
+  - nbsphinx
+  - ipykernel
+  - h5netcdf
+  - h5py
+  - netCDF4
   - xarray
   - xarray-datatree
-  - pip:
-    - bump2version
-    - wheel
-    - watchdog
-    - flake8
-    - coverage
-    - twine
-    - pytest
-    - black
+  - dask
+  - matplotlib-base
+

@@ -29,9 +29,15 @@ Code ported from wradlib.
 __all__ = [
     "create_sweep_dataset",
     "get_azimuth_attrs",
+    "get_latitude_attrs",
+    "get_longitude_attrs",
+    "get_altitude_attrs",
     "get_elevation_attrs",
     "get_moment_attrs",
     "get_range_attrs",
+    "get_time_attrs",
+    "moment_attrs",
+    "sweep_vars_mapping",
     "get_azimuth_dataarray",
     "get_elevation_dataarray",
     "get_range_dataarray",
@@ -225,6 +231,25 @@ frequency_attrs = {
     "standard_name": "",
     "units": "s-1",
 }
+
+lon_attrs = {
+    "long_name": "longitude",
+    "units": "degrees_east",
+    "standard_name": "longitude",
+}
+lat_attrs = {
+    "long_name": "latitude",
+    "units": "degrees_north",
+    "positive": "up",
+    "standard_name": "latitude",
+}
+alt_attrs = {
+    "long_name": "altitude",
+    "units": "meters",
+    "standard_name": "altitude",
+}
+
+moment_attrs = {"standard_name", "long_name", "units"}
 
 # todo: align this with sweep_dataset_vars
 # CfRadial 2.1 / FM301 / ODIM_H5 mapping
@@ -442,6 +467,34 @@ sweep_vars_mapping = {
 }
 
 
+def get_longitude_attrs():
+    lon_attrs = {
+        "long_name": "longitude",
+        "units": "degrees_east",
+        "standard_name": "longitude",
+    }
+    return lon_attrs
+
+
+def get_latitude_attrs():
+    lat_attrs = {
+        "long_name": "latitude",
+        "units": "degrees_north",
+        "positive": "up",
+        "standard_name": "latitude",
+    }
+    return lat_attrs
+
+
+def get_altitude_attrs():
+    alt_attrs = {
+        "long_name": "altitude",
+        "units": "meters",
+        "standard_name": "altitude",
+    }
+    return alt_attrs
+
+
 def get_range_attrs(rng):
     """Get Range CF attributes.
 
@@ -474,7 +527,7 @@ def get_range_attrs(rng):
     return range_attrs
 
 
-def get_azimuth_attrs(azi):
+def get_azimuth_attrs(azi=None):
     """Get Azimuth CF attributes.
 
     Parameters
@@ -493,14 +546,15 @@ def get_azimuth_attrs(azi):
         "units": "degrees",
         "axis": "radial_azimuth_coordinate",
     }
-    unique = len(np.unique(azi)) == 1
-    if not unique:
-        a1gate = np.argsort(np.argsort(azi))[0]
-        az_attrs["a1gate"] = a1gate
+    if azi is not None:
+        unique = len(np.unique(azi)) == 1
+        if not unique:
+            a1gate = np.argsort(np.argsort(azi))[0]
+            az_attrs["a1gate"] = a1gate
     return az_attrs
 
 
-def get_elevation_attrs(ele):
+def get_elevation_attrs(ele=None):
     """Get Elevation CF attributes.
 
     Parameters
@@ -520,6 +574,14 @@ def get_elevation_attrs(ele):
         "axis": "radial_elevation_coordinate",
     }
     return el_attrs
+
+
+def get_time_attrs(date_str):
+    time_attrs = {
+        "standard_name": "time",
+        "units": f"seconds since {date_str}",
+    }
+    return time_attrs
 
 
 def get_moment_attrs(moment):

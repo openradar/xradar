@@ -20,5 +20,6 @@ except Exception:
 # import subpackages
 from . import io  # noqa
 from . import model  # noqa
+from . import util  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

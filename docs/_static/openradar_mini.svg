@@ -58,8 +58,8 @@
      inkscape:document-rotation="0"
      showgrid="true"
      inkscape:window-width="1920"
-     inkscape:window-height="1171"
-     inkscape:window-x="1920"
+     inkscape:window-height="1135"
+     inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="1">
     <inkscape:grid
@@ -132,7 +132,7 @@
        id="text74"
        style="font-style:normal;font-weight:normal;font-size:10.5833px;line-height:125%;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect76);fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;" />
     <g
-       id="g1005">
+       id="g873">
       <path
          id="path56"
          style="fill:none;fill-opacity:1;stroke:#0099ff;stroke-width:2.123;stroke-linecap:round;stroke-linejoin:bevel;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
@@ -158,14 +158,6 @@
          height="1.3229173"
          x="6.7145834"
          y="30.227085" />
-      <text
-         xml:space="preserve"
-         id="text1580"
-         style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:10.5833px;line-height:125%;font-family:sans-serif;-inkscape-font-specification:'sans-serif Bold';letter-spacing:0px;word-spacing:0px;white-space:pre;shape-inside:url(#rect1582);fill:#0099ff;fill-opacity:1;stroke:none;stroke-width:0.264583px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;"
-         transform="translate(7.6015366,-17.910311)"><tspan
-           x="-1.3222656"
-           y="33.544061"><tspan
-             style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:sans-serif;-inkscape-font-specification:sans-serif;fill:#0099ff;fill-opacity:1">OR</tspan></tspan></text>
     </g>
   </g>
 </svg>

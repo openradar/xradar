@@ -10,9 +10,11 @@ Xarray Backends
     :maxdepth: 4
 
 .. automodule:: xradar.io.backends.cfradial1
+.. automodule:: xradar.io.backends.odim
 
 """
 
 from .cfradial1 import *  # noqa
+from .odim import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
