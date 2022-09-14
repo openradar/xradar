@@ -10,6 +10,7 @@ dependencies:
   - sphinx
   - sphinx-copybutton
   - nbsphinx
+  - ipykernel
   - h5netcdf
   - h5py
   - netCDF4
