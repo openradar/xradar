@@ -1,13 +1,16 @@
 # xradar
 
 [![PyPI Version](https://img.shields.io/pypi/v/xradar.svg)](https://pypi.python.org/pypi/xradar)
-[![RTD Version](https://readthedocs.org/projects/xradar/badge/?version=latest)](https://xradar.readthedocs.io/en/latest/?version=latest)
+[![Conda Version](https://img.shields.io/conda/vn/conda-forge/xradar.svg)](https://anaconda.org/conda-forge/xradar)
 
+[![CI](https://github.com/openradar/xradar/actions/workflows/ci.yml/badge.svg)](https://github.com/openradar/xradar/actions/workflows/ci.yml)
+[![Build distribution](https://github.com/openradar/xradar/actions/workflows/upload_pypi.yml/badge.svg)](https://github.com/openradar/xradar/actions/workflows/upload_pypi.yml)
+[![RTD Version](https://readthedocs.org/projects/xradar/badge/?version=latest)](https://xradar.readthedocs.io/en/latest/?version=latest)
 
 Xradar includes all the tools to get your weather radar into the xarray data model.
 
 * Free software: MIT license
-* Documentation: https://xradar.readthedocs.io.
+* Documentation: [https://docs.openradarscience.org/projects/xradar](https://xradar.readthedocs.io)
 
 ## About
 
@@ -21,4 +24,5 @@ Any software package that uses xarray in any way will then be able to directly u
 
 ## Features
 
-* TODO
+* Import CfRadial1 data
+* Import ODIM_H5 data

@@ -60,7 +60,7 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     ```bash
     $ mkvirtualenv xradar
     $ cd xradar/
-    $ python setup.py develop
+    $ python -m pip install -e .[dev]
     ```
 
 4. Create a branch for local development:
@@ -75,7 +75,7 @@ Ready to contribute? Here's how to set up `xradar` for local development.
 
     ```bash
     $ flake8 xradar tests
-    $ python setup.py test or pytest
+    $ python -m pytest
     $ tox
    ```
 
@@ -99,7 +99,7 @@ Before you submit a pull request, check that it meets these guidelines:
 2. If the pull request adds functionality, the docs should be updated. Put
    your new functionality into a function with a docstring, and add the
    feature to the list in README.rst.
-3. The pull request should work for Python 3.7, 3.8, 3.9 and 3.10 and for PyPy. Check
+3. The pull request should work for [supported Python versions](https://endoflife.date/python) and for PyPy. Check
    [GHA](https://github.com/openradar/xradar/actions)
    and make sure that the tests pass for all supported Python versions.
 
@@ -114,5 +114,5 @@ To run a subset of tests:
 ## Deploying
 
 A reminder for the maintainers on how to deploy.
-Make sure all your changes are committed (including an entry in [HISTORY.md](https://github.com/openradar/xradar/blob/main/HISTORY.md)).
+Make sure all your changes are committed (including an entry in [history.md](https://github.com/openradar/xradar/blob/main/docs/history.md)).
 Then just create a release in the GitHub workflow. GHA will then deploy to PyPI if tests pass.

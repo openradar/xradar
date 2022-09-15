@@ -10,7 +10,11 @@ with open("README.md") as readme_file:
 with open("docs/history.md") as history_file:
     history = history_file.read()
 
-requirements = []
+with open("requirements.txt", "r") as f:
+    INSTALL_REQUIRES = [rq for rq in f.read().split("\n") if rq != ""]
+
+with open("requirements_dev.txt", "r") as f:
+    DEVEL_REQUIRES = [rq for rq in f.read().split("\n") if rq != ""]
 
 test_requirements = [
     "pytest>=3",
@@ -32,7 +36,8 @@ setup(
         "Programming Language :: Python :: 3.10",
     ],
     description="Xradar includes all the tools to get your weather radar into the xarray data model.",
-    install_requires=requirements,
+    install_requires=INSTALL_REQUIRES,
+    extras_require=dict(dev=DEVEL_REQUIRES),
     license="MIT license",
     long_description=readme + "\n\n" + history,
     long_description_content_type="text/markdown",
