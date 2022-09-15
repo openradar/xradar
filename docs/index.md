@@ -7,6 +7,9 @@ myst:
 html_theme.sidebar_secondary.remove: true
 ---
 
+**Release:** {{release}}\
+**Date:** {{today}}
+
 ```{include} ../README.md
 ```
 
