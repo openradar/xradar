@@ -15,6 +15,7 @@ import xradar
 :caption: Get started
 
 importers
+notebooks/Accessors
 ```
 
 ```{toctree}
