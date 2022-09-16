@@ -11,12 +11,18 @@ import xradar
 ```
 
 ```{toctree}
-:maxdepth: 3
+:maxdepth: 2
 :caption: Get started
+
+importers
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Examples
 
 notebooks/CfRadial1
 notebooks/CfRadial1_full
 notebooks/ODIM_H5
 notebooks/ODIM_H5_full
-
 ```

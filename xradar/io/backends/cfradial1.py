@@ -7,7 +7,8 @@
 CfRadial1
 =========
 
-CfRadial1 Backend for reading CfRadial1-based radar data into Xarray structures.
+This sub-module contains the CfRadial1 xarray backend for reading CfRadial1-based radar
+data into Xarray structures as well as a reader to create a complete datatree.Datatree.
 
 Code ported from wradlib.
 
