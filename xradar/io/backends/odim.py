@@ -7,7 +7,8 @@
 ODIM_H5
 =======
 
-ODIM_H5 Backend for reading ODIM_H5-based radar data into Xarray structures.
+This sub-module contains the ODIM_H5 xarray backend for reading ODIM_H5-based radar
+data into Xarray structures as well as a reader to create a complete datatree.Datatree.
 
 Code ported from wradlib.
 

@@ -2,6 +2,16 @@
 # Copyright (c) 2022, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
+"""
+Common Backend Functions
+========================
+
+This submodule contains helper functions for data and metadata alignment.
+
+Currently all private and not part of the public API.
+
+"""
+
 import numpy as np
 import xarray as xr
 from datatree import DataTree
