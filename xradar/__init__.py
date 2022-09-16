@@ -18,6 +18,7 @@ except Exception:
     __version__ = "999"
 
 # import subpackages
+from . import accessors  # noqa
 from . import io  # noqa
 from . import model  # noqa
 from . import util  # noqa
