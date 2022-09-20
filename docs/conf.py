@@ -30,11 +30,14 @@ sys.path.insert(0, os.path.abspath(".."))
 on_rtd = os.environ.get("READTHEDOCS") == "True"
 
 # processing on readthedocs
-# we need to specifically install the current xradar checkout to create version.py
+# we need to specifically install the current xradar commit to create version.py
 # this fixes the "999" version issue
 if on_rtd:
     # install xradar from checked out source
-    subprocess.check_call(["python", "-m", "pip", "install", "--no-deps", "../."])
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+    print(f"Installing commit {commit}")
+    url = "https://github.com/openradar/xradar.git"
+    subprocess.check_call(["python", "-m", "pip", "install", "--no-deps", f"git+{url}@{commit}"])
 
 
 # -- General configuration ---------------------------------------------
