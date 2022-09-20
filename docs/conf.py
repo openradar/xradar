@@ -37,7 +37,9 @@ if on_rtd:
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
     print(f"Installing commit {commit}")
     url = "https://github.com/openradar/xradar.git"
-    subprocess.check_call(["python", "-m", "pip", "install", "--no-deps", f"git+{url}@{commit}"])
+    subprocess.check_call(
+        ["python", "-m", "pip", "install", "--no-deps", f"git+{url}@{commit}"]
+    )
 
 
 # -- General configuration ---------------------------------------------
