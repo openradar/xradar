@@ -83,7 +83,7 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
-    "datatree": ("https://xarray-datatree.readthedocs.io/en/latest/", None)
+    "datatree": ("https://xarray-datatree.readthedocs.io/en/latest/", None),
 }
 
 # Add any paths that contain templates here, relative to this directory.
