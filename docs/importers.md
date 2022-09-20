@@ -40,4 +40,4 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 With {class}`xradar.io.backends.odim.open_odim_datatree` all groups (eg. ``datasetN``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
-ParentNodes and ChildNodes to a datatree.Datatree.
+ParentNodes and ChildNodes to a {py:class}`datatree:datatree.Datatree`.
