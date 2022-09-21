@@ -1,6 +1,6 @@
 # History
 
-## Development Version
+## 0.7.0 (2022-09-21)
 
 * Add zenodo badges to README.md ({pull}`22`) by [@mgrover1](https://github.com/mgrover1)
 * Fix version on RTD ({pull}`23`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
