@@ -13,9 +13,9 @@ This module contains several helper functions to create minimal DataArrays and D
 
 Must read:
 
-* `CfRadial`_
-* `WMO CF extensions`_
-* `OPERA/ODIM_H5`_
+    * `CfRadial`_.
+    * `WMO CF extensions`_.
+    * `OPERA/ODIM_H5`_.
 
 Code ported from wradlib.
 
@@ -72,7 +72,7 @@ required_global_attrs = dict(
         ("institution", "where the original data were produced"),
         (
             "references",
-            ("references that describe the data or the methods used to produce it"),
+            "references that describe the data or the methods used to produce it",
         ),
         ("source", "method of production of the original data"),
         ("history", "list of modifications to the original data"),
@@ -80,6 +80,7 @@ required_global_attrs = dict(
         ("platform_is_mobile", "'true' or 'false', assumed 'false' if missing"),
     ]
 )
+
 
 # optional global attributes (root-group)
 optional_root_attrs = [
@@ -103,7 +104,7 @@ optional_root_attrs = [
     ),
 ]
 
-# required global variables (root-group)
+#: required global variables (root-group)
 required_root_vars = {
     "volume_number",
     "time_coverage_start",
@@ -115,21 +116,21 @@ required_root_vars = {
     "instrument_type",
 }
 
-# optional global attributes (root-group)
+#: optional global attributes (root-group)
 optional_root_vars = {
     "altitude_agl",
     "primary_axis",
     "status_str",
 }
 
-# sweep-group coordinate variables
+#: sweep-group coordinate variables
 sweep_coordinate_vars = {
     "time",
     "range",
     "frequency",
 }
 
-# required sweep-group metadata variables
+#: required sweep-group metadata variables
 required_sweep_metadata_vars = {
     "sweep_number",
     "sweep_mode",
@@ -140,7 +141,7 @@ required_sweep_metadata_vars = {
     "elevation",
 }
 
-# optional sweep-group metadata variables
+#: optional sweep-group metadata variables
 optional_sweep_metadata_vars = {
     "polarization_mode",
     "polarization_sequence",
@@ -161,7 +162,7 @@ optional_sweep_metadata_vars = {
     "n_samples",
 }
 
-# sweep dataset variable names
+#: sweep dataset variable names
 sweep_dataset_vars = {
     "DBZH",
     "DBZV",
@@ -202,14 +203,14 @@ sweep_dataset_vars = {
     "REC",
 }
 
-# non-standard sweep dataset variable names
+#: non-standard sweep dataset variable names
 non_standard_sweep_dataset_vars = {
     "DBZ",
     "VEL",
     "VR",
 }
 
-# required range attributes
+#: required range attributes
 range_attrs = {
     "units": "meters",
     "standard_name": "projection_range_coordinate",
@@ -220,39 +221,45 @@ range_attrs = {
     "meters_between_gates": "{}",
 }
 
-# required time attributes
+#: required time attributes
 time_attrs = {
     "standard_name": "time",
     "units": "seconds since {}",
 }
 
-# required frequency attributes
+#: required frequency attributes
 frequency_attrs = {
     "standard_name": "",
     "units": "s-1",
 }
 
+#:
 lon_attrs = {
     "long_name": "longitude",
     "units": "degrees_east",
     "standard_name": "longitude",
 }
+
+#:
 lat_attrs = {
     "long_name": "latitude",
     "units": "degrees_north",
     "positive": "up",
     "standard_name": "latitude",
 }
+
+#:
 alt_attrs = {
     "long_name": "altitude",
     "units": "meters",
     "standard_name": "altitude",
 }
 
+#:
 moment_attrs = {"standard_name", "long_name", "units"}
 
 # todo: align this with sweep_dataset_vars
-# CfRadial 2.1 / FM301 / ODIM_H5 mapping
+#: CfRadial 2.1 / FM301 / ODIM_H5 mapping
 sweep_vars_mapping = {
     "DBZH": {
         "standard_name": "radar_equivalent_reflectivity_factor_h",
@@ -315,31 +322,31 @@ sweep_vars_mapping = {
         "units": "unitless",
     },
     "VRADH": {
-        "standard_name": "radial_velocity_of_scatterers_away_" "from_instrument_h",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument_h",
         "long_name": "Radial velocity of scatterers away from instrument H",
         "short_name": "VRADH",
         "units": "meters per seconds",
     },
     "VRADV": {
-        "standard_name": "radial_velocity_of_scatterers_" "away_from_instrument_v",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument_v",
         "long_name": "Radial velocity of scatterers away from instrument V",
         "short_name": "VRADV",
         "units": "meters per second",
     },
     "VR": {
-        "standard_name": "radial_velocity_of_scatterers_away_" "from_instrument",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument",
         "long_name": "Radial velocity of scatterers away from instrument",
         "short_name": "VR",
         "units": "meters per seconds",
     },
     "VRAD": {
-        "standard_name": "radial_velocity_of_scatterers_away_" "from_instrument",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument",
         "long_name": "Radial velocity of scatterers away from instrument",
         "short_name": "VRAD",
         "units": "meters per seconds",
     },
     "VRADDH": {
-        "standard_name": "radial_velocity_of_scatterers_away_" "from_instrument_h",
+        "standard_name": "radial_velocity_of_scatterers_away_from_instrument_h",
         "long_name": "Radial velocity of scatterers away from instrument H",
         "short_name": "VRADDH",
         "units": "meters per seconds",
@@ -605,14 +612,14 @@ def get_range_dataarray(rng, nbins=None):
 
     Parameters
     ----------
-    rng : float | :class:`numpy:numpy.ndarray`
+    rng : float or :class:`numpy:numpy.ndarray`
         range resolution or array with range values.
     nbins: int
         number of bins, must be passed if rng is provided as resolution
 
     Returns
     -------
-    rng_da : xr.DataArray
+    rng_da : :class:`xarray:xarray.DataArray`
         Range DataArray.
     """
     if np.isscalar(rng):
@@ -629,7 +636,7 @@ def get_azimuth_dataarray(azimuth, nrays=None, a1gate=0):
 
     Parameters
     ----------
-    azimuth : float | :class:`numpy:numpy.ndarray`
+    azimuth : float or :class:`numpy:numpy.ndarray`
         Azimuth resolution, fixed azimuth value or array with azimuth values.
 
     Keyword Arguments
@@ -643,7 +650,7 @@ def get_azimuth_dataarray(azimuth, nrays=None, a1gate=0):
 
     Returns
     -------
-    azi_da : xr.DataArray
+    azi_da : :class:`xarray:xarray.DataArray`
         Azimuth DataArray.
     """
     if np.isscalar(azimuth):
@@ -666,7 +673,7 @@ def get_elevation_dataarray(elevation, nrays=None):
 
     Parameters
     ----------
-    elevation : float | :class:`numpy:numpy.ndarray`
+    elevation : float or :class:`numpy:numpy.ndarray`
         elevation resolution or array with elevation values.
 
     Keyword Arguments
@@ -677,7 +684,7 @@ def get_elevation_dataarray(elevation, nrays=None):
 
     Returns
     -------
-    ele_da : xr.DataArray
+    ele_da : :class:`xarray:xarray.DataArray`
         Elevation DataArray.
     """
     if np.isscalar(elevation):
@@ -698,7 +705,7 @@ def get_time_dataarray(time, nrays, date_str):
 
     Parameters
     ----------
-    time : float | :class:`numpy:numpy.ndarray`
+    time : float or :class:`numpy:numpy.ndarray`
         time resolution or array with time values ('seconds since'-notation).
     nrays : int
         number of rays
@@ -707,7 +714,7 @@ def get_time_dataarray(time, nrays, date_str):
 
     Returns
     -------
-    time_da : xr.DataArray
+    time_da : :class:`xarray:xarray.DataArray`
         Time DataArray.
     """
     if np.isscalar(time):
@@ -727,7 +734,7 @@ def get_sweep_dataarray(data, moment, fill=None):
 
     Parameters
     ----------
-    data : tuple | :class:`numpy:numpy.ndarray`
+    data : tuple or :class:`numpy:numpy.ndarray`
         tuple with shape of DataArray or 2d-array.
     moment : str
         String describing radar moment.
@@ -739,7 +746,7 @@ def get_sweep_dataarray(data, moment, fill=None):
 
     Returns
     -------
-    swp_da : xr.DataArray
+    swp_da : :class:`xarray:xarray.DataArray`
         Sweep Moment DataArray.
     """
     if isinstance(data, tuple):
@@ -764,24 +771,24 @@ def create_sweep_dataset(**kwargs):
     -----------------
     shape : tuple
         tuple with shape of DataArray
-    time : float | :class:`numpy:numpy.ndarray`
+    time : float or :class:`numpy:numpy.ndarray`
         time resolution or array with time values ('seconds since'-notation).
     date_str : str
         String with the form 'YYYY-mm-ddTHH:MM:SS' depicting the reference time.
-    rng : float | :class:`numpy:numpy.ndarray`
+    rng : float or :class:`numpy:numpy.ndarray`
         range resolution or array with range values.
-    azimuth : float | :class:`numpy:numpy.ndarray`
+    azimuth : float or :class:`numpy:numpy.ndarray`
         azimuth resolution or array with azimuth values.
     a1gate : int
         First measured ray. Defaults to 0. Only used for PPI.
-    elevation : float | :class:`numpy:numpy.ndarray`
+    elevation : float or :class:`numpy:numpy.ndarray`
         elevation resolution or array with elevation values.
     sweep : str
         "PPI" or "RHI".
 
     Returns
     -------
-    swp_ds : xr.Dataset
+    swp_ds : :class:`xarray:xarray.Dataset`
         Sweep Dataset.
     """
     shape = kwargs.pop("shape", None)

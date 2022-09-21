@@ -14,6 +14,7 @@ import xradar
 :maxdepth: 2
 :caption: Get started
 
+datamodel
 importers
 notebooks/Accessors
 ```
