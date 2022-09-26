@@ -6,7 +6,7 @@ Top-level package for xradar.
 
 """
 
-__author__ = """Maxwell Grover"""
+__author__ = """Open Radar Developers"""
 __email__ = "mgroverwx@gmail.com"
 
 # versioning
@@ -22,5 +22,6 @@ from . import accessors  # noqa
 from . import io  # noqa
 from . import model  # noqa
 from . import util  # noqa
+from . import georeference
 
 __all__ = [s for s in dir() if not s.startswith("_")]
