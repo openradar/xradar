@@ -28,3 +28,13 @@ def odim_file(tmp_path_factory):
     fname = os.path.join(fn, "odim_data.h5")
     urlretrieve(url, filename=fname)
     return fname
+
+@pytest.fixture(scope="session")
+def gamic_file(tmp_path_factory):
+    base_url = "https://raw.githubusercontent.com/wradlib/wradlib-data/main/hdf5/"
+    filename = "DWD-Vol-2_99999_20180601054047_00.h5"
+    url = urljoin(base_url, filename)
+    fn = tmp_path_factory.mktemp("gamic_data")
+    fname = os.path.join(fn, "gamic_data.h5")
+    urlretrieve(url, filename=fname)
+    return fname

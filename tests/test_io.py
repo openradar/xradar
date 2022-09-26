@@ -183,3 +183,28 @@ def test_open_odim_dataset(odim_file):
         backend_kwargs=dict(first_dim="auto"),
     )
     assert dict(ds.dims) == {"azimuth": 360, "range": 280}
+
+
+def test_open_gamic_dataset(gamic_file):
+    # open first sweep group
+    ds = xr.open_dataset(gamic_file, group="scan0", engine="gamic")
+    assert dict(ds.dims) == {"time": 360, "range": 360}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {"WRADH", "WRADV", "VRADH", "VRADV", "PHIDP", "DBTH", "DBTV", "DBZH", "DBZV", "RHOHV", "KDP", "ZDR"}
+
+    # open last sweep group
+    ds = xr.open_dataset(gamic_file, group="scan9", engine="gamic")
+    assert dict(ds.dims) == {"time": 360, "range": 1000}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {"WRADH", "WRADV", "VRADH", "VRADV", "PHIDP", "DBTH", "DBTV", "DBZH", "DBZV", "RHOHV", "KDP", "ZDR"}
+
+    # open last sweep group, auto
+    ds = xr.open_dataset(
+        gamic_file,
+        group="scan9",
+        engine="gamic",
+        backend_kwargs=dict(first_dim="auto"),
+    )
+    assert dict(ds.dims) == {"azimuth": 360, "range": 1000}
