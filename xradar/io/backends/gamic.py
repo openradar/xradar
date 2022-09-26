@@ -27,7 +27,7 @@ Example::
 
 __all__ = [
     "GamicBackendEntrypoint",
-    # "open_gamic_datatree",
+    "open_gamic_datatree",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -66,7 +66,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from ...util import has_import
-from .common import _attach_sweep_groups, _fix_angle, _maybe_decode, _reindex_angle, _calculate_angle_res
+from .common import _attach_sweep_groups, _fix_angle, _maybe_decode, _reindex_angle, _calculate_angle_res, _get_h5group_names, _assign_root
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding
 
 HDF5_LOCK = SerializableLock()
@@ -410,9 +410,9 @@ class GamicStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        dim, angle = self.root.fixed_dim_and_angle
-        attributes = {"fixed_angle": angle.item()}
-        return FrozenDict(attributes)
+    #     dim, angle = self.root.fixed_dim_and_angle
+    #     attributes = {"fixed_angle": angle.item()}
+        return FrozenDict()
 
 
 class GamicBackendEntrypoint(BackendEntrypoint):
@@ -491,4 +491,86 @@ class GamicBackendEntrypoint(BackendEntrypoint):
                 ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
 
+        # reassign azimuth/elevation/time coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
+        ds = ds.assign_coords({"time": ds.time})
+        ds = ds.assign_coords({"sweep_mode": ds.sweep_mode})
+
+        # assign geo-coords
+        ds = ds.assign_coords(
+            {
+                "latitude": ds.latitude,
+                "longitude": ds.longitude,
+                "altitude": ds.altitude,
+            }
+        )
+
         return ds
+
+
+def open_gamic_datatree(filename_or_obj, **kwargs):
+    """Open GAMIC HDF5 dataset as xradar Datatree.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path, file-like or DataStore
+        Strings and Path objects are interpreted as a path to a local or remote
+        radar file
+
+    Keyword Arguments
+    -----------------
+    first_dim : str
+        Default to 'time' as first dimension. If set to 'auto', first dimension will
+        be either 'azimuth' or 'elevation' depending on type of sweep.
+    sweep : int, list of int, optional
+        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+        extracted into a list.
+    keep_elevation : bool
+        For PPI only. Keep original elevation data if True. If False,
+        fixes erroneous elevation data. Defaults to True.
+    keep_azimuth : bool
+        For RHI only. Keep original azimuth data if True. If False,
+        fixes erroneous azimuth data. Defaults to True.
+    reindex_angle : bool or float
+        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
+        given a floating point number, it is used as tolerance.
+        Only invoked if `decode_coord=True`.
+    kwargs :  kwargs
+        Additional kwargs are fed to `xr.open_dataset`.
+
+    Returns
+    -------
+    dtree: DataTree
+        DataTree
+    """
+    # handle kwargs, extract first_dim
+    backend_kwargs = kwargs.pop("backend_kwargs", {})
+    # first_dim = backend_kwargs.pop("first_dim", None)
+    sweep = kwargs.pop("sweep", None)
+    sweeps = []
+    kwargs["backend_kwargs"] = backend_kwargs
+
+    if isinstance(sweep, str):
+        sweeps = [sweep]
+    elif isinstance(sweep, int):
+        sweeps = [f"scan{sweep}"]
+    elif isinstance(sweep, list):
+        if isinstance(sweep[0], int):
+            sweeps = [f"scan{i}" for i in sweep]
+        else:
+            sweeps.extend(sweep)
+    else:
+        sweeps = _get_h5group_names(filename_or_obj, "gamic")
+
+    ds = [
+        xr.open_dataset(filename_or_obj, group=swp, engine="gamic", **kwargs)
+        for swp in sweeps
+    ]
+
+    ds.insert(0, xr.open_dataset(filename_or_obj, group="/"))
+
+    # create datatree root node with required data
+    dtree = DataTree(data=_assign_root(ds), name="root")
+    # return datatree with attached sweep child nodes
+    return _attach_sweep_groups(dtree, ds[1:])
