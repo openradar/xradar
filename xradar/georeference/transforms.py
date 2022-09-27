@@ -111,6 +111,6 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
     ds.z.attrs = {'standard_name': 'height_above_ground', 'units': 'meters'}
 
     # Make sure these
-    ds.set_coords(['x', 'y', 'z'])
+    ds = ds.set_coords(['x', 'y', 'z'])
 
     return ds
