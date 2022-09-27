@@ -27,4 +27,5 @@ notebooks/CfRadial1
 notebooks/CfRadial1_full
 notebooks/ODIM_H5
 notebooks/ODIM_H5_full
+notebooks/Furuno
 ```

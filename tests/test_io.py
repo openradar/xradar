@@ -183,3 +183,37 @@ def test_open_odim_dataset(odim_file):
         backend_kwargs=dict(first_dim="auto"),
     )
     assert dict(ds.dims) == {"azimuth": 360, "range": 280}
+
+
+def test_open_furuno_scn_dataset(furuno_scn_file):
+    # open sweep group
+    ds = xr.open_dataset(furuno_scn_file, engine="furuno")
+    assert dict(ds.dims) == {"time": 1385, "range": 602}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+
+    # open sweep group, auto
+    ds = xr.open_dataset(
+        furuno_scn_file,
+        engine="furuno",
+        backend_kwargs=dict(first_dim="auto"),
+    )
+    assert dict(ds.dims) == {"azimuth": 1385, "range": 602}
+
+
+def test_open_furuno_scnx_dataset(furuno_scnx_file):
+    # open sweep group
+    ds = xr.open_dataset(furuno_scnx_file, engine="furuno")
+    assert dict(ds.dims) == {"time": 720, "range": 936}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+
+    # open sweep group, auto
+    ds = xr.open_dataset(
+        furuno_scnx_file,
+        engine="furuno",
+        backend_kwargs=dict(first_dim="auto"),
+    )
+    assert dict(ds.dims) == {"azimuth": 720, "range": 936}

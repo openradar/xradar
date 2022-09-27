@@ -1,6 +1,7 @@
 dask
 h5netcdf
 h5py
+lat_lon_parser
 netCDF4
 numpy
 xarray

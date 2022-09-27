@@ -49,6 +49,7 @@ setup(
         "xarray.backends": [
             "cfradial1 = xradar.io.backends:CfRadial1BackendEntrypoint",
             "odim = xradar.io.backends:OdimBackendEntrypoint",
+            "furuno = xradar.io.backends:FurunoBackendEntrypoint",
         ]
     },
     test_suite="tests",

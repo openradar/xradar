@@ -28,3 +28,25 @@ def odim_file(tmp_path_factory):
     fname = os.path.join(fn, "odim_data.h5")
     urlretrieve(url, filename=fname)
     return fname
+
+
+@pytest.fixture(scope="session")
+def furuno_scn_file(tmp_path_factory):
+    base_url = "https://raw.githubusercontent.com/wradlib/wradlib-data/main/furuno/"
+    filename = "0080_20210730_160000_01_02.scn.gz"
+    url = urljoin(base_url, filename)
+    fn = tmp_path_factory.mktemp("furuno_data")
+    fname = os.path.join(fn, "furuno_data.scn.gz")
+    urlretrieve(url, filename=fname)
+    return fname
+
+
+@pytest.fixture(scope="session")
+def furuno_scnx_file(tmp_path_factory):
+    base_url = "https://raw.githubusercontent.com/wradlib/wradlib-data/main/furuno/"
+    filename = "2006_20220324_000000_000.scnx.gz"
+    url = urljoin(base_url, filename)
+    fn = tmp_path_factory.mktemp("furuno_data")
+    fname = os.path.join(fn, "furuno_data.scnx.gz")
+    urlretrieve(url, filename=fname)
+    return fname
