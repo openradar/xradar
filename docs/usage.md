@@ -29,4 +29,5 @@ notebooks/ODIM_H5
 notebooks/ODIM_H5_full
 notebooks/GAMIC
 notebooks/GAMIC_full
+notebooks/Furuno
 ```

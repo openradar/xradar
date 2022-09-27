@@ -50,6 +50,7 @@ setup(
             "cfradial1 = xradar.io.backends:CfRadial1BackendEntrypoint",
             "gamic = xradar.io.backends:GamicBackendEntrypoint",
             "odim = xradar.io.backends:OdimBackendEntrypoint",
+            "furuno = xradar.io.backends:FurunoBackendEntrypoint",
         ]
     },
     test_suite="tests",

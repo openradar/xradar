@@ -10,11 +10,15 @@ Xarray Backends
     :maxdepth: 4
 
 .. automodule:: xradar.io.backends.cfradial1
+.. automodule:: xradar.io.backends.gamic
 .. automodule:: xradar.io.backends.odim
+.. automodule:: xradar.io.backends.furuno
+
 
 """
 
 from .cfradial1 import *  # noqa
+from .furuno import *  # noqa
 from .gamic import *  # noqa
 from .odim import *  # noqa
 
