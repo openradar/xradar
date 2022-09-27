@@ -51,6 +51,7 @@ setup(
             "gamic = xradar.io.backends:GamicBackendEntrypoint",
             "odim = xradar.io.backends:OdimBackendEntrypoint",
             "furuno = xradar.io.backends:FurunoBackendEntrypoint",
+            "rainbow = xradar.io.backends:RainbowBackendEntrypoint",
         ]
     },
     test_suite="tests",

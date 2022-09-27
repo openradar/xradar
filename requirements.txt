@@ -6,3 +6,4 @@ netCDF4
 numpy
 xarray
 xarray-datatree
+xmltodict
