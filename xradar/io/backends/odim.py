@@ -65,7 +65,14 @@ from ...model import (
     sweep_vars_mapping,
 )
 from ...util import has_import
-from .common import _attach_sweep_groups, _fix_angle, _maybe_decode, _reindex_angle, _get_h5group_names, _assign_root
+from .common import (
+    _assign_root,
+    _attach_sweep_groups,
+    _fix_angle,
+    _get_h5group_names,
+    _maybe_decode,
+    _reindex_angle,
+)
 
 HDF5_LOCK = SerializableLock()
 

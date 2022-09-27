@@ -35,15 +35,14 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import datetime as dt
 import io
 
+import dateutil
 import h5netcdf
 import numpy as np
-import dateutil
 import xarray as xr
 from datatree import DataTree
 from packaging.version import Version
 from xarray.backends.common import (
     AbstractDataStore,
-    BackendArray,
     BackendEntrypoint,
     find_root_and_group,
 )
@@ -66,7 +65,13 @@ from ...model import (
     sweep_vars_mapping,
 )
 from ...util import has_import
-from .common import _attach_sweep_groups, _fix_angle, _maybe_decode, _reindex_angle, _calculate_angle_res, _get_h5group_names, _assign_root
+from .common import (
+    _assign_root,
+    _attach_sweep_groups,
+    _fix_angle,
+    _get_h5group_names,
+    _reindex_angle,
+)
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding
 
 HDF5_LOCK = SerializableLock()
@@ -192,46 +197,41 @@ class _GamicH5NetCDFMetadata:
 
         ray_header = _get_ray_header_data(dimensions, data, encoding)
         dim, angle = self.fixed_dim_and_angle
-        angles = ray_header[dim]
 
-        angle_res = _calculate_angle_res(angles)
         dims = ("azimuth", "elevation")
         if dim == dims[1]:
             dims = (dims[1], dims[0])
-        #
-        # sort_idx = np.argsort(angles)
-        # a1gate = np.argsort(ray_header["time"][sort_idx])[0]
-        #
-        # az_attrs = az_attrs_template.copy()
-        # el_attrs = el_attrs_template.copy()
-        # az_attrs["a1gate"] = a1gate
-        #
-        # if dim == "azimuth":
-        #     az_attrs["angle_res"] = angle_res
-        # else:
-        #     el_attrs["angle_res"] = angle_res
 
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-
-        # rtime_attrs = {
-        #     "units": "seconds since 1970-01-01T00:00:00Z",
-        #     "standard_name": "time",
-        # }
+        sweep_number = int(self._group.split("/")[0][4:])
+        prt_mode = "not_set"
+        follow_mode = "not_set"
 
         range_data, cent_first, bin_range = self.range
         range_attrs = get_range_attrs(range_data)
-        # range_attrs["meters_to_center_of_first_gate"] = cent_first
-        # range_attrs["meters_between_gates"] = bin_range
 
         lon, lat, alt = self.site_coords
 
         coordinates = {
-            "azimuth": Variable((dims[0],), ray_header["azimuth"], get_azimuth_attrs(ray_header["azimuth"])),
-            "elevation": Variable((dims[0],), ray_header["elevation"], get_elevation_attrs(ray_header["elevation"])),
-            "time": Variable((dims[0],), ray_header["time"], get_time_attrs("1970-01-01T00:00:00Z")),
+            "azimuth": Variable(
+                (dims[0],),
+                ray_header["azimuth"],
+                get_azimuth_attrs(ray_header["azimuth"]),
+            ),
+            "elevation": Variable(
+                (dims[0],),
+                ray_header["elevation"],
+                get_elevation_attrs(ray_header["elevation"]),
+            ),
+            "time": Variable(
+                (dims[0],), ray_header["time"], get_time_attrs("1970-01-01T00:00:00Z")
+            ),
             "range": Variable(("range",), range_data, range_attrs),
-            # "time": Variable((), self.time, time_attrs),
             "sweep_mode": Variable((), sweep_mode),
+            "sweep_number": Variable((), sweep_number),
+            "prt_mode": Variable((), prt_mode),
+            "follow_mode": Variable((), follow_mode),
+            "fixed_angle": Variable((), angle),
             "longitude": Variable((), lon, get_longitude_attrs()),
             "latitude": Variable((), lat, get_latitude_attrs()),
             "altitude": Variable((), alt, get_altitude_attrs()),
@@ -410,8 +410,8 @@ class GamicStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-    #     dim, angle = self.root.fixed_dim_and_angle
-    #     attributes = {"fixed_angle": angle.item()}
+        #     dim, angle = self.root.fixed_dim_and_angle
+        #     attributes = {"fixed_angle": angle.item()}
         return FrozenDict()
 
 
@@ -495,7 +495,6 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"azimuth": ds.azimuth})
         ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
-        ds = ds.assign_coords({"sweep_mode": ds.sweep_mode})
 
         # assign geo-coords
         ds = ds.assign_coords(

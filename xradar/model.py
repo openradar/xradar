@@ -534,6 +534,18 @@ def get_range_attrs(rng):
     return range_attrs
 
 
+def _calculate_angle_res(dim):
+    # need to sort dim first
+    angle_diff = np.diff(sorted(dim))
+    angle_diff2 = np.abs(np.diff(angle_diff))
+
+    # only select angle_diff, where angle_diff2 is less than 0.1 deg
+    # Todo: currently 0.05 is working in most cases
+    #  make this robust or parameterisable
+    angle_diff_wanted = angle_diff[:-1][angle_diff2 < 0.05]
+    return np.round(np.nanmean(angle_diff_wanted), decimals=2)
+
+
 def get_azimuth_attrs(azi=None):
     """Get Azimuth CF attributes.
 
@@ -558,6 +570,8 @@ def get_azimuth_attrs(azi=None):
         if not unique:
             a1gate = np.argsort(np.argsort(azi))[0]
             az_attrs["a1gate"] = a1gate
+            angle_res = _calculate_angle_res(azi)
+            az_attrs["angle_res"] = angle_res
     return az_attrs
 
 
