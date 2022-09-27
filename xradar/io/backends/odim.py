@@ -69,6 +69,7 @@ from .common import (
     _assign_root,
     _attach_sweep_groups,
     _fix_angle,
+    _get_h5group_names,
     _maybe_decode,
     _reindex_angle,
 )
@@ -772,22 +773,6 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         )
 
         return ds
-
-
-def _get_h5group_names(filename, engine):
-    if engine == "odim":
-        groupname = "dataset"
-    elif engine == "gamic":
-        groupname = "scan"
-    elif engine == "cfradial2":
-        groupname = "sweep"
-    else:
-        raise ValueError(f"xradar: unknown engine `{engine}`.")
-    with h5netcdf.File(filename, "r", decode_vlen_strings=True) as fh:
-        groups = ["/".join(["", grp]) for grp in fh.groups if groupname in grp.lower()]
-    if isinstance(filename, io.BytesIO):
-        filename.seek(0)
-    return groups
 
 
 def open_odim_datatree(filename_or_obj, **kwargs):

@@ -15,6 +15,9 @@ Currently all private and not part of the public API.
 import struct
 from collections import OrderedDict
 
+import io
+
+import h5netcdf
 import numpy as np
 import xarray as xr
 from datatree import DataTree
@@ -141,6 +144,22 @@ def _attach_sweep_groups(dtree, sweeps):
     for i, sw in enumerate(sweeps):
         DataTree(sw, name=f"sweep_{i}", parent=dtree)
     return dtree
+
+
+def _get_h5group_names(filename, engine):
+    if engine == "odim":
+        groupname = "dataset"
+    elif engine == "gamic":
+        groupname = "scan"
+    elif engine == "cfradial2":
+        groupname = "sweep"
+    else:
+        raise ValueError(f"xradar: unknown engine `{engine}`.")
+    with h5netcdf.File(filename, "r", decode_vlen_strings=True) as fh:
+        groups = ["/".join(["", grp]) for grp in fh.groups if groupname in grp.lower()]
+    if isinstance(filename, io.BytesIO):
+        filename.seek(0)
+    return groups
 
 
 def _assign_root(sweeps):
@@ -291,3 +310,7 @@ SINT4 = {"fmt": "i", "dtype": "int32"}
 UINT1 = {"fmt": "B", "dtype": "unit8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "unint32"}
+
+
+
+

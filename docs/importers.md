@@ -6,6 +6,8 @@ Currently xradar can import:
 
 - CfRadial1
 - ODIM_H5
+- GAMIC HDF5
+- Furuno SCN/SCNX
 
 ## CfRadial1
 
@@ -39,6 +41,23 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 ### open_odim_datatree
 
 With {class}`xradar.io.backends.odim.open_odim_datatree` all groups (eg. ``datasetN``)
+are extracted. From that the ``root`` group is processed. Everything is finally added as
+ParentNodes and ChildNodes to a {py:class}`datatree:datatree.Datatree`.
+
+
+## GAMIC HDF5
+
+### GamicBackendEntrypoint
+
+The xarray backend {class}`xradar.io.backends.odim.GamicBackendEntrypoint`
+opens the file with {class}`xradar.io.backends.odim.GamicStore`. Several private helper functions are used to conveniently access data and
+metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
+with wanted group (eg. ``scan0``). Depending on the used backend kwargs several
+more functions are applied on that {py:class}`xarray:xarray.Dataset`.
+
+### open_gamic_datatree
+
+With {class}`xradar.io.backends.odim.open_gamic_datatree` all groups (eg. ``scanN``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
 ParentNodes and ChildNodes to a {py:class}`datatree:datatree.Datatree`.
 
