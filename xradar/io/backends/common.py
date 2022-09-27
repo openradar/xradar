@@ -12,10 +12,9 @@ Currently all private and not part of the public API.
 
 """
 
+import io
 import struct
 from collections import OrderedDict
-
-import io
 
 import h5netcdf
 import numpy as np
@@ -310,7 +309,3 @@ SINT4 = {"fmt": "i", "dtype": "int32"}
 UINT1 = {"fmt": "B", "dtype": "unit8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "unint32"}
-
-
-
-
