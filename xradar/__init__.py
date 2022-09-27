@@ -7,7 +7,7 @@ Top-level package for xradar.
 """
 
 __author__ = """Open Radar Developers"""
-__email__ = "mgroverwx@gmail.com"
+__email__ = 'mgroverwx@gmail.com'
 
 # versioning
 try:
@@ -15,13 +15,13 @@ try:
 except Exception:
     # Local copy or not installed with setuptools.
     # Disable minimum version checks on downstream libraries.
-    __version__ = "999"
+    __version__ = '999'
 
 # import subpackages
 from . import accessors  # noqa
+from . import georeference  # noqa
 from . import io  # noqa
 from . import model  # noqa
 from . import util  # noqa
-from . import georeference
 
-__all__ = [s for s in dir() if not s.startswith("_")]
+__all__ = [s for s in dir() if not s.startswith('_')]
