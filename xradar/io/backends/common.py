@@ -12,6 +12,9 @@ Currently all private and not part of the public API.
 
 """
 
+import io
+
+import h5netcdf
 import numpy as np
 import xarray as xr
 from datatree import DataTree
@@ -126,3 +129,73 @@ def _attach_sweep_groups(dtree, sweeps):
     for i, sw in enumerate(sweeps):
         DataTree(sw, name=f"sweep_{i}", parent=dtree)
     return dtree
+
+
+def _assign_root(sweeps):
+    """(Re-)Create root object according CfRadial2 standard"""
+    # extract time coverage
+    times = np.array(
+        [[ts.time.values.min(), ts.time.values.max()] for ts in sweeps[1:]]
+    ).flatten()
+    time_coverage_start = min(times)
+    time_coverage_end = max(times)
+
+    time_coverage_start_str = str(time_coverage_start)[:19] + "Z"
+    time_coverage_end_str = str(time_coverage_end)[:19] + "Z"
+
+    # create root group from scratch
+    root = xr.Dataset()  # data_vars=wrl.io.xarray.global_variables,
+    # attrs=wrl.io.xarray.global_attrs)
+
+    # take first dataset/file for retrieval of location
+    # site = self.site
+
+    # assign root variables
+    root = root.assign(
+        {
+            "volume_number": 0,
+            "platform_type": str("fixed"),
+            "instrument_type": "radar",
+            "time_coverage_start": time_coverage_start_str,
+            "time_coverage_end": time_coverage_end_str,
+            "latitude": sweeps[1]["latitude"].data,
+            "longitude": sweeps[1]["longitude"].data,
+            "altitude": sweeps[1]["altitude"].data,
+        }
+    )
+
+    # assign root attributes
+    attrs = {}
+    attrs["Conventions"] = sweeps[0].attrs.get("Conventions", "None")
+    attrs.update(
+        {
+            "version": "None",
+            "title": "None",
+            "institution": "None",
+            "references": "None",
+            "source": "None",
+            "history": "None",
+            "comment": "im/exported using xradar",
+            "instrument_name": "None",
+        }
+    )
+    root = root.assign_attrs(attrs)
+    # todo: pull in only CF attributes
+    root = root.assign_attrs(sweeps[1].attrs)
+    return root
+
+
+def _get_h5group_names(filename, engine):
+    if engine == "odim":
+        groupname = "dataset"
+    elif engine == "gamic":
+        groupname = "scan"
+    elif engine == "cfradial2":
+        groupname = "sweep"
+    else:
+        raise ValueError(f"xradar: unknown engine `{engine}`.")
+    with h5netcdf.File(filename, "r", decode_vlen_strings=True) as fh:
+        groups = ["/".join(["", grp]) for grp in fh.groups if groupname in grp.lower()]
+    if isinstance(filename, io.BytesIO):
+        filename.seek(0)
+    return groups

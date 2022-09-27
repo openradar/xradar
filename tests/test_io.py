@@ -7,7 +7,7 @@
 import numpy as np
 import xarray as xr
 
-from xradar.io import open_cfradial1_datatree, open_odim_datatree
+from xradar.io import open_cfradial1_datatree, open_gamic_datatree, open_odim_datatree
 from xradar.model import (
     non_standard_sweep_dataset_vars,
     required_sweep_metadata_vars,
@@ -183,3 +183,133 @@ def test_open_odim_dataset(odim_file):
         backend_kwargs=dict(first_dim="auto"),
     )
     assert dict(ds.dims) == {"azimuth": 360, "range": 280}
+
+
+def test_open_gamic_datatree(gamic_file):
+    dtree = open_gamic_datatree(gamic_file)
+
+    # root_attrs
+    attrs = dtree.attrs
+    assert attrs["Conventions"] == "None"
+
+    # root vars
+    rvars = dtree.data_vars
+    assert rvars["volume_number"] == 0
+    assert rvars["platform_type"] == "fixed"
+    assert rvars["instrument_type"] == "radar"
+    assert rvars["time_coverage_start"] == "2018-06-01T05:40:47Z"
+    assert rvars["time_coverage_end"] == "2018-06-01T05:44:16Z"
+    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(50.9287272))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(6.4569489))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(310.0))
+
+    # iterate over subgroups and check some values
+    moments = [
+        "WRADH",
+        "WRADV",
+        "VRADH",
+        "VRADV",
+        "PHIDP",
+        "DBTH",
+        "DBTV",
+        "DBZH",
+        "DBZV",
+        "RHOHV",
+        "KDP",
+        "ZDR",
+    ]
+    elevations = [
+        28.0,
+        18.0,
+        14.0,
+        11.0,
+        8.2,
+        6.0,
+        4.5,
+        3.1,
+        1.7,
+        0.6,
+    ]
+    azimuths = [360] * 10
+    ranges = [
+        360,
+        500,
+        620,
+        800,
+        1050,
+        1400,
+        1000,
+        1000,
+        1000,
+        1000,
+    ]
+    for i, grp in enumerate(dtree.groups[1:]):
+        ds = dtree[grp].ds
+        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments)
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+
+
+def test_open_gamic_dataset(gamic_file):
+    # open first sweep group
+    ds = xr.open_dataset(gamic_file, group="scan0", engine="gamic")
+    assert dict(ds.dims) == {"time": 360, "range": 360}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {
+        "WRADH",
+        "WRADV",
+        "VRADH",
+        "VRADV",
+        "PHIDP",
+        "DBTH",
+        "DBTV",
+        "DBZH",
+        "DBZV",
+        "RHOHV",
+        "KDP",
+        "ZDR",
+    }
+
+    # open last sweep group
+    ds = xr.open_dataset(gamic_file, group="scan9", engine="gamic")
+    assert dict(ds.dims) == {"time": 360, "range": 1000}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {
+        "WRADH",
+        "WRADV",
+        "VRADH",
+        "VRADV",
+        "PHIDP",
+        "DBTH",
+        "DBTV",
+        "DBZH",
+        "DBZV",
+        "RHOHV",
+        "KDP",
+        "ZDR",
+    }
+
+    # open last sweep group, auto
+    ds = xr.open_dataset(
+        gamic_file,
+        group="scan9",
+        engine="gamic",
+        backend_kwargs=dict(first_dim="auto"),
+    )
+    assert dict(ds.dims) == {"azimuth": 360, "range": 1000}
