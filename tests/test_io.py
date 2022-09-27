@@ -7,11 +7,7 @@
 import numpy as np
 import xarray as xr
 
-from xradar.io import (
-    open_cfradial1_datatree,
-    open_gamic_datatree,
-    open_odim_datatree,
-)
+from xradar.io import open_cfradial1_datatree, open_gamic_datatree, open_odim_datatree
 from xradar.model import (
     non_standard_sweep_dataset_vars,
     required_sweep_metadata_vars,
