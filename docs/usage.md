@@ -32,5 +32,7 @@ notebooks/GAMIC_full
 notebooks/Furuno
 notebooks/Rainbow
 notebooks/Rainbow_full
+notebooks/Iris
+notebooks/Iris_full
 notebooks/plot-ppi
 ```
