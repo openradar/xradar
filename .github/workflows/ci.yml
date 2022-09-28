@@ -61,7 +61,15 @@ jobs:
         python -c "import xradar; print(xradar.version.version)"
     - name: Test with pytest
       run: |
-        pytest -n auto --dist loadfile --verbose --durations=15 --pyargs tests
+        pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage.xml --cov=xradar --pyargs tests
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        env_vars: RUNNER_OS,PYTHON_VERSION
+        name: codecov-gha
+        fail_ci_if_error: false
 
   test_build_distribution:
     name: test build distribution

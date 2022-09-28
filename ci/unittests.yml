@@ -3,6 +3,8 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.7
+  - codecov
+  - coverage
   - dask
   - h5netcdf
   - h5py
@@ -11,6 +13,7 @@ dependencies:
   - numpy
   - pip
   - pytest
+  - pytest-cov
   - pytest-doctestplus
   - pytest-sugar
   - pytest-xdist
