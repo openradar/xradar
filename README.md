@@ -27,3 +27,8 @@ Any software package that uses xarray in any way will then be able to directly u
 
 * Import CfRadial1 data
 * Import ODIM_H5 data
+* Import GAMIC HDF5
+* Import Rainbow5
+* Import Iris/Sigmet
+* Import Furuno SCN/SCNX
+* Georeferencing (AEQD)
