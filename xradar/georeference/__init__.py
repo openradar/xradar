@@ -3,8 +3,8 @@
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
-Radar Data IO
-=============
+XRadar Georeferencing
+=====================
 
 .. toctree::
     :maxdepth: 4
