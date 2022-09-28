@@ -415,41 +415,6 @@ def _data_types_from_dsp_mask(words):
 
 def _check_product(product_type):
     """Return IRIS File Class depending on product type."""
-    # if product_type in [
-    #     "MAX",
-    #     "TOPS",
-    #     "HMAX",
-    #     "BASE",
-    #     "THICK",
-    #     "PPI",
-    #     "RHI",
-    #     "CAPPI",
-    #     "RAINN",
-    #     "RAIN1",
-    #     "CROSS",
-    #     "SHEAR",
-    #     "SRI",
-    #     "RTI",
-    #     "VIL",
-    #     "LAYER",
-    #     "BEAM",
-    #     "MLHGT",
-    # ]:
-    #     return IrisCartesianProductFile
-    # elif product_type in [
-    #     "CATCH",
-    #     "FCAST",
-    #     "NDOP",
-    #     "SLINE",
-    #     "TDWR",
-    #     "TRACK",
-    #     "VAD",
-    #     "VVP",
-    #     "WARN",
-    #     "WIND",
-    #     "STATUS",
-    # ]:
-    #     return IrisProductFile
     if product_type in ["RAW"]:
         return IrisRawFile
     else:
@@ -2533,7 +2498,7 @@ class IrisRecord:
             Slice into memory mapped file.
         recnum : int
         """
-        self.record = record  # .copy()
+        self.record = record
         self._pos = 0
         self.recnum = recnum
 
@@ -3086,35 +3051,6 @@ class IrisRecordFile(IrisFile, IrisProductHeader):
 
     identifier = ["PRODUCT_HDR"]
     product_identifier = [
-        "MAX",
-        "TOPS",
-        "HMAX",
-        "BASE",
-        "THICK",
-        "PPI",
-        "RHI",
-        "CAPPI",
-        "RAINN",
-        "RAIN1",
-        "CROSS",
-        "SHEAR",
-        "SRI",
-        "RTI",
-        "VIL",
-        "LAYER",
-        "BEAM",
-        "MLHGT",
-        "CATCH",
-        "FCAST",
-        "NDOP",
-        "SLINE",
-        "TDWR",
-        "TRACK",
-        "VAD",
-        "VVP",
-        "WARN",
-        "WIND",
-        "STATUS",
         "RAW",
     ]
 
