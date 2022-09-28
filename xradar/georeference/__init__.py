@@ -9,7 +9,7 @@ XRadar Georeferencing
 .. toctree::
     :maxdepth: 4
 
-.. automodule:: xradar.georeference
+.. automodule:: xradar.georeference.transforms
 
 """
 from .transforms import *  # noqa
