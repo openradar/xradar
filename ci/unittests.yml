@@ -6,6 +6,7 @@ dependencies:
   - dask
   - h5netcdf
   - h5py
+  - lat_lon_parser
   - netCDF4
   - numpy
   - pip
@@ -16,3 +17,4 @@ dependencies:
   - setuptools
   - xarray
   - xarray-datatree
+  - xmltodict

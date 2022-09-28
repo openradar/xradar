@@ -1,5 +1,11 @@
 # History
 
+## Development Version
+
+* add GAMIC HDF5 importer ({pull}`29`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* add Furuno SCN/SCNX importer ({pull}`30`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* add Rainbow5 importer ({pull}`32`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
 ## 0.7.0 (2022-09-21)
 
 * Add zenodo badges to README.md ({pull}`22`) by [@mgrover1](https://github.com/mgrover1)

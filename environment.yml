@@ -13,9 +13,11 @@ dependencies:
   - ipykernel
   - h5netcdf
   - h5py
+  - lat_lon_parser
   - netCDF4
   - xarray
   - xarray-datatree
+  - xmltodict
   - dask
   - matplotlib-base
 
