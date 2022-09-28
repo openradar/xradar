@@ -461,11 +461,16 @@ def test_open_iris_datatree(iris0_file):
     assert rvars["time_coverage_end"] == "2013-11-25T10:59:24Z"
     np.testing.assert_almost_equal(rvars["latitude"].values, np.array(9.331))
     np.testing.assert_almost_equal(rvars["longitude"].values, np.array(284.7170001))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(143.))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(143.0))
 
     # iterate over subgroups and check some values
     moments = [
-        'ZDR', 'RHOHV', 'DBZH', 'PHIDP', 'KDP', 'VRADH',
+        "ZDR",
+        "RHOHV",
+        "DBZH",
+        "PHIDP",
+        "KDP",
+        "VRADH",
     ]
     elevations = [
         0.5,
