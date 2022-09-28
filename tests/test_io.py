@@ -446,7 +446,7 @@ def test_open_rainbow_dataset(rainbow_file):
 
 
 def test_open_iris_datatree(iris0_file):
-    dtree = open_iris_datatree(iris0_file)
+    dtree = open_iris_datatree(iris0_file, reindex_angle=False)
 
     # root_attrs
     attrs = dtree.attrs
@@ -457,34 +457,30 @@ def test_open_iris_datatree(iris0_file):
     assert rvars["volume_number"] == 0
     assert rvars["platform_type"] == "fixed"
     assert rvars["instrument_type"] == "radar"
-    assert rvars["time_coverage_start"] == "2013-05-10T00:00:06Z"
-    assert rvars["time_coverage_end"] == "2013-05-10T00:03:14Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(50.856633))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(6.379967))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(116.7))
+    assert rvars["time_coverage_start"] == "2013-11-25T10:55:04Z"
+    assert rvars["time_coverage_end"] == "2013-11-25T10:59:24Z"
+    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(9.331))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(284.7170001))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(143.))
 
     # iterate over subgroups and check some values
     moments = [
-        "DBZH",
+        'ZDR', 'RHOHV', 'DBZH', 'PHIDP', 'KDP', 'VRADH',
     ]
     elevations = [
-        0.6,
-        1.4,
-        2.4,
-        3.5,
-        4.8,
-        6.3,
-        8.0,
-        9.9,
-        12.2,
-        14.8,
-        17.9,
-        21.3,
-        25.4,
+        0.5,
+        1.0,
+        2.0,
+        3.0,
+        5.0,
+        7.0,
+        10.0,
+        15.0,
+        20.0,
         30.0,
     ]
-    azimuths = [360] * 14
-    ranges = [400] * 14
+    azimuths = [360] * 10
+    ranges = [664] * 10
     for i, grp in enumerate(dtree.groups[1:]):
         ds = dtree[grp].ds
         assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
