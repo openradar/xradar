@@ -9,7 +9,7 @@ Radar Data IO
 .. toctree::
     :maxdepth: 4
 
-.. automodule:: xradar.io.backends
+.. automodule:: xradar.georeference
 
 """
 from .transforms import *  # noqa
