@@ -72,3 +72,25 @@ def rainbow_file(tmp_path_factory):
     fname = os.path.join(fn, "rainbow_data.vol")
     urlretrieve(url, filename=fname)
     return fname
+
+
+@pytest.fixture(scope="session")
+def iris0_file(tmp_path_factory):
+    base_url = "https://raw.githubusercontent.com/wradlib/wradlib-data/main/sigmet/"
+    filename = "cor-main131125105503.RAW2049"
+    url = urljoin(base_url, filename)
+    fn = tmp_path_factory.mktemp("iris_data")
+    fname = os.path.join(fn, "iris0_data.raw")
+    urlretrieve(url, filename=fname)
+    return fname
+
+
+@pytest.fixture(scope="session")
+def iris1_file(tmp_path_factory):
+    base_url = "https://raw.githubusercontent.com/wradlib/wradlib-data/main/sigmet/"
+    filename = "SUR210819000227.RAWKPJV"
+    url = urljoin(base_url, filename)
+    fn = tmp_path_factory.mktemp("iris_data")
+    fname = os.path.join(fn, "iris1_data.raw")
+    urlretrieve(url, filename=fname)
+    return fname

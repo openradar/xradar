@@ -21,8 +21,8 @@ Xarray Backends
 from .cfradial1 import *  # noqa
 from .furuno import *  # noqa
 from .gamic import *  # noqa
+from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
-from .iris import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

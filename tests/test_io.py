@@ -10,6 +10,7 @@ import xarray as xr
 from xradar.io import (
     open_cfradial1_datatree,
     open_gamic_datatree,
+    open_iris_datatree,
     open_odim_datatree,
     open_rainbow_datatree,
 )
@@ -442,3 +443,130 @@ def test_open_rainbow_dataset(rainbow_file):
         backend_kwargs=dict(first_dim="auto"),
     )
     assert dict(ds.dims) == {"azimuth": 360, "range": 400}
+
+
+def test_open_iris_datatree(iris0_file):
+    dtree = open_iris_datatree(iris0_file)
+
+    # root_attrs
+    attrs = dtree.attrs
+    assert attrs["Conventions"] == "None"
+
+    # root vars
+    rvars = dtree.data_vars
+    assert rvars["volume_number"] == 0
+    assert rvars["platform_type"] == "fixed"
+    assert rvars["instrument_type"] == "radar"
+    assert rvars["time_coverage_start"] == "2013-05-10T00:00:06Z"
+    assert rvars["time_coverage_end"] == "2013-05-10T00:03:14Z"
+    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(50.856633))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(6.379967))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(116.7))
+
+    # iterate over subgroups and check some values
+    moments = [
+        "DBZH",
+    ]
+    elevations = [
+        0.6,
+        1.4,
+        2.4,
+        3.5,
+        4.8,
+        6.3,
+        8.0,
+        9.9,
+        12.2,
+        14.8,
+        17.9,
+        21.3,
+        25.4,
+        30.0,
+    ]
+    azimuths = [360] * 14
+    ranges = [400] * 14
+    for i, grp in enumerate(dtree.groups[1:]):
+        ds = dtree[grp].ds
+        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments)
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+
+
+def test_open_iris0_dataset(iris0_file):
+    # open first sweep group
+    ds = xr.open_dataset(iris0_file, group=1, engine="iris")
+    assert dict(ds.dims) == {"time": 360, "range": 664}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {
+        "DBZH",
+        "VRADH",
+        "KDP",
+        "RHOHV",
+        "PHIDP",
+        "ZDR",
+    }
+
+    # open last sweep group
+    ds = xr.open_dataset(iris0_file, group=10, engine="iris")
+    assert dict(ds.dims) == {"time": 360, "range": 664}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {
+        "DBZH",
+        "VRADH",
+        "KDP",
+        "RHOHV",
+        "PHIDP",
+        "ZDR",
+    }
+
+    # open last sweep group, auto
+    ds = xr.open_dataset(
+        iris0_file,
+        group=10,
+        engine="iris",
+        backend_kwargs=dict(first_dim="auto"),
+    )
+    assert dict(ds.dims) == {"azimuth": 360, "range": 664}
+
+
+def test_open_iris1_dataset(iris1_file):
+    # open first and only sweep group
+    ds = xr.open_dataset(iris1_file, group=1, engine="iris")
+    assert dict(ds.dims) == {"time": 360, "range": 833}
+    assert set(ds.data_vars) & (
+        sweep_dataset_vars | non_standard_sweep_dataset_vars
+    ) == {
+        "DBZH",
+        "KDP",
+        "DBTH",
+        "PHIDP",
+        "ZDR",
+        "RHOHV",
+        "VRADH",
+        "WRADH",
+    }
+
+    # open first and only sweep group
+    ds = xr.open_dataset(
+        iris1_file,
+        group=1,
+        engine="iris",
+        backend_kwargs=dict(first_dim="auto"),
+    )
+    assert dict(ds.dims) == {"azimuth": 360, "range": 833}

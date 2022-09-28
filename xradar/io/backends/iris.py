@@ -19,6 +19,8 @@ into dedicated OrderedDict's. Reading sweep data can be skipped by setting
 `loaddata=False`. By default the data is decoded on the fly.
 Using `rawdata=True` the data will be kept undecoded.
 
+Code ported from wradlib.
+
 .. autosummary::
    :nosignatures:
    :toctree: generated/
@@ -26,24 +28,8 @@ Using `rawdata=True` the data will be kept undecoded.
    {}
 """
 __all__ = [
-    #"open_iris_dataset",
-    #"open_iris_mfdataset",
-    #"read_iris",
-    # "IrisRecord",
-    # "IrisHeaderBase",
-    # "IrisStructureHeader",
-    # "IrisIngestHeader",
-    # "IrisProductHeader",
-    # "IrisIngestDataHeader",
-    # "IrisFileBase",
-    # "IrisFile",
-    # "IrisIngestHeaderFile",
-    # "IrisIngestDataFile",
-    # "IrisRecordFile",
-    # "IrisRawFile",
-    # "IrisProductFile",
-    # "IrisCartesianProductFile",
     "IrisBackendEntrypoint",
+    "open_iris_datatree",
 ]
 __doc__ = __doc__.format("\n   ".join(__all__))
 
@@ -56,23 +42,14 @@ import warnings
 from collections import OrderedDict
 
 import numpy as np
-
-from xarray import Dataset
-from xarray.backends import NetCDF4DataStore
-from xarray.backends.common import (
-    AbstractDataStore,
-    BackendArray,
-    BackendEntrypoint,
-    find_root_and_group,
-)
-from xarray.backends.file_manager import CachingFileManager, DummyFileManager
-from xarray.backends.locks import SerializableLock, ensure_lock
+import xarray as xr
+from datatree import DataTree
+from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
-from xarray.core.utils import Frozen, FrozenDict, close_on_error, is_remote_uri
+from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
-
-from .odim import _reindex_angle
 
 from ...model import (
     get_altitude_attrs,
@@ -81,13 +58,10 @@ from ...model import (
     get_latitude_attrs,
     get_longitude_attrs,
     get_range_attrs,
-    get_time_attrs,
     moment_attrs,
     sweep_vars_mapping,
 )
-from ...util import has_import
-from .common import _attach_sweep_groups, _fix_angle, _maybe_decode, _reindex_angle
-
+from .common import _assign_root, _attach_sweep_groups, _reindex_angle
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
@@ -3887,9 +3861,6 @@ class IrisStore(AbstractDataStore):
             time_prefix = "milli"
 
         rtime = indexing.LazilyOuterIndexedArray(IrisArrayWrapper(self, dtime, var))
-        time = (
-            var["sweep_start_time"] - dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
-        ).total_seconds()
         encoding = {"group": self._group}
         rtime_attrs = {
             "units": f"{time_prefix}seconds since {var['sweep_start_time'].replace(tzinfo=None).isoformat()}Z",
@@ -3923,6 +3894,7 @@ class IrisStore(AbstractDataStore):
         range_attrs = get_range_attrs(rng)
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
+        azimuth = Variable((dim,), azimuth, {}, encoding)
 
         ing_head = self.ds["ingest_data_hdrs"]
         data = ing_head[list(ing_head.keys())[0]]
@@ -3930,11 +3902,8 @@ class IrisStore(AbstractDataStore):
 
         coords = {
             "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(azimuth), encoding),
-            "elevation": Variable(
-                (dim,), elevation, get_elevation_attrs(), encoding
-            ),
+            "elevation": Variable((dim,), elevation, get_elevation_attrs(), encoding),
             "time": rtime,
-            # "time": Variable((), time, time_attrs, encoding),
             "range": Variable(("range",), rng, range_attrs),
             "longitude": Variable((), lon, get_longitude_attrs()),
             "latitude": Variable((), lat, get_latitude_attrs()),
@@ -3972,10 +3941,6 @@ class IrisStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        ing_head = self.ds["ingest_data_hdrs"]
-        data = ing_head[list(ing_head.keys())[0]]
-
-        # attributes = {"fixed_angle": np.round(data["fixed_angle"], 1)}
         attributes = {}
         # RHI limits
         if self.root.scan_mode == 2:
@@ -4036,17 +4001,24 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
 
+        # drop DB_XHDR for now
+        ds = ds.drop_vars("DB_XHDR", errors="ignore")
+
+        # todo: new approach of sorting, fixes wrong sorting when using sortby if we
+        #  have multiple rays with the same timestamp
+        # first ray comes first
+        # ds = ds.roll(azimuth=-ds.time.argmin().values, roll_coords=True)
+        ds = ds.sortby(store.root.first_dimension)
+
         if decode_coords and reindex_angle is not False:
-            ds = ds.drop_vars("DB_XHDR", errors="ignore")
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
-        else:
-            ds = ds.sortby(store.root.first_dimension)
 
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+
         if first_dim == "auto":
             if "time" in ds.dims:
                 ds = ds.swap_dims({"time": dim0})
@@ -4071,3 +4043,70 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         )
 
         return ds
+
+
+def open_iris_datatree(filename_or_obj, **kwargs):
+    """Open Iris/Sigmet dataset as xradar Datatree.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path, file-like or DataStore
+        Strings and Path objects are interpreted as a path to a local or remote
+        radar file
+
+    Keyword Arguments
+    -----------------
+    first_dim : str
+        Default to 'time' as first dimension. If set to 'auto', first dimension will
+        be either 'azimuth' or 'elevation' depending on type of sweep.
+    sweep : int, list of int, optional
+        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+        extracted into a list.
+    keep_elevation : bool
+        For PPI only. Keep original elevation data if True. If False,
+        fixes erroneous elevation data. Defaults to True.
+    keep_azimuth : bool
+        For RHI only. Keep original azimuth data if True. If False,
+        fixes erroneous azimuth data. Defaults to True.
+    reindex_angle : bool or float
+        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
+        given a floating point number, it is used as tolerance.
+        Only invoked if `decode_coord=True`.
+    kwargs :  kwargs
+        Additional kwargs are fed to `xr.open_dataset`.
+
+    Returns
+    -------
+    dtree: DataTree
+        DataTree
+    """
+    # handle kwargs, extract first_dim
+    backend_kwargs = kwargs.pop("backend_kwargs", {})
+    # first_dim = backend_kwargs.pop("first_dim", None)
+    sweep = kwargs.pop("sweep", None)
+    sweeps = []
+    kwargs["backend_kwargs"] = backend_kwargs
+
+    if isinstance(sweep, str):
+        sweeps = [int(sweep[5:])]
+    elif isinstance(sweep, int):
+        sweeps = sweep
+    elif isinstance(sweep, list):
+        if isinstance(sweep[0], str):
+            sweeps = [int(sw[5:]) for sw in sweep]
+        else:
+            sweeps.extend(sweep)
+    else:
+        sweeps = _get_iris_group_names(filename_or_obj)
+
+    ds = [
+        xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
+        for swp in sweeps
+    ]
+
+    ds.insert(0, xr.Dataset())
+
+    # create datatree root node with required data
+    dtree = DataTree(data=_assign_root(ds), name="root")
+    # return datatree with attached sweep child nodes
+    return _attach_sweep_groups(dtree, ds[1:])
