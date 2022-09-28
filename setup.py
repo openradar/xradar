@@ -52,6 +52,7 @@ setup(
             "odim = xradar.io.backends:OdimBackendEntrypoint",
             "furuno = xradar.io.backends:FurunoBackendEntrypoint",
             "rainbow = xradar.io.backends:RainbowBackendEntrypoint",
+            "iris = xradar.io.backends:IrisBackendEntrypoint",
         ]
     },
     test_suite="tests",

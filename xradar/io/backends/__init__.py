@@ -14,12 +14,14 @@ Xarray Backends
 .. automodule:: xradar.io.backends.odim
 .. automodule:: xradar.io.backends.furuno
 .. automodule:: xradar.io.backends.rainbow
+.. automodule:: xradar.io.backends.iris
 
 """
 
 from .cfradial1 import *  # noqa
 from .furuno import *  # noqa
 from .gamic import *  # noqa
+from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
 
