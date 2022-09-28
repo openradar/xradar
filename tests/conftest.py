@@ -61,3 +61,14 @@ def gamic_file(tmp_path_factory):
     fname = os.path.join(fn, "gamic_data.h5")
     urlretrieve(url, filename=fname)
     return fname
+
+
+@pytest.fixture(scope="session")
+def rainbow_file(tmp_path_factory):
+    base_url = "https://raw.githubusercontent.com/wradlib/wradlib-data/main/rainbow/"
+    filename = "2013051000000600dBZ.vol"
+    url = urljoin(base_url, filename)
+    fn = tmp_path_factory.mktemp("rainbow_data")
+    fname = os.path.join(fn, "rainbow_data.vol")
+    urlretrieve(url, filename=fname)
+    return fname
