@@ -47,7 +47,8 @@ def antenna_to_cartesian(
     """
     if effective_radius_fraction is None:
         effective_radius_fraction = 4.0 / 3.0
-    theta_e = np.deg2rad(elevations)  # elevation angle in radians.
+    # Convert the elevation angle from degrees to radians
+    theta_e = np.deg2rad(elevations) 
     theta_a = np.deg2rad(azimuths)  # azimuth angle in radians.
     R = earth_radius * effective_radius_fraction  # effective radius of earth in meters.
     r = ranges  # distances to gates in meters.
