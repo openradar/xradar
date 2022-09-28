@@ -11,3 +11,7 @@ build-backend = "setuptools.build_meta"
 write_to = "xradar/version.py"
 version_scheme = "guess-next-dev"
 fallback_version = "999"
+
+[tool.black]
+line-length = 88
+skip-string-normalization = true
