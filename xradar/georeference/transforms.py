@@ -53,10 +53,10 @@ def antenna_to_cartesian(
     R = earth_radius * effective_radius_fraction  # effective radius of earth in meters.
     r = ranges  # distances to gates in meters.
 
-    z = (r**2 + R**2 + 2.0 * r * R * np.sin(theta_e)) ** 0.5 - R
+    z = (2.0 * np.sin(theta_e) * r * R + r**2 + R**2) ** 0.5 - R
     s = R * np.arcsin(r * np.cos(theta_e) / (R + z))  # arc length in m.
-    x = s * np.sin(theta_a)
-    y = s * np.cos(theta_a)
+    x = np.sin(theta_a) * s
+    y = np.cos(theta_a) * s
     return x, y, z
 
 
