@@ -10,8 +10,10 @@ Radar Data IO
     :maxdepth: 4
 
 .. automodule:: xradar.io.backends
+.. automodule:: xradar.io.export
 
 """
 from .backends import *  # noqa
+from .export import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

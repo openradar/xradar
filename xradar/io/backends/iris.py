@@ -390,7 +390,6 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
             # read/decode data
             for k1 in ["read", "func"]:
                 try:
-                    # print("K/V:", k, v)
                     data[k] = v[k1](data[k], **v[k1[0] + "kw"])
                 except KeyError:
                     pass

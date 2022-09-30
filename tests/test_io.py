@@ -7,6 +7,7 @@
 import numpy as np
 import xarray as xr
 
+import xradar.io
 from xradar.io import (
     open_cfradial1_datatree,
     open_gamic_datatree,
@@ -54,8 +55,6 @@ def test_open_cfradial1_datatree(cfradial1_file):
     for i, grp in enumerate(dtree.groups[1:]):
         if grp == "/":
             continue
-        # print(grp)
-        # print(dtree[grp])
         ds = dtree[grp].ds
         assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
@@ -114,11 +113,6 @@ def test_open_odim_datatree(odim_file):
     moments = ["PHIDP", "VRADH", "DBZH", "TH", "ZDR", "RHOHV", "WRADH", "KDP"]
     elevations = [
         0.5,
-        10.0,
-        13.3,
-        17.9,
-        23.9,
-        32.0,
         0.9,
         1.3,
         1.8,
@@ -127,15 +121,15 @@ def test_open_odim_datatree(odim_file):
         4.2,
         5.6,
         7.4,
+        10.0,
+        13.3,
+        17.9,
+        23.9,
+        32.0,
     ]
     azimuths = [360] * 14
     ranges = [
         1200,
-        480,
-        360,
-        280,
-        200,
-        200,
         1200,
         1200,
         1200,
@@ -144,6 +138,11 @@ def test_open_odim_datatree(odim_file):
         1100,
         1100,
         590,
+        480,
+        360,
+        280,
+        200,
+        200,
     ]
     for i, grp in enumerate(dtree.groups[1:]):
         ds = dtree[grp].ds
@@ -571,3 +570,12 @@ def test_open_iris1_dataset(iris1_file):
         backend_kwargs=dict(first_dim="auto"),
     )
     assert dict(ds.dims) == {"azimuth": 360, "range": 833}
+
+def test_odim_roundtrip(odim_file):
+    dtree = open_odim_datatree(odim_file, reindex_angle=False)
+    outfile = "odim_out.h5"
+    xradar.io.to_odim(dtree, outfile)
+    dtree2 = open_odim_datatree(outfile, reindex_angle=False)
+    for d0, d1 in zip(dtree.groups, dtree2.groups):
+        xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
+

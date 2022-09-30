@@ -1,5 +1,9 @@
 # History
 
+## Development Version
+
+* add ODIM_H5 exporter by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
 ## 0.0.8 (2022-09-28)
 
 * add GAMIC HDF5 importer ({pull}`29`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
