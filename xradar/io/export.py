@@ -31,11 +31,12 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-import h5py
-import numpy as np
 import datetime as dt
 
-from ..model import sweep_vars_mapping, required_sweep_metadata_vars
+import h5py
+import numpy as np
+
+from ..model import required_sweep_metadata_vars, sweep_vars_mapping
 
 
 def _write_odim(src, dest):

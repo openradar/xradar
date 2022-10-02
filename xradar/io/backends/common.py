@@ -156,7 +156,7 @@ def _get_h5group_names(filename, engine):
         groups = ["/".join(["", grp]) for grp in fh.groups if groupname in grp.lower()]
         # h5py/h5netcdf might return groups with alphanumeric sorting
         # just sort in any case
-        groups = sorted(groups, key=lambda x: int(x[len(groupname)+1:]))
+        groups = sorted(groups, key=lambda x: int(x[len(groupname) + 1 :]))
     if isinstance(filename, io.BytesIO):
         filename.seek(0)
     return groups

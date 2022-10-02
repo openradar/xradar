@@ -571,6 +571,7 @@ def test_open_iris1_dataset(iris1_file):
     )
     assert dict(ds.dims) == {"azimuth": 360, "range": 833}
 
+
 def test_odim_roundtrip(odim_file):
     dtree = open_odim_datatree(odim_file, reindex_angle=False)
     outfile = "odim_out.h5"
@@ -578,4 +579,3 @@ def test_odim_roundtrip(odim_file):
     dtree2 = open_odim_datatree(outfile, reindex_angle=False)
     for d0, d1 in zip(dtree.groups, dtree2.groups):
         xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
-
