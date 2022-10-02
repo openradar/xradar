@@ -36,7 +36,7 @@ import datetime as dt
 import h5py
 import numpy as np
 
-from ..model import required_sweep_metadata_vars, sweep_vars_mapping
+from ..model import required_sweep_metadata_vars
 
 
 def _write_odim(src, dest):
