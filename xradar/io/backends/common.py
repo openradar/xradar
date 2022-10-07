@@ -196,7 +196,6 @@ def _assign_root(sweeps):
         }
     ).reset_coords()
 
-
     # assign root attributes
     attrs = {}
     attrs["Conventions"] = sweeps[0].attrs.get("Conventions", "None")
