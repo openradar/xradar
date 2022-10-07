@@ -39,47 +39,47 @@ import numpy as np
 from ..model import required_sweep_metadata_vars
 
 
-def _write_odim(src, dest):
+def _write_odim(source, destination):
     """Writes ODIM_H5 Attributes.
 
     Parameters
     ----------
-    src : dict
+    source : dict
         Attributes to write
-    dest : handle
+    destination : handle
         h5py-group handle
     """
-    for key, value in src.items():
-        if key in dest.attrs:
+    for key, value in source.items():
+        if key in destination.attrs:
             continue
         if isinstance(value, str):
             tid = h5py.h5t.C_S1.copy()
             tid.set_size(len(value) + 1)
             H5T_C_S1_NEW = h5py.Datatype(tid)
-            dest.attrs.create(key, value, dtype=H5T_C_S1_NEW)
+            destination.attrs.create(key, value, dtype=H5T_C_S1_NEW)
         else:
-            dest.attrs[key] = value
+            destination.attrs[key] = value
 
 
-def _write_odim_dataspace(src, dest):
+def _write_odim_dataspace(source, destination):
     """Write ODIM_H5 Dataspaces.
 
     Parameters
     ----------
-    src : dict
+    source : dict
         Moments to write
-    dest : handle
+    destination : handle
         h5py-group handle
     """
     # for now assume all variables as valid
-    # keys = [key for key in src if key in sweep_vars_mapping]
+    # keys = [key for key in source if key in sweep_vars_mapping]
     # but not metadata variables
-    keys = [key for key in src if key not in required_sweep_metadata_vars]
+    keys = [key for key in source if key not in required_sweep_metadata_vars]
     data_list = [f"data{i + 1}" for i in range(len(keys))]
     data_idx = np.argsort(data_list)
     for idx in data_idx:
-        value = src[keys[idx]]
-        h5_data = dest.create_group(data_list[idx])
+        value = source[keys[idx]]
+        h5_data = destination.create_group(data_list[idx])
         enc = value.encoding
 
         # p. 21 ff
@@ -105,7 +105,7 @@ def _write_odim_dataspace(src, dest):
 
         # moments handling
         # todo: check bottom-up/top-down rhi
-        dim0 = "elevation" if src.sweep_mode == "rhi" else "azimuth"
+        dim0 = "elevation" if source.sweep_mode == "rhi" else "azimuth"
         val = value.sortby(dim0).values
         fillval = _fillvalue * scale_factor
         fillval += add_offset
@@ -113,6 +113,8 @@ def _write_odim_dataspace(src, dest):
         val = (val - add_offset) / scale_factor
         if np.issubdtype(dtype, np.integer):
             val = np.rint(val).astype(dtype)
+        # todo: compression is chosen totally arbitrary here
+        #  maybe parameterizing it?
         ds = h5_data.create_dataset(
             "data",
             data=val,
@@ -166,6 +168,7 @@ def to_odim(dtree, filename):
         what["object"] = "PVOL"
     else:
         what["object"] = "SCAN"
+    # todo: parameterize version
     what["version"] = "H5rad 2.2"
     what["date"] = str(root["time_coverage_start"].values)[:10].replace("-", "")
     what["time"] = str(root["time_coverage_end"].values)[11:19].replace(":", "")

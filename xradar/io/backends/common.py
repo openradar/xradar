@@ -182,6 +182,7 @@ def _assign_root(sweeps):
     # site = self.site
 
     # assign root variables
+    # reset_coords as root doesn't have coordinates
     root = root.assign(
         {
             "volume_number": 0,
@@ -189,11 +190,12 @@ def _assign_root(sweeps):
             "instrument_type": "radar",
             "time_coverage_start": time_coverage_start_str,
             "time_coverage_end": time_coverage_end_str,
-            "latitude": sweeps[1]["latitude"].data,
-            "longitude": sweeps[1]["longitude"].data,
-            "altitude": sweeps[1]["altitude"].data,
+            "latitude": sweeps[1]["latitude"],
+            "longitude": sweeps[1]["longitude"],
+            "altitude": sweeps[1]["altitude"],
         }
-    )
+    ).reset_coords()
+
 
     # assign root attributes
     attrs = {}

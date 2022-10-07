@@ -21,3 +21,5 @@ dependencies:
   - xarray
   - xarray-datatree
   - xmltodict
+  - pip:
+    - git+https://github.com/operadar/open-radar-data.git
