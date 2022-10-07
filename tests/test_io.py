@@ -6,7 +6,6 @@
 
 import numpy as np
 import xarray as xr
-
 from open_radar_data import DATASETS
 
 import xradar.io
