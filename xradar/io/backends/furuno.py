@@ -349,7 +349,7 @@ class FurunoFile:
             # check available moments
             items = dict()
             for i in range(9):
-                if (self.header["record_item"] & 2 ** i) == 2 ** i:
+                if (self.header["record_item"] & 2**i) == 2**i:
                     items[i] = moments[i]
             # claim available moments
             rays = self.header["number_sweep_direction_data"]
