@@ -34,7 +34,6 @@ def test_create_sweep_dataset():
     assert ds.time.shape == (360,)
     assert ds.range.shape == (1000,)
     assert ds.dims == {"time": 360, "range": 1000}
-    print(ds.elevation)
     assert np.unique(ds.elevation) == [5.0]
     assert ds.azimuth[0] == 0.5
     assert ds.azimuth[-1] == 359.5

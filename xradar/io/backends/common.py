@@ -150,12 +150,13 @@ def _get_h5group_names(filename, engine):
         groupname = "dataset"
     elif engine == "gamic":
         groupname = "scan"
-    elif engine == "cfradial2":
-        groupname = "sweep"
     else:
         raise ValueError(f"xradar: unknown engine `{engine}`.")
     with h5netcdf.File(filename, "r", decode_vlen_strings=True) as fh:
         groups = ["/".join(["", grp]) for grp in fh.groups if groupname in grp.lower()]
+        # h5py/h5netcdf might return groups with alphanumeric sorting
+        # just sort in any case
+        groups = sorted(groups, key=lambda x: int(x[len(groupname) + 1 :]))
     if isinstance(filename, io.BytesIO):
         filename.seek(0)
     return groups
@@ -181,6 +182,7 @@ def _assign_root(sweeps):
     # site = self.site
 
     # assign root variables
+    # reset_coords as root doesn't have coordinates
     root = root.assign(
         {
             "volume_number": 0,
@@ -188,11 +190,11 @@ def _assign_root(sweeps):
             "instrument_type": "radar",
             "time_coverage_start": time_coverage_start_str,
             "time_coverage_end": time_coverage_end_str,
-            "latitude": sweeps[1]["latitude"].data,
-            "longitude": sweeps[1]["longitude"].data,
-            "altitude": sweeps[1]["altitude"].data,
+            "latitude": sweeps[1]["latitude"],
+            "longitude": sweeps[1]["longitude"],
+            "altitude": sweeps[1]["altitude"],
         }
-    )
+    ).reset_coords()
 
     # assign root attributes
     attrs = {}
@@ -285,7 +287,6 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
             # read/decode data
             for k1 in ["read", "func"]:
                 try:
-                    # print("K/V:", k, v)
                     data[k] = v[k1](data[k], **v[k1[0] + "kw"])
                 except KeyError:
                     pass
