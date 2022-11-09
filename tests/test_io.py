@@ -56,7 +56,8 @@ def test_open_cfradial1_datatree(cfradial1_file):
         if grp == "/":
             continue
         ds = dtree[grp].ds
-        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert ds["azimuth"] == azimuths
+        assert ds["range"] == ranges
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -78,14 +79,14 @@ def test_open_cfradial1_datatree(cfradial1_file):
 def test_open_cfradial1_dataset(cfradial1_file):
     # open first sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_0", engine="cfradial1")
-    assert dict(ds.dims) == {"time": 483, "range": 996}
+    assert list(ds.dims) == ["r_calib", "time", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
 
     # open last sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1")
-    assert dict(ds.dims) == {"time": 483, "range": 996}
+    assert list(ds.dims) == ["r_calib", "time", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}

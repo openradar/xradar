@@ -38,14 +38,7 @@ from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
 
-from ...model import (
-    non_standard_sweep_dataset_vars,
-    required_global_attrs,
-    required_root_vars,
-    required_sweep_metadata_vars,
-    sweep_coordinate_vars,
-    sweep_dataset_vars,
-)
+from ...model import required_global_attrs, required_root_vars
 from .common import _attach_sweep_groups, _maybe_decode
 
 
@@ -76,17 +69,8 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
     ray_n_gates = root.get("ray_n_gates", False)
     ray_start_index = root.get("ray_start_index", False)
 
-    # strip variables and attributes
-    var = root.variables.keys()
-    keep_vars = (
-        sweep_coordinate_vars
-        | required_sweep_metadata_vars
-        | sweep_dataset_vars
-        | non_standard_sweep_dataset_vars
-    )
-    remove_vars = var ^ keep_vars
-    remove_vars &= var
-    data = root.drop_vars(remove_vars)
+    # strip attributes
+    data = root
     data.attrs = {}
     sweep_groups = []
     if isinstance(sweep, str):
