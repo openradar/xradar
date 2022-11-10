@@ -6,7 +6,6 @@
 
 import numpy as np
 import xarray as xr
-from open_radar_data import DATASETS
 
 import xradar.io
 from xradar.io import (
@@ -573,8 +572,8 @@ def test_open_iris1_dataset(iris1_file):
     assert dict(ds.dims) == {"azimuth": 360, "range": 833}
 
 
-def test_odim_roundtrip():
-    dtree = open_odim_datatree(DATASETS.fetch("T_PAGZ35_C_ENMI_20170421090837.hdf"))
+def test_odim_roundtrip(odim_file2):
+    dtree = open_odim_datatree(odim_file2)
     outfile = "odim_out.h5"
     xradar.io.to_odim(dtree, outfile)
     dtree2 = open_odim_datatree(outfile, reindex_angle=False)

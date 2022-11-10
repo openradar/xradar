@@ -688,6 +688,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         Only invoked if `decode_coord=True`.
     """
 
+    description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
+    url = "https://xradar.rtfd.io/en/latest/io.html#odim-h5"
+
     def open_dataset(
         self,
         filename_or_obj,

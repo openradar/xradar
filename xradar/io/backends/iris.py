@@ -3900,6 +3900,9 @@ def _get_iris_group_names(filename):
 class IrisBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for IRIS/Sigmet data."""
 
+    description = "Open IRIS/Sigmet files in Xarray"
+    url = "https://xradar.rtfd.io/latest/io.html#iris-sigmet-data-i-o"
+
     def open_dataset(
         self,
         filename_or_obj,

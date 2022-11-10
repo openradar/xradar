@@ -694,6 +694,9 @@ class FurunoStore(AbstractDataStore):
 class FurunoBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Furuno data."""
 
+    description = "Open FURUNO (.scn, .scnx) in Xarray"
+    url = "https://xradar.rtfd.io/en/latest/io.html#furuno-binary-data"
+
     def open_dataset(
         self,
         filename_or_obj,
