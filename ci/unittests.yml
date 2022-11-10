@@ -9,7 +9,10 @@ dependencies:
   - h5netcdf
   - h5py
   - lat_lon_parser
+  - matplotlib-base
+  - nbconvert
   - netCDF4
+  - notebook
   - numpy
   - pip
   - pytest
