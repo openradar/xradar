@@ -790,6 +790,9 @@ class RainbowStore(AbstractDataStore):
 class RainbowBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Rainbow5 data."""
 
+    description = "Open Rainbow5 files in Xarray"
+    url = "https://xradar.rtfd.io/latest/io.html#rainbow-data-i-o"
+
     def open_dataset(
         self,
         filename_or_obj,

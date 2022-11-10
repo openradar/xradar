@@ -226,6 +226,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
     Ported from wradlib.
     """
 
+    description = "Open CfRadial1 (.nc, .nc4) using netCDF4 in Xarray"
+    url = "https://xradar.rtfd.io/en/latest/io.html#cfradial1"
+
     def open_dataset(
         self,
         filename_or_obj,

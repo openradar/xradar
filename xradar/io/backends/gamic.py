@@ -418,6 +418,9 @@ class GamicStore(AbstractDataStore):
 class GamicBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for GAMIC data."""
 
+    description = "Open GAMIC HDF5 (.h5, .hdf5, .mvol) using h5netcdf in Xarray"
+    url = "https://xradar.rtfd.io/en/latest/io.html#gamic-hdf5"
+
     def open_dataset(
         self,
         filename_or_obj,
