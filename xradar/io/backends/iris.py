@@ -3847,7 +3847,7 @@ class IrisStore(AbstractDataStore):
             "sweep_number": Variable((), sweep_number),
             "prt_mode": Variable((), prt_mode),
             "follow_mode": Variable((), follow_mode),
-            "fixed_angle": Variable((), fixed_angle),
+            "sweep_fixed_angle": Variable((), fixed_angle),
         }
 
         # a1gate

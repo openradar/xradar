@@ -83,26 +83,28 @@ required_global_attrs = dict(
 
 
 # optional global attributes (root-group)
-optional_root_attrs = [
-    ("site_name", "name of site where data were gathered"),
-    ("scan_name", "name of scan strategy used, if applicable"),
-    ("scan_id", "scan strategy id, if applicable. assumed 0 if missing"),
-    (
-        "ray_times_increase",
+optional_root_attrs = dict(
+    [
+        ("site_name", "name of site where data were gathered"),
+        ("scan_name", "name of scan strategy used, if applicable"),
+        ("scan_id", "scan strategy id, if applicable. assumed 0 if missing"),
         (
-            "'true' or 'false', assumed 'true' if missing. "
-            "This is set to true if ray times increase monotonically "
-            "throughout all of the sweeps in the volume."
+            "ray_times_increase",
+            (
+                "'true' or 'false', assumed 'true' if missing. "
+                "This is set to true if ray times increase monotonically "
+                "throughout all of the sweeps in the volume."
+            ),
         ),
-    ),
-    (
-        "simulated",
         (
-            "'true' or 'false', assumed 'false' if missing. "
-            "data in this file are simulated"
+            "simulated",
+            (
+                "'true' or 'false', assumed 'false' if missing. "
+                "data in this file are simulated"
+            ),
         ),
-    ),
-]
+    ]
+)
 
 #: required global variables (root-group)
 required_root_vars = {
@@ -112,16 +114,22 @@ required_root_vars = {
     "latitude",
     "longitude",
     "altitude",
-    "platform_type",
-    "instrument_type",
+    "sweep_group_name",
+    "sweep_fixed_angle",
 }
 
 #: optional global attributes (root-group)
-optional_root_vars = {
-    "altitude_agl",
-    "primary_axis",
-    "status_str",
-}
+optional_root_vars = dict(
+    [
+        ("platform_type", None),
+        ("instrument_type", None),
+        ("primary_axis", None),
+        ("altitude_agl", None),
+        ("frequency", None),  # cfradial 2.0
+        ("status_str", None),  # cfrdadial 2.1
+        ("status_xml", "status_str"),  # cfradial 2.0
+    ]
+)
 
 #: sweep-group coordinate variables
 sweep_coordinate_vars = {
@@ -136,7 +144,7 @@ required_sweep_metadata_vars = {
     "sweep_mode",
     "follow_mode",
     "prt_mode",
-    "fixed_angle",
+    "sweep_fixed_angle",
     "azimuth",
     "elevation",
 }
@@ -210,6 +218,110 @@ non_standard_sweep_dataset_vars = {
     "VR",
 }
 
+# root metadata groups
+#: radar_parameters subgroup
+radar_parameters_subgroup = dict(
+    [
+        ("radar_antenna_gain_h", None),
+        ("radar_antenna_gain_v", None),
+        ("radar_beam_width_h", None),
+        ("radar_beam_width_v", None),
+        ("radar_receiver_bandwidth", None),  # cfradial2.1
+        ("radar_rx_bandwidth", "radar_receiver_bandwidth"),  # cfradial1.X
+    ]
+)
+
+#: radar_calibration subgroup
+radar_calibration_subgroup = dict(
+    [
+        ("calib_index", None),
+        ("time", None),
+        ("pulse_width", None),
+        ("antenna_gain_h", None),
+        ("antenna_gain_v", None),
+        ("xmit_power_h", None),
+        ("xmit_power_v", None),
+        ("two_way_waveguide_loss_h", None),
+        ("two_way_waveguide_loss_v", None),
+        ("two_way_radome_loss_h", None),
+        ("two_way_radome_loss_v", None),
+        ("receiver_mismatch_loss", None),
+        ("receiver_mismatch_loss_h", None),
+        ("receiver_mismatch_loss_v", None),
+        ("radar_constant_h", None),
+        ("radar_constant_v", None),
+        ("probert_jones_correction", None),
+        ("dielectric_factor_used", None),
+        ("noise_hc", None),
+        ("noise_vc", None),
+        ("noise_hx", None),
+        ("noise_vx", None),
+        ("receiver_gain_hc", None),
+        ("receiver_gain_vc", None),
+        ("receiver_gain_hx", None),
+        ("receiver_gain_vx", None),
+        ("base_1km_hc", None),
+        ("base_dbz_1km_hc", "base_1km_hc"),  # cfradial1
+        ("base_1km_vc", None),
+        ("base_dbz_1km_vc", "base_1km_vc"),  # cfradial1
+        ("base_1km_hx", None),
+        ("base_dbz_1km_hx", "base_1km_hx"),  # cfradial1
+        ("base_1km_vx", None),
+        ("base_dbz_1km_vx", "base_1km_vx"),  # cfradial1
+        ("sun_power_hc", None),
+        ("sun_power_vc", None),
+        ("sun_power_hx", None),
+        ("sun_power_vx", None),
+        ("noise_source_power_h", None),
+        ("noise_source_power_v", None),
+        ("power_measure_loss_h", None),
+        ("power_measure_loss_v", None),
+        ("coupler_forward_loss_h", None),
+        ("coupler_forward_loss_v", None),
+        ("zdr_correction", None),
+        ("ldr_correction_h", None),
+        ("ldr_correction_v", None),
+        ("system_phidp", None),
+        ("test_power_h", None),
+        ("test_power_v", None),
+        ("receiver_slope_hc", None),
+        ("receiver_slope_vc", None),
+        ("receiver_slope_hx", None),
+        ("receiver_slope_vx", None),
+    ]
+)
+
+#: georeferencing_correction subgroup
+georeferencing_correction_subgroup = dict(
+    [
+        ("azimuth_correction", None),
+        ("elevation_correction", None),
+        ("range_correction", None),
+        ("longitude_correction", None),
+        ("latitude_correction", None),
+        ("pressure_altitude_correction", None),
+        ("altitude_correction", "radar_altitude_correction"),  # cfradial1
+        ("radar_altitude_correction", None),
+        (
+            "eastward_velocity_correction",
+            "eastward_ground_speed_correction",
+        ),  # cfradial1
+        ("eastward_ground_speed_correction", None),
+        (
+            "northward_velocity_correction",
+            "northward_ground_speed_correction",
+        ),  # cfradial1
+        ("northward_ground_speed_correction", None),
+        ("vertical_velocity_correction", None),
+        ("heading_correction", None),
+        ("roll_correction", None),
+        ("pitch_correction", None),
+        ("drift_correction", None),
+        ("rotation_correction", None),
+        ("tilt_correction", None),
+    ]
+)
+
 #: required range attributes
 range_attrs = {
     "units": "meters",
@@ -233,29 +345,8 @@ frequency_attrs = {
     "units": "s-1",
 }
 
-#:
-lon_attrs = {
-    "long_name": "longitude",
-    "units": "degrees_east",
-    "standard_name": "longitude",
-}
 
-#:
-lat_attrs = {
-    "long_name": "latitude",
-    "units": "degrees_north",
-    "positive": "up",
-    "standard_name": "latitude",
-}
-
-#:
-alt_attrs = {
-    "long_name": "altitude",
-    "units": "meters",
-    "standard_name": "altitude",
-}
-
-#:
+#: required moment attributes
 moment_attrs = {"standard_name", "long_name", "units"}
 
 # todo: align this with sweep_dataset_vars

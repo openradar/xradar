@@ -52,12 +52,16 @@ def test_open_cfradial1_datatree(cfradial1_file):
     elevations = [0.5, 1.1, 1.8, 2.6, 3.6, 4.7, 6.5, 9.1, 12.8]
     azimuths = [483, 483, 482, 483, 481, 482, 482, 484, 483]
     ranges = [996, 996, 996, 996, 996, 996, 996, 996, 996]
-    for i, grp in enumerate(dtree.groups[1:]):
-        if grp == "/":
+    for grp in dtree.groups:
+
+        print(grp)
+        # only iterate sweep groups
+        if "sweep" not in grp:
             continue
         ds = dtree[grp].ds
-        assert ds["azimuth"] == azimuths
-        assert ds["range"] == ranges
+        i = ds.sweep_number.values
+        print(ds)
+        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -68,25 +72,22 @@ def test_open_cfradial1_datatree(cfradial1_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
-        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert np.round(ds.sweep_fixed_angle.values.item(), 1) == elevations[i]
 
 
 def test_open_cfradial1_dataset(cfradial1_file):
     # open first sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_0", engine="cfradial1")
-    assert list(ds.dims) == ["r_calib", "time", "range"]
+    assert list(ds.dims) == ["time", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
 
     # open last sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1")
-    assert list(ds.dims) == ["r_calib", "time", "range"]
+    assert list(ds.dims) == ["time", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
@@ -579,4 +580,5 @@ def test_odim_roundtrip(odim_file2):
     xradar.io.to_odim(dtree, outfile)
     dtree2 = open_odim_datatree(outfile, reindex_angle=False)
     for d0, d1 in zip(dtree.groups, dtree2.groups):
+        print(d0, d1)
         xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)

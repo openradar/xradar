@@ -766,7 +766,7 @@ class RainbowStore(AbstractDataStore):
             "sweep_number": Variable((), sweep_number),
             "prt_mode": Variable((), prt_mode),
             "follow_mode": Variable((), follow_mode),
-            "fixed_angle": Variable((), float(var["posangle"])),
+            "sweep_fixed_angle": Variable((), float(var["posangle"])),
             "longitude": Variable((), lon, get_longitude_attrs()),
             "latitude": Variable((), lat, get_latitude_attrs()),
             "altitude": Variable((), alt, get_altitude_attrs()),
