@@ -101,7 +101,7 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
         ds.azimuth,
         ds.elevation,
         earth_radius=earth_radius,
-        effective_radius_fraction=None,
+        effective_radius_fraction=effective_radius_fraction,
     )
 
     # Set the attributes for the dataset

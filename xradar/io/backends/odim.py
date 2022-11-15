@@ -177,7 +177,7 @@ class _OdimH5NetCDFMetadata:
             "sweep_number": Variable((), sweep_number),
             "prt_mode": Variable((), prt_mode),
             "follow_mode": Variable((), follow_mode),
-            "fixed_angle": Variable((), angle),
+            "sweep_fixed_angle": Variable((), angle),
             "longitude": Variable((), lon, lon_attrs),
             "latitude": Variable((), lat, lat_attrs),
             "altitude": Variable((), alt, alt_attrs),
@@ -837,6 +837,7 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         for swp in sweeps
     ]
 
+    # todo: apply CfRadial2 group structure below
     ds.insert(0, xr.open_dataset(filename_or_obj, group="/"))
 
     # create datatree root node with required data

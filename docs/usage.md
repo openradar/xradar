@@ -24,6 +24,7 @@ notebooks/Accessors
 :maxdepth: 2
 :caption: Examples
 
+notebooks/CfRadial1_Model_Transformation
 notebooks/CfRadial1
 notebooks/CfRadial1_full
 notebooks/ODIM_H5

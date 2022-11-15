@@ -215,7 +215,7 @@ def to_odim(dtree, filename):
         rscale = ds.range.values[1] / 1.0 - ds.range.values[0]
         rstart = (ds.range.values[0] - rscale / 2.0) / 1000.0
         a1gate = np.argsort(ds.sortby(dim0).time.values)[0]
-        fixed_angle = ds["fixed_angle"].values
+        fixed_angle = ds["sweep_fixed_angle"].values
         ds_where = {
             "elangle": fixed_angle,
             "nbins": ds.range.shape[0],
