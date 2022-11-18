@@ -14,4 +14,3 @@ fallback_version = "999"
 
 [tool.black]
 line-length = 88
-skip-string-normalization = true

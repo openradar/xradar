@@ -32,10 +32,10 @@ def test_get_x_y_z():
     ds = xradar.model.Dataset()
 
     # Add similar data to before
-    ds['time'] = pd.date_range(start='2018-11-10', end='2018-11-10T00:09:00', freq='T')
-    ds['range'] = np.arange(0, 1000, 100)
-    ds['azimuth'] = ('time', np.arange(0, 300, 30))
-    ds['elevation'] = ('time', np.arange(0, 50, 5))
+    ds["time"] = pd.date_range(start="2018-11-10", end="2018-11-10T00:09:00", freq="T")
+    ds["range"] = np.arange(0, 1000, 100)
+    ds["azimuth"] = ("time", np.arange(0, 300, 30))
+    ds["elevation"] = ("time", np.arange(0, 50, 5))
 
     ds = get_x_y_z(ds)
 
