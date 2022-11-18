@@ -23,7 +23,7 @@ from xradar.model import (
 
 
 def test_open_cfradial1_datatree(cfradial1_file):
-    dtree = open_cfradial1_datatree(cfradial1_file)
+    dtree = open_cfradial1_datatree(cfradial1_file, first_dim="time", site_coords=False)
     attrs = dtree.attrs
 
     # root_attrs
@@ -80,14 +80,14 @@ def test_open_cfradial1_datatree(cfradial1_file):
 def test_open_cfradial1_dataset(cfradial1_file):
     # open first sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_0", engine="cfradial1")
-    assert list(ds.dims) == ["time", "range"]
+    assert list(ds.dims) == ["azimuth", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
 
     # open last sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1")
-    assert list(ds.dims) == ["time", "range"]
+    assert list(ds.dims) == ["azimuth", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
