@@ -52,6 +52,8 @@ __all__ = [
     "optional_sweep_metadata_vars",
     "sweep_dataset_vars",
     "non_standard_sweep_dataset_vars",
+    "determine_cfradial2_sweep_variables",
+    "conform_cfradial2_sweep_group",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -959,3 +961,39 @@ def create_sweep_dataset(**kwargs):
     )
 
     return decode_cf(ds)
+
+
+def determine_cfradial2_sweep_variables(obj, optional, dim0):
+    # "calculate" variables to keep
+    keep_vars = set()
+    # mandatory coordinates
+    keep_vars |= sweep_coordinate_vars
+    # required metadata
+    keep_vars |= required_sweep_metadata_vars
+    # all moment fields
+    # todo: strip off non-conforming
+    keep_vars |= {k for k, v in obj.data_vars.items() if "range" in v.dims}
+    # optional variables
+    if optional:
+        keep_vars |= {k for k, v in obj.data_vars.items() if dim0 in v.dims}
+    return keep_vars
+
+
+def conform_cfradial2_sweep_group(obj, optional, dim0):
+    keep_vars = determine_cfradial2_sweep_variables(obj, optional, dim0)
+    # calculate variables to remove and remove them
+    var = set(obj.data_vars)
+    var |= set(obj.coords)
+    remove_vars = var ^ keep_vars
+    # only remove variables if in dataset
+    remove_vars &= var
+    out = obj.drop_vars(remove_vars)
+    out.attrs = {}
+
+    # swap dims, if needed
+    if dim0 != "time":
+        out = out.swap_dims({dim0: "time"})
+    # sort in any case
+    out = out.sortby("time")
+
+    return out
