@@ -80,7 +80,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
     root.attrs["Conventions"] = "Cf/Radial"
     root.attrs["version"] = "2.0"
     # add xradar version to history
-    xradar_version = version('xradar')
+    xradar_version = version("xradar")
     root.attrs["history"] += f": xradar v{xradar_version} CfRadial2 export"
 
     # write DataTree
