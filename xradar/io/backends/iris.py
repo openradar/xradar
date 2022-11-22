@@ -3739,12 +3739,15 @@ class IrisArrayWrapper(BackendArray):
 
 
 class IrisStore(AbstractDataStore):
-    """Store for reading IRIS sweeps via wradlib."""
+    """Store for reading IRIS sweeps via xradar.
+
+    Ported from wradlib.
+    """
 
     def __init__(self, manager, group=None):
 
         self._manager = manager
-        self._group = group
+        self._group = int(group[6:]) + 1
         self._filename = self.filename
         self._need_time_recalc = False
 
@@ -3811,7 +3814,8 @@ class IrisStore(AbstractDataStore):
 
         # get coordinates from IrisFile
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = self._group
+        # align with CfRadial2 convention
+        sweep_number = self._group - 1
         prt_mode = "not_set"
         follow_mode = "not_set"
 
@@ -3895,7 +3899,8 @@ class IrisStore(AbstractDataStore):
 def _get_iris_group_names(filename):
     sid, opener = _check_iris_file(filename)
     with opener(filename, loaddata=False) as ds:
-        keys = list(ds.data.keys())
+        # make this CfRadial2 conform
+        keys = [f"sweep_{i-1}" for i in list(ds.data.keys())]
     return keys
 
 
@@ -3947,29 +3952,20 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds = ds.drop_vars("DB_XHDR", errors="ignore")
 
         # todo: re-think the whole idea of angle reindexing and align with the other readers
-        # todo: new approach of sorting, fixes wrong sorting when using sortby if we
-        #  have multiple rays with the same timestamp
-        # first ray comes first
-        # ds = ds.roll(azimuth=-ds.time.argmin().values, roll_coords=True)
-        # handling first dimension
-        dim0 = store.root.first_dimension
-        ds = ds.sortby(dim0)
-
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
 
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)
 
+        # handling first dimension
+        dim0 = store.root.first_dimension
         # todo: could be optimized
-        if first_dim == "auto":
-            if "time" in ds.dims:
-                ds = ds.swap_dims({"time": dim0})
-            ds = ds.sortby(dim0)
-        else:
-            if "time" not in ds.dims:
-                ds = ds.swap_dims({dim0: "time"})
+        if first_dim == "time":
+            ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
+        else:
+            ds = ds.sortby(dim0)
 
         # reassign azimuth/elevation/time coordinates
         ds = ds.assign_coords({"azimuth": ds.azimuth})
@@ -4003,15 +3999,9 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     first_dim : str
         Default to 'time' as first dimension. If set to 'auto', first dimension will
         be either 'azimuth' or 'elevation' depending on type of sweep.
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+    sweep : str, optional
+        Sweeps to extract, default to first sweep (sweep_0). If None, all sweeps are
         extracted into a list.
-    keep_elevation : bool
-        For PPI only. Keep original elevation data if True. If False,
-        fixes erroneous elevation data. Defaults to True.
-    keep_azimuth : bool
-        For RHI only. Keep original azimuth data if True. If False,
-        fixes erroneous azimuth data. Defaults to True.
     reindex_angle : bool or float
         Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
         given a floating point number, it is used as tolerance.
@@ -4032,12 +4022,12 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     kwargs["backend_kwargs"] = backend_kwargs
 
     if isinstance(sweep, str):
-        sweeps = [int(sweep[5:])]
+        sweeps = [sweep]
     elif isinstance(sweep, int):
-        sweeps = sweep
+        sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
-        if isinstance(sweep[0], str):
-            sweeps = [int(sw[5:]) for sw in sweep]
+        if isinstance(sweep[0], int):
+            sweeps = [f"sweep_{sw}" for sw in sweep]
         else:
             sweeps.extend(sweep)
     else:
