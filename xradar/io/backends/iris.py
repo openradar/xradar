@@ -3665,9 +3665,15 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
     def site_coords(self):
         """Return Radar Location Tuple"""
         ing_conf = self.ingest_header["ingest_configuration"]
+        lon = ing_conf["longitude_radar"]
+        lat = ing_conf["latitude_radar"]
+        lon = lon if lon <= 180 else lon - 360
+        # todo: is this correct for southern latitudes?
+        lat = lat if lat <= 180 else lon - 360
+
         return (
-            ing_conf["longitude_radar"],
-            ing_conf["latitude_radar"],
+            lon,
+            lat,
             ing_conf["altitude_radar"] / 100.0,
         )
 
@@ -3820,13 +3826,18 @@ class IrisStore(AbstractDataStore):
         rng = (
             np.arange(
                 range_first_bin,
-                range_last_bin,
+                range_last_bin + task["step_output_bins"],
                 task["step_output_bins"],
                 dtype="float32",
             )[: task["number_output_bins"]]
             / 1e2
         )
-        range_attrs = get_range_attrs(rng)
+        range_attrs = get_range_attrs()
+        range_attrs["meters_between_gates"] = task["step_output_bins"] / 2
+        range_attrs["spacing_is_constant"] = (
+            "false" if task["variable_range_bin_spacing_flag"] else "true"
+        )
+        range_attrs["meters_to_center_of_first_gate"] = task["range_first_bin"]
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
         azimuth = Variable((dim,), azimuth, {}, encoding)
@@ -3836,7 +3847,7 @@ class IrisStore(AbstractDataStore):
         fixed_angle = np.round(data["fixed_angle"], 1)
 
         coords = {
-            "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(azimuth), encoding),
+            "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(), encoding),
             "elevation": Variable((dim,), elevation, get_elevation_attrs(), encoding),
             "time": rtime,
             "range": Variable(("range",), rng, range_attrs),
@@ -3849,15 +3860,6 @@ class IrisStore(AbstractDataStore):
             "follow_mode": Variable((), follow_mode),
             "sweep_fixed_angle": Variable((), fixed_angle),
         }
-
-        # a1gate
-        a1gate = np.where(rtime.values == rtime.values.min())[0][0]
-        coords[dim].attrs["a1gate"] = a1gate
-        # angle_res
-        task_scan_info = self.root.ingest_header["task_configuration"]["task_scan_info"]
-        coords[dim].attrs["angle_res"] = (
-            task_scan_info["desired_angular_resolution"] / 1000.0
-        )
 
         return coords
 
@@ -3917,8 +3919,10 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         group=None,
         keep_elevation=False,
         keep_azimuth=False,
-        reindex_angle=None,
-        first_dim="time",
+        reindex_angle=False,
+        first_dim="auto",
+        optional=True,
+        site_coords=True,
     ):
         store = IrisStore.open(
             filename_or_obj,
@@ -3942,11 +3946,14 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         # drop DB_XHDR for now
         ds = ds.drop_vars("DB_XHDR", errors="ignore")
 
+        # todo: re-think the whole idea of angle reindexing and align with the other readers
         # todo: new approach of sorting, fixes wrong sorting when using sortby if we
         #  have multiple rays with the same timestamp
         # first ray comes first
         # ds = ds.roll(azimuth=-ds.time.argmin().values, roll_coords=True)
-        ds = ds.sortby(store.root.first_dimension)
+        # handling first dimension
+        dim0 = store.root.first_dimension
+        ds = ds.sortby(dim0)
 
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
@@ -3954,9 +3961,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)
 
-        # handling first dimension
-        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
-
+        # todo: could be optimized
         if first_dim == "auto":
             if "time" in ds.dims:
                 ds = ds.swap_dims({"time": dim0})
@@ -3972,13 +3977,14 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": ds.latitude,
+                    "longitude": ds.longitude,
+                    "altitude": ds.altitude,
+                }
+            )
 
         return ds
 
