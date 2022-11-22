@@ -595,7 +595,7 @@ def get_altitude_attrs():
     return alt_attrs
 
 
-def get_range_attrs(rng):
+def get_range_attrs(rng=None):
     """Get Range CF attributes.
 
     Parameters
@@ -608,21 +608,22 @@ def get_range_attrs(rng):
     range_attrs : dict
         Dictionary with Range CF attributes.
     """
-    diff = np.diff(rng)
-    unique = np.unique(diff)
     range_attrs = {
         "units": "meters",
         "standard_name": "projection_range_coordinate",
         "long_name": "range_to_measurement_volume",
         "axis": "radial_range_coordinate",
     }
-    if unique:
-        spacing = "true"
-        range_attrs["meters_between_gates"] = diff[0]
-    else:
-        spacing = "false"
-    range_attrs["spacing_is_constant"] = spacing
-    range_attrs["meters_to_center_of_first_gate"] = rng[0]
+    if rng is not None:
+        diff = np.diff(rng)
+        unique = np.unique(diff)
+        if unique:
+            spacing = "true"
+            range_attrs["meters_between_gates"] = diff[0]
+        else:
+            spacing = "false"
+        range_attrs["spacing_is_constant"] = spacing
+        range_attrs["meters_to_center_of_first_gate"] = rng[0]
 
     return range_attrs
 
