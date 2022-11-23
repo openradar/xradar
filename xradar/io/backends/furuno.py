@@ -679,9 +679,7 @@ class FurunoStore(AbstractDataStore):
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
-                **dict(
-                    (k, self.open_store_variable(k, v)) for k, v in self.ds.data.items()
-                ),
+                **{k: self.open_store_variable(k, v) for k, v in self.ds.data.items()},
                 **self.open_store_coordinates(),
             }.items()
         )
@@ -709,8 +707,9 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
-        reindex_angle=None,
-        first_dim="time",
+        reindex_angle=False,
+        first_dim="auto",
+        site_coords=True,
         obsmode=None,
     ):
         store = FurunoStore.open(
@@ -735,8 +734,6 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
         ds.encoding["engine"] = "furuno"
 
-        ds = ds.sortby(list(ds.dims.keys())[0])
-
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
 
@@ -757,13 +754,14 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": ds.latitude,
+                    "longitude": ds.longitude,
+                    "altitude": ds.altitude,
+                }
+            )
 
         return ds
 
