@@ -392,11 +392,11 @@ def test_open_rainbow_datatree(rainbow_file):
         25.4,
         30.0,
     ]
-    azimuths = [360] * 14
+    azimuths = [361] * 14
     ranges = [400] * 14
     for i, grp in enumerate(dtree.groups[1:]):
         ds = dtree[grp].ds
-        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert dict(ds.dims) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -417,8 +417,8 @@ def test_open_rainbow_datatree(rainbow_file):
 
 def test_open_rainbow_dataset(rainbow_file):
     # open first sweep group
-    ds = xr.open_dataset(rainbow_file, group=0, engine="rainbow")
-    assert dict(ds.dims) == {"time": 360, "range": 400}
+    ds = xr.open_dataset(rainbow_file, group="sweep_0", engine="rainbow")
+    assert dict(ds.dims) == {"azimuth": 361, "range": 400}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -426,8 +426,8 @@ def test_open_rainbow_dataset(rainbow_file):
     }
 
     # open last sweep group
-    ds = xr.open_dataset(rainbow_file, group=13, engine="rainbow")
-    assert dict(ds.dims) == {"time": 360, "range": 400}
+    ds = xr.open_dataset(rainbow_file, group="sweep_13", engine="rainbow")
+    assert dict(ds.dims) == {"azimuth": 361, "range": 400}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -437,11 +437,11 @@ def test_open_rainbow_dataset(rainbow_file):
     # open last sweep group, auto
     ds = xr.open_dataset(
         rainbow_file,
-        group=13,
+        group="sweep_13",
         engine="rainbow",
-        backend_kwargs=dict(first_dim="auto"),
+        backend_kwargs=dict(first_dim="time"),
     )
-    assert dict(ds.dims) == {"azimuth": 360, "range": 400}
+    assert dict(ds.dims) == {"time": 361, "range": 400}
 
 
 def test_open_iris_datatree(iris0_file):

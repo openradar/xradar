@@ -106,13 +106,11 @@ def find_key(key, dictionary):
         if k == key:
             yield dictionary
         elif isinstance(v, dict):
-            for result in find_key(key, v):
-                yield result
+            yield from find_key(key, v)
         elif isinstance(v, list):
             for d in v:
                 if isinstance(d, dict):
-                    for result in find_key(key, d):
-                        yield result
+                    yield from find_key(key, d)
 
 
 def decompress(data):
@@ -387,7 +385,7 @@ def get_rb_header(fid):
         header += line[:-1]
         line = fid.readline()
         if len(line) == 0:
-            raise IOError("WRADLIB: Rainbow Fileheader Corrupt")
+            raise OSError("WRADLIB: Rainbow Fileheader Corrupt")
 
     return xmltodict.parse(header)
 
@@ -589,7 +587,7 @@ class RainbowStore(AbstractDataStore):
     def __init__(self, manager, group=None):
 
         self._manager = manager
-        self._group = group
+        self._group = int(group[6:])
         self._filename = self.filename
         self._need_time_recalc = False
 
@@ -745,7 +743,7 @@ class RainbowStore(AbstractDataStore):
         time_attrs = get_time_attrs(f"{time.isoformat()}Z")
 
         rng = Variable(("range",), rng, range_attrs)
-        azimuth = Variable((dim,), azimuth, get_azimuth_attrs(azimuth.values), encoding)
+        azimuth = Variable((dim,), azimuth, get_azimuth_attrs(), encoding)
         elevation = Variable((dim,), elevation, get_elevation_attrs(), encoding)
         time = Variable((dim,), rtime, time_attrs, encoding)
 
@@ -805,8 +803,9 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
-        reindex_angle=None,
-        first_dim="time",
+        reindex_angle=False,
+        first_dim="auto",
+        site_coords=True,
     ):
         store = RainbowStore.open(
             filename_or_obj,
@@ -847,13 +846,14 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": ds.latitude,
+                    "longitude": ds.longitude,
+                    "altitude": ds.altitude,
+                }
+            )
 
         return ds
 
@@ -861,7 +861,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
 def _get_rainbow_group_names(filename):
     with RainbowFile(filename, loaddata=False) as fh:
         cnt = len(fh.slices)
-    return list(range(cnt))
+    return [f"sweep_{i}" for i in range(cnt)]
 
 
 def open_rainbow_datatree(filename_or_obj, **kwargs):
@@ -907,12 +907,12 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
     kwargs["backend_kwargs"] = backend_kwargs
 
     if isinstance(sweep, str):
-        sweeps = [int(sweep[5:])]
+        sweeps = [sweep]
     elif isinstance(sweep, int):
-        sweeps = sweep
+        sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
-        if isinstance(sweep[0], str):
-            sweeps = [int(sw[5:]) for sw in sweep]
+        if isinstance(sweep[0], int):
+            sweeps = [f"sweep_{i + 1}" for i in sweep]
         else:
             sweeps.extend(sweep)
     else:
