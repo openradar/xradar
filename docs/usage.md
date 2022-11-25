@@ -32,4 +32,5 @@ notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
 notebooks/plot-ppi
+notebooks/angle_reindexing
 ```
