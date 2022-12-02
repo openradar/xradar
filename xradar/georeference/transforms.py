@@ -3,6 +3,7 @@
 # Distributed under the MIT License. See LICENSE for more info.
 
 import numpy as np
+import xarray as xr
 
 
 def antenna_to_cartesian(
@@ -111,7 +112,18 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
 
     ds.z.attrs = {'standard_name': 'height_above_ground', 'units': 'meters'}
 
-    # Make sure these
-    ds = ds.set_coords(['x', 'y', 'z'])
+    # Make sure the coordinates are set properly if it is a dataset
+    if isinstance(ds, xr.Dataset):
+        ds = ds.set_coords(['x', 'y', 'z'])
 
     return ds
+
+
+def get_x_y_z_tree(radar):
+    """
+    Applies the georeferencing to a xradar datatree
+    """
+    for key in list(radar.children):
+        if 'sweep' in key:
+            radar[key].ds = get_x_y_z(radar[key].to_dataset())
+    return radar
