@@ -114,7 +114,7 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
 
     # Make sure the coordinates are set properly if it is a dataset
     if isinstance(ds, xr.Dataset):
-        ds = ds.set_coords(['x', 'y', 'z'])
+        ds = ds.set_coords(["x", "y", "z"])
 
     return ds
 
@@ -124,6 +124,6 @@ def get_x_y_z_tree(radar):
     Applies the georeferencing to a xradar datatree
     """
     for key in list(radar.children):
-        if 'sweep' in key:
+        if "sweep" in key:
             radar[key].ds = get_x_y_z(radar[key].to_dataset())
     return radar

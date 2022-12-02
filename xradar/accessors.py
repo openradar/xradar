@@ -18,9 +18,9 @@ This module contains the functionality to create those accessors.
    {}
 """
 
-__all__ = ['create_xradar_dataarray_accessor']
+__all__ = ["create_xradar_dataarray_accessor"]
 
-__doc__ = __doc__.format('\n   '.join(__all__))
+__doc__ = __doc__.format("\n   ".join(__all__))
 
 import sys
 
@@ -50,10 +50,10 @@ def create_methods(funcs):
 
 def create_xradar_dataarray_accessor(name, funcs):
     if sys.version_info < (3, 9):
-        methods = {'__init__': accessor_constructor, **create_methods(funcs)}
+        methods = {"__init__": accessor_constructor, **create_methods(funcs)}
     else:
-        methods = {'__init__': accessor_constructor} | create_methods(funcs)
-    cls_name = ''.join([name.capitalize(), 'Accessor'])
+        methods = {"__init__": accessor_constructor} | create_methods(funcs)
+    cls_name = "".join([name.capitalize(), "Accessor"])
     accessor = type(cls_name, (object,), methods)
     return xr.register_dataarray_accessor(name)(accessor)
 
@@ -67,7 +67,7 @@ class XradarAccessor:
         self.xarray_obj = xarray_obj
 
 
-@xr.register_dataarray_accessor('xradar')
+@xr.register_dataarray_accessor("xradar")
 class XradarDataArrayAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
@@ -79,7 +79,7 @@ class XradarDataArrayAccessor(XradarAccessor):
         return radar.pipe(get_x_y_z)
 
 
-@xr.register_dataset_accessor('xradar')
+@xr.register_dataset_accessor("xradar")
 class XradarDataSetAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
@@ -91,7 +91,7 @@ class XradarDataSetAccessor(XradarAccessor):
         return radar.pipe(get_x_y_z)
 
 
-@dt.register_datatree_accessor('xradar')
+@dt.register_datatree_accessor("xradar")
 class XradarDataTreeAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to datatree.DataTree objects."""
 
