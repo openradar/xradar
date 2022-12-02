@@ -8,7 +8,7 @@ ODIM_H5 output
 ==============
 
 This sub-module contains the writer for export of ODIM_H5-based radar
-data into.
+data.
 
 Code ported from wradlib.
 
@@ -36,7 +36,7 @@ import datetime as dt
 import h5py
 import numpy as np
 
-from ..model import required_sweep_metadata_vars
+from ...model import required_sweep_metadata_vars
 
 
 def _write_odim(source, destination):

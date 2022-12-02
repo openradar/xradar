@@ -12,7 +12,7 @@ Reads data from Furuno's binary data formats
 To read from Furuno files :class:`numpy:numpy.memmap` is used to get access to
 the data. The Furuno header is read in any case into dedicated OrderedDict's.
 Reading sweep data can be skipped by setting `loaddata=False`.
-By default the data is decoded on the fly.
+By default, the data is decoded on the fly.
 
 Using `rawdata=True` the data will be kept undecoded.
 
@@ -21,7 +21,7 @@ Code ported from wradlib.
 Example::
 
     import xradar as xd
-    dtree = xd.io.open_furno_datatree(filename)
+    dtree = xd.io.open_furuno_datatree(filename)
 
 .. autosummary::
    :nosignatures:
@@ -679,9 +679,7 @@ class FurunoStore(AbstractDataStore):
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
-                **dict(
-                    (k, self.open_store_variable(k, v)) for k, v in self.ds.data.items()
-                ),
+                **{k: self.open_store_variable(k, v) for k, v in self.ds.data.items()},
                 **self.open_store_coordinates(),
             }.items()
         )
@@ -709,8 +707,9 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
-        reindex_angle=None,
-        first_dim="time",
+        reindex_angle=False,
+        first_dim="auto",
+        site_coords=True,
         obsmode=None,
     ):
         store = FurunoStore.open(
@@ -735,8 +734,6 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
         ds.encoding["engine"] = "furuno"
 
-        ds = ds.sortby(list(ds.dims.keys())[0])
-
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
 
@@ -757,13 +754,14 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": ds.latitude,
+                    "longitude": ds.longitude,
+                    "altitude": ds.altitude,
+                }
+            )
 
         return ds
 
@@ -780,14 +778,9 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
     Keyword Arguments
     -----------------
     first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
-    keep_elevation : bool
-        For PPI only. Keep original elevation data if True. If False,
-        fixes erroneous elevation data. Defaults to True.
-    keep_azimuth : bool
-        For RHI only. Keep original azimuth data if True. If False,
-        fixes erroneous azimuth data. Defaults to True.
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
     reindex_angle : bool or float
         Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
         given a floating point number, it is used as tolerance.

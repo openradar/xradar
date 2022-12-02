@@ -40,6 +40,7 @@ from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
 
 from ...model import (
+    conform_cfradial2_sweep_group,
     georeferencing_correction_subgroup,
     optional_root_attrs,
     optional_root_vars,
@@ -47,8 +48,6 @@ from ...model import (
     radar_parameters_subgroup,
     required_global_attrs,
     required_root_vars,
-    required_sweep_metadata_vars,
-    sweep_coordinate_vars,
 )
 from .common import _attach_sweep_groups, _maybe_decode
 
@@ -94,15 +93,35 @@ def _get_required_root_dataset(ds, optional=True):
     return root
 
 
-def _get_sweep_groups(root, sweep=None, first_dim="time"):
+def _get_sweep_groups(
+    obj, sweep=None, first_dim="auto", optional=True, site_coords=True
+):
     """Extract Sweep Groups.
+
+    Parameters
+    ----------
+    obj : xarray.Dataset
+        CfRadial1 Dataset
+
+    Keyword Arguments
+    -----------------
+    sweep : str, int, optional
+        Sweep/Group to extract, default to None.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    optional : bool
+        Import optional mandatory data and metadata, defaults to ``True``.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
 
     Ported from wradlib.
     """
     # get hold of sweep start/stop indices and remove variables
-    start_idx = root.sweep_start_ray_index.values.astype(int)
-    end_idx = root.sweep_end_ray_index.values.astype(int)
-    root = root.drop_vars(["sweep_start_ray_index", "sweep_end_ray_index"])
+    start_idx = obj.sweep_start_ray_index.values.astype(int)
+    end_idx = obj.sweep_end_ray_index.values.astype(int)
+    root = obj.drop_vars(["sweep_start_ray_index", "sweep_end_ray_index"])
 
     ray_n_gates = root.get("ray_n_gates", False)
     ray_start_index = root.get("ray_start_index", False)
@@ -113,14 +132,11 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
 
     root = root.rename({"fixed_angle": "sweep_fixed_angle"})
 
-    keep_vars = sweep_coordinate_vars | required_sweep_metadata_vars
-    var = set(root.data_vars)
-    keep_vars2 = {k for k, v in root.data_vars.items() if "time" in v.dims}
-    remove_vars = var ^ (keep_vars | keep_vars2)
-    remove_vars &= var
+    # conform to cfradial2 standard
+    data = conform_cfradial2_sweep_group(root, optional, "time")
 
-    data = root.drop_vars(remove_vars)
-    data.attrs = {}
+    # which sweeps to load
+    # sweep is assumed a list of strings with elements like "sweep_0"
     sweep_groups = {}
     if isinstance(sweep, str):
         sweep = [sweep]
@@ -161,25 +177,33 @@ def _get_sweep_groups(root, sweep=None, first_dim="time"):
             ds = ds.assign_coords({"elevation": ds.elevation.isel(range=0, drop=True)})
 
         # handling first dimension
+        # for CfRadial1 first dimension is time
         if first_dim == "auto":
-            if "time" in ds.dims:
-                ds = ds.swap_dims({"time": dim0})
+            ds = ds.swap_dims({"time": dim0})
             ds = ds.sortby(dim0)
-        else:
-            if "time" not in ds.dims:
-                ds = ds.swap_dims({dim0: "time"})
-            ds = ds.sortby("time")
 
         # reassign azimuth/elevation coordinates
         ds = ds.assign_coords({"azimuth": ds.azimuth})
         ds = ds.assign_coords({"elevation": ds.elevation})
+
+        # assign site_coords
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": root.latitude,
+                    "longitude": root.longitude,
+                    "altitude": root.altitude,
+                }
+            )
 
         sweep_groups[sw] = ds
 
     return sweep_groups
 
 
-def _get_cfradial2_group(ds, sweep="sweep_0", first_dim="time", optional=True):
+def _get_cfradial2_group(
+    ds, sweep="sweep_0", first_dim="time", optional=True, site_coords=False
+):
     """Assign CfRadial2 group from CfRadial1 data structure.
 
     Parameters
@@ -188,6 +212,14 @@ def _get_cfradial2_group(ds, sweep="sweep_0", first_dim="time", optional=True):
         Dataset of CfRadial1 file
     sweep : str, int, optional
         Sweep/Group to extract, default to first sweep.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    optional : bool
+        Import optional mandatory data and metadata, defaults to ``True``.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
 
     Returns
     -------
@@ -203,7 +235,15 @@ def _get_cfradial2_group(ds, sweep="sweep_0", first_dim="time", optional=True):
     elif sweep in ["georeferencing_correction"]:
         return _get_subgroup(ds, georeferencing_correction_subgroup)
     elif "sweep" in sweep:
-        return list(_get_sweep_groups(ds, sweep, first_dim=first_dim).values())[0]
+        return list(
+            _get_sweep_groups(
+                ds,
+                sweep,
+                first_dim=first_dim,
+                optional=optional,
+                site_coords=site_coords,
+            ).values()
+        )[0]
     else:
         return None
 
@@ -256,14 +296,17 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
 
     Keyword Arguments
     -----------------
-    first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
     sweep : int, list of int, optional
         Sweep number(s) to extract, default to first sweep. If None, all sweeps are
         extracted into a list.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    optional : bool
+        Import optional mandatory data and metadata, defaults to ``True``.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
 
     Returns
     -------
@@ -271,8 +314,9 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         DataTree with CfRadial2 groups.
     """
     # handle kwargs, extract first_dim
-    first_dim = kwargs.pop("first_dim", None)
+    first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
+    site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
 
     # open root group, cfradial1 only has one group
@@ -300,7 +344,16 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
 
     # return datatree with attached sweep child nodes
     dtree = _attach_sweep_groups(
-        dtree, list(_get_sweep_groups(ds, sweep=sweep, first_dim=first_dim).values())
+        dtree,
+        list(
+            _get_sweep_groups(
+                ds,
+                sweep=sweep,
+                first_dim=first_dim,
+                optional=optional,
+                site_coords=site_coords,
+            ).values()
+        ),
     )
 
     return dtree
@@ -312,8 +365,13 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
     Keyword Arguments
     -----------------
     first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    optional : bool
+        Import optional mandatory data and metadata, defaults to ``True``.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
 
     Ported from wradlib.
     """
@@ -334,8 +392,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         decode_timedelta=None,
         format=None,
         group="/",
-        first_dim="time",
+        first_dim="auto",
         optional=True,
+        site_coords=True,
     ):
 
         store = NetCDF4DataStore.open(
@@ -346,7 +405,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
 
         store_entrypoint = StoreBackendEntrypoint()
 
-        ds = store_entrypoint.open_dataset(
+        ds0 = store_entrypoint.open_dataset(
             store,
             mask_and_scale=mask_and_scale,
             decode_times=decode_times,
@@ -358,8 +417,13 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         )
 
         ds = _get_cfradial2_group(
-            ds, sweep=group, first_dim=first_dim, optional=optional
+            ds0,
+            sweep=group,
+            first_dim=first_dim,
+            optional=optional,
+            site_coords=site_coords,
         )
         if ds is None:
             raise ValueError(f"Group `{group}` missing from file `{filename_or_obj}`.")
+
         return ds

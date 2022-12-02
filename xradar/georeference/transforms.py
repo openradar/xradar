@@ -97,7 +97,7 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
     """
 
     # Calculate x, y, and z from the dataset
-    ds['x'], ds['y'], ds['z'] = antenna_to_cartesian(
+    ds["x"], ds["y"], ds["z"] = antenna_to_cartesian(
         ds.range,
         ds.azimuth,
         ds.elevation,
@@ -106,11 +106,11 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
     )
 
     # Set the attributes for the dataset
-    ds.x.attrs = {'standard_name': 'east_west_distance_from_radar', 'units': 'meters'}
+    ds.x.attrs = {"standard_name": "east_west_distance_from_radar", "units": "meters"}
 
-    ds.y.attrs = {'standard_name': 'north_south_distance_from_radar', 'units': 'meters'}
+    ds.y.attrs = {"standard_name": "north_south_distance_from_radar", "units": "meters"}
 
-    ds.z.attrs = {'standard_name': 'height_above_ground', 'units': 'meters'}
+    ds.z.attrs = {"standard_name": "height_above_ground", "units": "meters"}
 
     # Make sure the coordinates are set properly if it is a dataset
     if isinstance(ds, xr.Dataset):

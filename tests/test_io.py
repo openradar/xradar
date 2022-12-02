@@ -23,7 +23,7 @@ from xradar.model import (
 
 
 def test_open_cfradial1_datatree(cfradial1_file):
-    dtree = open_cfradial1_datatree(cfradial1_file)
+    dtree = open_cfradial1_datatree(cfradial1_file, first_dim="time", site_coords=False)
     attrs = dtree.attrs
 
     # root_attrs
@@ -80,14 +80,14 @@ def test_open_cfradial1_datatree(cfradial1_file):
 def test_open_cfradial1_dataset(cfradial1_file):
     # open first sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_0", engine="cfradial1")
-    assert list(ds.dims) == ["time", "range"]
+    assert list(ds.dims) == ["azimuth", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
 
     # open last sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1")
-    assert list(ds.dims) == ["time", "range"]
+    assert list(ds.dims) == ["azimuth", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
@@ -324,8 +324,8 @@ def test_open_gamic_dataset(gamic_file):
 
 def test_open_furuno_scn_dataset(furuno_scn_file):
     # open sweep group
-    ds = xr.open_dataset(furuno_scn_file, engine="furuno")
-    assert dict(ds.dims) == {"time": 1385, "range": 602}
+    ds = xr.open_dataset(furuno_scn_file, first_dim="time", engine="furuno")
+    assert dict(ds.dims) == {"time": 1376, "range": 602}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
@@ -334,15 +334,14 @@ def test_open_furuno_scn_dataset(furuno_scn_file):
     ds = xr.open_dataset(
         furuno_scn_file,
         engine="furuno",
-        backend_kwargs=dict(first_dim="auto"),
     )
-    assert dict(ds.dims) == {"azimuth": 1385, "range": 602}
+    assert dict(ds.dims) == {"azimuth": 1376, "range": 602}
 
 
 def test_open_furuno_scnx_dataset(furuno_scnx_file):
     # open sweep group
-    ds = xr.open_dataset(furuno_scnx_file, engine="furuno")
-    assert dict(ds.dims) == {"time": 720, "range": 936}
+    ds = xr.open_dataset(furuno_scnx_file, first_dim="time", engine="furuno")
+    assert dict(ds.dims) == {"time": 722, "range": 936}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
@@ -351,9 +350,8 @@ def test_open_furuno_scnx_dataset(furuno_scnx_file):
     ds = xr.open_dataset(
         furuno_scnx_file,
         engine="furuno",
-        backend_kwargs=dict(first_dim="auto"),
     )
-    assert dict(ds.dims) == {"azimuth": 720, "range": 936}
+    assert dict(ds.dims) == {"azimuth": 722, "range": 936}
 
 
 def test_open_rainbow_datatree(rainbow_file):
@@ -447,7 +445,7 @@ def test_open_rainbow_dataset(rainbow_file):
 
 
 def test_open_iris_datatree(iris0_file):
-    dtree = open_iris_datatree(iris0_file, reindex_angle=False)
+    dtree = open_iris_datatree(iris0_file)
 
     # root_attrs
     attrs = dtree.attrs
@@ -461,7 +459,7 @@ def test_open_iris_datatree(iris0_file):
     assert rvars["time_coverage_start"] == "2013-11-25T10:55:04Z"
     assert rvars["time_coverage_end"] == "2013-11-25T10:59:24Z"
     np.testing.assert_almost_equal(rvars["latitude"].values, np.array(9.331))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(284.7170001))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-75.2829999))
     np.testing.assert_almost_equal(rvars["altitude"].values, np.array(143.0))
 
     # iterate over subgroups and check some values
@@ -489,7 +487,7 @@ def test_open_iris_datatree(iris0_file):
     ranges = [664] * 10
     for i, grp in enumerate(dtree.groups[1:]):
         ds = dtree[grp].ds
-        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert dict(ds.dims) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -510,8 +508,8 @@ def test_open_iris_datatree(iris0_file):
 
 def test_open_iris0_dataset(iris0_file):
     # open first sweep group
-    ds = xr.open_dataset(iris0_file, group=1, engine="iris")
-    assert dict(ds.dims) == {"time": 360, "range": 664}
+    ds = xr.open_dataset(iris0_file, group="sweep_0", engine="iris")
+    assert dict(ds.dims) == {"azimuth": 360, "range": 664}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -524,8 +522,8 @@ def test_open_iris0_dataset(iris0_file):
     }
 
     # open last sweep group
-    ds = xr.open_dataset(iris0_file, group=10, engine="iris")
-    assert dict(ds.dims) == {"time": 360, "range": 664}
+    ds = xr.open_dataset(iris0_file, group="sweep_9", engine="iris")
+    assert dict(ds.dims) == {"azimuth": 360, "range": 664}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -540,17 +538,17 @@ def test_open_iris0_dataset(iris0_file):
     # open last sweep group, auto
     ds = xr.open_dataset(
         iris0_file,
-        group=10,
+        group="sweep_9",
         engine="iris",
-        backend_kwargs=dict(first_dim="auto"),
+        backend_kwargs=dict(first_dim="time"),
     )
-    assert dict(ds.dims) == {"azimuth": 360, "range": 664}
+    assert dict(ds.dims) == {"time": 360, "range": 664}
 
 
 def test_open_iris1_dataset(iris1_file):
     # open first and only sweep group
-    ds = xr.open_dataset(iris1_file, group=1, engine="iris")
-    assert dict(ds.dims) == {"time": 360, "range": 833}
+    ds = xr.open_dataset(iris1_file, group="sweep_0", engine="iris")
+    assert dict(ds.dims) == {"azimuth": 359, "range": 833}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -567,11 +565,11 @@ def test_open_iris1_dataset(iris1_file):
     # open first and only sweep group
     ds = xr.open_dataset(
         iris1_file,
-        group=1,
+        group="sweep_0",
         engine="iris",
-        backend_kwargs=dict(first_dim="auto"),
+        backend_kwargs=dict(first_dim="time"),
     )
-    assert dict(ds.dims) == {"azimuth": 360, "range": 833}
+    assert dict(ds.dims) == {"time": 359, "range": 833}
 
 
 def test_odim_roundtrip(odim_file2):

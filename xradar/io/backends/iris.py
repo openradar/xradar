@@ -3665,9 +3665,15 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
     def site_coords(self):
         """Return Radar Location Tuple"""
         ing_conf = self.ingest_header["ingest_configuration"]
+        lon = ing_conf["longitude_radar"]
+        lat = ing_conf["latitude_radar"]
+        lon = lon if lon <= 180 else lon - 360
+        # todo: is this correct for southern latitudes?
+        lat = lat if lat <= 180 else lon - 360
+
         return (
-            ing_conf["longitude_radar"],
-            ing_conf["latitude_radar"],
+            lon,
+            lat,
             ing_conf["altitude_radar"] / 100.0,
         )
 
@@ -3733,12 +3739,15 @@ class IrisArrayWrapper(BackendArray):
 
 
 class IrisStore(AbstractDataStore):
-    """Store for reading IRIS sweeps via wradlib."""
+    """Store for reading IRIS sweeps via xradar.
+
+    Ported from wradlib.
+    """
 
     def __init__(self, manager, group=None):
 
         self._manager = manager
-        self._group = group
+        self._group = int(group[6:]) + 1
         self._filename = self.filename
         self._need_time_recalc = False
 
@@ -3805,7 +3814,8 @@ class IrisStore(AbstractDataStore):
 
         # get coordinates from IrisFile
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = self._group
+        # align with CfRadial2 convention
+        sweep_number = self._group - 1
         prt_mode = "not_set"
         follow_mode = "not_set"
 
@@ -3820,13 +3830,18 @@ class IrisStore(AbstractDataStore):
         rng = (
             np.arange(
                 range_first_bin,
-                range_last_bin,
+                range_last_bin + task["step_output_bins"],
                 task["step_output_bins"],
                 dtype="float32",
             )[: task["number_output_bins"]]
             / 1e2
         )
-        range_attrs = get_range_attrs(rng)
+        range_attrs = get_range_attrs()
+        range_attrs["meters_between_gates"] = task["step_output_bins"] / 2
+        range_attrs["spacing_is_constant"] = (
+            "false" if task["variable_range_bin_spacing_flag"] else "true"
+        )
+        range_attrs["meters_to_center_of_first_gate"] = task["range_first_bin"]
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
         azimuth = Variable((dim,), azimuth, {}, encoding)
@@ -3836,7 +3851,7 @@ class IrisStore(AbstractDataStore):
         fixed_angle = np.round(data["fixed_angle"], 1)
 
         coords = {
-            "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(azimuth), encoding),
+            "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(), encoding),
             "elevation": Variable((dim,), elevation, get_elevation_attrs(), encoding),
             "time": rtime,
             "range": Variable(("range",), rng, range_attrs),
@@ -3849,15 +3864,6 @@ class IrisStore(AbstractDataStore):
             "follow_mode": Variable((), follow_mode),
             "sweep_fixed_angle": Variable((), fixed_angle),
         }
-
-        # a1gate
-        a1gate = np.where(rtime.values == rtime.values.min())[0][0]
-        coords[dim].attrs["a1gate"] = a1gate
-        # angle_res
-        task_scan_info = self.root.ingest_header["task_configuration"]["task_scan_info"]
-        coords[dim].attrs["angle_res"] = (
-            task_scan_info["desired_angular_resolution"] / 1000.0
-        )
 
         return coords
 
@@ -3893,7 +3899,8 @@ class IrisStore(AbstractDataStore):
 def _get_iris_group_names(filename):
     sid, opener = _check_iris_file(filename)
     with opener(filename, loaddata=False) as ds:
-        keys = list(ds.data.keys())
+        # make this CfRadial2 conform
+        keys = [f"sweep_{i-1}" for i in list(ds.data.keys())]
     return keys
 
 
@@ -3917,8 +3924,10 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         group=None,
         keep_elevation=False,
         keep_azimuth=False,
-        reindex_angle=None,
-        first_dim="time",
+        reindex_angle=False,
+        first_dim="auto",
+        optional=True,
+        site_coords=True,
     ):
         store = IrisStore.open(
             filename_or_obj,
@@ -3942,12 +3951,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         # drop DB_XHDR for now
         ds = ds.drop_vars("DB_XHDR", errors="ignore")
 
-        # todo: new approach of sorting, fixes wrong sorting when using sortby if we
-        #  have multiple rays with the same timestamp
-        # first ray comes first
-        # ds = ds.roll(azimuth=-ds.time.argmin().values, roll_coords=True)
-        ds = ds.sortby(store.root.first_dimension)
-
+        # todo: re-think the whole idea of angle reindexing and align with the other readers
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
 
@@ -3955,16 +3959,13 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds.attrs.pop("elevation_upper_limit", None)
 
         # handling first dimension
-        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
-
-        if first_dim == "auto":
-            if "time" in ds.dims:
-                ds = ds.swap_dims({"time": dim0})
-            ds = ds.sortby(dim0)
-        else:
-            if "time" not in ds.dims:
-                ds = ds.swap_dims({dim0: "time"})
+        dim0 = store.root.first_dimension
+        # todo: could be optimized
+        if first_dim == "time":
+            ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
+        else:
+            ds = ds.sortby(dim0)
 
         # reassign azimuth/elevation/time coordinates
         ds = ds.assign_coords({"azimuth": ds.azimuth})
@@ -3972,13 +3973,14 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": ds.latitude,
+                    "longitude": ds.longitude,
+                    "altitude": ds.altitude,
+                }
+            )
 
         return ds
 
@@ -3997,15 +3999,9 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     first_dim : str
         Default to 'time' as first dimension. If set to 'auto', first dimension will
         be either 'azimuth' or 'elevation' depending on type of sweep.
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+    sweep : str, optional
+        Sweeps to extract, default to first sweep (sweep_0). If None, all sweeps are
         extracted into a list.
-    keep_elevation : bool
-        For PPI only. Keep original elevation data if True. If False,
-        fixes erroneous elevation data. Defaults to True.
-    keep_azimuth : bool
-        For RHI only. Keep original azimuth data if True. If False,
-        fixes erroneous azimuth data. Defaults to True.
     reindex_angle : bool or float
         Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
         given a floating point number, it is used as tolerance.
@@ -4026,12 +4022,12 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     kwargs["backend_kwargs"] = backend_kwargs
 
     if isinstance(sweep, str):
-        sweeps = [int(sweep[5:])]
+        sweeps = [sweep]
     elif isinstance(sweep, int):
-        sweeps = sweep
+        sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
-        if isinstance(sweep[0], str):
-            sweeps = [int(sw[5:]) for sw in sweep]
+        if isinstance(sweep[0], int):
+            sweeps = [f"sweep_{sw}" for sw in sweep]
         else:
             sweeps.extend(sweep)
     else:

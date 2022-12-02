@@ -52,6 +52,8 @@ __all__ = [
     "optional_sweep_metadata_vars",
     "sweep_dataset_vars",
     "non_standard_sweep_dataset_vars",
+    "determine_cfradial2_sweep_variables",
+    "conform_cfradial2_sweep_group",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -593,7 +595,7 @@ def get_altitude_attrs():
     return alt_attrs
 
 
-def get_range_attrs(rng):
+def get_range_attrs(rng=None):
     """Get Range CF attributes.
 
     Parameters
@@ -606,21 +608,22 @@ def get_range_attrs(rng):
     range_attrs : dict
         Dictionary with Range CF attributes.
     """
-    diff = np.diff(rng)
-    unique = np.unique(diff)
     range_attrs = {
         "units": "meters",
         "standard_name": "projection_range_coordinate",
         "long_name": "range_to_measurement_volume",
         "axis": "radial_range_coordinate",
     }
-    if unique:
-        spacing = "true"
-        range_attrs["meters_between_gates"] = diff[0]
-    else:
-        spacing = "false"
-    range_attrs["spacing_is_constant"] = spacing
-    range_attrs["meters_to_center_of_first_gate"] = rng[0]
+    if rng is not None:
+        diff = np.diff(rng)
+        unique = np.unique(diff)
+        if unique:
+            spacing = "true"
+            range_attrs["meters_between_gates"] = diff[0]
+        else:
+            spacing = "false"
+        range_attrs["spacing_is_constant"] = spacing
+        range_attrs["meters_to_center_of_first_gate"] = rng[0]
 
     return range_attrs
 
@@ -959,3 +962,39 @@ def create_sweep_dataset(**kwargs):
     )
 
     return decode_cf(ds)
+
+
+def determine_cfradial2_sweep_variables(obj, optional, dim0):
+    # "calculate" variables to keep
+    keep_vars = set()
+    # mandatory coordinates
+    keep_vars |= sweep_coordinate_vars
+    # required metadata
+    keep_vars |= required_sweep_metadata_vars
+    # all moment fields
+    # todo: strip off non-conforming
+    keep_vars |= {k for k, v in obj.data_vars.items() if "range" in v.dims}
+    # optional variables
+    if optional:
+        keep_vars |= {k for k, v in obj.data_vars.items() if dim0 in v.dims}
+    return keep_vars
+
+
+def conform_cfradial2_sweep_group(obj, optional, dim0):
+    keep_vars = determine_cfradial2_sweep_variables(obj, optional, dim0)
+    # calculate variables to remove and remove them
+    var = set(obj.data_vars)
+    var |= set(obj.coords)
+    remove_vars = var ^ keep_vars
+    # only remove variables if in dataset
+    remove_vars &= var
+    out = obj.drop_vars(remove_vars)
+    out.attrs = {}
+
+    # swap dims, if needed
+    if dim0 != "time":
+        out = out.swap_dims({dim0: "time"})
+    # sort in any case
+    out = out.sortby("time")
+
+    return out
