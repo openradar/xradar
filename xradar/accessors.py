@@ -18,6 +18,8 @@ This module contains the functionality to create those accessors.
    {}
 """
 
+from __future__ import annotations  # noqa: F401
+
 __all__ = ["create_xradar_dataarray_accessor"]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -63,7 +65,9 @@ class XradarAccessor:
     Common Datatree, Dataset, DataArray accessor functionality.
     """
 
-    def __init__(self, xarray_obj: xr.Dataset | xr.DataArray | dt.DataTree):
+    def __init__(
+        self, xarray_obj: xr.Dataset | xr.DataArray | dt.DataTree
+    ) -> XradarAccessor:
         self.xarray_obj = xarray_obj
 
 
