@@ -148,7 +148,7 @@ def test_open_odim_datatree(odim_file):
     ]
     for i, grp in enumerate(dtree.groups[1:]):
         ds = dtree[grp].ds
-        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert dict(ds.dims) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -169,15 +169,15 @@ def test_open_odim_datatree(odim_file):
 
 def test_open_odim_dataset(odim_file):
     # open first sweep group
-    ds = xr.open_dataset(odim_file, group="dataset1", engine="odim")
-    assert dict(ds.dims) == {"time": 360, "range": 1200}
+    ds = xr.open_dataset(odim_file, group="sweep_0", engine="odim")
+    assert dict(ds.dims) == {"azimuth": 360, "range": 1200}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "TH", "ZDR"}
 
     # open last sweep group
-    ds = xr.open_dataset(odim_file, group="dataset12", engine="odim")
-    assert dict(ds.dims) == {"time": 360, "range": 280}
+    ds = xr.open_dataset(odim_file, group="sweep_11", engine="odim")
+    assert dict(ds.dims) == {"azimuth": 360, "range": 280}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"VRADH", "KDP", "WRADH", "TH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
@@ -185,11 +185,11 @@ def test_open_odim_dataset(odim_file):
     # open last sweep group, auto
     ds = xr.open_dataset(
         odim_file,
-        group="dataset12",
+        group="sweep_11",
         engine="odim",
-        backend_kwargs=dict(first_dim="auto"),
+        backend_kwargs=dict(first_dim="time"),
     )
-    assert dict(ds.dims) == {"azimuth": 360, "range": 280}
+    assert dict(ds.dims) == {"time": 360, "range": 280}
 
 
 def test_open_gamic_datatree(gamic_file):
@@ -237,7 +237,7 @@ def test_open_gamic_datatree(gamic_file):
         1.7,
         0.6,
     ]
-    azimuths = [360] * 10
+    azimuths = [361, 361, 361, 360, 361, 360, 360, 361, 360, 360]
     ranges = [
         360,
         500,
@@ -252,7 +252,7 @@ def test_open_gamic_datatree(gamic_file):
     ]
     for i, grp in enumerate(dtree.groups[1:]):
         ds = dtree[grp].ds
-        assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
+        assert dict(ds.dims) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -273,8 +273,8 @@ def test_open_gamic_datatree(gamic_file):
 
 def test_open_gamic_dataset(gamic_file):
     # open first sweep group
-    ds = xr.open_dataset(gamic_file, group="scan0", engine="gamic")
-    assert dict(ds.dims) == {"time": 360, "range": 360}
+    ds = xr.open_dataset(gamic_file, group="sweep_0", engine="gamic")
+    assert dict(ds.dims) == {"azimuth": 361, "range": 360}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -293,8 +293,8 @@ def test_open_gamic_dataset(gamic_file):
     }
 
     # open last sweep group
-    ds = xr.open_dataset(gamic_file, group="scan9", engine="gamic")
-    assert dict(ds.dims) == {"time": 360, "range": 1000}
+    ds = xr.open_dataset(gamic_file, group="sweep_9", engine="gamic")
+    assert dict(ds.dims) == {"azimuth": 360, "range": 1000}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -315,11 +315,11 @@ def test_open_gamic_dataset(gamic_file):
     # open last sweep group, auto
     ds = xr.open_dataset(
         gamic_file,
-        group="scan9",
+        group="sweep_9",
         engine="gamic",
-        backend_kwargs=dict(first_dim="auto"),
+        backend_kwargs=dict(first_dim="time"),
     )
-    assert dict(ds.dims) == {"azimuth": 360, "range": 1000}
+    assert dict(ds.dims) == {"time": 360, "range": 1000}
 
 
 def test_open_furuno_scn_dataset(furuno_scn_file):

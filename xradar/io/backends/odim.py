@@ -138,12 +138,14 @@ class _OdimH5NetCDFMetadata:
 
         az_attrs = get_azimuth_attrs()
         el_attrs = get_elevation_attrs()
-        az_attrs["a1gate"] = a1gate
 
-        if dim == "azimuth":
-            az_attrs["angle_res"] = angle_res
-        else:
-            el_attrs["angle_res"] = angle_res
+        # do not forward a1gate and angle_res for now
+        # az_attrs["a1gate"] = a1gate
+        #
+        # if dim == "azimuth":
+        #     az_attrs["angle_res"] = angle_res
+        # else:
+        #     el_attrs["angle_res"] = angle_res
 
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
         sweep_number = int(self._group.split("/")[0][7:])
@@ -562,7 +564,7 @@ class OdimStore(AbstractDataStore):
             manager = DummyFileManager(root)
 
         self._manager = manager
-        self._group = group
+        self._group = f"/dataset{int(group[6:])+1}"
         self._filename = self.filename
         self.is_remote = is_remote_uri(self._filename)
         self.lock = ensure_lock(lock)
@@ -650,13 +652,11 @@ class OdimStore(AbstractDataStore):
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
-                **dict(
-                    [
-                        (k, v)
-                        for substore in self.substore
-                        for k, v in substore.get_variables().items()
-                    ]
-                ),
+                **{
+                    k: v
+                    for substore in self.substore
+                    for k, v in substore.get_variables().items()
+                },
                 **self.open_store_coordinates(),
             }.items()
         )
@@ -710,7 +710,8 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         keep_elevation=True,
         keep_azimuth=True,
         reindex_angle=False,
-        first_dim="time",
+        first_dim="auto",
+        site_coords=True,
     ):
 
         if isinstance(filename_or_obj, io.IOBase):
@@ -823,10 +824,10 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     if isinstance(sweep, str):
         sweeps = [sweep]
     elif isinstance(sweep, int):
-        sweeps = [f"dataset{sweep}"]
+        sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
         if isinstance(sweep[0], int):
-            sweeps = [f"dataset{i+1}" for i in sweep]
+            sweeps = [f"sweep_{i+1}" for i in sweep]
         else:
             sweeps.extend(sweep)
     else:

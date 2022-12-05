@@ -216,12 +216,12 @@ class _GamicH5NetCDFMetadata:
             "azimuth": Variable(
                 (dims[0],),
                 ray_header["azimuth"],
-                get_azimuth_attrs(ray_header["azimuth"]),
+                get_azimuth_attrs(),
             ),
             "elevation": Variable(
                 (dims[0],),
                 ray_header["elevation"],
-                get_elevation_attrs(ray_header["elevation"]),
+                get_elevation_attrs(),
             ),
             "time": Variable(
                 (dims[0],), ray_header["time"], get_time_attrs("1970-01-01T00:00:00Z")
@@ -317,7 +317,7 @@ class GamicStore(AbstractDataStore):
             manager = DummyFileManager(root)
 
         self._manager = manager
-        self._group = group
+        self._group = f"scan{int(group[6:])}"
         self._filename = self.filename
         self.is_remote = is_remote_uri(self._filename)
         self.lock = ensure_lock(lock)
@@ -433,14 +433,15 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         format=None,
-        group="scan0",
+        group="sweep_0",
         invalid_netcdf=None,
         phony_dims="access",
         decode_vlen_strings=True,
-        keep_elevation=False,
-        keep_azimuth=False,
-        reindex_angle=None,
-        first_dim="time",
+        keep_elevation=True,
+        keep_azimuth=True,
+        reindex_angle=False,
+        first_dim="auto",
+        site_coords=True,
     ):
 
         if isinstance(filename_or_obj, io.IOBase):
@@ -470,8 +471,6 @@ class GamicBackendEntrypoint(BackendEntrypoint):
 
         ds.encoding["engine"] = "gamic"
 
-        ds = ds.sortby(list(ds.dims.keys())[0])
-
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
 
@@ -500,13 +499,14 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        if site_coords:
+            ds = ds.assign_coords(
+                {
+                    "latitude": ds.latitude,
+                    "longitude": ds.longitude,
+                    "altitude": ds.altitude,
+                }
+            )
 
         return ds
 
@@ -522,12 +522,13 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
 
     Keyword Arguments
     -----------------
-    first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
     sweep : int, list of int, optional
         Sweep number(s) to extract, default to first sweep. If None, all sweeps are
         extracted into a list.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
     keep_elevation : bool
         For PPI only. Keep original elevation data if True. If False,
         fixes erroneous elevation data. Defaults to True.
@@ -556,10 +557,10 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     if isinstance(sweep, str):
         sweeps = [sweep]
     elif isinstance(sweep, int):
-        sweeps = [f"scan{sweep}"]
+        sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
         if isinstance(sweep[0], int):
-            sweeps = [f"scan{i}" for i in sweep]
+            sweeps = [f"sweep_{i}" for i in sweep]
         else:
             sweeps.extend(sweep)
     else:
