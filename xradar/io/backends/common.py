@@ -148,8 +148,10 @@ def _attach_sweep_groups(dtree, sweeps):
 def _get_h5group_names(filename, engine):
     if engine == "odim":
         groupname = "dataset"
+        off = 1
     elif engine == "gamic":
         groupname = "scan"
+        off = 0
     else:
         raise ValueError(f"xradar: unknown engine `{engine}`.")
     with h5netcdf.File(filename, "r", decode_vlen_strings=True) as fh:
@@ -157,6 +159,7 @@ def _get_h5group_names(filename, engine):
         # h5py/h5netcdf might return groups with alphanumeric sorting
         # just sort in any case
         groups = sorted(groups, key=lambda x: int(x[len(groupname) + 1 :]))
+        groups = [f"sweep_{int(sw[len(groupname) + 1 :]) - off}" for sw in groups]
     if isinstance(filename, io.BytesIO):
         filename.seek(0)
     return groups
@@ -186,7 +189,7 @@ def _assign_root(sweeps):
     root = root.assign(
         {
             "volume_number": 0,
-            "platform_type": str("fixed"),
+            "platform_type": "fixed",
             "instrument_type": "radar",
             "time_coverage_start": time_coverage_start_str,
             "time_coverage_end": time_coverage_end_str,
