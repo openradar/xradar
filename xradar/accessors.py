@@ -75,30 +75,78 @@ class XradarAccessor:
 class XradarDataArrayAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
-    def georeference(self) -> xr.DataArray:
+    def georeference(
+        self, earth_radius=6371000, effective_radius_fraction=None
+    ) -> xr.DataArray:
         """
-        Add georeference information
+        Parameters
+        ----------
+        earth_radius: float
+            Radius of the earth (default is 6371000 m).
+        effective_radius_fraction: float
+            Fraction of earth to use for the effective radius (default is 4/3).
+        Returns
+        -------
+        da = xr.DataArray
+            Dataset including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
-        return radar.pipe(get_x_y_z)
+        return radar.pipe(
+            get_x_y_z,
+            earth_radius=earth_radius,
+            effective_radius_fraction=effective_radius_fraction,
+        )
 
 
 @xr.register_dataset_accessor("xradar")
 class XradarDataSetAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
-    def georeference(self) -> xr.DataArray:
+    def georeference(
+        self, earth_radius=6371000, effective_radius_fraction=None
+    ) -> xr.Dataset:
         """
-        Add georeference information
+        Add georeference information to an xarray dataset
+        Parameters
+        ----------
+        earth_radius: float
+            Radius of the earth (default is 6371000 m).
+        effective_radius_fraction: float
+            Fraction of earth to use for the effective radius (default is 4/3).
+        Returns
+        -------
+        da = xr.Dataset
+            Dataset including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
-        return radar.pipe(get_x_y_z)
+        return radar.pipe(
+            get_x_y_z,
+            earth_radius=earth_radius,
+            effective_radius_fraction=effective_radius_fraction,
+        )
 
 
 @dt.register_datatree_accessor("xradar")
 class XradarDataTreeAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to datatree.DataTree objects."""
 
-    def georeference(self) -> dt.DataTree:
+    def georeference(
+        self, earth_radius=6371000, effective_radius_fraction=None
+    ) -> dt.DataTree:
+        """
+        Add georeference information to an xradar datatree object
+        Parameters
+        ----------
+        earth_radius: float
+            Radius of the earth (default is 6371000 m).
+        effective_radius_fraction: float
+            Fraction of earth to use for the effective radius (default is 4/3).
+        Returns
+        -------
+        da = dt.Datatree
+            Daatree including x, y, and z as coordinates.
+        """
         radar = self.xarray_obj
-        return radar.pipe(get_x_y_z_tree)
+        return radar.pipe(
+            get_x_y_z_tree, earth_radius=6371000, effective_radius_fraction=None
+        )

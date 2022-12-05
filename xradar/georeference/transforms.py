@@ -119,11 +119,27 @@ def get_x_y_z(ds, earth_radius=6371000, effective_radius_fraction=None):
     return ds
 
 
-def get_x_y_z_tree(radar):
+def get_x_y_z_tree(radar, earth_radius=6371000, effective_radius_fraction=None):
     """
     Applies the georeferencing to a xradar datatree
+    Parameters
+    ----------
+    radar: dt.DataTree
+        Xradar datatree object with radar information.
+    earth_radius: float
+        Radius of the earth (default is 6371000 m).
+    effective_radius_fraction: float
+        Fraction of earth to use for the effective radius (default is 4/3).
+    Returns
+    -------
+    radar: dt.DataTree
+        Datatree with sweep datasets including georeferenced coordinates
     """
     for key in list(radar.children):
         if "sweep" in key:
-            radar[key].ds = get_x_y_z(radar[key].to_dataset())
+            radar[key].ds = get_x_y_z(
+                radar[key].to_dataset(),
+                earth_radius=earth_radius,
+                effective_radius_fraction=effective_radius_fraction,
+            )
     return radar
