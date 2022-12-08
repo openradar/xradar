@@ -4,6 +4,7 @@ h5py
 lat_lon_parser
 netCDF4
 numpy
+scipy
 xarray
 xarray-datatree
 xmltodict
