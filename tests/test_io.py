@@ -322,6 +322,15 @@ def test_open_gamic_dataset(gamic_file):
     assert dict(ds.dims) == {"time": 360, "range": 1000}
 
 
+def test_open_gamic_dataset_reindex(gamic_file):
+    # open first sweep group
+    reindex_angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
+    ds = xr.open_dataset(
+        gamic_file, group="sweep_0", engine="gamic", reindex_angle=reindex_angle
+    )
+    assert dict(ds.dims) == {"azimuth": 360, "range": 360}
+
+
 def test_open_furuno_scn_dataset(furuno_scn_file):
     # open sweep group
     ds = xr.open_dataset(furuno_scn_file, first_dim="time", engine="furuno")

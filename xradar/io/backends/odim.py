@@ -53,6 +53,7 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict, is_remote_uri
 from xarray.core.variable import Variable
 
+from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -64,14 +65,12 @@ from ...model import (
     moment_attrs,
     sweep_vars_mapping,
 )
-from ...util import has_import
 from .common import (
     _assign_root,
     _attach_sweep_groups,
     _fix_angle,
     _get_h5group_names,
     _maybe_decode,
-    _reindex_angle,
 )
 
 HDF5_LOCK = SerializableLock()
@@ -607,7 +606,7 @@ class OdimStore(AbstractDataStore):
             kwargs["decode_vlen_strings"] = decode_vlen_strings
 
         if lock is None:
-            if has_import("dask"):
+            if util.has_import("dask"):
                 lock = HDF5_LOCK
             else:
                 lock = False
@@ -674,18 +673,18 @@ class OdimBackendEntrypoint(BackendEntrypoint):
     Keyword Arguments
     -----------------
     first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
-    keep_elevation : bool
-        For PPI only. Keep original elevation data if True. If False,
-        fixes erroneous elevation data. Defaults to True.
-    keep_azimuth : bool
-        For RHI only. Keep original azimuth data if True. If False,
-        fixes erroneous azimuth data. Defaults to True.
-    reindex_angle : bool or float
-        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
-        given a floating point number, it is used as tolerance.
-        Only invoked if `decode_coord=True`.
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to False.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
+    kwargs :  kwargs
+        Additional kwargs are fed to `xr.open_dataset`.
     """
 
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
@@ -703,14 +702,13 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         format=None,
-        group="dataset1",
+        group="sweep_0",
         invalid_netcdf=None,
         phony_dims="access",
         decode_vlen_strings=True,
-        keep_elevation=True,
-        keep_azimuth=True,
-        reindex_angle=False,
         first_dim="auto",
+        reindex_angle=False,
+        fix_second_angle=False,
         site_coords=True,
     ):
 
@@ -739,17 +737,18 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
 
+        # reassign azimuth/elevation/time coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
+        ds = ds.assign_coords({"time": ds.time})
+
         ds.encoding["engine"] = "odim"
 
+        # handle duplicates and reindex
         if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
-
-        if not keep_azimuth:
-            if ds.azimuth.dims[0] == "elevation":
-                ds = ds.assign_coords({"azimuth": ds.azimuth.pipe(_fix_angle)})
-        if not keep_elevation:
-            if ds.elevation.dims[0] == "azimuth":
-                ds = ds.assign_coords({"elevation": ds.elevation.pipe(_fix_angle)})
+            ds = ds.pipe(util.remove_duplicate_rays)
+            ds = ds.pipe(util.reindex_angle, **reindex_angle)
+            ds = ds.pipe(util.ipol_time)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -762,10 +761,10 @@ class OdimBackendEntrypoint(BackendEntrypoint):
                 ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
 
-        # reassign azimuth/elevation/time coordinates
-        ds = ds.assign_coords({"azimuth": ds.azimuth})
-        ds = ds.assign_coords({"elevation": ds.elevation})
-        ds = ds.assign_coords({"time": ds.time})
+        # fix second angle
+        if fix_second_angle and first_dim == "auto":
+            dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
+            ds = ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
         # assign geo-coords
         ds = ds.assign_coords(
@@ -790,22 +789,20 @@ def open_odim_datatree(filename_or_obj, **kwargs):
 
     Keyword Arguments
     -----------------
-    first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
     sweep : int, list of int, optional
         Sweep number(s) to extract, default to first sweep. If None, all sweeps are
         extracted into a list.
-    keep_elevation : bool
-        For PPI only. Keep original elevation data if True. If False,
-        fixes erroneous elevation data. Defaults to True.
-    keep_azimuth : bool
-        For RHI only. Keep original azimuth data if True. If False,
-        fixes erroneous azimuth data. Defaults to True.
-    reindex_angle : bool or float
-        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
-        given a floating point number, it is used as tolerance.
-        Only invoked if `decode_coord=True`.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to False.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs :  kwargs
         Additional kwargs are fed to `xr.open_dataset`.
 

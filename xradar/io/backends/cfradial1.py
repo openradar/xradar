@@ -39,6 +39,7 @@ from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
 
+from ... import util
 from ...model import (
     conform_cfradial2_sweep_group,
     georeferencing_correction_subgroup,
@@ -303,6 +304,11 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to False.
     optional : bool
         Import optional mandatory data and metadata, defaults to ``True``.
     site_coords : bool
@@ -368,12 +374,15 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    optional : bool
-        Import optional mandatory data and metadata, defaults to ``True``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        For PPI only. If True, fixes erroneous second angle data. Defaults to False.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-
-    Ported from wradlib.
+    kwargs :  kwargs
+        Additional kwargs are fed to `xr.open_dataset`.
     """
 
     description = "Open CfRadial1 (.nc, .nc4) using netCDF4 in Xarray"
@@ -393,8 +402,10 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         format=None,
         group="/",
         first_dim="auto",
-        optional=True,
+        reindex_angle=False,
+        fix_second_angle=False,
         site_coords=True,
+        optional=True,
     ):
 
         store = NetCDF4DataStore.open(
@@ -425,5 +436,10 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         )
         if ds is None:
             raise ValueError(f"Group `{group}` missing from file `{filename_or_obj}`.")
+
+        if decode_coords and reindex_angle is not False:
+            ds = ds.pipe(util.remove_duplicate_rays)
+            ds = ds.pipe(util.reindex_angle, **reindex_angle)
+            ds = ds.pipe(util.ipol_time)
 
         return ds

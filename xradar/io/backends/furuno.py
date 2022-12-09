@@ -55,6 +55,7 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
+from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -76,7 +77,6 @@ from .common import (
     _attach_sweep_groups,
     _calculate_angle_res,
     _get_fmt_string,
-    _reindex_angle,
     _unpack_dictionary,
 )
 
@@ -707,8 +707,9 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
-        reindex_angle=False,
         first_dim="auto",
+        reindex_angle=False,
+        fix_second_angle=False,
         site_coords=True,
         obsmode=None,
     ):
@@ -732,10 +733,18 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
 
+        # reassign azimuth/elevation/time coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
+        ds = ds.assign_coords({"time": ds.time})
+
         ds.encoding["engine"] = "furuno"
 
+        # handle duplicates and reindex
         if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
+            ds = ds.pipe(util.remove_duplicate_rays)
+            ds = ds.pipe(util.reindex_angle, **reindex_angle)
+            ds = ds.pipe(util.ipol_time)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -747,11 +756,6 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             if "time" not in ds.dims:
                 ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
-
-        # reassign azimuth/elevation/time coordinates
-        ds = ds.assign_coords({"azimuth": ds.azimuth})
-        ds = ds.assign_coords({"elevation": ds.elevation})
-        ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
         if site_coords:
@@ -767,7 +771,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
 
 def open_furuno_datatree(filename_or_obj, **kwargs):
-    """Open ODIM_H5 dataset as xradar Datatree.
+    """Open FURUNO dataset as xradar Datatree.
 
     Parameters
     ----------
@@ -777,14 +781,20 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
 
     Keyword Arguments
     -----------------
+    sweep : int, list of int, optional
+        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+        extracted into a list.
     first_dim : str
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or float
-        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
-        given a floating point number, it is used as tolerance.
-        Only invoked if `decode_coord=True`.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to False.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs :  kwargs
         Additional kwargs are fed to `xr.open_dataset`.
 
