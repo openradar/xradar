@@ -2,7 +2,7 @@
 
 In this section we provide material how to use xradar.
 
-Most of the material is distributed as juypter notebooks to be able to interactively explore xradar functionality.
+Most of the material is distributed as jupyter notebooks to be able to interactively explore xradar functionality.
 
 To use xradar in a project:
 

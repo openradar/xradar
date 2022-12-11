@@ -34,6 +34,7 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
     ],
     description="Xradar includes all the tools to get your weather radar into the xarray data model.",
     install_requires=INSTALL_REQUIRES,
