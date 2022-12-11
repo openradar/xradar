@@ -51,6 +51,7 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
+from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -61,7 +62,7 @@ from ...model import (
     moment_attrs,
     sweep_vars_mapping,
 )
-from .common import _assign_root, _attach_sweep_groups, _reindex_angle
+from .common import _assign_root, _attach_sweep_groups
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
@@ -2826,7 +2827,7 @@ class IrisFile(IrisFileBase, IrisStructureHeader):
         if self.structure_identifier in self.identifier:
             return self.structure_identifier
         else:
-            raise IOError(
+            raise OSError(
                 f"Cannot read {self.structure_identifier} with "
                 f"{self.__class__.__name__} class"
             )
@@ -3064,7 +3065,7 @@ class IrisRecordFile(IrisFile, IrisProductHeader):
         if self.product_type in self.product_identifier:
             return self.product_type
         else:
-            raise IOError(
+            raise OSError(
                 f"Cannot read {self.product_type} with {self.__class__.__name__} class"
             )
 
@@ -3922,12 +3923,11 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
-        keep_elevation=False,
-        keep_azimuth=False,
-        reindex_angle=False,
         first_dim="auto",
-        optional=True,
+        reindex_angle=False,
+        fix_second_angle=False,
         site_coords=True,
+        optional=True,
     ):
         store = IrisStore.open(
             filename_or_obj,
@@ -3948,29 +3948,34 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
 
+        # reassign azimuth/elevation/time coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
+        ds = ds.assign_coords({"time": ds.time})
+
         # drop DB_XHDR for now
         ds = ds.drop_vars("DB_XHDR", errors="ignore")
 
-        # todo: re-think the whole idea of angle reindexing and align with the other readers
+        ds.encoding["engine"] = "iris"
+
+        # handle duplicates and reindex
         if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(_reindex_angle, store=store, tol=reindex_angle)
+            ds = ds.pipe(util.remove_duplicate_rays)
+            ds = ds.pipe(util.reindex_angle, **reindex_angle)
+            ds = ds.pipe(util.ipol_time)
 
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)
 
         # handling first dimension
-        dim0 = store.root.first_dimension
+        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+
         # todo: could be optimized
         if first_dim == "time":
             ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
         else:
             ds = ds.sortby(dim0)
-
-        # reassign azimuth/elevation/time coordinates
-        ds = ds.assign_coords({"azimuth": ds.azimuth})
-        ds = ds.assign_coords({"elevation": ds.elevation})
-        ds = ds.assign_coords({"time": ds.time})
 
         # assign geo-coords
         if site_coords:
@@ -3996,16 +4001,20 @@ def open_iris_datatree(filename_or_obj, **kwargs):
 
     Keyword Arguments
     -----------------
-    first_dim : str
-        Default to 'time' as first dimension. If set to 'auto', first dimension will
-        be either 'azimuth' or 'elevation' depending on type of sweep.
-    sweep : str, optional
-        Sweeps to extract, default to first sweep (sweep_0). If None, all sweeps are
+    sweep : int, list of int, optional
+        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
         extracted into a list.
-    reindex_angle : bool or float
-        Defaults to False, no reindexing. If True reindex angle with tol=0.4deg. If
-        given a floating point number, it is used as tolerance.
-        Only invoked if `decode_coord=True`.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to False.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs :  kwargs
         Additional kwargs are fed to `xr.open_dataset`.
 

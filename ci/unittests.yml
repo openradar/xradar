@@ -20,6 +20,7 @@ dependencies:
   - pytest-doctestplus
   - pytest-sugar
   - pytest-xdist
+  - scipy
   - setuptools
   - xarray
   - xmltodict
