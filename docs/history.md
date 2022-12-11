@@ -1,6 +1,6 @@
 # History
 
-## 0.0.9 (22022-12-XX)
+## 0.0.9 (22022-12-11)
 
 * add ODIM_H5 exporter ({pull}`39`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * fetch radar data from open-radar-data ({pull}`44`) by [@kmuehlbauer](https://github.com/kmuehlbauer)

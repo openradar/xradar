@@ -16,7 +16,7 @@ dependencies:
   - lat_lon_parser
   - netCDF4
   - xarray
-  - xarray-datatree
+  - xarray-datatree>=0.0.10
   - xmltodict
   - dask
   - matplotlib-base

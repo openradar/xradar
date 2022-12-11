@@ -23,7 +23,7 @@ dependencies:
   - scipy
   - setuptools
   - xarray
+  - xarray-datatree>=0.0.10
   - xmltodict
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
-    - git+https://github.com/xarray-contrib/datatree
