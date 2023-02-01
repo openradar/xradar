@@ -53,7 +53,6 @@ def test_open_cfradial1_datatree(cfradial1_file):
     azimuths = [483, 483, 482, 483, 481, 482, 482, 484, 483]
     ranges = [996, 996, 996, 996, 996, 996, 996, 996, 996]
     for grp in dtree.groups:
-
         print(grp)
         # only iterate sweep groups
         if "sweep" not in grp:

@@ -532,7 +532,6 @@ class FurunoStore(AbstractDataStore):
     """Store for reading Furuno sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
-
         self._manager = manager
         self._group = group
         self._filename = self.filename
@@ -604,7 +603,6 @@ class FurunoStore(AbstractDataStore):
         return Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):
-
         dim = self.ds.first_dimension
 
         # range

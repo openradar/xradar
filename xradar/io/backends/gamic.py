@@ -188,7 +188,6 @@ class _GamicH5NetCDFMetadata:
         return tuple(dimensions)
 
     def coordinates(self, dimensions, data, encoding):
-
         ray_header = _get_ray_header_data(dimensions, data, encoding)
         dim, angle = self.fixed_dim_and_angle
 
@@ -297,7 +296,6 @@ class GamicStore(AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
-
         if isinstance(manager, (h5netcdf.File, h5netcdf.Group)):
             if group is None:
                 root, group = find_root_and_group(manager)
@@ -453,7 +451,6 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         fix_second_angle=False,
         site_coords=True,
     ):
-
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
 

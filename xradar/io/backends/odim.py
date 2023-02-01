@@ -491,7 +491,6 @@ class OdimSubStore(AbstractDataStore):
         group=None,
         lock=False,
     ):
-
         if not isinstance(store, OdimStore):
             raise TypeError(
                 f"Wrong type {type(store)} for parameter store, "
@@ -519,7 +518,6 @@ class OdimSubStore(AbstractDataStore):
         return self._acquire()
 
     def open_store_variable(self, name, var):
-
         dimensions = self.root.get_variable_dimensions(var.dimensions)
         data = indexing.LazilyOuterIndexedArray(H5NetCDFArrayWrapper(name, self))
         encoding = _get_h5netcdf_encoding(self, var)
@@ -549,7 +547,6 @@ class OdimStore(AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
-
         if isinstance(manager, (h5netcdf.File, h5netcdf.Group)):
             if group is None:
                 root, group = find_root_and_group(manager)
@@ -711,7 +708,6 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         fix_second_angle=False,
         site_coords=True,
     ):
-
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
 
