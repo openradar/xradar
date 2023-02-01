@@ -125,10 +125,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install build setuptools wheel twine
+          pip install build setuptools wheel twine tomli-cli
       - name: Package
         run: |
-          echo 'local_scheme =  "no-local-version"' >> pyproject.toml
+          toml set --toml-path pyproject.toml tool.setuptools_scm.local_scheme "no-local-version"
           git update-index --assume-unchanged pyproject.toml
           python -m build
           cp dist/xradar*.gz dist/xradar1.gz
