@@ -114,8 +114,8 @@ for k, v in xradar.__dict__.items():
     if isinstance(v, types.ModuleType):
         if k not in ["_warnings", "version"]:
             modules.append(k)
-            file = open("{0}.rst".format(k), mode="w")
-            file.write(".. automodule:: xradar.{}\n".format(k))
+            file = open(f"{k}.rst", mode="w")
+            file.write(f".. automodule:: xradar.{k}\n")
             file.close()
 
 # create API/Library reference rst-file
@@ -128,9 +128,9 @@ Library Reference
 """
 
 file = open("reference.rst", mode="w")
-file.write("{}\n".format(reference))
+file.write(f"{reference}\n")
 for mod in sorted(modules):
-    file.write("   {}\n".format(mod))
+    file.write(f"   {mod}\n")
 file.close()
 
 # get all rst files, do it manually
