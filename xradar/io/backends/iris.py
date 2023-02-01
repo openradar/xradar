@@ -3746,7 +3746,6 @@ class IrisStore(AbstractDataStore):
     """
 
     def __init__(self, manager, group=None):
-
         self._manager = manager
         self._group = int(group[6:]) + 1
         self._filename = self.filename

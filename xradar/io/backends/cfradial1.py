@@ -407,7 +407,6 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         site_coords=True,
         optional=True,
     ):
-
         store = NetCDF4DataStore.open(
             filename_or_obj,
             format=format,

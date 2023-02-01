@@ -27,7 +27,6 @@ def test_antenna_to_cartesian():
 
 
 def test_get_x_y_z():
-
     # Create an empty xradar dataset
     ds = xradar.model.Dataset()
 

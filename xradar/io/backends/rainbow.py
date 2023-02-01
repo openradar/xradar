@@ -586,7 +586,6 @@ class RainbowStore(AbstractDataStore):
     """Store for reading RAINBOW5 sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
-
         self._manager = manager
         self._group = int(group[6:])
         self._filename = self.filename
@@ -643,7 +642,6 @@ class RainbowStore(AbstractDataStore):
         return {mname: Variable((dim, "range"), data, attrs, encoding)}
 
     def open_store_coordinates(self, var):
-
         dim = self.root.first_dimension
         ray = var["slicedata"]["rayinfo"]
 
