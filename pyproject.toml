@@ -1,11 +1,54 @@
+[project]
+name = "xradar"
+description = """Xradar includes all the tools to get your weather radar into the xarray data model."""
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+keywords = ["xradar"]
+authors = [
+    {name = "Maxwell Grover", email = "mgrover@anl.gov"},
+    {name = "Kai Mühlbauer", email = "kai.muehlbauer@uni-bonn.de"},
+    {name = "Zachary Sherman", email = "zsherman@anl.gov"},
+]
+classifiers=[
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dynamic = ["version", "dependencies", "optional-dependencies", "readme"]
+
+[project.urls]
+homepage = "https://docs.openradarscience.org/projects/xradar"
+documentation = "https://docs.openradarscience.org/projects/xradar/"
+repository = "https://github.com/openradar/xradar"
+changelog = "https://github.com/openradar/xradar/blob/main/docs/history.md"
+
+[project.entry-points."xarray.backends"]
+cfradial1 = "xradar.io.backends:CfRadial1BackendEntrypoint"
+furuno = "xradar.io.backends:FurunoBackendEntrypoint"
+gamic = "xradar.io.backends:GamicBackendEntrypoint"
+iris = "xradar.io.backends:IrisBackendEntrypoint"
+odim = "xradar.io.backends:OdimBackendEntrypoint"
+rainbow = "xradar.io.backends:RainbowBackendEntrypoint"
+
 [build-system]
 requires = [
     "setuptools>=45",
     "wheel",
-    "setuptools_scm[toml]>=6.2",
-    "setuptools_scm_git_archive",
+    "setuptools_scm[toml]>=7.0",
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+readme = {file = ["README.md", "docs/history.md"], content_type = "text/markdown"}
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { file = "requirements_dev.txt"}
 
 [tool.setuptools_scm]
 write_to = "xradar/version.py"
@@ -13,4 +56,36 @@ version_scheme = "guess-next-dev"
 fallback_version = "999"
 
 [tool.black]
+target-version = ["py39"]
 line-length = 88
+
+[tool.ruff]
+target-version = "py39"
+builtins = ["ellipsis"]
+exclude = [
+    ".eggs",
+    "doc",
+]
+
+# E402: module level import not at top of file
+# E501: line too long - let black worry about that
+# E731: do not assign a lambda expression, use a def
+ignore = [
+    "E402",
+    "E501",
+    "E731",
+]
+select = [
+    # Pyflakes
+    "F",
+    # Pycodestyle
+    "E",
+    "W",
+    # isort
+    "I",
+    # Pyupgrade
+    "UP",
+]
+
+[tool.ruff.isort]
+known-first-party = ["xradar"]
