@@ -1,5 +1,10 @@
 # History
 
+## 0.0.10 (2023-02-01)
+
+* add WRN110 scn format to Furuno reader ({pull}`65`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* Adapt to new build process, pyproject.toml only, use `ruff` for linting ({pull}`67`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
 ## 0.0.9 (2022-12-11)
 
 * add ODIM_H5 exporter ({pull}`39`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
@@ -40,5 +45,3 @@ Setting up CI workflow and build, [@mgrover1](https://github.com/mgrover1) and [
 ## 0.0.1 (2022-09-01)
 
 * First release on PyPI.
-
-
