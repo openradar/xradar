@@ -575,7 +575,7 @@ class FurunoStore(AbstractDataStore):
             add_offset = -1e-2
             scale_factor = 1e-2
         elif name in ["azimuth", "elevation"]:
-            add_offset = 0
+            add_offset = 0.0
             scale_factor = 1e-2
         else:
             add_offset = -327.68
@@ -595,7 +595,7 @@ class FurunoStore(AbstractDataStore):
             if name != "QUAL":
                 attrs["add_offset"] = add_offset
                 attrs["scale_factor"] = scale_factor
-                attrs["_FillValue"] = 0
+                attrs["_FillValue"] = 0.0
             dims = (dim, "range")
         attrs[
             "coordinates"
@@ -664,7 +664,7 @@ class FurunoStore(AbstractDataStore):
             "sweep_number": Variable((), sweep_number),
             "prt_mode": Variable((), prt_mode),
             "follow_mode": Variable((), follow_mode),
-            "fixed_angle": Variable((), self.ds.fixed_angle),
+            "sweep_fixed_angle": Variable((), self.ds.fixed_angle),
             "longitude": Variable((), lon, get_longitude_attrs()),
             "latitude": Variable((), lat, get_latitude_attrs()),
             "altitude": Variable((), alt, get_altitude_attrs()),
