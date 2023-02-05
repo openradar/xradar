@@ -23,4 +23,3 @@ dependencies:
   - scipy
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
-    - git+https://github.com/xarray-contrib/datatree
