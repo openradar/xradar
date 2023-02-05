@@ -1,8 +1,13 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import pytest
 from open_radar_data import DATASETS
+
+
+@pytest.fixture(params=["file", "filelike"])
+def file_or_filelike(request):
+    return request.param
 
 
 @pytest.fixture(scope="session")

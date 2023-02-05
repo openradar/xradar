@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -25,7 +25,10 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+import contextlib
+import gzip
 import importlib.util
+import io
 
 import numpy as np
 from scipy import interpolate
@@ -369,3 +372,15 @@ def ipol_time(ds):
         time = time.pipe(_ipol_time)
     ds["time"] = time
     return ds
+
+
+@contextlib.contextmanager
+def _get_data_file(file, file_or_filelike):
+    if file_or_filelike == "filelike":
+        _open = open
+        if file[-3:] == ".gz":
+            _open = gzip.open
+        with _open(file, mode="r+b") as f:
+            yield io.BytesIO(f.read())
+    else:
+        yield file
