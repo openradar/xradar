@@ -1,5 +1,10 @@
 # History
 
+## 0.0.11 (2023-02-06)
+
+* fix ``_Undetect``/``_FillValue`` in odim writer ({pull}`71`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* port more backend tests from wradlib ({pull}`73`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
 ## 0.0.10 (2023-02-01)
 
 * add WRN110 scn format to Furuno reader ({pull}`65`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
