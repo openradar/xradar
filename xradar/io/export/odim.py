@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -78,22 +78,25 @@ def _write_odim_dataspace(source, destination):
     data_list = [f"data{i + 1}" for i in range(len(keys))]
     data_idx = np.argsort(data_list)
     for idx in data_idx:
+        # todo: check bottom-up/top-down rhi
+        dim0 = "elevation" if source.sweep_mode == "rhi" else "azimuth"
         value = source[keys[idx]]
+        # do not try to write variables with wrong dimensions, just skip them
+        if set([dim0, "range"]) != set(value.dims):
+            continue
         h5_data = destination.create_group(data_list[idx])
         enc = value.encoding
+        dtype = enc.get("dtype", value.dtype)
 
         # p. 21 ff
         h5_what = h5_data.create_group("what")
-        try:
-            undetect = float(value._Undetect)
-        except AttributeError:
-            undetect = np.finfo(np.float_).max
+        # get maximum value for dtype for undetect if not available
+        undetect = float(enc.get("_Undetect", np.ma.minimum_fill_value(dtype)))
 
         # set some defaults, if not available
         scale_factor = float(enc.get("scale_factor", 1.0))
         add_offset = float(enc.get("add_offset", 0.0))
         _fillvalue = float(enc.get("_FillValue", undetect))
-        dtype = enc.get("dtype", value.dtype)
         what = {
             "quantity": value.name,
             "gain": scale_factor,
@@ -104,8 +107,6 @@ def _write_odim_dataspace(source, destination):
         _write_odim(what, h5_what)
 
         # moments handling
-        # todo: check bottom-up/top-down rhi
-        dim0 = "elevation" if source.sweep_mode == "rhi" else "azimuth"
         val = value.sortby(dim0).values
         fillval = _fillvalue * scale_factor
         fillval += add_offset
@@ -215,9 +216,8 @@ def to_odim(dtree, filename):
         rscale = ds.range.values[1] / 1.0 - ds.range.values[0]
         rstart = (ds.range.values[0] - rscale / 2.0) / 1000.0
         a1gate = np.argsort(ds.sortby(dim0).time.values)[0]
-        fixed_angle = ds["sweep_fixed_angle"].values
         ds_where = {
-            "elangle": fixed_angle,
+            "elangle": ds["sweep_fixed_angle"].values,
             "nbins": ds.range.shape[0],
             "rstart": rstart,
             "rscale": rscale,
