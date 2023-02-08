@@ -36,8 +36,6 @@ import datetime as dt
 import h5py
 import numpy as np
 
-from ...model import required_sweep_metadata_vars
-
 
 def _write_odim(source, destination):
     """Writes ODIM_H5 Attributes.
@@ -71,19 +69,16 @@ def _write_odim_dataspace(source, destination):
     destination : handle
         h5py-group handle
     """
-    # for now assume all variables as valid
-    # keys = [key for key in source if key in sweep_vars_mapping]
-    # but not metadata variables
-    keys = [key for key in source if key not in required_sweep_metadata_vars]
+    # todo: check bottom-up/top-down rhi
+    dim0 = "elevation" if source.sweep_mode == "rhi" else "azimuth"
+
+    # only assume as radar moments when dimensions fit
+    keys = [key for key, val in source.items() if {dim0, "range"} == set(val.dims)]
+
     data_list = [f"data{i + 1}" for i in range(len(keys))]
     data_idx = np.argsort(data_list)
     for idx in data_idx:
-        # todo: check bottom-up/top-down rhi
-        dim0 = "elevation" if source.sweep_mode == "rhi" else "azimuth"
         value = source[keys[idx]]
-        # do not try to write variables with wrong dimensions, just skip them
-        if set([dim0, "range"]) != set(value.dims):
-            continue
         h5_data = destination.create_group(data_list[idx])
         enc = value.encoding
         dtype = enc.get("dtype", value.dtype)
