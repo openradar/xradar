@@ -1881,7 +1881,20 @@ SIGMET_DATA_TYPES = OrderedDict(
             },
         ),
         # Corrected Velocity (1 byte)
-        (17, {"name": "DB_VELC", "dtype": "uint8", "func": None}),
+        (
+            17,
+            {
+                "name": "DB_VELC",
+                "dtype": "uint8",
+                "func": decode_array,
+                "fkw": {
+                    "offset": -1,
+                    "scale": 253.0 / 150,
+                    "offset2": -75,
+                    "mask": 0.0,
+                },
+            },
+        ),
         # SQI (1 byte)
         (
             18,

@@ -79,6 +79,14 @@ def decode_array():
     )
 
 
+def test_decode_velc():
+    data = [0, 1, 2, 128, 129, 254, 255]
+    np.testing.assert_array_almost_equal(
+        iris.decode_array(data, scale=127 / 75.0, offset=-1, offset2=-75, mask=0.0),
+        [np.inf, -75.0, -74.409449, 0.0, 0.590551, 74.409449, 75.0],
+    )
+
+
 def test_decode_kdp():
     np.testing.assert_array_almost_equal(
         iris.decode_kdp(np.arange(-5, 5, dtype="int8"), wavelength=10.0),
