@@ -147,7 +147,7 @@ class _OdimH5NetCDFMetadata:
         #     el_attrs["angle_res"] = angle_res
 
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = int(self._group.split("/")[0][7:])
+        sweep_number = int(self._group.split("/")[0][7:]) - 1
         prt_mode = "not_set"
         follow_mode = "not_set"
 

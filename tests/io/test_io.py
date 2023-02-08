@@ -53,13 +53,12 @@ def test_open_cfradial1_datatree(cfradial1_file):
     azimuths = [483, 483, 482, 483, 481, 482, 482, 484, 483]
     ranges = [996, 996, 996, 996, 996, 996, 996, 996, 996]
     for grp in dtree.groups:
-        print(grp)
         # only iterate sweep groups
         if "sweep" not in grp:
             continue
         ds = dtree[grp].ds
         i = ds.sweep_number.values
-        print(ds)
+        assert i == int(grp[7:])
         assert dict(ds.dims) == {"time": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -83,13 +82,14 @@ def test_open_cfradial1_dataset(cfradial1_file):
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
-
+    assert ds.sweep_number == 0
     # open last sweep group
     ds = xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1")
     assert list(ds.dims) == ["azimuth", "range"]
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"DBZ", "VR"}
+    assert ds.sweep_number == 8
 
 
 def test_open_odim_datatree(odim_file):
@@ -164,6 +164,7 @@ def test_open_odim_datatree(odim_file):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number.values == int(grp[7:])
 
 
 def test_open_odim_dataset(odim_file):
@@ -173,6 +174,7 @@ def test_open_odim_dataset(odim_file):
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "TH", "ZDR"}
+    assert ds.sweep_number == 0
 
     # open last sweep group
     ds = xr.open_dataset(odim_file, group="sweep_11", engine="odim")
@@ -180,6 +182,7 @@ def test_open_odim_dataset(odim_file):
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"VRADH", "KDP", "WRADH", "TH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
+    assert ds.sweep_number == 11
 
     # open last sweep group, auto
     ds = xr.open_dataset(
@@ -189,6 +192,7 @@ def test_open_odim_dataset(odim_file):
         backend_kwargs=dict(first_dim="time"),
     )
     assert dict(ds.dims) == {"time": 360, "range": 280}
+    assert ds.sweep_number == 11
 
 
 def test_open_gamic_datatree(gamic_file):
@@ -268,6 +272,7 @@ def test_open_gamic_datatree(gamic_file):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number == i
 
 
 def test_open_gamic_dataset(gamic_file):
@@ -290,6 +295,7 @@ def test_open_gamic_dataset(gamic_file):
         "KDP",
         "ZDR",
     }
+    assert ds.sweep_number == 0
 
     # open last sweep group
     ds = xr.open_dataset(gamic_file, group="sweep_9", engine="gamic")
@@ -310,6 +316,7 @@ def test_open_gamic_dataset(gamic_file):
         "KDP",
         "ZDR",
     }
+    assert ds.sweep_number == 9
 
     # open last sweep group, auto
     ds = xr.open_dataset(
@@ -319,6 +326,7 @@ def test_open_gamic_dataset(gamic_file):
         backend_kwargs=dict(first_dim="time"),
     )
     assert dict(ds.dims) == {"time": 360, "range": 1000}
+    assert ds.sweep_number == 9
 
 
 def test_open_gamic_dataset_reindex(gamic_file):
@@ -344,6 +352,7 @@ def test_open_furuno_scn_dataset(furuno_scn_file):
         engine="furuno",
     )
     assert dict(ds.dims) == {"azimuth": 1376, "range": 602}
+    assert ds.sweep_number == 0
 
 
 def test_open_furuno_scnx_dataset(furuno_scnx_file):
@@ -360,6 +369,7 @@ def test_open_furuno_scnx_dataset(furuno_scnx_file):
         engine="furuno",
     )
     assert dict(ds.dims) == {"azimuth": 722, "range": 936}
+    assert ds.sweep_number == 0
 
 
 def test_open_rainbow_datatree(rainbow_file):
@@ -421,6 +431,7 @@ def test_open_rainbow_datatree(rainbow_file):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number == i
 
 
 def test_open_rainbow_dataset(rainbow_file):
@@ -432,6 +443,7 @@ def test_open_rainbow_dataset(rainbow_file):
     ) == {
         "DBZH",
     }
+    assert ds.sweep_number == 0
 
     # open last sweep group
     ds = xr.open_dataset(rainbow_file, group="sweep_13", engine="rainbow")
@@ -441,6 +453,7 @@ def test_open_rainbow_dataset(rainbow_file):
     ) == {
         "DBZH",
     }
+    assert ds.sweep_number == 13
 
     # open last sweep group, auto
     ds = xr.open_dataset(
@@ -450,6 +463,7 @@ def test_open_rainbow_dataset(rainbow_file):
         backend_kwargs=dict(first_dim="time"),
     )
     assert dict(ds.dims) == {"time": 361, "range": 400}
+    assert ds.sweep_number == 13
 
 
 def test_open_iris_datatree(iris0_file):
@@ -512,6 +526,7 @@ def test_open_iris_datatree(iris0_file):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number == i
 
 
 def test_open_iris0_dataset(iris0_file):
@@ -528,6 +543,7 @@ def test_open_iris0_dataset(iris0_file):
         "PHIDP",
         "ZDR",
     }
+    assert ds.sweep_number == 0
 
     # open last sweep group
     ds = xr.open_dataset(iris0_file, group="sweep_9", engine="iris")
@@ -542,6 +558,7 @@ def test_open_iris0_dataset(iris0_file):
         "PHIDP",
         "ZDR",
     }
+    assert ds.sweep_number == 9
 
     # open last sweep group, auto
     ds = xr.open_dataset(
@@ -551,6 +568,7 @@ def test_open_iris0_dataset(iris0_file):
         backend_kwargs=dict(first_dim="time"),
     )
     assert dict(ds.dims) == {"time": 360, "range": 664}
+    assert ds.sweep_number == 9
 
 
 def test_open_iris1_dataset(iris1_file):
@@ -569,6 +587,7 @@ def test_open_iris1_dataset(iris1_file):
         "VRADH",
         "WRADH",
     }
+    assert ds.sweep_number == 0
 
     # open first and only sweep group
     ds = xr.open_dataset(
@@ -578,6 +597,7 @@ def test_open_iris1_dataset(iris1_file):
         backend_kwargs=dict(first_dim="time"),
     )
     assert dict(ds.dims) == {"time": 359, "range": 833}
+    assert ds.sweep_number == 0
 
 
 def test_odim_roundtrip(odim_file2):
