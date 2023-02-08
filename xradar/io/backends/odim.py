@@ -243,7 +243,8 @@ class _OdimH5NetCDFMetadata:
             dim = "azimuth"
             angle = self._root[grp]["where"].attrs["elangle"]
 
-        angle = np.round(angle, decimals=1)
+        # do not round angle
+        # angle = np.round(angle, decimals=1)
         return dim, angle
 
     def _get_elevation_how(self):
