@@ -365,11 +365,10 @@ class FurunoFile:
             self._data["azimuth"] = np.fmod(
                 angles[:, 1] + self.header["azimuth_offset"], 36000
             )
-            if self.version in [3, 103]:
-                dtype = "int16"
-            else:
-                dtype = "uint16"
-            self._data["elevation"] = angles[:, 2].view(dtype=dtype)
+            # elevation angles are dtype "int16"
+            # which was tested against a sweep with -1deg elevation
+            # https://github.com/openradar/xradar/pull/82
+            self._data["elevation"] = angles[:, 2].view(dtype="int16")
         return self._data
 
     def close(self):
