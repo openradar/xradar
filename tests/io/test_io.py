@@ -345,6 +345,16 @@ def test_open_furuno_scn_dataset(furuno_scn_file):
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+    for key, value in ds.data_vars.items():
+        if key in ["RATE", "KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"]:
+            assert value.encoding["_FillValue"] == 0.0
+        elif key in ["azimuth", "elevation"]:
+            assert value.encoding["_FillValue"] == np.ma.minimum_fill_value(
+                value.encoding["dtype"]
+            )
+        else:
+            assert value.encoding.get("_FillValue", None) is None
+    assert ds.sweep_number == 0
 
     # open sweep group, auto
     ds = xr.open_dataset(
@@ -362,6 +372,17 @@ def test_open_furuno_scnx_dataset(furuno_scnx_file):
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+
+    for key, value in ds.data_vars.items():
+        if key in ["RATE", "KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"]:
+            assert value.encoding["_FillValue"] == 0.0
+        elif key in ["azimuth", "elevation"]:
+            assert value.encoding["_FillValue"] == np.ma.minimum_fill_value(
+                value.encoding["dtype"]
+            )
+        else:
+            assert value.encoding.get("_FillValue", None) is None
+    assert ds.sweep_number == 0
 
     # open sweep group, auto
     ds = xr.open_dataset(

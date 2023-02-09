@@ -587,6 +587,8 @@ class FurunoStore(AbstractDataStore):
             attrs = get_azimuth_attrs() if name == "azimuth" else get_elevation_attrs()
             attrs["add_offset"] = add_offset
             attrs["scale_factor"] = scale_factor
+            # choose maximum of dtype here, because it is out of the valid range
+            attrs["_FillValue"] = np.ma.minimum_fill_value(data.dtype)
             dims = (dim,)
             if name == self.ds.first_dimension:
                 attrs["a1gate"] = self.ds.a1gate
