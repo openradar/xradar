@@ -589,9 +589,11 @@ class FurunoStore(AbstractDataStore):
             # choose maximum of dtype here, because it is out of the valid range
             attrs["_FillValue"] = np.ma.minimum_fill_value(data.dtype)
             dims = (dim,)
-            if name == self.ds.first_dimension:
-                attrs["a1gate"] = self.ds.a1gate
-                attrs["angle_res"] = self.ds.angle_resolution
+            # do not propagate a1gate and angle_res for now
+            # if name == self.ds.first_dimension:
+            #    attrs["a1gate"] = self.ds.a1gate
+            #    attrs["angle_res"] = self.ds.angle_resolution
+
         else:
             if name != "QUAL":
                 attrs["add_offset"] = add_offset
