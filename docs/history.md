@@ -1,5 +1,9 @@
 # History
 
+## 0.0.13 (2023-02-09)
+
+* FIX: only skip setting cf-attributes if both gain and offset are unused ({pull}`85`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
 ## 0.0.12 (2023-02-09)
 
 * ENH: add IRIS ``DB_VELC`` decoding and tests ({issue}`78`), ({pull}`83`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
