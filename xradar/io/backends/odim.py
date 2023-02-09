@@ -350,7 +350,7 @@ class _OdimH5NetCDFMetadata:
         what = self._root[self._group]["what"].attrs
         gain = what.get("gain", 1.0)
         offset = what.get("offset", 0.0)
-        if gain != 1.0 and offset != 0.0:
+        if not (gain == 1.0 and offset == 0.0):
             attrs["scale_factor"] = gain
             attrs["add_offset"] = offset
             attrs["_FillValue"] = what.get("nodata", None)
