@@ -115,7 +115,7 @@ class XradarDataArrayAccessor(XradarAccessor):
 
         Returns
         -------
-        proj_crs : :py:class:`pyproj.CRS`
+        proj_crs : :py:class:`~pyproj.crs.CoordinateSystem`
         """
         radar = self.xarray_obj
         return radar.pipe(get_crs)
@@ -139,7 +139,7 @@ class XradarDataSetAccessor(XradarAccessor):
             Fraction of earth to use for the effective radius (default is 4/3).
         Returns
         -------
-        da = xr.Dataset
+        da = xarray.Dataset
             Dataset including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
@@ -154,7 +154,7 @@ class XradarDataSetAccessor(XradarAccessor):
 
         Returns
         -------
-        ds : xr.Dataset
+        ds : xarray.Dataset
             Dataset including spatial_ref coordinate.
         """
         radar = self.xarray_obj
@@ -165,7 +165,7 @@ class XradarDataSetAccessor(XradarAccessor):
 
         Returns
         -------
-        proj_crs : :py:class:`pyproj.CRS`
+        proj_crs : :py:class:`~pyproj.crs.CoordinateSystem`
         """
         radar = self.xarray_obj
         return radar.pipe(get_crs)
@@ -189,7 +189,7 @@ class XradarDataTreeAccessor(XradarAccessor):
             Fraction of earth to use for the effective radius (default is 4/3).
         Returns
         -------
-        da = dt.Datatree
+        da = datatree.Datatree
             Datatree including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
@@ -204,7 +204,7 @@ class XradarDataTreeAccessor(XradarAccessor):
 
         Returns
         -------
-        da : dt.DataTree
+        da : datatree.DataTree
             Datatree including spatial_ref coordinate.
         """
         ds = self.xarray_obj

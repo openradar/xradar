@@ -681,11 +681,11 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
     """
 
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
@@ -779,7 +779,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
 
 def open_odim_datatree(filename_or_obj, **kwargs):
-    """Open ODIM_H5 dataset as xradar Datatree.
+    """Open ODIM_H5 dataset as :py:class:`datatree.DataTree`.
 
     Parameters
     ----------
@@ -800,15 +800,15 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
 
     Returns
     -------
-    dtree: DataTree
+    dtree: datatree.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim
