@@ -33,4 +33,5 @@ notebooks/Rainbow
 notebooks/Iris
 notebooks/plot-ppi
 notebooks/angle_reindexing
+notebooks/Multi-Volume-Concatenation.ipynb
 ```
