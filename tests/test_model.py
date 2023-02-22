@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """Tests for `xradar` model package."""
@@ -26,6 +26,9 @@ def test_create_sweep_dataset():
     assert ds.range[-1] == 99950
     assert ds.time[0].values == np.datetime64("2022-08-27T10:00:00.000000000")
     assert ds.time[-1].values == np.datetime64("2022-08-27T10:01:29.750000000")
+    assert ds.altitude == 375
+    assert ds.longitude == 8.7877271
+    assert ds.latitude == 46.172541
 
     # provide azimuth- and time-resolution and fixed elevation
     ds = model.create_sweep_dataset(azimuth=1.0, elevation=5.0, time=1)
