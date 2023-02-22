@@ -2,7 +2,8 @@ name: wradlib-unittests
 channels:
   - conda-forge
 dependencies:
-  - python>=3.7
+  - python>=3.9
+  - cartopy
   - codecov
   - coverage
   - dask
@@ -15,6 +16,7 @@ dependencies:
   - notebook
   - numpy
   - pip
+  - pyproj
   - pytest
   - pytest-cov
   - pytest-doctestplus
