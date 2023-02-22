@@ -10,8 +10,10 @@ XRadar Georeferencing
     :maxdepth: 4
 
 .. automodule:: xradar.georeference.transforms
+.. automodule:: xradar.georeference.projection
 
 """
 from .transforms import *  # noqa
+from .projection import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
