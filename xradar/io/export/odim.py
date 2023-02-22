@@ -137,7 +137,7 @@ def to_odim(dtree, filename):
 
     Parameters
     ----------
-    dtree : :class:`datatree.DataTree`
+    dtree : datatree.DataTree
     filename : str
         output filename
     """

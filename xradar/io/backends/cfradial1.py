@@ -287,11 +287,11 @@ def _get_radar_calibration(ds):
 
 
 def open_cfradial1_datatree(filename_or_obj, **kwargs):
-    """Open CfRadial1 dataset as xradar Datatree.
+    """Open CfRadial1 dataset as :py:class:`datatree.DataTree`.
 
     Parameters
     ----------
-    filename_or_obj : str, Path, file-like or DataStore
+    filename_or_obj : str, Path, file-like or xarray.DataStore
         Strings and Path objects are interpreted as a path to a local or remote
         radar file
 
@@ -308,7 +308,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     optional : bool
         Import optional mandatory data and metadata, defaults to ``True``.
     site_coords : bool
@@ -316,7 +316,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
 
     Returns
     -------
-    dtree: DataTree
+    dtree: datatree.DataTree
         DataTree with CfRadial2 groups.
     """
     # handle kwargs, extract first_dim
@@ -381,8 +381,8 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         For PPI only. If True, fixes erroneous second angle data. Defaults to False.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
     """
 
     description = "Open CfRadial1 (.nc, .nc4) using netCDF4 in Xarray"

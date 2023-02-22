@@ -32,7 +32,7 @@ def get_earth_radius(crs, latitude):
 
     Parameters
     ----------
-    crs : :py:class:`pyproj.CRS`
+    crs : :py:class:`~pyproj.crs.CoordinateSystem`
         spatial reference object
     latitude : float
         geodetic latitude in degrees
@@ -58,17 +58,17 @@ def get_earth_radius(crs, latitude):
 
 
 def get_crs(ds, datum="WGS84"):
-    """Return pyproj.CRS from 'spatial_ref' coordinate
+    """Return :py:class:`pyproj.crs.CoordinateSystem` from ``spatial_ref`` coordinate.
 
     Parameters
     ----------
-    ds : xr.Dataset
+    ds : xarray.Dataset
     datum : str
         datum string, defaults to 'WGS84'
 
     Returns
     -------
-    proj_crs : :py:class:`pyproj.CRS`
+    proj_crs : :py:class:`~pyproj.crs.CoordinateSystem`
     """
     if "spatial_ref" in ds:
         proj_crs = pyproj.CRS.from_cf(ds["spatial_ref"].attrs)
@@ -83,20 +83,20 @@ def get_crs(ds, datum="WGS84"):
 
 
 def add_crs(ds, crs=None, datum="WGS84"):
-    """Add 'spatial_ref' coordinate derived from pyproj.CRS
+    """Add ``spatial_ref`` coordinate derived from :py:class:`pyproj.crs.CoordinateSystem`.
 
     Parameters
     ----------
-    ds : xr.Dataset
-    crs : :py:class:`pyproj.CRS`
-        pyproj.CRS to be added, defaults to AEQD (with given datum)
+    ds : xarray.Dataset
+    crs : :py:class:`~pyproj.crs.CoordinateSystem`
+        ``spatial_ref`` to be added, defaults to ``AEQD`` (with given datum)
     datum : str
         datum string, defaults to 'WGS84'
 
     Returns
     -------
-    ds : xr.Dataset
-        Dataset including spatial_ref coordinate.
+    ds : xarray.Dataset
+        Dataset including ``spatial_ref`` coordinate.
     """
     spatial_ref = Variable((), 0)
     if crs is None:
@@ -109,20 +109,20 @@ def add_crs(ds, crs=None, datum="WGS84"):
 
 
 def add_crs_tree(radar, datum="WGS84"):
-    """Add 'spatial_ref' coordinate derived from pyproj.CRS
+    """Add ``spatial_ref`` coordinate derived from :py:class:`pyproj.crs.CoordinateSystem`.
 
     Parameters
     ----------
-    radar : xr.Dataset
-    crs : :py:class:`pyproj.CRS`
-        pyproj.CRS to be added, defaults to AEQD (with given datum)
+    radar : xarray.Dataset
+    crs : :py:class:`~pyproj.crs.CoordinateSystem`
+        ``spatial_ref`` to be added, defaults to ``AEQD`` (with given datum)
     datum : str
         datum string, defaults to 'WGS84'
 
     Returns
     -------
-    radar : dt.DataTree
-        Datatree with sweep datasets including spatial_ref coordinate.
+    radar : datatree.DataTree
+        Datatree with sweep datasets including ``spatial_ref`` coordinate.
     """
     for key in list(radar.children):
         if "sweep" in key:

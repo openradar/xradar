@@ -44,7 +44,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
 
     Parameters
     ----------
-    dtree : DataTree
+    dtree : datatree.DataTree
         DataTree with CfRadial2 groups.
     filename : str
         output filename

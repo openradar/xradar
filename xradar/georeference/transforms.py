@@ -36,11 +36,11 @@ def antenna_to_cartesian(
 
     Parameters
     ----------
-    ranges : array
+    ranges : array-like
         Distances to the center of the radar gates (bins) in meters.
-    azimuths : array
+    azimuths : array-like
         Azimuth angle of the radar in degrees.
-    elevations : array
+    elevations : array-like
         Elevation angle of the radar in degrees.
     earth_radius: float
         Radius of the earth (default is 6371000 m).
@@ -57,15 +57,21 @@ def antenna_to_cartesian(
     Notes
     -----
     The calculation for Cartesian coordinate is adapted from equations
-    2.28(b) and 2.28(c) of Doviak and Zrnic [1]_ assuming a
+    2.28(b) and 2.28(c) of Doviak and Zrnić [1]_ assuming a
     standard atmosphere (4/3 Earth's radius model).
 
     .. math::
+        :nowrap:
 
+        \\begin{gather*}
         z = \\sqrt{r^2+R^2+2*r*R*sin(\\theta_e)} - R
+        \\\\
         s = R * arcsin(\\frac{r*cos(\\theta_e)}{R+z})
+        \\\\
         x = s * sin(\\theta_a)
+        \\\\
         y = s * cos(\\theta_a)
+        \\end{gather*}
 
     Where r is the distance from the radar to the center of the gate,
     :math:`\\theta_a` is the azimuth angle, :math:`\\theta_e` is the
@@ -74,7 +80,7 @@ def antenna_to_cartesian(
 
     References
     ----------
-    .. [1] Doviak and Zrnic, Doppler Radar and Weather Observations, Second
+    .. [1] Doviak and Zrnić, Doppler Radar and Weather Observations, Second
         Edition, 1993, p. 21.
     """
     if effective_radius_fraction is None:
@@ -117,15 +123,21 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
     Notes
     -----
     The calculation for Cartesian coordinate is adapted from equations
-    2.28(b) and 2.28(c) of Doviak and Zrnic [1]_ assuming a
+    2.28(b) and 2.28(c) of Doviak and Zrnić [1]_ assuming a
     standard atmosphere (4/3 Earth's radius model).
 
     .. math::
+        :nowrap:
 
+        \\begin{gather*}
         z = \\sqrt{r^2+R^2+2*r*R*sin(\\theta_e)} - R
+        \\\\
         s = R * arcsin(\\frac{r*cos(\\theta_e)}{R+z})
+        \\\\
         x = s * sin(\\theta_a)
+        \\\\
         y = s * cos(\\theta_a)
+        \\end{gather*}
 
     Where r is the distance from the radar to the center of the gate,
     :math:`\\theta_a` is the azimuth angle, :math:`\\theta_e` is the
@@ -134,7 +146,7 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
 
     References
     ----------
-    .. [1] Doviak and Zrnic, Doppler Radar and Weather Observations, Second
+    .. [1] Doviak and Zrnić, Doppler Radar and Weather Observations, Second
         Edition, 1993, p. 21.
     """
     if earth_radius is None:
@@ -173,7 +185,7 @@ def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None):
 
     Parameters
     ----------
-    radar: dt.DataTree
+    radar: datatree.DataTree
         Xradar datatree object with radar information.
     earth_radius: float
         Radius of the earth. Defaults to a latitude-dependent radius derived from
@@ -183,7 +195,7 @@ def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None):
 
     Returns
     -------
-    radar: dt.DataTree
+    radar: datatree.DataTree
         Datatree with sweep datasets including georeferenced coordinates
     """
     for key in list(radar.children):
