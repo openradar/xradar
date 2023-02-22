@@ -10,14 +10,19 @@ authors = [
     {name = "Zachary Sherman", email = "zsherman@anl.gov"},
 ]
 classifiers=[
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
 ]
 dynamic = ["version", "dependencies", "optional-dependencies", "readme"]
 
@@ -45,7 +50,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
-readme = {file = ["README.md", "docs/history.md"], content_type = "text/markdown"}
+readme = {file = ["README.md", "docs/history.md"], content-type = "text/markdown"}
 
 [tool.setuptools.dynamic.optional-dependencies]
 dev = { file = "requirements_dev.txt"}

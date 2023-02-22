@@ -15,12 +15,13 @@ dependencies:
   - h5py
   - lat_lon_parser
   - netCDF4
+  - pyproj
   - xarray
   - xarray-datatree>=0.0.10
   - xmltodict
+  - cartopy
   - dask
   - matplotlib-base
   - scipy
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
-    - git+https://github.com/xarray-contrib/datatree

@@ -147,7 +147,7 @@ class _OdimH5NetCDFMetadata:
         #     el_attrs["angle_res"] = angle_res
 
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = int(self._group.split("/")[0][7:])
+        sweep_number = int(self._group.split("/")[0][7:]) - 1
         prt_mode = "not_set"
         follow_mode = "not_set"
 
@@ -243,7 +243,8 @@ class _OdimH5NetCDFMetadata:
             dim = "azimuth"
             angle = self._root[grp]["where"].attrs["elangle"]
 
-        angle = np.round(angle, decimals=1)
+        # do not round angle
+        # angle = np.round(angle, decimals=1)
         return dim, angle
 
     def _get_elevation_how(self):
@@ -347,10 +348,13 @@ class _OdimH5NetCDFMetadata:
     def _get_dset_what(self):
         attrs = {}
         what = self._root[self._group]["what"].attrs
-        attrs["scale_factor"] = what.get("gain", 1)
-        attrs["add_offset"] = what.get("offset", 0)
-        attrs["_FillValue"] = what.get("nodata", None)
-        attrs["_Undetect"] = what.get("undetect", 0)
+        gain = what.get("gain", 1.0)
+        offset = what.get("offset", 0.0)
+        if not (gain == 1.0 and offset == 0.0):
+            attrs["scale_factor"] = gain
+            attrs["add_offset"] = offset
+            attrs["_FillValue"] = what.get("nodata", None)
+            attrs["_Undetect"] = what.get("undetect", 0.0)
         # if no quantity is given, use the group-name
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
@@ -677,11 +681,11 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
     """
 
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
@@ -775,7 +779,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
 
 def open_odim_datatree(filename_or_obj, **kwargs):
-    """Open ODIM_H5 dataset as xradar Datatree.
+    """Open ODIM_H5 dataset as :py:class:`datatree.DataTree`.
 
     Parameters
     ----------
@@ -796,15 +800,15 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
 
     Returns
     -------
-    dtree: DataTree
+    dtree: datatree.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim

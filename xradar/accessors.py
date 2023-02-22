@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -29,7 +29,7 @@ import sys
 import datatree as dt
 import xarray as xr
 
-from .georeference import get_x_y_z, get_x_y_z_tree
+from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
 
 
 def accessor_constructor(self, xarray_obj):
@@ -76,13 +76,14 @@ class XradarDataArrayAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
     def georeference(
-        self, earth_radius=6371000, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None
     ) -> xr.DataArray:
         """
         Parameters
         ----------
         earth_radius: float
-            Radius of the earth (default is 6371000 m).
+            Radius of the earth. Defaults to a latitude-dependent radius derived from
+            WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
         Returns
@@ -91,11 +92,33 @@ class XradarDataArrayAccessor(XradarAccessor):
             Dataset including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
+
         return radar.pipe(
             get_x_y_z,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
         )
+
+    def add_crs(self) -> xr.DataArray:
+        """Add 'spatial_ref' coordinate derived from pyproj.CRS
+
+        Returns
+        -------
+        da : xr.DataArray
+            DataArray including spatial_ref coordinate.
+        """
+        ds = self.xarray_obj
+        return ds.pipe(add_crs)
+
+    def get_crs(self):
+        """Retrieve pyproj.CRS from 'spatial_ref' coordinate
+
+        Returns
+        -------
+        proj_crs : :py:class:`~pyproj.crs.CoordinateSystem`
+        """
+        radar = self.xarray_obj
+        return radar.pipe(get_crs)
 
 
 @xr.register_dataset_accessor("xradar")
@@ -103,19 +126,20 @@ class XradarDataSetAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
     def georeference(
-        self, earth_radius=6371000, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None
     ) -> xr.Dataset:
         """
         Add georeference information to an xarray dataset
         Parameters
         ----------
         earth_radius: float
-            Radius of the earth (default is 6371000 m).
+            Radius of the earth. Defaults to a latitude-dependent radius derived from
+            WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
         Returns
         -------
-        da = xr.Dataset
+        da = xarray.Dataset
             Dataset including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
@@ -125,28 +149,63 @@ class XradarDataSetAccessor(XradarAccessor):
             effective_radius_fraction=effective_radius_fraction,
         )
 
+    def add_crs(self) -> xr.DataSet:
+        """Add 'spatial_ref' coordinate derived from pyproj.CRS
+
+        Returns
+        -------
+        ds : xarray.Dataset
+            Dataset including spatial_ref coordinate.
+        """
+        radar = self.xarray_obj
+        return radar.pipe(add_crs)
+
+    def get_crs(self):
+        """Retrieve pyproj.CRS from 'spatial_ref' coordinate
+
+        Returns
+        -------
+        proj_crs : :py:class:`~pyproj.crs.CoordinateSystem`
+        """
+        radar = self.xarray_obj
+        return radar.pipe(get_crs)
+
 
 @dt.register_datatree_accessor("xradar")
 class XradarDataTreeAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to datatree.DataTree objects."""
 
     def georeference(
-        self, earth_radius=6371000, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None
     ) -> dt.DataTree:
         """
         Add georeference information to an xradar datatree object
         Parameters
         ----------
         earth_radius: float
-            Radius of the earth (default is 6371000 m).
+            Radius of the earth. Defaults to a latitude-dependent radius derived from
+            WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
         Returns
         -------
-        da = dt.Datatree
-            Daatree including x, y, and z as coordinates.
+        da = datatree.Datatree
+            Datatree including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
         return radar.pipe(
-            get_x_y_z_tree, earth_radius=6371000, effective_radius_fraction=None
+            get_x_y_z_tree,
+            earth_radius=earth_radius,
+            effective_radius_fraction=effective_radius_fraction,
         )
+
+    def add_crs(self) -> dt.DataTree:
+        """Add 'spatial_ref' coordinate derived from pyproj.CRS
+
+        Returns
+        -------
+        da : datatree.DataTree
+            Datatree including spatial_ref coordinate.
+        """
+        ds = self.xarray_obj
+        return ds.pipe(add_crs_tree)

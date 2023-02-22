@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -25,7 +25,10 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+import contextlib
+import gzip
 import importlib.util
+import io
 
 import numpy as np
 from scipy import interpolate
@@ -109,7 +112,7 @@ def _reindex_angle(ds, array, tolerance, method="nearest"):
     ----------
     ds : xarray.Dataset
         Dateset to reindex first angle.
-    array : array
+    array : array-like
         Array with angle values which the Dataset should reindex to.
     tolerance : float
         Angle tolerance up to which angles should be considered for used method.
@@ -117,7 +120,7 @@ def _reindex_angle(ds, array, tolerance, method="nearest"):
     Keyword Arguments
     -----------------
     method : str
-        Reindexing method, defaults to "nearest". See xarray.Dataset.reindex().
+        Reindexing method, defaults to "nearest". See :py:meth:`xarray.Dataset.reindex`.
 
     Returns
     -------
@@ -154,7 +157,7 @@ def reindex_angle(
 ):
     """Reindex along first angle.
 
-    Missing values will be filled by variable's _FillValue.
+    Missing values will be filled by variable's ``_FillValue``.
 
     Parameters
     ----------
@@ -172,7 +175,7 @@ def reindex_angle(
     direction : int
         Sweep direction, -1 -> CCW, 1 -> CW.
     method : str
-        Reindexing method, defaults to "nearest". See xarray.Dataset.reindex().
+        Reindexing method, defaults to "nearest". See :py:meth:`xarray.Dataset.reindex`.
     tolerance : float
         Angle tolerance up to which angles should be considered for used method.
         Defaults to angle_res / 2.
@@ -369,3 +372,15 @@ def ipol_time(ds):
         time = time.pipe(_ipol_time)
     ds["time"] = time
     return ds
+
+
+@contextlib.contextmanager
+def _get_data_file(file, file_or_filelike):
+    if file_or_filelike == "filelike":
+        _open = open
+        if file[-3:] == ".gz":
+            _open = gzip.open
+        with _open(file, mode="r+b") as f:
+            yield io.BytesIO(f.read())
+    else:
+        yield file

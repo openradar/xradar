@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -84,7 +84,7 @@ required_global_attrs = dict(
 )
 
 
-# optional global attributes (root-group)
+#: optional global attributes (root-group)
 optional_root_attrs = dict(
     [
         ("site_name", "name of site where data were gathered"),
@@ -952,12 +952,21 @@ def create_sweep_dataset(**kwargs):
     time = get_time_dataarray(time, nrays, date_str)
     rng = get_range_dataarray(rng, nbins)
 
+    # get site coordinates, Locarno Monti, MeteoSwiss
+    # trivia: the place where xradar was born in August 2022
+    altitude = 375
+    latitude = 46.172541
+    longitude = 8.7877271
+
     ds = Dataset(
         coords=dict(
             time=time,
             range=rng,
             azimuth=azimuth,
             elevation=elevation,
+            longitude=([], longitude, get_longitude_attrs()),
+            latitude=([], latitude, get_latitude_attrs()),
+            altitude=([], altitude, get_altitude_attrs()),
         )
     )
 

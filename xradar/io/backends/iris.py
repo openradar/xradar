@@ -1881,7 +1881,20 @@ SIGMET_DATA_TYPES = OrderedDict(
             },
         ),
         # Corrected Velocity (1 byte)
-        (17, {"name": "DB_VELC", "dtype": "uint8", "func": None}),
+        (
+            17,
+            {
+                "name": "DB_VELC",
+                "dtype": "uint8",
+                "func": decode_array,
+                "fkw": {
+                    "offset": -1,
+                    "scale": 253.0 / 150,
+                    "offset2": -75,
+                    "mask": 0.0,
+                },
+            },
+        ),
         # SQI (1 byte)
         (
             18,
@@ -3990,7 +4003,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
 
 def open_iris_datatree(filename_or_obj, **kwargs):
-    """Open Iris/Sigmet dataset as xradar Datatree.
+    """Open Iris/Sigmet dataset as :py:class:`datatree.DataTree`.
 
     Parameters
     ----------
@@ -4011,15 +4024,15 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
 
     Returns
     -------
-    dtree: DataTree
+    dtree: datatree.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim

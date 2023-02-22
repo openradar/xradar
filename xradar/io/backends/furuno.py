@@ -365,11 +365,10 @@ class FurunoFile:
             self._data["azimuth"] = np.fmod(
                 angles[:, 1] + self.header["azimuth_offset"], 36000
             )
-            if self.version in [3, 103]:
-                dtype = "int16"
-            else:
-                dtype = "uint16"
-            self._data["elevation"] = angles[:, 2].view(dtype=dtype)
+            # elevation angles are dtype "int16"
+            # which was tested against a sweep with -1deg elevation
+            # https://github.com/openradar/xradar/pull/82
+            self._data["elevation"] = angles[:, 2].view(dtype="int16")
         return self._data
 
     def close(self):
@@ -575,7 +574,7 @@ class FurunoStore(AbstractDataStore):
             add_offset = -1e-2
             scale_factor = 1e-2
         elif name in ["azimuth", "elevation"]:
-            add_offset = 0
+            add_offset = 0.0
             scale_factor = 1e-2
         else:
             add_offset = -327.68
@@ -587,15 +586,19 @@ class FurunoStore(AbstractDataStore):
             attrs = get_azimuth_attrs() if name == "azimuth" else get_elevation_attrs()
             attrs["add_offset"] = add_offset
             attrs["scale_factor"] = scale_factor
+            # choose maximum of dtype here, because it is out of the valid range
+            attrs["_FillValue"] = np.ma.minimum_fill_value(data.dtype)
             dims = (dim,)
-            if name == self.ds.first_dimension:
-                attrs["a1gate"] = self.ds.a1gate
-                attrs["angle_res"] = self.ds.angle_resolution
+            # do not propagate a1gate and angle_res for now
+            # if name == self.ds.first_dimension:
+            #    attrs["a1gate"] = self.ds.a1gate
+            #    attrs["angle_res"] = self.ds.angle_resolution
+
         else:
             if name != "QUAL":
                 attrs["add_offset"] = add_offset
                 attrs["scale_factor"] = scale_factor
-                attrs["_FillValue"] = 0
+                attrs["_FillValue"] = 0.0
             dims = (dim, "range")
         attrs[
             "coordinates"
@@ -664,7 +667,7 @@ class FurunoStore(AbstractDataStore):
             "sweep_number": Variable((), sweep_number),
             "prt_mode": Variable((), prt_mode),
             "follow_mode": Variable((), follow_mode),
-            "fixed_angle": Variable((), self.ds.fixed_angle),
+            "sweep_fixed_angle": Variable((), self.ds.fixed_angle),
             "longitude": Variable((), lon, get_longitude_attrs()),
             "latitude": Variable((), lat, get_latitude_attrs()),
             "altitude": Variable((), alt, get_altitude_attrs()),
@@ -768,7 +771,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
 
 def open_furuno_datatree(filename_or_obj, **kwargs):
-    """Open FURUNO dataset as xradar Datatree.
+    """Open FURUNO dataset as :py:class:`datatree.DataTree`.
 
     Parameters
     ----------
@@ -789,15 +792,15 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to False.
+        If True, fixes erroneous second angle data. Defaults to ``False``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs :  kwargs
-        Additional kwargs are fed to `xr.open_dataset`.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
 
     Returns
     -------
-    dtree: DataTree
+    dtree: datatree.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim
