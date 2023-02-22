@@ -4,6 +4,7 @@ h5py
 lat_lon_parser
 netCDF4
 numpy
+pyproj
 scipy
 xarray
 xarray-datatree >= 0.0.10
