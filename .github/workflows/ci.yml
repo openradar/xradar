@@ -78,36 +78,9 @@ jobs:
         name: codecov-gha
         fail_ci_if_error: false
 
-  test_build_distribution:
-    name: test build distribution
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -l {0}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build setuptools wheel
-      - name: Package
-        run: |
-          python -m build
-          cp dist/xradar*.gz dist/xradar0.gz
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: xradar-0-${{github.event.number}}
-          path: dist/xradar0.gz
-
-  test_build_distribution2:
+  test_build_distribution_testpypi:
     name: test build distribution for testpypi
+    needs: [lint, build_0]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -135,3 +108,39 @@ jobs:
         with:
           name: xradar-1-${{github.event.number}}
           path: dist/xradar1.gz
+      - name: Upload to TestPyPI
+        if: ${{ github.event_name == 'push' }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TESTPYPI_API_TOKEN }}
+        run: |
+          twine upload --repository testpypi dist/*
+
+  test_build_distribution_pypi:
+    name: test build distribution
+    needs: [lint, build_0, test_build_distribution_testpypi]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build setuptools wheel
+      - name: Package
+        run: |
+          python -m build
+          cp dist/xradar*.gz dist/xradar0.gz
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: xradar-0-${{github.event.number}}
+          path: dist/xradar0.gz
