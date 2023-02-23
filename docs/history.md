@@ -1,6 +1,6 @@
 # History
 
-## 0.1.0 (TBA)
+## 0.1.0 (2023-02-23)
 
 * Add an example on reading multiple sweeps into a single object ({pull}`69`) by [@mgrover1](https://github.com/mgrover1)
 * ENH: add spatial_ref with pyproj when georeferencing, add/adapt methods/tests ({issue}`38`), ({pull}`87`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
