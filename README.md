@@ -23,6 +23,10 @@ As memory representation an xarray based data model was chosen, which is interna
 
 Any software package that uses xarray in any way will then be able to directly use the described data model and thus quickly and easily import and export radar data. Another advantage is the easy connection to already existing [open source radar processing software](https://openradarscience.org/pages/projects/#).
 
+## Status
+
+Xradar is considered stable for the implemented readers and writers which have been ported from wradlib. It will remain in beta status until the standard is finally fixed and the API as well as data model will move into stable/production status.
+
 ## Features
 
 * Import CfRadial1 data
