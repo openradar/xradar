@@ -114,6 +114,7 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TESTPYPI_API_TOKEN }}
         run: |
+          rm -f dist/xradar1.gz
           twine upload --repository testpypi dist/*
 
   test_build_distribution_pypi:
