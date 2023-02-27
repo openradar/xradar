@@ -71,7 +71,8 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
         if "sweep" in grp:
             dtree[grp] = DataTree(
                 conform_cfradial2_sweep_group(
-                    dtree[grp].to_dataset(), optional=False, dim0="azimuth"
+                    dtree[grp].to_dataset(),
+                    optional=False,
                 )
             )
 
