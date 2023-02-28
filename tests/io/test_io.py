@@ -4,7 +4,11 @@
 
 """Tests for `io` module."""
 
+import tempfile
+
+import datatree
 import numpy as np
+import pytest
 import xarray as xr
 
 import xradar.io
@@ -629,3 +633,27 @@ def test_odim_roundtrip(odim_file2):
     for d0, d1 in zip(dtree.groups, dtree2.groups):
         print(d0, d1)
         xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
+
+
+@pytest.mark.parametrize("first_dim", ["time", "auto"])
+def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
+    dtree0 = open_cfradial1_datatree(cfradial1_file, first_dim=first_dim)
+    # first write to cfradial2
+    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
+    xradar.io.to_cfradial2(dtree0.copy(), outfile)
+    # then open cfradial2 file
+    dtree1 = datatree.open_datatree(outfile)
+    # and write again
+    outfile1 = tempfile.NamedTemporaryFile(mode="w+b").name
+    xradar.io.to_cfradial2(dtree1.copy(), outfile1)
+    # and open second cfradial2
+    dtree2 = datatree.open_datatree(outfile1)
+    # check equality
+    for d0, d1, d2 in zip(dtree0.groups, dtree1.groups, dtree2.groups):
+        if "sweep" in d0:
+            if first_dim == "auto":
+                first_dim = "azimuth"
+            assert first_dim in dtree0[d0].dims
+            assert "time" in dtree1[d1].dims
+            assert "time" in dtree2[d2].dims
+        xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
