@@ -113,8 +113,6 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
         val[np.isnan(val)] = fillval
         if np.issubdtype(dtype, np.integer):
             val = np.rint(val).astype(dtype)
-        # todo: compression is chosen totally arbitrary here
-        #  maybe parameterizing it?
         ds = h5_data.create_dataset(
             "data",
             data=val,
