@@ -59,7 +59,7 @@ def _write_odim(source, destination):
             destination.attrs[key] = value
 
 
-def _write_odim_dataspace(source, destination):
+def _write_odim_dataspace(source, destination, compression, compression_opts):
     """Write ODIM_H5 Dataspaces.
 
     Parameters
@@ -68,6 +68,10 @@ def _write_odim_dataspace(source, destination):
         Moments to write
     destination : handle
         h5py-group handle
+    compression : str
+        Compression filter name
+    compression_opts : compression strategy
+        options as needed by above filter
     """
     # todo: check bottom-up/top-down rhi
     dim0 = "elevation" if source.sweep_mode == "rhi" else "azimuth"
@@ -105,17 +109,15 @@ def _write_odim_dataspace(source, destination):
         val = value.sortby(dim0).values
         fillval = _fillvalue * scale_factor
         fillval += add_offset
-        val[np.isnan(val)] = fillval
         val = (val - add_offset) / scale_factor
+        val[np.isnan(val)] = fillval
         if np.issubdtype(dtype, np.integer):
             val = np.rint(val).astype(dtype)
-        # todo: compression is chosen totally arbitrary here
-        #  maybe parameterizing it?
         ds = h5_data.create_dataset(
             "data",
             data=val,
-            compression="gzip",
-            compression_opts=6,
+            compression=compression,
+            compression_opts=compression_opts,
             fillvalue=_fillvalue,
             dtype=dtype,
         )
@@ -132,7 +134,7 @@ def _write_odim_dataspace(source, destination):
             ds.attrs.create("IMAGE_VERSION", version, dtype=H5T_C_S1_VER)
 
 
-def to_odim(dtree, filename):
+def to_odim(dtree, filename, compression="gzip", compression_opts=6):
     """Save DataTree to ODIM_H5/V2_2 compliant file.
 
     Parameters
@@ -140,6 +142,14 @@ def to_odim(dtree, filename):
     dtree : datatree.DataTree
     filename : str
         output filename
+
+    Keyword Arguments
+    -----------------
+    compression : str
+        Compression filter name, defaults to "gzip".
+    compression_opts : compression strategy
+        options as needed by above filter, defaults to 6
+
     """
     root = dtree["/"]
 
@@ -257,6 +267,6 @@ def to_odim(dtree, filename):
         _write_odim(ds_how, h5_ds_how)
 
         # write moments
-        _write_odim_dataspace(ds, h5_dataset)
+        _write_odim_dataspace(ds, h5_dataset, compression, compression_opts)
 
     h5.close()

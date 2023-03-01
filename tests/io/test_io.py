@@ -625,10 +625,15 @@ def test_open_iris1_dataset(iris1_file):
     assert ds.sweep_number == 0
 
 
-def test_odim_roundtrip(odim_file2):
+@pytest.mark.parametrize(
+    "compression, compression_opts", [("gzip", 0), ("gzip", 6), ("gzip", 9)]
+)
+def test_odim_roundtrip(odim_file2, compression, compression_opts):
     dtree = open_odim_datatree(odim_file2)
-    outfile = "odim_out.h5"
-    xradar.io.to_odim(dtree, outfile)
+    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
+    xradar.io.to_odim(
+        dtree, outfile, compression=compression, compression_opts=compression_opts
+    )
     dtree2 = open_odim_datatree(outfile, reindex_angle=False)
     for d0, d1 in zip(dtree.groups, dtree2.groups):
         print(d0, d1)
