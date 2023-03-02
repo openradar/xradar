@@ -46,6 +46,11 @@ def rainbow_file():
 
 
 @pytest.fixture(scope="session")
+def rainbow_file2():
+    return DATASETS.fetch("sample_rainbow_5_59.vol")
+
+
+@pytest.fixture(scope="session")
 def iris0_file():
     return DATASETS.fetch("cor-main131125105503.RAW2049")
 

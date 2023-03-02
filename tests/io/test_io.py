@@ -7,6 +7,7 @@
 import tempfile
 
 import datatree
+import h5py
 import numpy as np
 import pytest
 import xarray as xr
@@ -632,12 +633,36 @@ def test_odim_roundtrip(odim_file2, compression, compression_opts):
     dtree = open_odim_datatree(odim_file2)
     outfile = tempfile.NamedTemporaryFile(mode="w+b").name
     xradar.io.to_odim(
-        dtree, outfile, compression=compression, compression_opts=compression_opts
+        dtree,
+        outfile,
+        source="WMO:01104,NOD:norst",
+        compression=compression,
+        compression_opts=compression_opts,
     )
     dtree2 = open_odim_datatree(outfile, reindex_angle=False)
     for d0, d1 in zip(dtree.groups, dtree2.groups):
         print(d0, d1)
         xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
+
+
+def test_write_odim_source(rainbow_file2):
+    dtree = open_rainbow_datatree(rainbow_file2)
+    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
+
+    with pytest.raises(ValueError):
+        xradar.io.to_odim(
+            dtree,
+            outfile,
+            source="PLC:Wideumont",
+        )
+
+    xradar.io.to_odim(
+        dtree,
+        outfile,
+        source="NOD:bewid,WMO:06477",
+    )
+    ds = h5py.File(outfile)
+    assert ds["what"].attrs["source"].decode("utf-8") == "NOD:bewid,WMO:06477"
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
