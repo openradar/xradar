@@ -134,7 +134,7 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
             ds.attrs.create("IMAGE_VERSION", version, dtype=H5T_C_S1_VER)
 
 
-def to_odim(dtree, filename, compression="gzip", compression_opts=6):
+def to_odim(dtree, filename, source=None, compression="gzip", compression_opts=6):
     """Save DataTree to ODIM_H5/V2_2 compliant file.
 
     Parameters
@@ -145,12 +145,22 @@ def to_odim(dtree, filename, compression="gzip", compression_opts=6):
 
     Keyword Arguments
     -----------------
+    source : str
+        mandatory radar identifier (see ODIM documentation)
     compression : str
         Compression filter name, defaults to "gzip".
     compression_opts : compression strategy
         options as needed by above filter, defaults to 6
-
     """
+    nod = "NOD" in source
+    wmo = "WMO" in source
+    rad = "RAD" in source
+    if not nod and not rad and not wmo:
+        raise ValueError(
+            "Please provide the source parameter with at least one"
+            "of the mandatory radar identifier (NOD, RAD, WMO)"
+        )
+
     root = dtree["/"]
 
     h5 = h5py.File(filename, "w")
@@ -178,7 +188,8 @@ def to_odim(dtree, filename, compression="gzip", compression_opts=6):
     what["version"] = "H5rad 2.2"
     what["date"] = str(root["time_coverage_start"].values)[:10].replace("-", "")
     what["time"] = str(root["time_coverage_end"].values)[11:19].replace(":", "")
-    what["source"] = root.attrs["instrument_name"]
+
+    what["source"] = source
 
     h5_what = h5.create_group("what")
     _write_odim(what, h5_what)
