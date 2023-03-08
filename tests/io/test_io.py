@@ -641,8 +641,50 @@ def test_odim_roundtrip(odim_file2, compression, compression_opts):
     )
     dtree2 = open_odim_datatree(outfile, reindex_angle=False)
     for d0, d1 in zip(dtree.groups, dtree2.groups):
-        print(d0, d1)
         xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
+
+
+def test_odim_optional_how(odim_file2):
+    dtree = open_odim_datatree(odim_file2)
+    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
+    xradar.io.to_odim(
+        dtree,
+        outfile,
+        source="WMO:01104,NOD:norst",
+        optional_how=True,
+    )
+    ds = h5py.File(outfile)
+
+    for i in range(1, 6):
+        ds_how = ds["dataset%s" % (i)]["how"].attrs
+        assert "scan_index" in ds_how
+        assert "scan_count" in ds_how
+        assert "startazA" in ds_how
+        assert "stopazA" in ds_how
+        assert "startazT" in ds_how
+        assert "startazT" in ds_how
+        assert "startelA" in ds_how
+        assert "stopelA" in ds_how
+
+    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
+    xradar.io.to_odim(
+        dtree,
+        outfile,
+        source="WMO:01104,NOD:norst",
+        optional_how=False,
+    )
+    ds = h5py.File(outfile)
+
+    for i in range(1, 6):
+        ds_how = ds["dataset%s" % (i)]["how"].attrs
+        assert "scan_index" not in ds_how
+        assert "scan_count" not in ds_how
+        assert "startazA" not in ds_how
+        assert "stopazA" not in ds_how
+        assert "startazT" not in ds_how
+        assert "startazT" not in ds_how
+        assert "startelA" not in ds_how
+        assert "stopelA" not in ds_how
 
 
 def test_write_odim_source(rainbow_file2):
