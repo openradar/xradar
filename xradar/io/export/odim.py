@@ -134,7 +134,14 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
             ds.attrs.create("IMAGE_VERSION", version, dtype=H5T_C_S1_VER)
 
 
-def to_odim(dtree, filename, source=None, compression="gzip", compression_opts=6):
+def to_odim(
+    dtree,
+    filename,
+    source=None,
+    optional_how=False,
+    compression="gzip",
+    compression_opts=6,
+):
     """Save DataTree to ODIM_H5/V2_2 compliant file.
 
     Parameters
@@ -147,6 +154,8 @@ def to_odim(dtree, filename, source=None, compression="gzip", compression_opts=6
     -----------------
     source : str
         mandatory radar identifier (see ODIM documentation)
+    optional_how : boolean
+        True to include optional how attributes, defaults to False
     compression : str
         Compression filter name, defaults to "gzip".
     compression_opts : compression strategy
@@ -265,16 +274,20 @@ def to_odim(dtree, filename, source=None, compression="gzip", compression_opts=6
 
         # ODIM_H5 datasetN numbers are 1-based
         sweep_number = ds.sweep_number + 1
-        ds_how = {
-            "scan_index": sweep_number,
-            "scan_count": len(grps),
-            "startazT": tout - difft,
-            "stopazT": tout + difft,
-            "startazA": azout - diffa,
-            "stopazA": azout + diffa,
-            "startelA": elout - diffe,
-            "stopelA": elout + diffe,
-        }
+
+        ds_how = {}
+        if optional_how:
+            optional = {
+                "scan_index": sweep_number,
+                "scan_count": len(grps),
+                "startazT": tout - difft,
+                "stopazT": tout + difft,
+                "startazA": azout - diffa,
+                "stopazA": azout + diffa,
+                "startelA": elout - diffe,
+                "stopelA": elout + diffe,
+            }
+            ds_how.update(optional)
         _write_odim(ds_how, h5_ds_how)
 
         # write moments
