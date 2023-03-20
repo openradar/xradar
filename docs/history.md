@@ -1,6 +1,6 @@
 # History
 
-## Development Version
+## 0.2.0 (2023-03-24)
 
 * ENH: switch to add optional how attributes in ODIM format writer ({pull}`97`) by [@egouden](https://github.com/egouden)
 * FIX: add keyword argument for mandatory source attribute in ODIM format writer ({pull}`96`) by [@egouden](https://github.com/egouden)
