@@ -23,5 +23,7 @@ dependencies:
   - dask
   - matplotlib-base
   - scipy
+  - boto3
+  - arm_pyart
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
