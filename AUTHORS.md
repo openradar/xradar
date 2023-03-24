@@ -8,4 +8,4 @@
 
 ## Contributors
 
-None yet. Why not be the first?
+* Edouard Goudenhoofdt <edouard.goudenhoofdt@meteo.be>
