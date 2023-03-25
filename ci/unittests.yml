@@ -27,5 +27,7 @@ dependencies:
   - xarray
   - xarray-datatree>=0.0.10
   - xmltodict
+  - boto3
+  - arm_pyart
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
