@@ -29,5 +29,7 @@ dependencies:
   - xmltodict
   - boto3
   - arm_pyart
+  - ffmpeg
+  - zarr
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
