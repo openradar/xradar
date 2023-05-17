@@ -2282,13 +2282,45 @@ SIGMET_DATA_TYPES = OrderedDict(
         # Turbulence (2 byte)
         (70, {"name": "DB_TURB16", "dtype": "uint16", "func": None}),
         # Total Power Enhanced (via H+V or HV) (1 byte)
-        (71, {"name": "DB_DBTE8", "dtype": "uint8", "func": None}),
+        (
+            71,
+            {
+                "name": "DB_DBTE8",
+                "dtype": "uint8",
+                "func": decode_array,
+                "fkw": {"scale": 2.0, "offset": -64.0},
+            },
+        ),
         # Total Power Enhanced (via H+V or HV) (2 byte)
-        (72, {"name": "DB_DBTE16", "dtype": "uint16", "func": None}),
+        (
+            72,
+            {
+                "name": "DB_DBTE16",
+                "dtype": "uint16",
+                "func": decode_array,
+                "fkw": {"scale": 100.0, "offset": -32768.0},
+            },
+        ),
         # Clutter Corrected Reflectivity Enhanced (1 byte)
-        (73, {"name": "DB_DBZE8", "dtype": "uint8", "func": None}),
+        (
+            73,
+            {
+                "name": "DB_DBZE8",
+                "dtype": "uint8",
+                "func": decode_array,
+                "fkw": {"scale": 2.0, "offset": -64.0},
+            },
+        ),
         # Clutter Corrected Reflectivity Enhanced (2 byte)
-        (74, {"name": "DB_DBZE16", "dtype": "uint16", "func": None}),
+        (
+            74,
+            {
+                "name": "DB_DBZE16",
+                "dtype": "uint16",
+                "func": decode_array,
+                "fkw": {"scale": 100.0, "offset": -32768.0},
+            },
+        ),
         # Polarimetric meteo index (1 byte)
         (
             75,
