@@ -367,7 +367,8 @@ def ipol_time(ds):
     time = ds.time
     if amin > amax:
         time = time.pipe(_ipol_time, 0, amin)
-        time = time.pipe(_ipol_time, amin, -1)
+        if amin != len(time) - 1:
+            time = time.pipe(_ipol_time, amin, -1)
     else:
         time = time.pipe(_ipol_time)
     ds["time"] = time
