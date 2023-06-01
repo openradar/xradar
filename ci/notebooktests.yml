@@ -1,15 +1,19 @@
-name: xradar-unittests
+name: xradar-notebookstests
 channels:
   - conda-forge
 dependencies:
   - python>=3.9
+  - cartopy
   - codecov
   - coverage
   - dask
   - h5netcdf
   - h5py
   - lat_lon_parser
+  - matplotlib-base
+  - nbconvert
   - netCDF4
+  - notebook
   - numpy
   - pip
   - pyproj
@@ -23,5 +27,9 @@ dependencies:
   - xarray
   - xarray-datatree>=0.0.10
   - xmltodict
+  - boto3
+  - arm_pyart
+  - ffmpeg
+  - zarr
   - pip:
     - git+https://github.com/openradar/open-radar-data.git
