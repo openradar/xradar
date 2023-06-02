@@ -29,6 +29,7 @@ import contextlib
 import gzip
 import importlib.util
 import io
+import warnings
 
 import numpy as np
 from scipy import interpolate
@@ -324,7 +325,18 @@ def extract_angle_parameters(ds):
     return angle_dict
 
 
-def _ipol_time(da, start=0, stop=-1):
+def _trailing_zeros(da, digits=16, dim=0):
+    """Calculate number of trailing zeros for input cast to int."""
+    for i in range(digits):
+        x = da.dropna(da.dims[dim]).astype(int).values % np.power(10, i)
+        if not x.any():
+            continue
+        else:
+            break
+    return i - 1
+
+
+def _ipol_time(da, dim0, a1gate=0, direction=1):
     """Interpolate/extrapolate missing time steps (NaT).
 
     Parameters
@@ -338,17 +350,52 @@ def _ipol_time(da, start=0, stop=-1):
         DataArray with interpolated/extrapolated timesteps.
     """
     dtype = da.dtype
-    da_sel = da[start:stop].dropna("azimuth")
+    idx = slice(None, None)
+
+    # extract wanted section
+    da_sel = da.isel({dim0: idx})
+
+    # get sorting indices along first dimension
+    sidx = da_sel[dim0].argsort()
+
+    # special handling for wrap-around angles
+    angles = da_sel[dim0].values
+    # a1gate should normally only be set for PPI,
+    if a1gate > 0:
+        angles[-a1gate:] += 360
+    da_sel = da_sel.assign_coords({dim0: angles})
+
+    # prepare azimuth array for interpolation
+    angles = da_sel[dim0].diff(dim0).cumsum(dim0).pad({dim0: (1, 0)}, constant_values=0)
+    da_sel = da_sel.assign_coords({dim0: angles * direction})
+
+    # apply original order for interpolation, get angles
+    angles = da_sel.sortby([sidx])[dim0]
+
+    # drop NaT from selection for creation of interpolator
+    da_sel = da_sel.dropna(dim0)
+
+    # setup interpolator
     ipol = interpolate.interp1d(
-        da_sel.azimuth,
+        da_sel[dim0].values,
         da_sel.astype(int),
         fill_value="extrapolate",
+        assume_sorted=False,
     )
-    da.data[start:stop] = ipol(da.azimuth[start:stop]).astype(dtype)
+
+    # floating point interpolation might introduce spurious digits
+    # get least significant digit
+    sig = np.power(10, _trailing_zeros(da_sel.time))
+
+    # interpolate and round to the least significant digit
+    data = np.rint(ipol(angles) / sig).astype(int) * sig
+
+    # apply interpolated times into original DataArray
+    da.loc[{dim0: idx}] = data.astype(dtype)
     return da
 
 
-def ipol_time(ds):
+def ipol_time(ds, *, a1gate_idx=None, direction=None, **kwargs):
     """Interpolate/extrapolate missing time steps (NaT).
 
     Parameters
@@ -356,22 +403,62 @@ def ipol_time(ds):
     ds : xarray.Dataset
         Dataset to interpolate/extrapolate missing timesteps.
 
+    Keyword Arguments
+    -----------------
+    a1gate_idx : int | None
+        First measured gate. 0 assumed, if None.
+    direction : int | None
+        1: CW, -1: CCW, Clockwise assumed, if None.
+
     Returns
     -------
     ds : xarray.Dataset
         Dataset with interpolated/extrapolated timesteps.
     """
+    # get first dim and sort to get common state
+    dim0 = get_first_angle(ds)
+    ds = ds.sortby(dim0)
+
+    # return early, if nothing to do
+    if not np.isnan(ds.time).any():
+        return ds
+
+    if direction is None:
+        # set clockwise, rotating in positive direction
+        direction = 1
+
     time = ds.time.astype(int)
-    amin = time.where(time > 0).argmin("azimuth", skipna=True).values
-    amax = time.where(time > 0).argmax("azimuth", skipna=True).values
+    # skip NaT (-9223372036854775808) for amin/amax calculation
+    amin = time.where(time > -9223372036854775808).argmin(dim0, skipna=True).values
+    amax = time.where(time > -9223372036854775808).argmax(dim0, skipna=True).values
     time = ds.time
-    if amin > amax:
-        time = time.pipe(_ipol_time, 0, amin)
-        time = time.pipe(_ipol_time, amin, -1)
+
+    if a1gate_idx is None:
+        # if times are not sorted ascending
+        if amin > amax:
+            # check if we have missing times between amax and amin
+            # todo: align with start or end per keyword argument
+            if (amin - amax) > 1:
+                warnings.warn(
+                    "Rays might miss on beginning and/or end of sweep. "
+                    "`a1gate` information is needed to fully recover. "
+                    "We'll assume sweep start at first valid ray."
+                )
+            # set a1gate to amin
+            a1gate_idx = amin
+        else:
+            a1gate_idx = 0
+
+    if a1gate_idx > 0:
+        # roll first ray to 0-index, interpolate, roll-back
+        time = time.roll({dim0: -a1gate_idx}, roll_coords=True)
+        time = time.pipe(_ipol_time, dim0, a1gate=a1gate_idx, direction=direction)
+        time = time.roll({dim0: a1gate_idx}, roll_coords=True)
     else:
-        time = time.pipe(_ipol_time)
-    ds["time"] = time
-    return ds
+        time = time.pipe(_ipol_time, dim0, direction=direction)
+
+    ds_out = ds.assign({"time": ([dim0], time.values)})
+    return ds_out.sortby(dim0)
 
 
 @contextlib.contextmanager

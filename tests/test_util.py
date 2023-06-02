@@ -108,3 +108,44 @@ def test_ipol_time():
     xr.testing.assert_allclose(
         time_out.drop_vars(time_out.coords), time_in.drop_vars(time_in.coords)
     )
+
+
+@pytest.mark.parametrize("missing", [0, 1, 2, 10, 50])
+@pytest.mark.parametrize("a1gate", [0, 1, 2, 179, 180, 181, 357, 358, 359])
+@pytest.mark.parametrize("rot", ["cw", "ccw"])
+def test_ipol_time2(missing, a1gate, rot):
+    # prepare Dataset with one NaT in between
+    if rot == "cw":
+        start_ang, stop_ang = 0, 360
+        direction = 1
+    else:
+        start_ang, stop_ang = 360, 0
+        direction = -1
+
+    ds = model.create_sweep_dataset(
+        a1gate=a1gate, direction=direction, start_ang=start_ang, stop_ang=stop_ang
+    )
+    ds = ds.swap_dims({"time": "azimuth"})
+    ds = ds.sortby("azimuth")
+    ds_in = xr.concat(
+        [
+            ds.isel(azimuth=slice(missing, 180 - missing)),
+            ds.isel(azimuth=slice(180 + missing, 360 - missing)),
+        ],
+        "azimuth",
+        data_vars="minimal",
+    )
+
+    ds_out = util.remove_duplicate_rays(ds_in)
+    ds_out = util.reindex_angle(
+        ds_out,
+        start_angle=start_ang,
+        stop_angle=stop_ang,
+        angle_res=1.0,
+        direction=direction,
+        method="nearest",
+    )
+    dsx = ds_out.copy(deep=True)
+    dsy = dsx.pipe(util.ipol_time, a1gate_idx=a1gate, direction=direction)
+    # see if all time values were reconstructed
+    xr.testing.assert_equal(ds, dsy)

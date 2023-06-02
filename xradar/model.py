@@ -887,6 +887,8 @@ def create_sweep_dataset(**kwargs):
         range resolution or array with range values.
     azimuth : float or :class:`numpy:numpy.ndarray`
         azimuth resolution or array with azimuth values.
+    direction : int
+        1 - CW/UP, -1 CCW/DOWN
     a1gate : int
         First measured ray. Defaults to 0. Only used for PPI.
     elevation : float or :class:`numpy:numpy.ndarray`
@@ -937,10 +939,11 @@ def create_sweep_dataset(**kwargs):
     time = kwargs.pop("time", 0.25)
     date_str = kwargs.pop("date_str", "2022-08-27T10:00:00")
     rng = kwargs.pop("rng", 100)
+    direction = kwargs.pop("direction", 1)
 
     # calculate according to PPI/RHI
     if sweep == "PPI":
-        azimuth = get_azimuth_dataarray(azimuth, nrays=None, a1gate=a1gate)
+        azimuth = get_azimuth_dataarray(azimuth, nrays=None, a1gate=a1gate)[::direction]
         nrays = azimuth.shape[0]
         elevation = get_elevation_dataarray(elevation, nrays=nrays)
     else:
