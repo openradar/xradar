@@ -149,3 +149,10 @@ def test_ipol_time2(missing, a1gate, rot):
     dsy = dsx.pipe(util.ipol_time, a1gate_idx=a1gate, direction=direction)
     # see if all time values were reconstructed
     xr.testing.assert_equal(ds, dsy)
+
+    # check emit warning
+    if a1gate in [179, 180, 181] and missing and direction == 1:
+        with pytest.warns(
+            UserWarning, match="Rays might miss on beginning and/or end of sweep."
+        ):
+            dsx.pipe(util.ipol_time, direction=direction)
