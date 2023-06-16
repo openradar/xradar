@@ -273,12 +273,20 @@ def extract_angle_parameters(ds):
     # and other erroneous ray alignments which result in different first_angle values
 
     # 6. this finds the median of those diff-values which are over some quantile
-    # infact this removes angle differences which are too small
-    median_diff = diff.where(diff >= diff.quantile(0.30)).median(skipna=True)
+    # in fact this removes angle differences which are too small
+    # calculate std/median
+    # see GH112, if we get further issues, we might add a warning here in the future
+    std = diff.std(skipna=True)
+    median = diff.median(skipna=True)
+    # remove values above and below std (centered around median), calculate median
+    median_diff = diff.where(
+        (diff >= (median - std)) & (diff <= (median + std))
+    ).median(skipna=True)
+
     # unique differences
     diffset = set(diff.values)
     # if there are more than 1 unique angle differences that means
-    # non uniform angle spacing
+    # non-uniform angle spacing
     uniform_angle_spacing = len(diffset) == 1
     angle_dict.update(uniform_angle_spacing=uniform_angle_spacing)
 
