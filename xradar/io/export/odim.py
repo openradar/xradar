@@ -161,10 +161,10 @@ def to_odim(
     compression_opts : compression strategy
         options as needed by above filter, defaults to 6
     """
-    nod = "NOD" in source
-    wmo = "WMO" in source
-    rad = "RAD" in source
-    if not nod and not rad and not wmo:
+    has_identifier = False
+    if source is not None:
+        has_identifier = any(key in source for key in ["NOD", "WMO", "RAD"])
+    if not has_identifier:
         raise ValueError(
             "Please provide the source parameter with at least one"
             "of the mandatory radar identifier (NOD, RAD, WMO)"
