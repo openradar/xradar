@@ -3744,7 +3744,12 @@ class IrisArrayWrapper(BackendArray):
 
     def __init__(self, datastore, name, var):
         self.datastore = datastore
-        self.group = var["sweep_number"]
+        self.group = datastore._group
+        if self.group != var["sweep_number"]:
+            warnings.warn(
+                f"sweep_{self.group - 1} empty or corrupted.",
+                RuntimeWarning,
+            )
         self.name = name
         # get rays and bins
         nrays = var["number_rays_file_written"]
@@ -3889,7 +3894,6 @@ class IrisStore(AbstractDataStore):
         range_attrs["meters_to_center_of_first_gate"] = task["range_first_bin"]
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
-        azimuth = Variable((dim,), azimuth, {}, encoding)
 
         ing_head = self.ds["ingest_data_hdrs"]
         data = ing_head[list(ing_head.keys())[0]]
