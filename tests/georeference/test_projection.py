@@ -47,7 +47,7 @@ def test_get_crs():
         "false_northing": 0.0,
     }
     for key, value in crs.items():
-        if type(value) == float:
+        if isinstance(value, float):
             assert proj_crs_cf[key] == pytest.approx(value)
         else:
             assert proj_crs_cf[key] == value
@@ -78,7 +78,7 @@ def test_write_crs():
         "false_northing": 0.0,
     }
     for key, value in crs.items():
-        if type(value) == float:
+        if isinstance(value, float):
             assert ds.spatial_ref.attrs[key] == pytest.approx(value)
         else:
             assert ds.spatial_ref.attrs[key] == value
