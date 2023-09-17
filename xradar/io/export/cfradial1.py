@@ -48,15 +48,15 @@ def _calib_mapper(calib_params):
     new_data_vars = {}
     for var in calib_params.data_vars:
         data_array = calib_params[var]
-        new_data_vars['r_calib_' + var] = xr.DataArray(
+        new_data_vars["r_calib_" + var] = xr.DataArray(
             data=data_array.data[np.newaxis, ...],
-            dims=['r_calib'] + list(data_array.dims),
-            coords={'r_calib': [0]},
-            attrs=data_array.attrs
+            dims=["r_calib"] + list(data_array.dims),
+            coords={"r_calib": [0]},
+            attrs=data_array.attrs,
         )
     radar_calib_renamed = xr.Dataset(new_data_vars)
-    dummy_ds = radar_calib_renamed.rename_vars({'r_calib': "fake_coord"})
-    del dummy_ds['fake_coord']
+    dummy_ds = radar_calib_renamed.rename_vars({"r_calib": "fake_coord"})
+    del dummy_ds["fake_coord"]
     return dummy_ds
 
 
@@ -74,8 +74,8 @@ def _main_info_mapper(dtree):
     """
     dataset = (
         dtree.root.to_dataset()
-        .drop('sweep_group_name')
-        .rename({'sweep_fixed_angle': 'fixed_angle'})
+        .drop("sweep_group_name")
+        .rename({"sweep_fixed_angle": "fixed_angle"})
     )
     return dataset
 
@@ -86,7 +86,7 @@ def _variable_mapper(dtree, sweep_group_name):
 
     Parameters:
     - dtree: xarray.Dataset
-        Radar dtreeume dataset.
+        Radar dataset.
     - sweep_group_name: xarray.DataArray
         DataArray containing sweep group names.
 
@@ -96,31 +96,37 @@ def _variable_mapper(dtree, sweep_group_name):
     """
     sweep_group_names = sweep_group_name.values.tolist()
 
-    sweep_datasets = [
-        dtree[name]
-        .drop_vars(['x', 'y', 'z'])
-        .swap_dims({'azimuth': 'time'})
-        .to_dataset()
-        for name in sweep_group_names
-    ]
+    sweep_datasets = []
+
+    for name in sweep_group_names:
+        data = dtree[name]
+
+        # Check if 'x', 'y', and 'z' variables are available before dropping them
+        if "x" in data.variables:
+            data = data.drop_vars(["x"])
+        if "y" in data.variables:
+            data = data.drop_vars(["y"])
+        if "z" in data.variables:
+            data = data.drop_vars(["z"])
+
+        # Swap dimensions 'azimuth' to 'time'
+        data = data.swap_dims({"azimuth": "time"})
+
+        # Convert to a dataset and append to the list
+        sweep_datasets.append(data.to_dataset())
 
     result_dataset = xr.concat(
         sweep_datasets,
-        dim='time',
-        compat='no_conflicts',
-        join='right',
-        combine_attrs='drop_conflicts'
-    )
-
-    result_dataset = result_dataset.drop(
-        ["sweep_fixed_angle",
-         "sweep_number",
-         "sweep_mode",
-         "prt_mode",
-         "follow_mode"]
+        dim="time",
+        compat="no_conflicts",
+        join="right",
+        combine_attrs="drop_conflicts",
     )
     result_dataset = result_dataset.drop(
-        ['latitude', 'longitude', 'altitude', 'spatial_ref']
+        ["sweep_fixed_angle", "sweep_number", "sweep_mode", "prt_mode", "follow_mode"]
+    )
+    result_dataset = result_dataset.drop(
+        ["latitude", "longitude", "altitude", "spatial_ref"]
     )
 
     return result_dataset
@@ -142,40 +148,35 @@ def _sweep_info_mapper(dtree):
     dataset = xr.Dataset()
 
     sweep_vars = [
-        'sweep_number',
-        'sweep_mode',
-        'polarization_mode',
-        'prt_mode',
-        'follow_mode',
-        'sweep_fixed_angle',
-        'sweep_start_ray_index',
-        'sweep_end_ray_index'
+        "sweep_number",
+        "sweep_mode",
+        "polarization_mode",
+        "prt_mode",
+        "follow_mode",
+        "sweep_fixed_angle",
+        "sweep_start_ray_index",
+        "sweep_end_ray_index",
     ]
 
     for var_name in sweep_vars:
         var_data_list = [
-            np.unique(
-                dtree[s][var_name].values[np.newaxis, ...]
-            ) if var_name in dtree[s] else np.array([np.nan])
+            np.unique(dtree[s][var_name].values[np.newaxis, ...])
+            if var_name in dtree[s]
+            else np.array([np.nan])
             for s in dtree.sweep_group_name.values
         ]
         var_attrs_list = [
-            dtree[s][var_name]
-            .attrs if var_name in dtree[s] else {
-            } for s in dtree.sweep_group_name.values
+            dtree[s][var_name].attrs if var_name in dtree[s] else {}
+            for s in dtree.sweep_group_name.values
         ]
         var_data = np.concatenate(var_data_list)
         var_attrs = {}
         for attrs in var_attrs_list:
             var_attrs.update(attrs)
-        var_data_array = xr.DataArray(
-            var_data,
-            dims=('sweep',),
-            attrs=var_attrs
-        )
+        var_data_array = xr.DataArray(var_data, dims=("sweep",), attrs=var_attrs)
         dataset[var_name] = var_data_array
 
-    dataset = dataset.rename({'sweep_fixed_angle': 'fixed_angle'})
+    dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
 
     return dataset
 
@@ -199,10 +200,10 @@ def calculate_sweep_indices(dtree, dataset=None):
     if dataset is None:
         dataset = xr.Dataset()
 
-    sweep_group_names = dtree['sweep_group_name'].values
+    sweep_group_names = dtree["sweep_group_name"].values
 
-    sweep_start_ray_index = np.zeros(len(sweep_group_names), dtype='int32')
-    sweep_end_ray_index = np.zeros(len(sweep_group_names), dtype='int32')
+    sweep_start_ray_index = np.zeros(len(sweep_group_names), dtype="int32")
+    sweep_end_ray_index = np.zeros(len(sweep_group_names), dtype="int32")
 
     cumulative_size = 0
 
@@ -216,15 +217,15 @@ def calculate_sweep_indices(dtree, dataset=None):
 
         cumulative_size += size
 
-    dataset['sweep_start_ray_index'] = xr.DataArray(
+    dataset["sweep_start_ray_index"] = xr.DataArray(
         sweep_start_ray_index,
-        dims=('sweep',),
-        attrs={'standard_name': 'index_of_first_ray_in_sweep'}
+        dims=("sweep",),
+        attrs={"standard_name": "index_of_first_ray_in_sweep"},
     )
-    dataset['sweep_end_ray_index'] = xr.DataArray(
+    dataset["sweep_end_ray_index"] = xr.DataArray(
         sweep_end_ray_index,
-        dims=('sweep',),
-        attrs={'standard_name': 'index_of_last_ray_in_sweep'}
+        dims=("sweep",),
+        attrs={"standard_name": "index_of_last_ray_in_sweep"},
     )
 
     return dataset
@@ -241,16 +242,16 @@ def to_cfradial1(dtree, filename):
     - filename: str
         The name of the output netCDF file.
     """
-    radar_params = dtree['radar_parameters'].to_dataset()
-    calib_params = dtree['radar_calibration'].to_dataset()
+    radar_params = dtree["radar_parameters"].to_dataset()
+    calib_params = dtree["radar_calibration"].to_dataset()
     calibs = _calib_mapper(calib_params)
     radar_info = _main_info_mapper(dtree)
     variables = _variable_mapper(dtree, dtree.sweep_group_name)
     swp_info = _sweep_info_mapper(dtree)
-    radar_georef = dtree['georeferencing_correction'].to_dataset()
+    radar_georef = dtree["georeferencing_correction"].to_dataset()
     for params in [radar_params, calibs, radar_georef, radar_info, swp_info]:
         variables.update(params)
-    variables = variables.reset_coords('elevation')
-    variables = variables.reset_coords('azimuth')
+    variables = variables.reset_coords("elevation")
+    variables = variables.reset_coords("azimuth")
     dataset = calculate_sweep_indices(dtree, variables)
-    dataset.to_netcdf(filename, format='netcdf4')
+    dataset.to_netcdf(filename, format="netcdf4")
