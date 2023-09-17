@@ -122,12 +122,12 @@ def _variable_mapper(dtree, sweep_group_name):
         join="right",
         combine_attrs="drop_conflicts",
     )
+    if "spatial_ref" in result_dataset.variables:
+        result_dataset = result_dataset.drop_vars("spatial_ref")
     result_dataset = result_dataset.drop(
         ["sweep_fixed_angle", "sweep_number", "sweep_mode", "prt_mode", "follow_mode"]
     )
-    result_dataset = result_dataset.drop(
-        ["latitude", "longitude", "altitude", "spatial_ref"]
-    )
+    result_dataset = result_dataset.drop(["latitude", "longitude", "altitude"])
 
     return result_dataset
 
