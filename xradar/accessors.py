@@ -24,8 +24,6 @@ __all__ = ["create_xradar_dataarray_accessor"]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-import sys
-
 import datatree as dt
 import xarray as xr
 
@@ -51,10 +49,7 @@ def create_methods(funcs):
 
 
 def create_xradar_dataarray_accessor(name, funcs):
-    if sys.version_info < (3, 9):
-        methods = {"__init__": accessor_constructor, **create_methods(funcs)}
-    else:
-        methods = {"__init__": accessor_constructor} | create_methods(funcs)
+    methods = {"__init__": accessor_constructor} | create_methods(funcs)
     cls_name = "".join([name.capitalize(), "Accessor"])
     accessor = type(cls_name, (object,), methods)
     return xr.register_dataarray_accessor(name)(accessor)
