@@ -110,7 +110,8 @@ def _variable_mapper(dtree, sweep_group_name):
             data = data.drop_vars(["z"])
 
         # Swap dimensions 'azimuth' to 'time'
-        data = data.swap_dims({"azimuth": "time"})
+        if "azimuth" in data.dims:
+            data = data.swap_dims({"azimuth": "time"})
 
         # Convert to a dataset and append to the list
         sweep_datasets.append(data.to_dataset())
