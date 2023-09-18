@@ -122,12 +122,24 @@ def _variable_mapper(dtree, sweep_group_name):
         join="right",
         combine_attrs="drop_conflicts",
     )
-    if "spatial_ref" in result_dataset.variables:
-        result_dataset = result_dataset.drop_vars("spatial_ref")
-    result_dataset = result_dataset.drop(
-        ["sweep_fixed_angle", "sweep_number", "sweep_mode", "prt_mode", "follow_mode"]
-    )
-    result_dataset = result_dataset.drop(["latitude", "longitude", "altitude"])
+
+    # Check if specific variables exist before dropping them
+    drop_variables = [
+        "sweep_fixed_angle",
+        "sweep_number",
+        "sweep_mode",
+        "prt_mode",
+        "follow_mode",
+    ]
+    for var in drop_variables:
+        if var in result_dataset.variables:
+            result_dataset = result_dataset.drop(var)
+
+    # Check if specific variables exist before dropping them
+    drop_coords = ["latitude", "longitude", "altitude", "spatial_ref"]
+    for coord in drop_coords:
+        if coord in result_dataset.coords:
+            result_dataset = result_dataset.drop(coord)
 
     return result_dataset
 
@@ -231,7 +243,7 @@ def calculate_sweep_indices(dtree, dataset=None):
     return dataset
 
 
-def to_cfradial1(dtree, filename):
+def to_cfradial1(dtree, filename, optional=True):
     """
     Convert a radar dtreeume dataset to the CFRadial1 format
     and save it to a file.
@@ -242,16 +254,32 @@ def to_cfradial1(dtree, filename):
     - filename: str
         The name of the output netCDF file.
     """
-    radar_params = dtree["radar_parameters"].to_dataset()
-    calib_params = dtree["radar_calibration"].to_dataset()
-    calibs = _calib_mapper(calib_params)
+
+    dataset = _variable_mapper(dtree, dtree.sweep_group_name)
+    dataset = dataset.reset_coords("elevation")
+    dataset = dataset.reset_coords("azimuth")
+
+    # Check if radar_parameters, radar_calibration, and
+    # georeferencing_correction exist in dtree
+    if "radar_parameters" in dtree:
+        radar_params = dtree["radar_parameters"].to_dataset()
+        dataset.update(radar_params)
+
+    if "radar_calibration" in dtree:
+        calib_params = dtree["radar_calibration"].to_dataset()
+        calibs = _calib_mapper(calib_params)
+        dataset.update(calibs)
+
+    if "georeferencing_correction" in dtree:
+        radar_georef = dtree["georeferencing_correction"].to_dataset()
+        dataset.update(radar_georef)
+
     radar_info = _main_info_mapper(dtree)
-    variables = _variable_mapper(dtree, dtree.sweep_group_name)
     swp_info = _sweep_info_mapper(dtree)
-    radar_georef = dtree["georeferencing_correction"].to_dataset()
-    for params in [radar_params, calibs, radar_georef, radar_info, swp_info]:
-        variables.update(params)
-    variables = variables.reset_coords("elevation")
-    variables = variables.reset_coords("azimuth")
-    dataset = calculate_sweep_indices(dtree, variables)
+
+    for params in [radar_info, swp_info]:
+        dataset.update(params)
+
+    # This calculate will always come at the end of this function
+    dataset = calculate_sweep_indices(dtree, dataset)
     dataset.to_netcdf(filename, format="netcdf4")
