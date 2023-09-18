@@ -65,8 +65,8 @@ def _main_info_mapper(dtree):
     Map main radar information from a radar dtreeume dataset.
 
     Parameters:
-    - dtree: xarray.Dataset
-        Radar dtreeume dataset.
+    - dtree: datatree.Datatree
+        Radar datatree.
 
     Returns:
     xarray.Dataset
@@ -85,10 +85,10 @@ def _variable_mapper(dtree, sweep_group_name):
     Map radar variables for different sweep groups.
 
     Parameters:
-    - dtree: xarray.Dataset
-        Radar dataset.
+    - dtree: datatree.Datatree
+        Radar datatree.
     - sweep_group_name: xarray.DataArray
-        DataArray containing sweep group names.
+        DataArray containing sweep group names in radar datatree.
 
     Returns:
     xarray.Dataset
@@ -146,12 +146,11 @@ def _variable_mapper(dtree, sweep_group_name):
 
 def _sweep_info_mapper(dtree):
     """
-    Extract specified sweep information variables from a
-    radar dtreeume dataset.
+    Extract specified sweep information variables from a radar datatree
 
     Parameters:
-    - dtree: xarray.Dataset
-        Radar dtreeume dataset.
+    - dtree: datatree.Datatree
+        Radar datatree.
 
     Returns:
     xarray.Dataset
@@ -199,8 +198,8 @@ def calculate_sweep_indices(dtree, dataset=None):
     values in a radar dataset.
 
     Parameters:
-    - dtree: xarray.Dataset
-        Radar dataset containing elevation values for different sweep groups.
+    - dtree: datatree.Datatree
+        Radar datatree containing elevation values for different sweep groups.
     - dataset: xarray.Dataset, optional
         An optional dataset to which the calculated indices will be added.
         If None, a new dataset will be created.
