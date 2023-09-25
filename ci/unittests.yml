@@ -4,6 +4,7 @@ channels:
 dependencies:
   - python>=3.9
   - codecov
+  - cmweather
   - coverage
   - dask
   - h5netcdf
