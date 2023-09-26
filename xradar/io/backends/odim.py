@@ -353,8 +353,8 @@ class _OdimH5NetCDFMetadata:
         if not (gain == 1.0 and offset == 0.0):
             attrs["scale_factor"] = gain
             attrs["add_offset"] = offset
-            attrs["_FillValue"] = what.get("nodata", None)
-            attrs["_Undetect"] = what.get("undetect", 0.0)
+        attrs["_FillValue"] = what.get("nodata", None)
+        attrs["_Undetect"] = what.get("undetect", 0.0)
         # if no quantity is given, use the group-name
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
