@@ -60,7 +60,7 @@ def _calib_mapper(calib_params):
 
 def _main_info_mapper(dtree):
     """
-    Map main radar information from a radar dtreeume dataset.
+    Map main radar information from a radar datatree dataset.
 
     Parameters:
     - dtree: datatree.Datatree
@@ -72,7 +72,7 @@ def _main_info_mapper(dtree):
     """
     dataset = (
         dtree.root.to_dataset()
-        .drop("sweep_group_name")
+        .drop_vars("sweep_group_name", errors="ignore")
         .rename({"sweep_fixed_angle": "fixed_angle"})
     )
     return dataset
@@ -192,7 +192,11 @@ def _sweep_info_mapper(dtree):
             if "sweep" in s
         ]
 
-        var_data = np.concatenate(var_data_list)
+        if not var_data_list:
+            var_data = np.array([np.nan])
+        else:
+            var_data = np.concatenate(var_data_list)
+
         var_attrs = {}
         for attrs in var_attrs_list:
             var_attrs.update(attrs)
@@ -279,6 +283,7 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
             calib_params = dtree["radar_calibration"].to_dataset()
             calibs = _calib_mapper(calib_params)
             dataset.update(calibs)
+
     if "radar_parameters" in dtree:
         radar_params = dtree["radar_parameters"].to_dataset()
         dataset.update(radar_params)
