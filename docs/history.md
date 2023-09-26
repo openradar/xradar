@@ -3,6 +3,7 @@
 ## development version
 
 * FIX: use datastore._group instead of variable["sweep_number"] ({issue}`121`) by [@aladinor](https://github.com/aladinor) , {pull}`123`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* MIN: use "crs_wkt" instead of deprecated "spatial_ref" when adding CRS ({pull}`127`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.3.0 (2023-07-11)
 * ENH: Add new examples using radar data on AWS s3 bucket ({pull}`102`) by [@aladinor](https://github.com/aladinor)

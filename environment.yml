@@ -20,6 +20,7 @@ dependencies:
   - xarray-datatree>=0.0.10
   - xmltodict
   - cartopy
+  - cmweather
   - dask
   - matplotlib-base
   - scipy
