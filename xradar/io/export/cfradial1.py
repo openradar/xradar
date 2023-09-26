@@ -10,8 +10,6 @@ CfRadial1 output
 This sub-module contains the writer for export of CfRadial1-based radar
 data.
 
-Author: @syedhamidali.
-
 Example::
 
     import xradar as xd
