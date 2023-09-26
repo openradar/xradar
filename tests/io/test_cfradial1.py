@@ -21,13 +21,8 @@ def test_compare_sweeps():
         # Open the modified data tree
         dtree1 = xd.io.open_cfradial1_datatree(temp_file.name)
 
-        # Iterate through sweep keys and compare DataArrays
-        for grp in dtree1.groups:
-            if "sweep" in grp:
-                dtree1[grp]
-
         # Compare the values of the DataArrays for all sweeps
-        for sweep_num in range(9):  # Assuming there are 9 sweeps
+        for sweep_num in range(9):  # there are 9 sweeps in this file
             xr.testing.assert_equal(
                 dtree[f"sweep_{sweep_num}"].ds, dtree1[f"sweep_{sweep_num}"].ds
             )
