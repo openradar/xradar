@@ -236,7 +236,7 @@ def calculate_sweep_indices(dtree, dataset=None):
                 cumulative_size += ele_size
 
     except:
-        print(f"Sweep group '{name}' not found in radar datatree. Skipping...")
+        print(f"Sweep group '{group_name}' not found in radar datatree. Skipping...")
     
     dataset["sweep_start_ray_index"] = xr.DataArray(
         sweep_start_ray_index,
