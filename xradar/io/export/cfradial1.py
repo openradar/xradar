@@ -94,17 +94,21 @@ def _variable_mapper(dtree, dim0=None):
     xarray.Dataset
         Dataset containing mapped radar variables.
     """
-    
+
     sweep_info = _sweep_info_mapper(dtree)
     vol_info = _main_info_mapper(dtree).drop("fixed_angle")
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
             data = dtree[grp]
-            
+
             # handling first dimension
             if dim0 is None:
-                dim0 = "elevation" if data.sweep_mode.load().astype(str) == "rhi" else "azimuth"
+                dim0 = (
+                    "elevation"
+                    if data.sweep_mode.load().astype(str) == "rhi"
+                    else "azimuth"
+                )
                 if dim0 not in data.dims:
                     dim0 = "time"
                     assert dim0 in data.dims
@@ -112,15 +116,15 @@ def _variable_mapper(dtree, dim0=None):
             # swap dims, if needed
             if dim0 != "time" and dim0 in data.dims:
                 data = data.swap_dims({dim0: "time"})
-            
+
             # sort in any case
             data = data.sortby("time")
-            
+
             data = data.drop_vars(["x", "y", "z"], errors="ignore")
-            
+
             # Convert to a dataset and append to the list
             sweep_datasets.append(data.to_dataset())
-    
+
     result_dataset = xr.concat(
         sweep_datasets,
         dim="time",
@@ -138,7 +142,7 @@ def _variable_mapper(dtree, dim0=None):
         "follow_mode",
     ]
     result_dataset = result_dataset.drop_vars(drop_variables, errors="ignore")
-    
+
     drop_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
     result_dataset = result_dataset.drop_vars(drop_coords, errors="ignore")
 
@@ -226,7 +230,7 @@ def calculate_sweep_indices(dtree, dataset=None):
     sweep_end_ray_index = []
 
     cumulative_size = 0
-    
+
     try:
         for group_name in dtree.groups:
             if "sweep" in group_name:
@@ -235,9 +239,11 @@ def calculate_sweep_indices(dtree, dataset=None):
                 sweep_end_ray_index.append(cumulative_size + ele_size - 1)
                 cumulative_size += ele_size
 
-    except:
-        print(f"Sweep group '{group_name}' not found in radar datatree. Skipping...")
-    
+    except KeyError as e:
+        print(
+            f"Error: The sweep group '{e.args[0]}' was not found in radar datatree. Skipping..."
+        )
+
     dataset["sweep_start_ray_index"] = xr.DataArray(
         sweep_start_ray_index,
         dims=("sweep",),
@@ -282,11 +288,11 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
     if "georeferencing_correction" in dtree:
         radar_georef = dtree["georeferencing_correction"].to_dataset()
         dataset.update(radar_georef)
-        
+
     dataset.attrs = dtree.attrs
-    
+
     if filename is None:
         time = str(dataset.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
-        filename = f'cfrad_{dataset.instrument_name}_{time}.nc'
+        filename = f"cfrad_{dataset.instrument_name}_{time}.nc"
 
     dataset.to_netcdf(filename, format="netcdf4")
