@@ -15,7 +15,7 @@ Author: @syedhamidali.
 Example::
 
     import xradar as xd
-    dtree = xd.io.to_cfradial1(dtree, filename)
+    dtree = xd.io.to_cfradial1(dtree, filename, calibs=True)
 
 .. autosummary::
    :nosignatures:
@@ -80,42 +80,47 @@ def _main_info_mapper(dtree):
     return dataset
 
 
-def _variable_mapper(dtree, sweep_group_name):
+def _variable_mapper(dtree, dim0=None):
     """
     Map radar variables for different sweep groups.
 
     Parameters:
     - dtree: datatree.Datatree
         Radar datatree.
-    - sweep_group_name: xarray.DataArray
-        DataArray containing sweep group names in radar datatree.
+    - drop_xyz: bool
+        Default: False
 
     Returns:
     xarray.Dataset
         Dataset containing mapped radar variables.
     """
-    sweep_group_names = sweep_group_name.values.tolist()
-
+    
+    sweep_info = _sweep_info_mapper(dtree)
+    vol_info = _main_info_mapper(dtree).drop("fixed_angle")
     sweep_datasets = []
+    for grp in dtree.groups:
+        if "sweep" in grp:
+            data = dtree[grp]
+            
+            # handling first dimension
+            if dim0 is None:
+                dim0 = "elevation" if data.sweep_mode.load().astype(str) == "rhi" else "azimuth"
+                if dim0 not in data.dims:
+                    dim0 = "time"
+                    assert dim0 in data.dims
 
-    for name in sweep_group_names:
-        data = dtree[name]
-
-        # Check if 'x', 'y', and 'z' variables are available before dropping them
-        if "x" in data.variables:
-            data = data.drop_vars(["x"])
-        if "y" in data.variables:
-            data = data.drop_vars(["y"])
-        if "z" in data.variables:
-            data = data.drop_vars(["z"])
-
-        # Swap dimensions 'azimuth' to 'time'
-        if "azimuth" in data.dims:
-            data = data.swap_dims({"azimuth": "time"})
-
-        # Convert to a dataset and append to the list
-        sweep_datasets.append(data.to_dataset())
-
+            # swap dims, if needed
+            if dim0 != "time" and dim0 in data.dims:
+                data = data.swap_dims({dim0: "time"})
+            
+            # sort in any case
+            data = data.sortby("time")
+            
+            data = data.drop_vars(["x", "y", "z"], errors="ignore")
+            
+            # Convert to a dataset and append to the list
+            sweep_datasets.append(data.to_dataset())
+    
     result_dataset = xr.concat(
         sweep_datasets,
         dim="time",
@@ -132,16 +137,16 @@ def _variable_mapper(dtree, sweep_group_name):
         "prt_mode",
         "follow_mode",
     ]
-    for var in drop_variables:
-        if var in result_dataset.variables:
-            result_dataset = result_dataset.drop(var)
+    result_dataset = result_dataset.drop_vars(drop_variables, errors="ignore")
+    
+    drop_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
+    result_dataset = result_dataset.drop_vars(drop_coords, errors="ignore")
 
-    # Check if specific variables exist before dropping them
-    drop_coords = ["latitude", "longitude", "altitude", "spatial_ref"]
-    for coord in drop_coords:
-        if coord in result_dataset.coords:
-            result_dataset = result_dataset.drop(coord)
-
+    result_dataset = result_dataset.update(sweep_info)
+    sweep_indices = calculate_sweep_indices(dtree, result_dataset)
+    result_dataset = result_dataset.update(sweep_indices)
+    result_dataset = result_dataset.reset_coords(["elevation", "azimuth"])
+    result_dataset = result_dataset.update(vol_info)
     return result_dataset
 
 
@@ -175,16 +180,21 @@ def _sweep_info_mapper(dtree):
             np.unique(dtree[s][var_name].values[np.newaxis, ...])
             if var_name in dtree[s]
             else np.array([np.nan])
-            for s in dtree.sweep_group_name.values
+            for s in dtree.groups
+            if "sweep" in s
         ]
+
         var_attrs_list = [
             dtree[s][var_name].attrs if var_name in dtree[s] else {}
-            for s in dtree.sweep_group_name.values
+            for s in dtree.groups
+            if "sweep" in s
         ]
+
         var_data = np.concatenate(var_data_list)
         var_attrs = {}
         for attrs in var_attrs_list:
             var_attrs.update(attrs)
+
         var_data_array = xr.DataArray(var_data, dims=("sweep",), attrs=var_attrs)
         dataset[var_name] = var_data_array
 
@@ -212,28 +222,28 @@ def calculate_sweep_indices(dtree, dataset=None):
     if dataset is None:
         dataset = xr.Dataset()
 
-    sweep_group_names = dtree["sweep_group_name"].values
-
-    sweep_start_ray_index = np.zeros(len(sweep_group_names), dtype="int32")
-    sweep_end_ray_index = np.zeros(len(sweep_group_names), dtype="int32")
+    sweep_start_ray_index = []
+    sweep_end_ray_index = []
 
     cumulative_size = 0
+    
+    try:
+        for group_name in dtree.groups:
+            if "sweep" in group_name:
+                ele_size = dtree[group_name].elevation.size
+                sweep_start_ray_index.append(cumulative_size)
+                sweep_end_ray_index.append(cumulative_size + ele_size - 1)
+                cumulative_size += ele_size
 
-    for i, sweep_name in enumerate(sweep_group_names):
-        elevation_var = dtree[sweep_name].elevation
-
-        size = elevation_var.size
-
-        sweep_start_ray_index[i] = cumulative_size
-        sweep_end_ray_index[i] = cumulative_size + size - 1
-
-        cumulative_size += size
-
+    except:
+        print(f"Sweep group '{name}' not found in radar datatree. Skipping...")
+    
     dataset["sweep_start_ray_index"] = xr.DataArray(
         sweep_start_ray_index,
         dims=("sweep",),
         attrs={"standard_name": "index_of_first_ray_in_sweep"},
     )
+
     dataset["sweep_end_ray_index"] = xr.DataArray(
         sweep_end_ray_index,
         dims=("sweep",),
@@ -243,7 +253,7 @@ def calculate_sweep_indices(dtree, dataset=None):
     return dataset
 
 
-def to_cfradial1(dtree, filename, optional=True):
+def to_cfradial1(dtree=None, filename=None, calibs=True):
     """
     Convert a radar dtreeume dataset to the CFRadial1 format
     and save it to a file.
@@ -253,33 +263,30 @@ def to_cfradial1(dtree, filename, optional=True):
         Radar dtreeume dataset.
     - filename: str
         The name of the output netCDF file.
+    - calibs: Bool, optional
+        calibration parameters
     """
-
-    dataset = _variable_mapper(dtree, dtree.sweep_group_name)
-    dataset = dataset.reset_coords("elevation")
-    dataset = dataset.reset_coords("azimuth")
+    dataset = _variable_mapper(dtree)
 
     # Check if radar_parameters, radar_calibration, and
     # georeferencing_correction exist in dtree
+    if calibs:
+        if "radar_calibration" in dtree:
+            calib_params = dtree["radar_calibration"].to_dataset()
+            calibs = _calib_mapper(calib_params)
+            dataset.update(calibs)
     if "radar_parameters" in dtree:
         radar_params = dtree["radar_parameters"].to_dataset()
         dataset.update(radar_params)
 
-    if "radar_calibration" in dtree:
-        calib_params = dtree["radar_calibration"].to_dataset()
-        calibs = _calib_mapper(calib_params)
-        dataset.update(calibs)
-
     if "georeferencing_correction" in dtree:
         radar_georef = dtree["georeferencing_correction"].to_dataset()
         dataset.update(radar_georef)
+        
+    dataset.attrs = dtree.attrs
+    
+    if filename is None:
+        time = str(dataset.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
+        filename = f'cfrad_{dataset.instrument_name}_{time}.nc'
 
-    radar_info = _main_info_mapper(dtree)
-    swp_info = _sweep_info_mapper(dtree)
-
-    for params in [radar_info, swp_info]:
-        dataset.update(params)
-
-    # This calculate will always come at the end of this function
-    dataset = calculate_sweep_indices(dtree, dataset)
     dataset.to_netcdf(filename, format="netcdf4")
