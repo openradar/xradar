@@ -272,7 +272,7 @@ def calculate_sweep_indices(dtree, dataset=None):
 
 def to_cfradial1(dtree=None, filename=None, calibs=True):
     """
-    Convert a radar dtreeume dataset to the CFRadial1 format
+    Convert a radar datatree.DataTree to the CFRadial1 format
     and save it to a file.
 
     Parameters
