@@ -15,7 +15,7 @@ Xradar includes all the tools to get your weather radar into the xarray data mod
 
 ## About
 
-At a developer meeting held in the course of the ERAD2022 conference in Locarno, Switzerland, future plans and cross-package collaboration of the openradarscience community were intensively discussed.
+At a developer meeting held in the course of the ERAD2022 conference in Locarno, Switzerland, future plans and cross-package collaboration of the [openradarscience](https://openradar.discourse.group/) community were intensively discussed.
 
 The consensus was that a close collaboration that benefits the entire community can only be maximized through joint projects. So the idea of a common software project whose only task is to read and write radar data was born. The data import should include as many available data formats as possible, but the data export should be limited to the recognized standards, such as [ODIM_H5](https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/) and [CfRadial](https://github.com/NCAR/CfRadial).
 
@@ -29,7 +29,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 
 ## Features
 
-* Import CfRadial1 data
+* Import/Export CfRadial1 data
 * Import/Export CfRadial2 data
 * Import/Export ODIM_H5 data
 * Import GAMIC HDF5
