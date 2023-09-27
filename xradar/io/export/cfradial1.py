@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -13,7 +13,7 @@ data.
 Example::
 
     import xradar as xd
-    dtree = xd.io.to_cfradial1(dtree, filename, calibs=True)
+    xd.io.to_cfradial1(dtree, filename, calibs=True)
 
 .. autosummary::
    :nosignatures:
@@ -35,11 +35,13 @@ def _calib_mapper(calib_params):
     """
     Map calibration parameters to a new dataset format.
 
-    Parameters:
-    - calib_params: xarray.Dataset
+    Parameters
+    ----------
+    calib_params: xarray.Dataset
         Calibration parameters dataset.
 
-    Returns:
+    Returns
+    -------
     xarray.Dataset
         New dataset with mapped calibration parameters.
     """
@@ -62,11 +64,13 @@ def _main_info_mapper(dtree):
     """
     Map main radar information from a radar datatree dataset.
 
-    Parameters:
-    - dtree: datatree.Datatree
+    Parameters
+    ----------
+    dtree: datatree.DataTree
         Radar datatree.
 
-    Returns:
+    Returns
+    -------
     xarray.Dataset
         Dataset containing the mapped radar information.
     """
@@ -82,13 +86,15 @@ def _variable_mapper(dtree, dim0=None):
     """
     Map radar variables for different sweep groups.
 
-    Parameters:
-    - dtree: datatree.Datatree
+    Parameters
+    ----------
+    dtree: datatree.DataTree
         Radar datatree.
-    - drop_xyz: bool
-        Default: False
+    dim0: str
+        Either `azimuth` or `elevation`
 
-    Returns:
+    Returns
+    -------
     xarray.Dataset
         Dataset containing mapped radar variables.
     """
@@ -156,11 +162,13 @@ def _sweep_info_mapper(dtree):
     """
     Extract specified sweep information variables from a radar datatree
 
-    Parameters:
-    - dtree: datatree.Datatree
+    Parameters
+    ----------
+    dtree: datatree.DataTree
         Radar datatree.
 
-    Returns:
+    Returns
+    -------
     xarray.Dataset
         Dataset containing the specified sweep information variables.
     """
@@ -214,10 +222,11 @@ def calculate_sweep_indices(dtree, dataset=None):
     Calculate sweep start and end ray indices for elevation
     values in a radar dataset.
 
-    Parameters:
-    - dtree: datatree.Datatree
+    Parameters
+    ----------
+    dtree: datatree.DataTree
         Radar datatree containing elevation values for different sweep groups.
-    - dataset: xarray.Dataset, optional
+    dataset: xarray.Dataset, optional
         An optional dataset to which the calculated indices will be added.
         If None, a new dataset will be created.
 
@@ -266,12 +275,13 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
     Convert a radar dtreeume dataset to the CFRadial1 format
     and save it to a file.
 
-    Parameters:
-    - dtree: xarray.Dataset
-        Radar dtreeume dataset.
-    - filename: str
+    Parameters
+    ----------
+    dtree: datatree.DataTree
+        Radar datatree object.
+    filename: str, optional
         The name of the output netCDF file.
-    - calibs: Bool, optional
+    calibs: Bool, optional
         calibration parameters
     """
     dataset = _variable_mapper(dtree)
@@ -296,6 +306,6 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
 
     if filename is None:
         time = str(dataset.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
-        filename = f"cfrad_{dataset.instrument_name}_{time}.nc"
+        filename = f"cfrad1_{dataset.instrument_name}_{time}.nc"
 
     dataset.to_netcdf(filename, format="netcdf4")
