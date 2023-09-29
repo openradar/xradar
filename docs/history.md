@@ -1,7 +1,7 @@
 # History
 
 ## 0.4.0 (2023-09-27)
-
+* FIX: Add _FillValue to CfRadial1 exporter, and minor error in CfRadial1_Export.ipynb notebook by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Add cfradial1 exporter ({issue}`124`) by [@syedhamidali](https://github.com/syedhamidali), ({pull}`126`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: use datastore._group instead of variable["sweep_number"] ({issue}`121`) by [@aladinor](https://github.com/aladinor) , ({pull}`123`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MIN: use "crs_wkt" instead of deprecated "spatial_ref" when adding CRS ({pull}`127`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
