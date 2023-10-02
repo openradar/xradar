@@ -317,7 +317,7 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
         dataset[var_name].encoding["_FillValue"] = fill_value
 
     dataset.attrs["Conventions"] = "Cf/Radial"
-    dataset.attrs["version"] = "1.0"
+    dataset.attrs["version"] = "1.2"
     xradar_version = version("xradar")
     dataset.attrs["history"] += f": xradar v{xradar_version} CfRadial1 export"
 
