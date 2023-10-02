@@ -29,6 +29,7 @@ __all__ = [
 
 from importlib.metadata import version
 
+import netCDF4
 import numpy as np
 import xarray as xr
 
@@ -312,7 +313,7 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
     ]
 
     # Set _FillValue attribute to -32768 for variables with >= 2 dimensions
-    fill_value = -32768
+    fill_value = netCDF4.default_fillvals["i2"]
     for var_name in multidim_variables:
         dataset[var_name].encoding["_FillValue"] = fill_value
 
