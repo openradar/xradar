@@ -290,6 +290,16 @@ radar_calibration_subgroup = dict(
         ("receiver_slope_vc", None),
         ("receiver_slope_hx", None),
         ("receiver_slope_vx", None),
+        ("k_squared_water", None),
+        ("i0_dbm_hc", None),
+        ("i0_dbm_vc", None),
+        ("i0_dbm_hx", None),
+        ("i0_dbm_vx", None),
+        ("dynamic_range_db_hc", None),
+        ("dynamic_range_db_vc", None),
+        ("dynamic_range_db_hx", None),
+        ("dynamic_range_db_vx", None),
+        ("dbz_correction", None),
     ]
 )
 
