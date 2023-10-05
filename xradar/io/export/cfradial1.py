@@ -27,6 +27,8 @@ __all__ = [
     "to_cfradial1",
 ]
 
+from importlib.metadata import version
+
 import numpy as np
 import xarray as xr
 
@@ -303,6 +305,11 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
         dataset.update(radar_georef)
 
     dataset.attrs = dtree.attrs
+
+    dataset.attrs["Conventions"] = "Cf/Radial"
+    dataset.attrs["version"] = "1.2"
+    xradar_version = version("xradar")
+    dataset.attrs["history"] += f": xradar v{xradar_version} CfRadial1 export"
 
     if filename is None:
         time = str(dataset.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
