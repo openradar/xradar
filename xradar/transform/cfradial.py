@@ -33,10 +33,10 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-from typing import Mapping, Optional
+from collections.abc import Mapping
+
 import numpy as np
 from datatree import DataTree
-from xarray import open_dataset
 from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
@@ -44,6 +44,7 @@ from xarray.core.dataarray import DataArray
 from xarray.core.dataset import Dataset
 
 from .. import util
+from ..io.backends.common import _attach_sweep_groups, _maybe_decode
 from ..model import (
     conform_cfradial2_sweep_group,
     georeferencing_correction_subgroup,
@@ -54,7 +55,6 @@ from ..model import (
     required_global_attrs,
     required_root_vars,
 )
-from ..io.backends.common import _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -291,14 +291,29 @@ def _get_radar_calibration(ds):
 
 
 class Cfradial2(DataTree):
-    def __init__(self, data: Dataset | DataArray | None = None, parent: DataTree | None = None, children: Mapping[str, DataTree] | None = None, name: str | None = None):
+    def __init__(
+        self,
+        data: Dataset | DataArray | None = None,
+        parent: DataTree | None = None,
+        children: Mapping[str, DataTree] | None = None,
+        name: str | None = None,
+    ):
         super().__init__(data, parent, children, name)
+
     def to_cfradial1_dataset(self):
         ds = to_cfradial1(self)
         return ds
 
+    def to_cf1(self):
+        ds = to_cfradial1(self)
+        return ds
 
-def to_cfradial2(ds,  **kwargs):
+    def to_cf1_dataset(self):
+        ds = to_cfradial1(self)
+        return ds
+
+
+def to_cfradial2(ds, **kwargs):
     """Open CfRadial1 dataset as :py:class:`datatree.DataTree`.
 
     Parameters
@@ -334,7 +349,7 @@ def to_cfradial2(ds,  **kwargs):
     # handle kwargs, extract first_dim
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
-    site_coords = kwargs.pop("site_coords", True)
+    kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
 
     # open root group, cfradial1 only has one group
@@ -457,21 +472,67 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         return ds
 
 
-
 from collections.abc import Mapping
-from importlib.metadata import version
 from typing import Any
 
-import numpy as np
 import xarray as xr
 from xarray import Dataset
 
-class Cfradial1(Dataset):
-    __slots__ = ("__all__")
 
-    def __init__(self, data_vars: Mapping[Any, Any] | None = None, coords: Mapping[Any, Any] | None = None, attrs: Mapping[Any, Any] | None = None) -> None:
+class Cfradial1(Dataset):
+    """
+    A class for transforming data from Cfradial1 format to Cfradial2 format.
+    """
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        data_vars: Mapping[Any, Any] | None = None,
+        coords: Mapping[Any, Any] | None = None,
+        attrs: Mapping[Any, Any] | None = None,
+    ) -> None:
+        """
+        Initialize a Cfradial1 instance.
+
+        Parameters
+        ----------
+        - data_vars (Mapping[Any, Any] | None): A dictionary-like object containing data variables.
+        - coords (Mapping[Any, Any] | None): A dictionary-like object containing coordinate variables.
+        - attrs (Mapping[Any, Any] | None): A dictionary-like object containing attributes.
+        """
         super().__init__(data_vars, coords, attrs)
+
     def to_cfradial2_datatree(self):
+        """
+        Transform the Cfradial1 data to Cfradial2 format.
+
+        Returns
+        -------
+        - Cfradial2DataTree: An instance of Cfradial2DataTree containing the transformed data.
+        """
+        dtree = to_cfradial2(self)
+        return dtree
+
+    def to_cf2(self):
+        """
+        Transform the Cfradial1 data to Cfradial2 format.
+
+        Returns
+        -------
+        - Cfradial2DataTree: An instance of Cfradial2DataTree containing the transformed data.
+        """
+        dtree = to_cfradial2(self)
+        return dtree
+
+    def to_cf2_datatree(self):
+        """
+        Transform the Cfradial1 data to Cfradial2 format.
+
+        Returns
+        -------
+        - Cfradial2DataTree: An instance of Cfradial2DataTree containing the transformed data.
+        """
         dtree = to_cfradial2(self)
         return dtree
 
@@ -545,7 +606,9 @@ def _variable_mapper(dtree, dim0=None):
     """
 
     sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle",)
+    vol_info = _main_info_mapper(dtree).drop_vars(
+        "fixed_angle",
+    )
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:

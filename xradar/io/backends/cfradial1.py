@@ -302,6 +302,17 @@ class Cfradial2(DataTree):
         super().__init__(data, parent, children, name)
 
     def to_cfradial1_dataset(self):
+        """Transforms Cfradial2 to Cfradial1"""
+        ds = to_cfradial1(self)
+        return ds
+
+    def to_cf1(self):
+        """Transforms Cfradial2 to Cfradial1"""
+        ds = to_cfradial1(self)
+        return ds
+
+    def to_cf1_dataset(self):
+        """Transforms Cfradial2 to Cfradial1"""
         ds = to_cfradial1(self)
         return ds
 
