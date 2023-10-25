@@ -3836,7 +3836,7 @@ class IrisStore(AbstractDataStore):
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         attrs[
             "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+        ] = "elevation azimuth range latitude longitude altitude time"
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self, var):
