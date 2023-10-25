@@ -4,7 +4,7 @@ Exporting is only supported for acknowledged standards.
 
 Currently xradar can export:
 
-- [](#odim_h5)
+- [](#odim-h5)
 - [](#cfradial2)
 - [](#cfradial1)
 

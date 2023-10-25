@@ -72,8 +72,8 @@ myst_enable_extensions = [
 
 
 extlinks = {
-    "issue": ("https://github.com/openradar/xradar/issues/%s", "GH"),
-    "pull": ("https://github.com/openradar/xradar/pull/%s", "PR"),
+    "issue": ("https://github.com/openradar/xradar/issues/%s", "GH %s"),
+    "pull": ("https://github.com/openradar/xradar/pull/%s", "PR %s"),
 }
 
 mathjax_path = (
