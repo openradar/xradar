@@ -602,7 +602,7 @@ class FurunoStore(AbstractDataStore):
             dims = (dim, "range")
         attrs[
             "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+        ] = "elevation azimuth range latitude longitude altitude time"
         return Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):

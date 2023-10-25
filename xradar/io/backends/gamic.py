@@ -127,9 +127,7 @@ def _get_gamic_variable_name_and_attrs(attrs, dtype):
     attrs["_FillValue"] = undetect
     attrs["_Undetect"] = undetect
 
-    attrs[
-        "coordinates"
-    ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+    attrs["coordinates"] = "elevation azimuth range latitude longitude altitude time"
 
     return name, attrs
 
