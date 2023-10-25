@@ -62,6 +62,7 @@ extensions = [
     "sphinx.ext.todo",
     "myst_parser",
     "sphinx_copybutton",
+    "sphinx_favicon",
     "nbsphinx",
 ]
 
@@ -250,18 +251,6 @@ html_context = {
 html_theme_options = {
     "announcement": "<p>xradar is in an early stage of development, please report any issues <a href='https://github.com/openradar/xradar/issues'>here!</a></p>",
     "github_url": "https://github.com/openradar/xradar",
-    "favicons": [
-        {
-            "rel": "icon",
-            "sizes": "16x16",
-            "href": "openradar_micro.svg",
-        },
-        {
-            "rel": "icon",
-            "sizes": "32x32",
-            "href": "openradar_micro.svg",
-        },
-    ],
     "icon_links": [
         {
             "name": "PyPI",
@@ -283,6 +272,19 @@ html_theme_options = {
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
+
+favicons = [
+    {
+        "rel": "icon",
+        "sizes": "16x16",
+        "href": "openradar_micro.svg",
+    },
+    {
+        "rel": "icon",
+        "sizes": "32x32",
+        "href": "openradar_micro.svg",
+    },
+]
 
 
 # -- Options for HTMLHelp output ---------------------------------------
