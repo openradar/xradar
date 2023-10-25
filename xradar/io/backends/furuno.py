@@ -362,8 +362,10 @@ class FurunoFile:
                 self._data[item] = data[:, i, :]
             # get angles
             angles = raw_data[:, :4].reshape(rays, 4)
+            # need to promote to uint32 to prevent integer overflow
+            # https://github.com/openradar/xradar/issues/137
             self._data["azimuth"] = np.fmod(
-                angles[:, 1] + self.header["azimuth_offset"], 36000
+                angles[:, 1].astype("uint32") + self.header["azimuth_offset"], 36000
             )
             # elevation angles are dtype "int16"
             # which was tested against a sweep with -1deg elevation
