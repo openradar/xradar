@@ -353,8 +353,8 @@ class _OdimH5NetCDFMetadata:
         if not (gain == 1.0 and offset == 0.0):
             attrs["scale_factor"] = gain
             attrs["add_offset"] = offset
-            attrs["_FillValue"] = what.get("nodata", None)
-            attrs["_Undetect"] = what.get("undetect", 0.0)
+        attrs["_FillValue"] = what.get("nodata", None)
+        attrs["_Undetect"] = what.get("undetect", 0.0)
         # if no quantity is given, use the group-name
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
@@ -482,7 +482,9 @@ def _get_odim_variable_name_and_attrs(name, attrs):
             pass
         else:
             attrs.update({key: mapping[key] for key in moment_attrs})
-        attrs["coordinates"] = "elevation azimuth range"
+        attrs[
+            "coordinates"
+        ] = "elevation azimuth range latitude longitude altitude time"
     return name, attrs
 
 
@@ -748,7 +750,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(util.remove_duplicate_rays)
             ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time)
+            ds = ds.pipe(util.ipol_time, **reindex_angle)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"

@@ -47,7 +47,7 @@ def test_get_crs():
         "false_northing": 0.0,
     }
     for key, value in crs.items():
-        if type(value) == float:
+        if isinstance(value, float):
             assert proj_crs_cf[key] == pytest.approx(value)
         else:
             assert proj_crs_cf[key] == value
@@ -60,7 +60,7 @@ def test_write_crs():
     ds = add_crs(ds)
 
     # Make sure spatial_ref has been added with the correct values
-    assert ds.spatial_ref == 0
+    assert ds.crs_wkt == 0
     crs = {
         "semi_major_axis": 6378137.0,
         "semi_minor_axis": 6356752.314245179,
@@ -78,7 +78,7 @@ def test_write_crs():
         "false_northing": 0.0,
     }
     for key, value in crs.items():
-        if type(value) == float:
-            assert ds.spatial_ref.attrs[key] == pytest.approx(value)
+        if isinstance(value, float):
+            assert ds.crs_wkt.attrs[key] == pytest.approx(value)
         else:
-            assert ds.spatial_ref.attrs[key] == value
+            assert ds.crs_wkt.attrs[key] == value

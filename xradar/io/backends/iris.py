@@ -2282,13 +2282,45 @@ SIGMET_DATA_TYPES = OrderedDict(
         # Turbulence (2 byte)
         (70, {"name": "DB_TURB16", "dtype": "uint16", "func": None}),
         # Total Power Enhanced (via H+V or HV) (1 byte)
-        (71, {"name": "DB_DBTE8", "dtype": "uint8", "func": None}),
+        (
+            71,
+            {
+                "name": "DB_DBTE8",
+                "dtype": "uint8",
+                "func": decode_array,
+                "fkw": {"scale": 2.0, "offset": -64.0},
+            },
+        ),
         # Total Power Enhanced (via H+V or HV) (2 byte)
-        (72, {"name": "DB_DBTE16", "dtype": "uint16", "func": None}),
+        (
+            72,
+            {
+                "name": "DB_DBTE16",
+                "dtype": "uint16",
+                "func": decode_array,
+                "fkw": {"scale": 100.0, "offset": -32768.0},
+            },
+        ),
         # Clutter Corrected Reflectivity Enhanced (1 byte)
-        (73, {"name": "DB_DBZE8", "dtype": "uint8", "func": None}),
+        (
+            73,
+            {
+                "name": "DB_DBZE8",
+                "dtype": "uint8",
+                "func": decode_array,
+                "fkw": {"scale": 2.0, "offset": -64.0},
+            },
+        ),
         # Clutter Corrected Reflectivity Enhanced (2 byte)
-        (74, {"name": "DB_DBZE16", "dtype": "uint16", "func": None}),
+        (
+            74,
+            {
+                "name": "DB_DBZE16",
+                "dtype": "uint16",
+                "func": decode_array,
+                "fkw": {"scale": 100.0, "offset": -32768.0},
+            },
+        ),
         # Polarimetric meteo index (1 byte)
         (
             75,
@@ -3712,7 +3744,12 @@ class IrisArrayWrapper(BackendArray):
 
     def __init__(self, datastore, name, var):
         self.datastore = datastore
-        self.group = var["sweep_number"]
+        self.group = datastore._group
+        if self.group != var["sweep_number"]:
+            warnings.warn(
+                f"sweep_{self.group - 1} empty or corrupted.",
+                RuntimeWarning,
+            )
         self.name = name
         # get rays and bins
         nrays = var["number_rays_file_written"]
@@ -3799,7 +3836,7 @@ class IrisStore(AbstractDataStore):
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         attrs[
             "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+        ] = "elevation azimuth range latitude longitude altitude time"
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self, var):
@@ -3857,7 +3894,6 @@ class IrisStore(AbstractDataStore):
         range_attrs["meters_to_center_of_first_gate"] = task["range_first_bin"]
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
-        azimuth = Variable((dim,), azimuth, {}, encoding)
 
         ing_head = self.ds["ingest_data_hdrs"]
         data = ing_head[list(ing_head.keys())[0]]
@@ -3974,7 +4010,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(util.remove_duplicate_rays)
             ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time)
+            ds = ds.pipe(util.ipol_time, **reindex_angle)
 
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)

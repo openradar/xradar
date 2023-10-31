@@ -127,9 +127,7 @@ def _get_gamic_variable_name_and_attrs(attrs, dtype):
     attrs["_FillValue"] = undetect
     attrs["_Undetect"] = undetect
 
-    attrs[
-        "coordinates"
-    ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+    attrs["coordinates"] = "elevation azimuth range latitude longitude altitude time"
 
     return name, attrs
 
@@ -487,7 +485,7 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(util.remove_duplicate_rays)
             ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time)
+            ds = ds.pipe(util.ipol_time, **reindex_angle)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"

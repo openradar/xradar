@@ -26,11 +26,15 @@ notebooks/Accessors
 
 notebooks/CfRadial1_Model_Transformation
 notebooks/CfRadial1
+notebooks/CfRadial1_Export
 notebooks/ODIM_H5
 notebooks/GAMIC
 notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
+notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
 notebooks/angle_reindexing
+notebooks/Multi-Volume-Concatenation.ipynb
+notebooks/multiple-sweeps-into-volume-scan.ipynb
 ```

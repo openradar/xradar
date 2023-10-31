@@ -362,8 +362,10 @@ class FurunoFile:
                 self._data[item] = data[:, i, :]
             # get angles
             angles = raw_data[:, :4].reshape(rays, 4)
+            # need to promote to uint32 to prevent integer overflow
+            # https://github.com/openradar/xradar/issues/137
             self._data["azimuth"] = np.fmod(
-                angles[:, 1] + self.header["azimuth_offset"], 36000
+                angles[:, 1].astype("uint32") + self.header["azimuth_offset"], 36000
             )
             # elevation angles are dtype "int16"
             # which was tested against a sweep with -1deg elevation
@@ -602,7 +604,7 @@ class FurunoStore(AbstractDataStore):
             dims = (dim, "range")
         attrs[
             "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+        ] = "elevation azimuth range latitude longitude altitude time"
         return Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):
@@ -744,7 +746,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(util.remove_duplicate_rays)
             ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time)
+            ds = ds.pipe(util.ipol_time, **reindex_angle)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"

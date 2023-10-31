@@ -290,6 +290,16 @@ radar_calibration_subgroup = dict(
         ("receiver_slope_vc", None),
         ("receiver_slope_hx", None),
         ("receiver_slope_vx", None),
+        ("k_squared_water", None),
+        ("i0_dbm_hc", None),
+        ("i0_dbm_vc", None),
+        ("i0_dbm_hx", None),
+        ("i0_dbm_vx", None),
+        ("dynamic_range_db_hc", None),
+        ("dynamic_range_db_vc", None),
+        ("dynamic_range_db_hx", None),
+        ("dynamic_range_db_vx", None),
+        ("dbz_correction", None),
     ]
 )
 
@@ -887,6 +897,8 @@ def create_sweep_dataset(**kwargs):
         range resolution or array with range values.
     azimuth : float or :class:`numpy:numpy.ndarray`
         azimuth resolution or array with azimuth values.
+    direction : int
+        1 - CW/UP, -1 CCW/DOWN
     a1gate : int
         First measured ray. Defaults to 0. Only used for PPI.
     elevation : float or :class:`numpy:numpy.ndarray`
@@ -937,10 +949,11 @@ def create_sweep_dataset(**kwargs):
     time = kwargs.pop("time", 0.25)
     date_str = kwargs.pop("date_str", "2022-08-27T10:00:00")
     rng = kwargs.pop("rng", 100)
+    direction = kwargs.pop("direction", 1)
 
     # calculate according to PPI/RHI
     if sweep == "PPI":
-        azimuth = get_azimuth_dataarray(azimuth, nrays=None, a1gate=a1gate)
+        azimuth = get_azimuth_dataarray(azimuth, nrays=None, a1gate=a1gate)[::direction]
         nrays = azimuth.shape[0]
         elevation = get_elevation_dataarray(elevation, nrays=nrays)
     else:
@@ -989,7 +1002,14 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
     return keep_vars
 
 
-def conform_cfradial2_sweep_group(obj, optional, dim0):
+def conform_cfradial2_sweep_group(obj, optional, dim0=None):
+    if dim0 is None:
+        # handling first dimension
+        dim0 = "elevation" if obj.sweep_mode.load().astype(str) == "rhi" else "azimuth"
+        if dim0 not in obj.dims:
+            dim0 = "time"
+            assert dim0 in obj.dims
+
     keep_vars = determine_cfradial2_sweep_variables(obj, optional, dim0)
     # calculate variables to remove and remove them
     var = set(obj.data_vars)
@@ -1001,7 +1021,7 @@ def conform_cfradial2_sweep_group(obj, optional, dim0):
     out.attrs = {}
 
     # swap dims, if needed
-    if dim0 != "time":
+    if dim0 != "time" and dim0 in obj.dims:
         out = out.swap_dims({dim0: "time"})
     # sort in any case
     out = out.sortby("time")

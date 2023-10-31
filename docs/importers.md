@@ -5,11 +5,11 @@ To import different radar data different approaches are used.
 Currently xradar can import:
 
 - [](#cfradial1)
-- [](#odim_h5)
+- [](#odim-h5)
 - [](#gamic-hdf5)
 - [](#furuno-scn-and-scnx)
 - [](#rainbow)
-- [](#irissigmet)
+- [](#iris-sigmet)
 
 ## CfRadial1
 

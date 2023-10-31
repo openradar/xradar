@@ -3,6 +3,45 @@
 ## Development Version
 * FIX: Fix handling of sweep_mode attribiutes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
 
+## 0.4.1 (2023-10-26)
+
+* FIX: Add history to cfradial1 output, and fix minor error in CfRadial1_Export.ipynb notebook({pull}`132`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: fix readthedocs build for python 3.12 ({pull}`140`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: align coordinates in backends, pin python >3.9,<=3.12 in environment.yml ({pull}`139`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: prevent integer overflow when calculating azimuth in FURUNO scn files ({issue}`137`) by [@giacant](https://github.com/giacant) , ({pull}`138`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
+## 0.4.0 (2023-09-27)
+
+* ENH: Add cfradial1 exporter ({issue}`124`) by [@syedhamidali](https://github.com/syedhamidali), ({pull}`126`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: use datastore._group instead of variable["sweep_number"] ({issue}`121`) by [@aladinor](https://github.com/aladinor) , ({pull}`123`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* MIN: use "crs_wkt" instead of deprecated "spatial_ref" when adding CRS ({pull}`127`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: always read nodata and undetect attributes from ODIM file ({pull}`125`) by [@egouden](https://github.com/egouden)
+* MIN: use `cmweather` colormaps in xradar ({pull}`128`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.3.0 (2023-07-11)
+
+* ENH: Add new examples using radar data on AWS s3 bucket ({pull}`102`) by [@aladinor](https://github.com/aladinor)
+* FIX: Correct DB_DBTE8/DB_DBZE8 and DB_DBTE16/DB_DBZE16 decoding for iris-backend ({pull}`110`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: Cast boolean string to int in rainbow dictionary ({pull}`113`) by [@egouden](https://github.com/egouden)
+* MNT: switch to mamba-org/setup-micromamba, split CI tests ({issue}`115`), ({pull}`116`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: time interpolation ({pull}`117`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: robust ``angle_res`` retrieval in ``extract_angle_parameters`` ({issue}`112`), ({pull}`118`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: robust radar identifier in ``to_odim()`` ({pull}`120`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
+## 0.2.0 (2023-03-24)
+
+* ENH: switch to add optional how attributes in ODIM format writer ({pull}`97`) by [@egouden](https://github.com/egouden)
+* FIX: add keyword argument for mandatory source attribute in ODIM format writer ({pull}`96`) by [@egouden](https://github.com/egouden)
+* FIX: check for dim0 if not given, only swap_dims if needed ({issue}`92`), ({pull}`94`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX+ENH: need array copy before overwriting and make compression available in to_odim ({pull}`95`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
+## 0.1.0 (2023-02-23)
+
+* Add an example on reading multiple sweeps into a single object ({pull}`69`) by [@mgrover1](https://github.com/mgrover1)
+* ENH: add spatial_ref with pyproj when georeferencing, add/adapt methods/tests ({issue}`38`), ({pull}`87`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* Docs/docstring updates, PULL_REQUEST_TEMPLATE.md ({pull}`89`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* Finalize release 0.1.0, add testpypi upload on push to main ({pull}`91`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
 ## 0.0.13 (2023-02-09)
 
 * FIX: only skip setting cf-attributes if both gain and offset are unused ({pull}`85`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
