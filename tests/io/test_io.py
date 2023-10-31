@@ -73,6 +73,7 @@ def test_open_cfradial1_datatree(cfradial1_file):
             "range",
         }
         assert np.round(ds.sweep_fixed_angle.values.item(), 1) == elevations[i]
+        assert ds.sweep_mode == "azimuth_surveillance"
 
 
 def test_open_cfradial1_dataset(cfradial1_file):

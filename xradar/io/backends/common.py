@@ -24,7 +24,12 @@ from datatree import DataTree
 
 def _maybe_decode(attr):
     try:
-        return attr.decode()
+        # Decode the xr.DataArray differently than a byte string
+        if type(attr) == xr.core.dataarray.DataArray:
+            decoded_attr = attr.astype(str).str.rstrip()
+        else:
+            decoded_attr = attr.decode()
+        return decoded_attr
     except AttributeError:
         return attr
 

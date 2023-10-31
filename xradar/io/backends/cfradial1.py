@@ -155,8 +155,8 @@ def _get_sweep_groups(
         swslice = slice(i, i + 1)
         ds = data.isel(time=tslice, sweep=swslice).squeeze("sweep")
 
-        sweep_mode = _maybe_decode(ds.sweep_mode).compute()
-        dim0 = "elevation" if sweep_mode == "rhi" else "azimuth"
+        ds["sweep_mode"] = _maybe_decode(ds.sweep_mode).compute()
+        dim0 = "elevation" if ds["sweep_mode"] == "rhi" else "azimuth"
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
