@@ -1,5 +1,8 @@
 # History
 
+## Development Version
+* FIX: Fix handling of sweep_mode attribiutes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
+
 ## 0.4.1 (2023-10-26)
 
 * FIX: Add history to cfradial1 output, and fix minor error in CfRadial1_Export.ipynb notebook({pull}`132`) by [@syedhamidali](https://github.com/syedhamidali)
