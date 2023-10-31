@@ -1,5 +1,8 @@
 # History
 
+## Development Version
+* FIX: Fix handling of sweep_mode attribiutes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
+
 ## 0.0.13 (2023-02-09)
 
 * FIX: only skip setting cf-attributes if both gain and offset are unused ({pull}`85`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
