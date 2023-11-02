@@ -1,7 +1,8 @@
 # History
 
 ## Development Version
-* FIX: Fix handling of sweep_mode attribiutes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
+* FIX: Fix handling of sweep_mode attributes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
+* FIX: explicitely check for "False" in get_crs() {pull}`142`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.4.1 (2023-10-26)
 
