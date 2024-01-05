@@ -12,11 +12,17 @@ Currently, all private and not part of the public API.
 
 """
 
+import bz2
+import gzip
 import io
+import itertools
 import struct
 from collections import OrderedDict
+from collections.abc import MutableMapping
 
+import fsspec
 import h5netcdf
+import netCDF4
 import numpy as np
 import xarray as xr
 from datatree import DataTree
@@ -229,3 +235,208 @@ SINT4 = {"fmt": "i", "dtype": "int32"}
 UINT1 = {"fmt": "B", "dtype": "unit8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "unint32"}
+
+
+def prepare_for_read(filename, storage_options={"anon": True}):
+    """
+    Return a file like object read for reading.
+
+    Open a file for reading in binary mode with transparent decompression of
+    Gzip and BZip2 files. The resulting file-like object should be closed.
+
+    Parameters
+    ----------
+    filename : str or file-like object
+        Filename or file-like object which will be opened. File-like objects
+        will not be examined for compressed data.
+
+    storage_options : dict, optional
+        Parameters passed to the backend file-system such as Google Cloud Storage,
+        Amazon Web Service S3.
+
+    Returns
+    -------
+    file_like : file-like object
+        File like object from which data can be read.
+
+    """
+    # if a file-like object was provided, return
+    if hasattr(filename, "read"):  # file-like object
+        return filename
+
+    # look for compressed data by examining the first few bytes
+    fh = fsspec.open(filename, mode="rb", compression="infer", **storage_options).open()
+    magic = fh.read(3)
+    fh.close()
+
+    # If the data is still compressed, use gunzip/bz2 to uncompress the data
+    if magic.startswith(b"\x1f\x8b"):
+        return gzip.GzipFile(filename, "rb")
+
+    if magic.startswith(b"BZh"):
+        return bz2.BZ2File(filename, "rb")
+
+    return fsspec.open(
+        filename, mode="rb", compression="infer", **storage_options
+    ).open()
+
+
+def stringarray_to_chararray(arr, numchars=None):
+    """
+    Convert an string array to a character array with one extra dimension.
+
+    Parameters
+    ----------
+    arr : array
+        Array with numpy dtype 'SN', where N is the number of characters
+        in the string.
+
+    numchars : int
+        Number of characters used to represent the string. If numchar > N
+        the results will be padded on the right with blanks. The default,
+        None will use N.
+
+    Returns
+    -------
+    chararr : array
+        Array with dtype 'S1' and shape = arr.shape + (numchars, ).
+
+    """
+    carr = netCDF4.stringtochar(arr)
+    if numchars is None:
+        return carr
+
+    arr_numchars = carr.shape[-1]
+    if numchars <= arr_numchars:
+        raise ValueError("numchars must be >= %i" % (arr_numchars))
+    chararr = np.zeros(arr.shape + (numchars,), dtype="S1")
+    chararr[..., :arr_numchars] = carr[:]
+    return chararr
+
+
+def _test_arguments(dic):
+    """Issue a warning if receive non-empty argument dict."""
+    if dic:
+        import warnings
+
+        warnings.warn("Unexpected arguments: %s" % dic.keys())
+
+
+def make_time_unit_str(dtobj):
+    """Return a time unit string from a datetime object."""
+    return "seconds since " + dtobj.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class LazyLoadDict(MutableMapping):
+    """
+    A dictionary-like class supporting lazy loading of specified keys.
+
+    Keys which are lazy loaded are specified using the set_lazy method.
+    The callable object which produces the specified key is provided as the
+    second argument to this method. This object gets called when the value
+    of the key is loaded. After this initial call the results is cached
+    in the traditional dictionary which is used for supplemental access to
+    this key.
+
+    Testing for keys in this dictionary using the "key in d" syntax will
+    result in the loading of a lazy key, use "key in d.keys()" to prevent
+    this evaluation.
+
+    The comparison methods, __cmp__, __ge__, __gt__, __le__, __lt__, __ne__,
+    nor the view methods, viewitems, viewkeys, viewvalues, are implemented.
+    Neither is the the fromkeys method.
+
+    This is from Py-ART.
+
+    Parameters
+    ----------
+    dic : dict
+        Dictionary containing key, value pairs which will be stored and
+        evaluated traditionally. This dictionary referenced not copied into
+        the LazyLoadDictionary and hence changed to this dictionary may change
+        the original. If this behavior is not desired copy dic in the
+        initalization.
+
+    Examples
+    --------
+    >>> d = LazyLoadDict({'key1': 'value1', 'key2': 'value2'})
+    >>> d.keys()
+    ['key2', 'key1']
+    >>> lazy_func = lambda : 999
+    >>> d.set_lazy('lazykey1', lazy_func)
+    >>> d.keys()
+    ['key2', 'key1', 'lazykey1']
+    >>> d['lazykey1']
+    999
+
+    """
+
+    def __init__(self, dic):
+        """initalize."""
+        self._dic = dic
+        self._lazyload = {}
+
+    # abstract methods
+    def __setitem__(self, key, value):
+        """Set a key which will not be stored and evaluated traditionally."""
+        self._dic[key] = value
+        if key in self._lazyload:
+            del self._lazyload[key]
+
+    def __getitem__(self, key):
+        """Get the value of a key, evaluating a lazy key if needed."""
+        if key in self._lazyload:
+            value = self._lazyload[key]()
+            self._dic[key] = value
+            del self._lazyload[key]
+        return self._dic[key]
+
+    def __delitem__(self, key):
+        """Remove a lazy or traditional key from the dictionary."""
+        if key in self._lazyload:
+            del self._lazyload[key]
+        else:
+            del self._dic[key]
+
+    def __iter__(self):
+        """Iterate over all lazy and traditional keys."""
+        return itertools.chain(self._dic.copy(), self._lazyload.copy())
+
+    def __len__(self):
+        """Return the number of traditional and lazy keys."""
+        return len(self._dic) + len(self._lazyload)
+
+    # additional class to mimic dict behavior
+    def __str__(self):
+        """Return a string representation of the object."""
+        if len(self._dic) == 0 or len(self._lazyload) == 0:
+            seperator = ""
+        else:
+            seperator = ", "
+        lazy_reprs = [(repr(k), repr(v)) for k, v in self._lazyload.items()]
+        lazy_strs = ["{}: LazyLoad({})".format(*r) for r in lazy_reprs]
+        lazy_str = ", ".join(lazy_strs) + "}"
+        return str(self._dic)[:-1] + seperator + lazy_str
+
+    def has_key(self, key):
+        """True if dictionary has key, else False."""
+        return key in self
+
+    def copy(self):
+        """
+        Return a copy of the dictionary.
+
+        Lazy keys are not evaluated in the original or copied dictionary.
+        """
+        dic = self.__class__(self._dic.copy())
+        # load all lazy keys into the copy
+        for key, value_callable in self._lazyload.items():
+            dic.set_lazy(key, value_callable)
+        return dic
+
+    # lazy dictionary specific methods
+    def set_lazy(self, key, value_callable):
+        """Set a lazy key to load from a callable object."""
+        if key in self._dic:
+            del self._dic[key]
+        self._lazyload[key] = value_callable
