@@ -15,6 +15,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.furuno
 .. automodule:: xradar.io.backends.rainbow
 .. automodule:: xradar.io.backends.iris
+.. automodule:: xradar.io.backends.nexrad_level2
 
 """
 
@@ -25,6 +26,6 @@ from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
 from .nexrad_level2 import *  # noqa
-from .nexrad_archive import *  # noqa
+from .nexrad_interpolate import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
