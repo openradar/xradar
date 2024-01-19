@@ -7,6 +7,5 @@ include README.md
 recursive-include tests *
 recursive-include xradar *.c *.pyx *.pxd
 recursive-exclude * __pycache__
-recursive-exclude * *.py[o]
 
 recursive-include docs *.rst conf.py Makefile make.bat *.jpg *.png *.gif
