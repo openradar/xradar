@@ -5,7 +5,7 @@ include LICENSE
 include README.md
 
 recursive-include tests *
-recursive-include xradar *.pyx
+recursive-include xradar *.c *.pyx *.pxd
 recursive-exclude * __pycache__
 recursive-exclude * *.py[o]
 
