@@ -18,10 +18,6 @@ from xradar.io.backends.common import (
     prepare_for_read,
 )
 from xradar.io.backends.nexrad_common import get_nexrad_location
-from xradar.io.backends.nexrad_interpolate import (
-    _fast_interpolate_scan_2,
-    _fast_interpolate_scan_4,
-)
 from xradar.model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -31,6 +27,11 @@ from xradar.model import (
     get_moment_attrs,
     get_range_attrs,
     get_time_attrs,
+)
+
+from .nexrad_interpolate import (
+    _fast_interpolate_scan_2,
+    _fast_interpolate_scan_4,
 )
 
 nexrad_mapping = {
@@ -1366,7 +1367,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
 
-        ds.encoding["engine"] = "NexradLevel2"
+        ds.encoding["engine"] = "nexradlevel2"
 
         # handle duplicates and reindex
         if decode_coords and reindex_angle is not False:
