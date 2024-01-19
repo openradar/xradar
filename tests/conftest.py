@@ -58,3 +58,8 @@ def iris0_file():
 @pytest.fixture(scope="session")
 def iris1_file():
     return DATASETS.fetch("SUR210819000227.RAWKPJV")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_file():
+    return DATASETS.fetch("KATX20130717_195021_V06")
