@@ -26,6 +26,5 @@ from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
 from .nexrad_level2 import *  # noqa
-from .nexrad_interpolate import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
