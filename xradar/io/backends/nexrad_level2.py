@@ -11,6 +11,10 @@ from xarray.core import indexing
 from xarray.core.variable import Variable
 
 from xradar import util
+from xradar.interpolate.nexrad_interpolate import (
+    _fast_interpolate_scan_2,
+    _fast_interpolate_scan_4,
+)
 from xradar.io.backends.common import (
     LazyLoadDict,
     _assign_root,
@@ -27,11 +31,6 @@ from xradar.model import (
     get_moment_attrs,
     get_range_attrs,
     get_time_attrs,
-)
-
-from .nexrad_interpolate import (
-    _fast_interpolate_scan_2,
-    _fast_interpolate_scan_4,
 )
 
 nexrad_mapping = {
