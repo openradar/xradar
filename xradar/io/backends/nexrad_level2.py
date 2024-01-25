@@ -11,7 +11,7 @@ from xarray.core import indexing
 from xarray.core.variable import Variable
 
 from xradar import util
-from xradar.interpolate.nexrad_interpolate import (
+from xradar.interpolate._nexrad_interpolate import (
     _fast_interpolate_scan_2,
     _fast_interpolate_scan_4,
 )

@@ -10,8 +10,8 @@ Options.annotate = False
 # Modules to be compiled and include_dirs when necessary
 extensions = [
     Extension(
-        "xradar.interpolate.nexrad_interpolate",
-        sources=["xradar/interpolate/nexrad_interpolate.pyx"],
+        "xradar.interpolate._nexrad_interpolate",
+        sources=["xradar/interpolate/_nexrad_interpolate.pyx"],
         include_dirs=[numpy.get_include()],
     ),
 ]
