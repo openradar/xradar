@@ -58,7 +58,7 @@ jobs:
               conda
     - name: Install xradar
       run: |
-        python -m pip install . --no-deps --force-reinstall
+        python -m pip install . --force-reinstall
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"
