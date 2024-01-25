@@ -59,6 +59,7 @@ jobs:
     - name: Install xradar
       run: |
         python -m pip install . --force-reinstall
+        ls xradar/interpolate/
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"
