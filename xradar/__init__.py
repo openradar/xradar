@@ -20,6 +20,7 @@ except Exception:
 # import subpackages
 from . import accessors  # noqa
 from . import georeference  # noqa
+from . import interpolate  # noqa
 from . import io  # noqa
 from . import model  # noqa
 from . import util  # noqa
