@@ -22,7 +22,6 @@ from collections.abc import MutableMapping
 
 import fsspec
 import h5netcdf
-import netCDF4
 import numpy as np
 import xarray as xr
 from datatree import DataTree
@@ -279,47 +278,6 @@ def prepare_for_read(filename, storage_options={"anon": True}):
     return fsspec.open(
         filename, mode="rb", compression="infer", **storage_options
     ).open()
-
-
-def stringarray_to_chararray(arr, numchars=None):
-    """
-    Convert an string array to a character array with one extra dimension.
-
-    Parameters
-    ----------
-    arr : array
-        Array with numpy dtype 'SN', where N is the number of characters
-        in the string.
-
-    numchars : int
-        Number of characters used to represent the string. If numchar > N
-        the results will be padded on the right with blanks. The default,
-        None will use N.
-
-    Returns
-    -------
-    chararr : array
-        Array with dtype 'S1' and shape = arr.shape + (numchars, ).
-
-    """
-    carr = netCDF4.stringtochar(arr)
-    if numchars is None:
-        return carr
-
-    arr_numchars = carr.shape[-1]
-    if numchars <= arr_numchars:
-        raise ValueError("numchars must be >= %i" % (arr_numchars))
-    chararr = np.zeros(arr.shape + (numchars,), dtype="S1")
-    chararr[..., :arr_numchars] = carr[:]
-    return chararr
-
-
-def _test_arguments(dic):
-    """Issue a warning if receive non-empty argument dict."""
-    if dic:
-        import warnings
-
-        warnings.warn("Unexpected arguments: %s" % dic.keys())
 
 
 def make_time_unit_str(dtobj):
