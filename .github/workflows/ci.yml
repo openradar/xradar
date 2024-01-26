@@ -58,8 +58,11 @@ jobs:
               conda
     - name: Install xradar
       run: |
-        python -m pip install . --force-reinstall
+        python -m pip install . --no-deps
         python setup.py build_ext --inplace
+    - name: Version Info
+      run: |
+        python -c "import xradar; print(xradar.version.version)"
     - name: Test with pytest
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
@@ -102,6 +105,7 @@ jobs:
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
+        python setup.py build_ext --inplace
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"

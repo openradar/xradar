@@ -17,13 +17,6 @@ extensions = [
 
 # This is the function that is executed
 setup(
-    install_requires=[
-        "setuptools>=45",
-        "wheel",
-        "setuptools_scm[toml]>=7.0",
-        "cython",
-        "numpy",
-    ],
     # external to be compiled
     ext_modules=cythonize(
         extensions, compiler_directives={"language_level": "3", "cpow": True}
