@@ -1,5 +1,8 @@
 # History
 
+## Development Version
+* ENH: Add a reader for nexrad level2 files ({pull}`147`) by [@mgrover1](https://github.com/mgrover1)
+
 ## 0.4.2 (2023-11-02)
 
 * FIX: Fix handling of sweep_mode attributes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
