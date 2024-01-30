@@ -56,7 +56,6 @@ jobs:
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
-        python setup.py build_ext --inplace
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"
@@ -101,7 +100,7 @@ jobs:
               conda
     - name: Install xradar
       run: |
-        python setup.py build_ext --inplace --no-deps
+        python -m pip install . --no-deps
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"

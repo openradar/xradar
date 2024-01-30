@@ -46,7 +46,6 @@ requires = [
     "setuptools>=45",
     "wheel",
     "setuptools_scm[toml]>=7.0",
-    "cython",
     "numpy"
 ]
 build-backend = "setuptools.build_meta"
