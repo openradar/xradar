@@ -11,10 +11,6 @@ from xarray.core import indexing
 from xarray.core.variable import Variable
 
 from xradar import util
-from xradar.interpolate._nexrad_interpolate import (
-    _fast_interpolate_scan_2,
-    _fast_interpolate_scan_4,
-)
 from xradar.io.backends.common import (
     LazyLoadDict,
     _assign_root,
@@ -1007,55 +1003,11 @@ def _find_range_params(scan_info):
     return min_first_gate, min_gate_spacing, max_last_gate
 
 
-def _find_scans_to_interp(scan_info, first_gate, gate_spacing):
-    """Return a dict indicating what moments/scans need interpolation."""
-    moments = {m for scan in scan_info for m in scan["moments"]}
-    interpolate = {moment: [] for moment in moments}
-    for scan_num, scan in enumerate(scan_info):
-        for moment in moments:
-            if moment not in scan["moments"]:
-                continue
-            index = scan["moments"].index(moment)
-            first = scan["first_gate"][index]
-            spacing = scan["gate_spacing"][index]
-            if first != first_gate or spacing != gate_spacing:
-                interpolate[moment].append(scan_num)
-                # for proper interpolation the gate spacing of the scan to be
-                # interpolated should be 1/4th the spacing of the radar
-                if spacing == gate_spacing * 4:
-                    interpolate["multiplier"] = "4"
-                elif spacing == gate_spacing * 2:
-                    interpolate["multiplier"] = "2"
-                else:
-                    raise ValueError("Gate spacing is neither 1/4 or 1/2")
-                # assert first_gate + 1.5 * gate_spacing == first
-    # remove moments with no scans needing interpolation
-    interpolate = {k: v for k, v in interpolate.items() if len(v) != 0}
-    return interpolate
-
-
-def _interpolate_scan(mdata, start, end, moment_ngates, multiplier, linear_interp=True):
-    """Interpolate a single NEXRAD moment scan from 1000 m to 250 m."""
-    fill_value = -9999
-    data = mdata.filled(fill_value)
-    scratch_ray = np.empty((data.shape[1],), dtype=data.dtype)
-    if multiplier == "4":
-        _fast_interpolate_scan_4(
-            data, scratch_ray, fill_value, start, end, moment_ngates, linear_interp
-        )
-    else:
-        _fast_interpolate_scan_2(
-            data, scratch_ray, fill_value, start, end, moment_ngates, linear_interp
-        )
-    mdata[:] = np.ma.array(data, mask=(data == fill_value))
-
-
 def format_nexrad_level2_data(
     filename,
     delay_field_loading=False,
     station=None,
     scans=None,
-    linear_interp=True,
     storage_options={"anon": True},
     first_dimension=None,
     group=None,
@@ -1069,10 +1021,6 @@ def format_nexrad_level2_data(
     # Access the scan info and load in the available moments
     scan_info = nfile.scan_info(scans)
     available_moments = {m for scan in scan_info for m in scan["moments"]}
-    first_gate, gate_spacing, last_gate = _find_range_params(scan_info)
-
-    # Interpolate to 360 degrees where neccessary
-    interpolate = _find_scans_to_interp(scan_info, first_gate, gate_spacing)
 
     # Deal with time
     time_start, _time = nfile.get_times(scans)
@@ -1189,42 +1137,17 @@ def format_nexrad_level2_data(
 
     # fields
     max_ngates = len(_range["data"])
-    available_moments = {m for scan in scan_info for m in scan["moments"]}
-    interpolate = _find_scans_to_interp(
-        scan_info,
-        first_gate,
-        gate_spacing,
-    )
 
     fields = {}
     for moment in available_moments:
         dic = get_moment_attrs(nexrad_mapping[moment])
         dic["_FillValue"] = -9999
-        if delay_field_loading and moment not in interpolate:
+        if delay_field_loading:
             dic = LazyLoadDict(dic)
             data_call = _NEXRADLevel2StagedField(nfile, moment, max_ngates, scans)
             dic.set_lazy("data", data_call)
         else:
             mdata = nfile.get_data(moment, max_ngates, scans=scans)
-            if moment in interpolate:
-                interp_scans = interpolate[moment]
-                warnings.warn(
-                    "Gate spacing is not constant, interpolating data in "
-                    + f"scans {interp_scans} for moment {moment}.",
-                    UserWarning,
-                )
-                for scan in interp_scans:
-                    idx = scan_info[scan]["moments"].index(moment)
-                    moment_ngates = scan_info[scan]["ngates"][idx]
-                    start = sweep_start_ray_index["data"][scan]
-                    end = sweep_end_ray_index["data"][scan]
-                    if interpolate["multiplier"] == "4":
-                        multiplier = "4"
-                    else:
-                        multiplier = "2"
-                    _interpolate_scan(
-                        mdata, start, end, moment_ngates, multiplier, linear_interp
-                    )
             dic["data"] = mdata
         fields[nexrad_mapping[moment]] = dic
     instrument_parameters = {}

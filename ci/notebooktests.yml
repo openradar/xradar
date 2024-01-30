@@ -7,7 +7,6 @@ dependencies:
   - cmweather
   - codecov
   - coverage
-  - cython
   - dask
   - h5netcdf
   - h5py
