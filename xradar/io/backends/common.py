@@ -302,7 +302,7 @@ class LazyLoadDict(MutableMapping):
 
     The comparison methods, __cmp__, __ge__, __gt__, __le__, __lt__, __ne__,
     nor the view methods, viewitems, viewkeys, viewvalues, are implemented.
-    Neither is the the fromkeys method.
+    Neither is the fromkeys method.
 
     This is from Py-ART.
 
