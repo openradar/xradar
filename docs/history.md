@@ -1,5 +1,9 @@
 # History
 
+## Development Version (unreleased)
+
+* MNT: Update GitHub actions, address DeprecationWarnings ({pull}`153`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
 ## 0.4.3 (2024-02-24)
 
 * MNT:  address black style changes, update pre-commit-config.yaml ({pull}`152`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
