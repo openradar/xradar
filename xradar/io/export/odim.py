@@ -228,7 +228,7 @@ def to_odim(
         # skip NaT values
         valid_times = ~np.isnat(ds.time.values)
         t = sorted(ds.time.values[valid_times])
-        if sys.version_info[0] == 3 and sys.version[1] <= 10:
+        if sys.version_info.major == 3 and sys.version_info.minor <= 10:
             start = dt.datetime.utcfromtimestamp(np.rint(t[0].astype("O") / 1e9))
             end = dt.datetime.utcfromtimestamp(np.rint(t[-1].astype("O") / 1e9))
         else:
