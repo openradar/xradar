@@ -37,8 +37,8 @@ def test_remove_duplicate_rays():
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
     ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
     ds_out = util.remove_duplicate_rays(ds)
-    assert ds.dims["azimuth"] == 361
-    assert ds_out.dims["azimuth"] == 360
+    assert ds.sizes["azimuth"] == 361
+    assert ds_out.sizes["azimuth"] == 360
 
 
 def test_reindex_angle():
@@ -48,7 +48,7 @@ def test_reindex_angle():
     ds_out = util.reindex_angle(
         ds_out, start_angle=0, stop_angle=360, angle_res=1.0, direction=1
     )
-    assert ds_out.dims["azimuth"] == 360
+    assert ds_out.sizes["azimuth"] == 360
     np.testing.assert_array_equal(ds_out.azimuth.values, np.arange(0.5, 360, 1.0))
 
 

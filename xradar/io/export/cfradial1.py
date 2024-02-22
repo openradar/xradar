@@ -102,7 +102,7 @@ def _variable_mapper(dtree, dim0=None):
     """
 
     sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree).drop("fixed_angle")
+    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle")
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
