@@ -31,8 +31,8 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-import sys
 import datetime as dt
+import sys
 
 import h5py
 import numpy as np
