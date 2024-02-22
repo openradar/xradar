@@ -2,6 +2,7 @@
 
 ## 0.4.3 (2024-02-24)
 
+* MNT:  address black style changes, update pre-commit-config.yaml ({pull}`152`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * FIX: use len(unique) to estimate unique entry for odim range ({pull}`151`) by [@martinpaule](https://github.com/martinpaule).
 
 ## 0.4.2 (2023-11-02)
