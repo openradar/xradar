@@ -189,9 +189,11 @@ def _sweep_info_mapper(dtree):
 
     for var_name in sweep_vars:
         var_data_list = [
-            np.unique(dtree[s][var_name].values[np.newaxis, ...])
-            if var_name in dtree[s]
-            else np.array([np.nan])
+            (
+                np.unique(dtree[s][var_name].values[np.newaxis, ...])
+                if var_name in dtree[s]
+                else np.array([np.nan])
+            )
             for s in dtree.groups
             if "sweep" in s
         ]
