@@ -227,8 +227,8 @@ def to_odim(
         # skip NaT values
         valid_times = ~np.isnat(ds.time.values)
         t = sorted(ds.time.values[valid_times])
-        start = dt.datetime.utcfromtimestamp(np.rint(t[0].astype("O") / 1e9))
-        end = dt.datetime.utcfromtimestamp(np.rint(t[-1].astype("O") / 1e9))
+        start = dt.datetime.fromtimestamp(np.rint(t[0].astype("O") / 1e9), dt.UTC)
+        end = dt.datetime.fromtimestamp(np.rint(t[-1].astype("O") / 1e9), dt.UTC)
         ds_what["product"] = "SCAN"
         ds_what["startdate"] = start.strftime("%Y%m%d")
         ds_what["starttime"] = start.strftime("%H%M%S")
