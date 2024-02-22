@@ -93,5 +93,5 @@ select = [
     "UP",
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["xradar"]
