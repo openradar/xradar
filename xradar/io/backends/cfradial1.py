@@ -145,7 +145,7 @@ def _get_sweep_groups(
         sweep = [f"sweep_{sweep}"]
 
     # iterate over sweeps
-    for i in range(root.dims["sweep"]):
+    for i in range(root.sizes["sweep"]):
         sw = f"sweep_{i}"
         if sweep is not None and not (sw in sweep or i in sweep):
             continue
