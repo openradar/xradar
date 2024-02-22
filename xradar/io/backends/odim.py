@@ -482,9 +482,9 @@ def _get_odim_variable_name_and_attrs(name, attrs):
             pass
         else:
             attrs.update({key: mapping[key] for key in moment_attrs})
-        attrs[
-            "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time"
+        attrs["coordinates"] = (
+            "elevation azimuth range latitude longitude altitude time"
+        )
     return name, attrs
 
 
