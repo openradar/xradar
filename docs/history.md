@@ -1,5 +1,9 @@
 # History
 
+## 0.4.3 (2024-02-24)
+
+* FIX: use len(unique) to estimate unique entry for odim range ({pull}`151`) by [@martinpaule](https://github.com/martinpaule).
+
 ## 0.4.2 (2023-11-02)
 
 * FIX: Fix handling of sweep_mode attributes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
