@@ -244,7 +244,7 @@ class _OdimH5NetCDFMetadata:
         dimensions = []
         for n, _ in enumerate(dims):
             if n == 0:
-                dimensions.append(self.first_dim)
+                dimensions.append(self.dim0)
             elif n == 1:
                 dimensions.append("range")
             else:
