@@ -129,3 +129,9 @@ def test_get_time(point):
     )
     time = odim._get_time(what, point=point[0])
     assert time == point[1]
+
+
+def test_OdimH5NetCDFMetadata(odim_file):
+    store = odim.OdimStore.open(odim_file, group="sweep_0")
+    with pytest.warns(DeprecationWarning):
+        assert store.substore[0].root.first_dim == "azimuth"

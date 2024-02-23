@@ -247,8 +247,6 @@ class _OdimH5NetCDFMetadata:
                 dimensions.append(self.dim0)
             elif n == 1:
                 dimensions.append("range")
-            else:
-                pass
         return tuple(dimensions)
 
     @property
