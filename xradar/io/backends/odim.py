@@ -34,6 +34,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
 import io
+import warnings
 
 import h5netcdf
 import numpy as np
@@ -88,6 +89,117 @@ def _calculate_angle_res(dim):
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
 
 
+def _get_azimuth_how(how):
+    startaz = how["startazA"]
+    stopaz = how.get("stopazA", False)
+    if stopaz is False:
+        # stopazA missing
+        # create from startazA
+        stopaz = np.roll(startaz, -1)
+        stopaz[-1] += 360
+    zero_index = np.where(stopaz < startaz)
+    stopaz[zero_index[0]] += 360
+    azimuth_data = (startaz + stopaz) / 2.0
+    azimuth_data[azimuth_data >= 360] -= 360
+    return azimuth_data
+
+
+def _get_azimuth_where(where):
+    res = 360.0 / where["nrays"]
+    return np.arange(res / 2.0, 360.0, res, dtype="float32")
+
+
+def _get_fixed_dim_and_angle(where):
+    dim = "elevation"
+
+    # try RHI first
+    angle_keys = ["az_angle", "azangle"]
+    angle = None
+    for ak in angle_keys:
+        angle = where.get(ak, None)
+        if angle is not None:
+            break
+    if angle is None:
+        dim = "azimuth"
+        angle = where["elangle"]
+
+    # do not round angle
+    # angle = np.round(angle, decimals=1)
+    return dim, angle
+
+
+def _get_elevation_how(how):
+    startel = how.get("startelA", False)
+    stopel = how.get("stopelA", False)
+    if startel is not False and stopel is not False:
+        elevation_data = (startel + stopel) / 2.0
+    else:
+        elevation_data = how["elangles"]
+    return elevation_data
+
+
+def _get_elevation_where(where):
+    return np.ones(where["nrays"], dtype="float32") * where["elangle"]
+
+
+def _get_time_how(how):
+    return (how["startazT"] + how["stopazT"]) / 2.0
+
+
+def _get_time_what(what, where, nrays=None):
+    startdate = _maybe_decode(what["startdate"])
+    starttime = _maybe_decode(what["starttime"])
+    # take care for missing enddate/endtime
+    # see https://github.com/wradlib/wradlib/issues/563
+    enddate = _maybe_decode(what.get("enddate", what["startdate"]))
+    endtime = _maybe_decode(what.get("endtime", what["starttime"]))
+    start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
+    end = dt.datetime.strptime(enddate + endtime, "%Y%m%d%H%M%S")
+    start = start.replace(tzinfo=dt.timezone.utc).timestamp()
+    end = end.replace(tzinfo=dt.timezone.utc).timestamp()
+    if nrays is None:
+        nrays = where["nrays"]
+    if start == end:
+        import warnings
+
+        warnings.warn(
+            "xradar: Equal ODIM `starttime` and `endtime` "
+            "values. Can't determine correct sweep start-, "
+            "end- and raytimes.",
+            UserWarning,
+        )
+
+        time_data = np.ones(nrays) * start
+    else:
+        delta = (end - start) / nrays
+        time_data = np.arange(start + delta / 2.0, end, delta)
+        time_data = np.roll(time_data, shift=+where["a1gate"])
+    return time_data
+
+
+def _get_range(where):
+    ngates = where["nbins"]
+    range_start = where["rstart"] * 1000.0
+    bin_range = where["rscale"]
+    cent_first = range_start + bin_range / 2.0
+    range_data = np.arange(
+        cent_first, range_start + bin_range * ngates, bin_range, dtype="float32"
+    )
+    return range_data, cent_first, bin_range
+
+
+def _get_time(what, point="start"):
+    startdate = _maybe_decode(what[f"{point}date"])
+    starttime = _maybe_decode(what[f"{point}time"])
+    start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
+    start = start.replace(tzinfo=dt.timezone.utc).timestamp()
+    return start
+
+
+def _get_a1gate(where):
+    return where["a1gate"]
+
+
 class _OdimH5NetCDFMetadata:
     """Wrapper around OdimH5 data fileobj for easy access of metadata.
 
@@ -106,11 +218,27 @@ class _OdimH5NetCDFMetadata:
     def __init__(self, fileobj, group):
         self._root = fileobj
         self._group = group
+        self._how = None
+        self._what = None
+        self._where = None
+        self._dim0 = None
+        self._fixed_angle = None
 
     @property
     def first_dim(self):
-        dim, _ = self._get_fixed_dim_and_angle()
-        return dim
+        warnings.warn(
+            "xradar: use of `first_dim` is deprecated, please use `dim0` instead.",
+            DeprecationWarning,
+        )
+        if self._dim0 is None:
+            self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
+        return self._dim0
+
+    @property
+    def dim0(self):
+        if self._dim0 is None:
+            self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
+        return self._dim0
 
     def get_variable_dimensions(self, dims):
         dimensions = []
@@ -173,7 +301,6 @@ class _OdimH5NetCDFMetadata:
             "elevation": Variable((dims[0],), elevation, el_attrs),
             "time": Variable((dims[0],), rtime, rtime_attrs),
             "range": Variable(("range",), range_data, range_attrs),
-            # "time": Variable((), self.time, time_attrs),
             "sweep_mode": Variable((), sweep_mode),
             "sweep_number": Variable((), sweep_number),
             "prt_mode": Variable((), prt_mode),
@@ -202,107 +329,51 @@ class _OdimH5NetCDFMetadata:
         return self._get_range()
 
     @property
-    def what(self):
+    def ds_what(self):
         return self._get_dset_what()
 
+    @property
+    def how(self):
+        if self._how is None:
+            self._how = self.grp["how"].attrs
+        return self._how
+
+    @property
+    def what(self):
+        if self._what is None:
+            self._what = self.grp["what"].attrs
+        return self._what
+
+    @property
+    def where(self):
+        if self._where is None:
+            self._where = self.grp["where"].attrs
+        return self._where
+
+    @property
+    def grp(self):
+        return self._root[self._group.split("/")[0]]
+
     def _get_azimuth_how(self):
-        grp = self._group.split("/")[0]
-        how = self._root[grp]["how"].attrs
-        startaz = how["startazA"]
-        stopaz = how.get("stopazA", False)
-        if stopaz is False:
-            # stopazA missing
-            # create from startazA
-            stopaz = np.roll(startaz, -1)
-            stopaz[-1] += 360
-        zero_index = np.where(stopaz < startaz)
-        stopaz[zero_index[0]] += 360
-        azimuth_data = (startaz + stopaz) / 2.0
-        azimuth_data[azimuth_data >= 360] -= 360
-        return azimuth_data
+        return _get_azimuth_how(self.how)
 
     def _get_azimuth_where(self):
-        grp = self._group.split("/")[0]
-        nrays = self._root[grp]["where"].attrs["nrays"]
-        res = 360.0 / nrays
-        azimuth_data = np.arange(res / 2.0, 360.0, res, dtype="float32")
-        return azimuth_data
+        return _get_azimuth_where(self.where)
 
     def _get_fixed_dim_and_angle(self):
-        grp = self._group.split("/")[0]
-        dim = "elevation"
-
-        # try RHI first
-        angle_keys = ["az_angle", "azangle"]
-        angle = None
-        for ak in angle_keys:
-            angle = self._root[grp]["where"].attrs.get(ak, None)
-            if angle is not None:
-                break
-        if angle is None:
-            dim = "azimuth"
-            angle = self._root[grp]["where"].attrs["elangle"]
-
-        # do not round angle
-        # angle = np.round(angle, decimals=1)
-        return dim, angle
+        return _get_fixed_dim_and_angle(self.where)
 
     def _get_elevation_how(self):
-        grp = self._group.split("/")[0]
-        how = self._root[grp]["how"].attrs
-        startaz = how.get("startelA", False)
-        stopaz = how.get("stopelA", False)
-        if startaz is not False and stopaz is not False:
-            elevation_data = (startaz + stopaz) / 2.0
-        else:
-            elevation_data = how["elangles"]
-        return elevation_data
+        return _get_elevation_how(self.how)
 
     def _get_elevation_where(self):
-        grp = self._group.split("/")[0]
-        nrays = self._root[grp]["where"].attrs["nrays"]
-        elangle = self._root[grp]["where"].attrs["elangle"]
-        elevation_data = np.ones(nrays, dtype="float32") * elangle
-        return elevation_data
+        return _get_elevation_where(self.where)
 
     def _get_time_how(self):
-        grp = self._group.split("/")[0]
-        startT = self._root[grp]["how"].attrs["startazT"]
-        stopT = self._root[grp]["how"].attrs["stopazT"]
-        time_data = (startT + stopT) / 2.0
-        return time_data
+        return _get_time_how(self.how)
 
     def _get_time_what(self, nrays=None):
-        grp = self._group.split("/")[0]
-        what = self._root[grp]["what"].attrs
-        startdate = _maybe_decode(what["startdate"])
-        starttime = _maybe_decode(what["starttime"])
-        # take care for missing enddate/endtime
-        # see https://github.com/wradlib/wradlib/issues/563
-        enddate = _maybe_decode(what.get("enddate", what["startdate"]))
-        endtime = _maybe_decode(what.get("endtime", what["starttime"]))
-        start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
-        end = dt.datetime.strptime(enddate + endtime, "%Y%m%d%H%M%S")
-        start = start.replace(tzinfo=dt.timezone.utc).timestamp()
-        end = end.replace(tzinfo=dt.timezone.utc).timestamp()
-        if nrays is None:
-            nrays = self._root[grp]["where"].attrs["nrays"]
-        if start == end:
-            import warnings
-
-            warnings.warn(
-                "xradar: Equal ODIM `starttime` and `endtime` "
-                "values. Can't determine correct sweep start-, "
-                "end- and raytimes.",
-                UserWarning,
-            )
-
-            time_data = np.ones(nrays) * start
-        else:
-            delta = (end - start) / nrays
-            time_data = np.arange(start + delta / 2.0, end, delta)
-            time_data = np.roll(time_data, shift=+self.a1gate)
-        return time_data
+        return _get_time_what(self.what, self.where, nrays)
 
     def _get_ray_times(self, nrays=None):
         try:
@@ -314,30 +385,10 @@ class _OdimH5NetCDFMetadata:
         return time_data
 
     def _get_range(self):
-        grp = self._group.split("/")[0]
-        where = self._root[grp]["where"].attrs
-        ngates = where["nbins"]
-        range_start = where["rstart"] * 1000.0
-        bin_range = where["rscale"]
-        cent_first = range_start + bin_range / 2.0
-        range_data = np.arange(
-            cent_first, range_start + bin_range * ngates, bin_range, dtype="float32"
-        )
-        return range_data, cent_first, bin_range
+        return _get_range(self.where)
 
     def _get_time(self, point="start"):
-        grp = self._group.split("/")[0]
-        what = self._root[grp]["what"].attrs
-        startdate = _maybe_decode(what[f"{point}date"])
-        starttime = _maybe_decode(what[f"{point}time"])
-        start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
-        start = start.replace(tzinfo=dt.timezone.utc).timestamp()
-        return start
-
-    def _get_a1gate(self):
-        grp = self._group.split("/")[0]
-        a1gate = self._root[grp]["where"].attrs["a1gate"]
-        return a1gate
+        return _get_time(self.what, point=point)
 
     def _get_site_coords(self):
         lon = self._root["where"].attrs["lon"]
@@ -363,7 +414,7 @@ class _OdimH5NetCDFMetadata:
 
     @property
     def a1gate(self):
-        return self._get_a1gate()
+        return _get_a1gate(self.where)
 
     @property
     def azimuth(self):
@@ -464,6 +515,7 @@ def _get_h5netcdf_encoding(self, var):
     vlen_dtype = h5py.check_dtype(vlen=var.dtype)
     if vlen_dtype is str:
         encoding["dtype"] = str
+    # todo: this might be removed, since xarray is capable from version 2023.X.Y
     elif vlen_dtype is not None:  # pragma: no cover
         # xarray doesn't support writing arbitrary vlen dtypes yet.
         pass
@@ -528,7 +580,7 @@ class OdimSubStore(AbstractDataStore):
         data = indexing.LazilyOuterIndexedArray(H5NetCDFArrayWrapper(name, self))
         encoding = _get_h5netcdf_encoding(self, var)
         encoding["group"] = self._group
-        name, attrs = _get_odim_variable_name_and_attrs(name, self.root.what)
+        name, attrs = _get_odim_variable_name_and_attrs(name, self.root.ds_what)
 
         return name, Variable(dimensions, data, attrs, encoding)
 
