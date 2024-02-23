@@ -257,10 +257,6 @@ class _OdimH5NetCDFMetadata:
         rtime = self.ray_times
         dim, angle = self.fixed_dim_and_angle
         angle_res = _calculate_angle_res(locals()[dim])
-        dims = ("azimuth", "elevation")
-        if dim == dims[1]:
-            dims = (dims[1], dims[0])
-
         az_attrs = get_azimuth_attrs()
         el_attrs = get_elevation_attrs()
 
@@ -295,9 +291,9 @@ class _OdimH5NetCDFMetadata:
 
         # todo: add CF attributes where not yet available
         coordinates = {
-            "azimuth": Variable((dims[0],), azimuth, az_attrs),
-            "elevation": Variable((dims[0],), elevation, el_attrs),
-            "time": Variable((dims[0],), rtime, rtime_attrs),
+            "azimuth": Variable((dim,), azimuth, az_attrs),
+            "elevation": Variable((dim,), elevation, el_attrs),
+            "time": Variable((dim,), rtime, rtime_attrs),
             "range": Variable(("range",), range_data, range_attrs),
             "sweep_mode": Variable((), sweep_mode),
             "sweep_number": Variable((), sweep_number),
