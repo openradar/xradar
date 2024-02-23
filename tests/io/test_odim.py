@@ -6,6 +6,7 @@
 
 ported from wradlib
 """
+from contextlib import nullcontext
 
 import numpy as np
 import pytest
@@ -108,7 +109,14 @@ def test_get_time_what(a1gate, enddate):
     else:
         a1g = 946684800.0
     where = dict(nrays=360, a1gate=a1gate[0])
-    time = odim._get_time_what(what, where)
+    if not enddate:
+        check = pytest.warns(
+            UserWarning, match="Equal ODIM `starttime` and `endtime` values"
+        )
+    else:
+        check = nullcontext()
+    with check:
+        time = odim._get_time_what(what, where)
     assert time[0] == a1g
     assert len(time) == 360
 
