@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -200,8 +200,8 @@ def _get_a1gate(where):
     return where["a1gate"]
 
 
-class _OdimH5NetCDFMetadata:
-    """Wrapper around OdimH5 data fileobj for easy access of metadata.
+class _H5NetCDFMetadata:
+    """Wrapper around OdimH5/Gamic data fileobj for easy access of metadata.
 
     Parameters
     ----------
@@ -225,6 +225,35 @@ class _OdimH5NetCDFMetadata:
         self._fixed_angle = None
 
     @property
+    def coordinates(self):
+        # additional metadata which might come in handy in the future
+        # do not forward a1gate and angle_res for now
+        # a1gate = self.a1gate
+        # angle_res = _calculate_angle_res(locals()[dim])
+        # az_attrs["a1gate"] = a1gate
+        #
+        # if dim == "azimuth":
+        #     az_attrs["angle_res"] = angle_res
+        # else:
+        #     el_attrs["angle_res"] = angle_res
+
+        coordinates = {
+            "azimuth": self.azimuth,
+            "elevation": self.elevation,
+            "time": self.time,
+            "range": self.range,
+            "sweep_mode": self.sweep_mode,
+            "sweep_number": self.sweep_number,
+            "prt_mode": self.prt_mode,
+            "follow_mode": self.follow_mode,
+            "sweep_fixed_angle": self.sweep_fixed_angle,
+            "longitude": self.longitude,
+            "latitude": self.latitude,
+            "altitude": self.altitude,
+        }
+        return coordinates
+
+    @property
     def first_dim(self):
         warnings.warn(
             "xradar: use of `first_dim` is deprecated, please use `dim0` instead.",
@@ -236,6 +265,7 @@ class _OdimH5NetCDFMetadata:
 
     @property
     def dim0(self):
+        """Get name of first dimension."""
         if self._dim0 is None:
             self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
         return self._dim0
@@ -250,131 +280,134 @@ class _OdimH5NetCDFMetadata:
         return tuple(dimensions)
 
     @property
-    def coordinates(self):
-        azimuth = self.azimuth
-        elevation = self.elevation
-        a1gate = self.a1gate
-        rtime = self.ray_times
-        dim, angle = self.fixed_dim_and_angle
-        angle_res = _calculate_angle_res(locals()[dim])
-        az_attrs = get_azimuth_attrs()
-        el_attrs = get_elevation_attrs()
-
-        # do not forward a1gate and angle_res for now
-        # az_attrs["a1gate"] = a1gate
-        #
-        # if dim == "azimuth":
-        #     az_attrs["angle_res"] = angle_res
-        # else:
-        #     el_attrs["angle_res"] = angle_res
-
-        sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = int(self._group.split("/")[0][7:]) - 1
-        prt_mode = "not_set"
-        follow_mode = "not_set"
-
-        rtime_attrs = {
-            "units": "seconds since 1970-01-01T00:00:00Z",
-            "standard_name": "time",
-        }
-
-        range_data, cent_first, bin_range = self.range
-        range_attrs = get_range_attrs(range_data)
-
-        lon_attrs = get_longitude_attrs()
-        lat_attrs = get_latitude_attrs()
-        alt_attrs = get_altitude_attrs()
-
-        time_attrs = get_time_attrs("1970-01-01T00:00:00Z")
-
-        lon, lat, alt = self.site_coords
-
-        # todo: add CF attributes where not yet available
-        coordinates = {
-            "azimuth": Variable((dim,), azimuth, az_attrs),
-            "elevation": Variable((dim,), elevation, el_attrs),
-            "time": Variable((dim,), rtime, rtime_attrs),
-            "range": Variable(("range",), range_data, range_attrs),
-            "sweep_mode": Variable((), sweep_mode),
-            "sweep_number": Variable((), sweep_number),
-            "prt_mode": Variable((), prt_mode),
-            "follow_mode": Variable((), follow_mode),
-            "sweep_fixed_angle": Variable((), angle),
-            "longitude": Variable((), lon, lon_attrs),
-            "latitude": Variable((), lat, lat_attrs),
-            "altitude": Variable((), alt, alt_attrs),
-        }
-        return coordinates
-
-    @property
     def site_coords(self):
         return self._get_site_coords()
 
     @property
-    def time(self):
-        return self._get_time()
-
-    @property
-    def fixed_dim_and_angle(self):
-        return self._get_fixed_dim_and_angle()
-
-    @property
-    def range(self):
-        return self._get_range()
-
-    @property
-    def ds_what(self):
-        return self._get_dset_what()
-
-    @property
     def how(self):
+        """Get how-group attributes."""
         if self._how is None:
             self._how = self.grp["how"].attrs
         return self._how
 
     @property
     def what(self):
+        """Get what-group attributes."""
         if self._what is None:
             self._what = self.grp["what"].attrs
         return self._what
 
     @property
     def where(self):
+        """Get where-group attributes."""
         if self._where is None:
             self._where = self.grp["where"].attrs
         return self._where
+
+    def _get_site_coords(self):
+        lon = self._root["where"].attrs["lon"]
+        lat = self._root["where"].attrs["lat"]
+        alt = self._root["where"].attrs["height"]
+        return lon, lat, alt
+
+    @property
+    def azimuth(self):
+        """Return azimuth Variable."""
+        return self._azimuth
+
+    @property
+    def elevation(self):
+        """Return elevation Variable."""
+        return self._elevation
+
+    @property
+    def time(self):
+        """Return time Variable."""
+        return self._time
+
+    @property
+    def range(self):
+        """Return range Variable."""
+        range_data, cent_first, bin_range = self._get_range()
+        range_attrs = get_range_attrs(range_data)
+        return Variable(("range",), range_data, range_attrs)
+
+    @property
+    def longitude(self):
+        """Return longitude Variable."""
+        return Variable((), self._root["where"].attrs["lon"], get_longitude_attrs())
+
+    @property
+    def latitude(self):
+        """Return latitude Variable."""
+        return Variable((), self._root["where"].attrs["lat"], get_latitude_attrs())
+
+    @property
+    def altitude(self):
+        """Return altitude Variable."""
+        return Variable((), self._root["where"].attrs["height"], get_altitude_attrs())
+
+    @property
+    def sweep_fixed_angle(self):
+        """Return sweep_fixed_angle Variable."""
+        if self._fixed_angle is None:
+            self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
+        return Variable((), self._fixed_angle)
+
+    @property
+    def sweep_mode(self):
+        """Return sweep_mode Variable."""
+        sweep_mode = "azimuth_surveillance" if self.dim0 == "azimuth" else "rhi"
+        return Variable((), sweep_mode)
+
+    @property
+    def sweep_number(self):
+        """Return sweep_number Variable."""
+        return Variable((), self._sweep_number)
+
+    @property
+    def prt_mode(self):
+        """Return prt_mode Variable."""
+        return Variable((), "not_set")
+
+    @property
+    def follow_mode(self):
+        """Return follow_mode Variable."""
+        return Variable((), "not_set")
+
+
+class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
+    """Wrapper around OdimH5 data fileobj for easy access of metadata.
+
+    Parameters
+    ----------
+    fileobj : file-like
+        h5netcdf filehandle.
+    group : str
+        odim group to acquire
+
+    Returns
+    -------
+    object : metadata object
+    """
+
+    @property
+    def ds_what(self):
+        return self._get_dset_what()
 
     @property
     def grp(self):
         return self._root[self._group.split("/")[0]]
 
-    def _get_azimuth_how(self):
-        return _get_azimuth_how(self.how)
-
-    def _get_azimuth_where(self):
-        return _get_azimuth_where(self.where)
-
     def _get_fixed_dim_and_angle(self):
         return _get_fixed_dim_and_angle(self.where)
 
-    def _get_elevation_how(self):
-        return _get_elevation_how(self.how)
-
-    def _get_elevation_where(self):
-        return _get_elevation_where(self.where)
-
-    def _get_time_how(self):
-        return _get_time_how(self.how)
-
-    def _get_time_what(self, nrays=None):
-        return _get_time_what(self.what, self.where, nrays)
-
     def _get_ray_times(self, nrays=None):
         try:
-            time_data = self._get_time_how()
+            time_data = _get_time_how(self.how)
             self._need_time_recalc = False
         except (AttributeError, KeyError, TypeError):
-            time_data = self._get_time_what(nrays=nrays)
+            time_data = _get_time_what(self.what, self.where, nrays)
             self._need_time_recalc = True
         return time_data
 
@@ -383,12 +416,6 @@ class _OdimH5NetCDFMetadata:
 
     def _get_time(self, point="start"):
         return _get_time(self.what, point=point)
-
-    def _get_site_coords(self):
-        lon = self._root["where"].attrs["lon"]
-        lat = self._root["where"].attrs["lat"]
-        alt = self._root["where"].attrs["height"]
-        return lon, lat, alt
 
     def _get_dset_what(self):
         attrs = {}
@@ -411,24 +438,29 @@ class _OdimH5NetCDFMetadata:
         return _get_a1gate(self.where)
 
     @property
-    def azimuth(self):
+    def _azimuth(self):
         try:
-            azimuth = self._get_azimuth_how()
+            azimuth = _get_azimuth_how(self.how)
         except (AttributeError, KeyError, TypeError):
-            azimuth = self._get_azimuth_where()
-        return azimuth
+            azimuth = _get_azimuth_where(self.where)
+        return Variable((self.dim0,), azimuth, get_azimuth_attrs())
 
     @property
-    def elevation(self):
+    def _elevation(self):
         try:
-            elevation = self._get_elevation_how()
+            elevation = _get_elevation_how(self.how)
         except (AttributeError, KeyError, TypeError):
-            elevation = self._get_elevation_where()
-        return elevation
+            elevation = _get_elevation_where(self.where)
+        return Variable((self.dim0,), elevation, get_elevation_attrs())
 
     @property
-    def ray_times(self):
-        return self._get_ray_times()
+    def _time(self):
+        return Variable((self.dim0,), self._get_ray_times(), get_time_attrs())
+
+    @property
+    def _sweep_number(self):
+        """Return sweep number."""
+        return int(self._group.split("/")[0][7:]) - 1
 
 
 class H5NetCDFArrayWrapper(BackendArray):
@@ -710,10 +742,7 @@ class OdimStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        dim, angle = self.substore[0].root.fixed_dim_and_angle
-        attributes = {}
-        # attributes["fixed_angle"] = angle.item()
-        return FrozenDict(attributes)
+        return FrozenDict()
 
 
 class OdimBackendEntrypoint(BackendEntrypoint):

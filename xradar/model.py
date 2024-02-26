@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2023, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -701,10 +701,10 @@ def get_elevation_attrs(ele=None):
     return el_attrs
 
 
-def get_time_attrs(date_str):
+def get_time_attrs(date_str="1970-01-01T00:00:00Z", date_unit="seconds"):
     time_attrs = {
         "standard_name": "time",
-        "units": f"seconds since {date_str}",
+        "units": f"{date_unit} since {date_str}",
     }
     return time_attrs
 

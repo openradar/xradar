@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """Tests for `xradar` util package."""
@@ -68,9 +68,9 @@ def test_extract_angle_parameters():
         "expected_number_rays": 360,
         "first_angle": "azimuth",
         "max_angle": np.array(359.5111083984375),
-        "max_time": np.datetime64("2018-06-01T05:43:08.042000128"),
+        "max_time": np.datetime64("2018-06-01T05:43:08.042000000"),
         "min_angle": np.array(0.52459716796875),
-        "min_time": np.datetime64("2018-06-01T05:42:44.042000128"),
+        "min_time": np.datetime64("2018-06-01T05:42:44.042000000"),
         "missing_rays": np.array(False),
         "second_angle": "elevation",
         "start_angle": 0,

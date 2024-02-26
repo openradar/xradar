@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -55,18 +55,14 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
-    get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
-    get_latitude_attrs,
-    get_longitude_attrs,
-    get_range_attrs,
     get_time_attrs,
     moment_attrs,
     sweep_vars_mapping,
 )
 from .common import _assign_root, _attach_sweep_groups, _fix_angle, _get_h5group_names
-from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding
+from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
 
 HDF5_LOCK = SerializableLock()
 
@@ -132,25 +128,50 @@ def _get_gamic_variable_name_and_attrs(attrs, dtype):
     return name, attrs
 
 
-def _get_ray_header_data(dimensions, data, encoding):
-    ray_header = Variable(dimensions, data, {}, encoding)
+def _get_range(how):
+    ngates = how["bin_count"]
+    bin_range = how["range_step"] * how["range_samples"]
+    cent_first = bin_range / 2.0
+    range_data = np.arange(
+        cent_first,
+        bin_range * ngates,
+        bin_range,
+        dtype="float32",
+    )
+    return range_data, cent_first, bin_range
 
-    azstart = ray_header.values["azimuth_start"]
-    azstop = ray_header.values["azimuth_stop"]
+
+def _get_fixed_dim_and_angle(how):
+    dims = {0: "elevation", 1: "azimuth"}
+    try:
+        dim = 1
+        angle = np.round(how[dims[0]], decimals=1)
+    except KeyError:
+        dim = 0
+        angle = np.round(how[dims[1]], decimals=1)
+
+    return dims[dim], angle
+
+
+def _get_azimuth(ray_header):
+    azstart = ray_header["azimuth_start"]
+    azstop = ray_header["azimuth_stop"]
     zero_index = np.where(azstop < azstart)
     azstop[zero_index[0]] += 360
-    azimuth = (azstart + azstop) / 2.0
-
-    elstart = ray_header.values["elevation_start"]
-    elstop = ray_header.values["elevation_stop"]
-    elevation = (elstart + elstop) / 2.0
-
-    time = ray_header.values["timestamp"] / 1e6
-
-    return {"azimuth": azimuth, "elevation": elevation, "time": time}
+    return (azstart + azstop) / 2.0
 
 
-class _GamicH5NetCDFMetadata:
+def _get_elevation(ray_header):
+    elstart = ray_header["elevation_start"]
+    elstop = ray_header["elevation_stop"]
+    return (elstart + elstop) / 2.0
+
+
+def _get_time(ray_header):
+    return ray_header["timestamp"]
+
+
+class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
     """Wrapper around OdimH5 data fileobj for easy access of metadata.
 
     Parameters
@@ -165,129 +186,51 @@ class _GamicH5NetCDFMetadata:
     object : metadata object
     """
 
-    def __init__(self, fileobj, group):
-        self._root = fileobj
-        self._group = group
-
-    @property
-    def first_dim(self):
-        dim, _ = self._get_fixed_dim_and_angle()
-        return dim
-
-    def get_variable_dimensions(self, dims):
-        dimensions = []
-        for n, _ in enumerate(dims):
-            if n == 0:
-                dimensions.append(self.first_dim)
-            elif n == 1:
-                dimensions.append("range")
-            else:
-                pass
-        return tuple(dimensions)
-
     def coordinates(self, dimensions, data, encoding):
-        ray_header = _get_ray_header_data(dimensions, data, encoding)
-        dim, angle = self.fixed_dim_and_angle
+        self._get_ray_header_data(dimensions, data, encoding)
+        return super().coordinates
 
-        dims = ("azimuth", "elevation")
-        if dim == dims[1]:
-            dims = (dims[1], dims[0])
+    def _get_ray_header_data(self, dimensions, data, encoding):
+        ray_header = Variable(dimensions, data, {}, encoding)
+        self._azimuth = Variable(
+            (self.dim0,),
+            _get_azimuth(ray_header.values),
+            get_azimuth_attrs(),
+        )
 
-        sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = int(self._group.split("/")[0][4:])
-        prt_mode = "not_set"
-        follow_mode = "not_set"
+        self._elevation = Variable(
+            (self.dim0,),
+            _get_elevation(ray_header.values),
+            get_elevation_attrs(),
+        )
 
-        range_data, cent_first, bin_range = self.range
-        range_attrs = get_range_attrs(range_data)
-
-        lon, lat, alt = self.site_coords
-
-        coordinates = {
-            "azimuth": Variable(
-                (dims[0],),
-                ray_header["azimuth"],
-                get_azimuth_attrs(),
-            ),
-            "elevation": Variable(
-                (dims[0],),
-                ray_header["elevation"],
-                get_elevation_attrs(),
-            ),
-            "time": Variable(
-                (dims[0],), ray_header["time"], get_time_attrs("1970-01-01T00:00:00Z")
-            ),
-            "range": Variable(("range",), range_data, range_attrs),
-            "sweep_mode": Variable((), sweep_mode),
-            "sweep_number": Variable((), sweep_number),
-            "prt_mode": Variable((), prt_mode),
-            "follow_mode": Variable((), follow_mode),
-            "sweep_fixed_angle": Variable((), angle),
-            "longitude": Variable((), lon, get_longitude_attrs()),
-            "latitude": Variable((), lat, get_latitude_attrs()),
-            "altitude": Variable((), alt, get_altitude_attrs()),
-        }
-
-        return coordinates
+        # keep microsecond resolution
+        self._time = Variable(
+            (self.dim0,),
+            _get_time(ray_header.values),
+            get_time_attrs("1970-01-01T00:00:00Z", "microseconds"),
+        )
 
     @property
-    def site_coords(self):
-        return self._get_site_coords()
-
-    @property
-    def time(self):
-        return self._get_time()
-
-    @property
-    def fixed_dim_and_angle(self):
-        return self._get_fixed_dim_and_angle()
-
-    @property
-    def range(self):
-        return self._get_range()
-
-    @property
-    def what(self):
-        return self._get_dset_what()
+    def grp(self):
+        return self._root[self._group]
 
     def _get_fixed_dim_and_angle(self):
-        how = self._root[self._group]["how"].attrs
-        dims = {0: "elevation", 1: "azimuth"}
-        try:
-            dim = 1
-            angle = np.round(how[dims[0]], decimals=1)
-        except KeyError:
-            dim = 0
-            angle = np.round(how[dims[1]], decimals=1)
-
-        return dims[dim], angle
+        return _get_fixed_dim_and_angle(self.how)
 
     def _get_range(self):
-        how = self._root[self._group]["how"].attrs
-        range_samples = how["range_samples"]
-        range_step = how["range_step"]
-        ngates = how["bin_count"]
-        bin_range = range_step * range_samples
-        cent_first = bin_range / 2.0
-        range_data = np.arange(
-            cent_first,
-            bin_range * ngates,
-            bin_range,
-            dtype="float32",
-        )
-        return range_data, cent_first, bin_range
+        return _get_range(self.how)
 
     def _get_time(self):
-        start = self._root[self._group]["how"].attrs["timestamp"]
+        start = self.how["timestamp"]
         start = dateutil.parser.parse(start)
         start = start.replace(tzinfo=dt.timezone.utc).timestamp()
         return start
 
-    def _get_site_coords(self):
-        lon = self._root["where"].attrs["lon"]
-        lat = self._root["where"].attrs["lat"]
-        alt = self._root["where"].attrs["height"]
-        return lon, lat, alt
+    @property
+    def _sweep_number(self):
+        """Return sweep number."""
+        return int(self._group.split("/")[0][4:])
 
 
 class GamicStore(AbstractDataStore):
@@ -400,8 +343,6 @@ class GamicStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        #     dim, angle = self.root.fixed_dim_and_angle
-        #     attributes = {"fixed_angle": angle.item()}
         return FrozenDict()
 
 
