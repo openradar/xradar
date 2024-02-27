@@ -201,6 +201,25 @@ def test_open_odim_dataset(odim_file):
     assert ds.sweep_number == 11
 
 
+def test_open_odim_store(odim_file):
+    store = xradar.io.backends.odim.OdimStore.open(odim_file, group="sweep_0")
+    assert store.substore[0].root.a1gate == 86
+    assert store.substore[0].root.site_coords == (
+        151.20899963378906,
+        -33.700801849365234,
+        195.0,
+    )
+    assert store.substore[0].root._get_site_coords() == (
+        151.20899963378906,
+        -33.700801849365234,
+        195.0,
+    )
+    assert store.substore[0].root.sweep_fixed_angle == 0.5
+    assert store.substore[0].root._get_time() == np.datetime64(
+        "2018-12-20T06:06:28", "s"
+    )
+
+
 def test_open_gamic_datatree(gamic_file):
     dtree = open_gamic_datatree(gamic_file)
 
@@ -333,6 +352,14 @@ def test_open_gamic_dataset(gamic_file):
     )
     assert dict(ds.sizes) == {"time": 360, "range": 1000}
     assert ds.sweep_number == 9
+
+
+def test_open_gamic_store(gamic_file):
+    store = xradar.io.backends.gamic.GamicStore.open(gamic_file, group="sweep_0")
+    assert store.root.site_coords == (6.4569489, 50.9287272, 310.0)
+    assert store.root._get_site_coords() == (6.4569489, 50.9287272, 310.0)
+    assert store.root.sweep_fixed_angle == 28.0
+    assert store.root._get_time() == np.datetime64("2018-06-01T05:40:47.041000", "us")
 
 
 def test_open_gamic_dataset_reindex(gamic_file):

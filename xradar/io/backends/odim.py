@@ -192,7 +192,7 @@ def _get_time(what, point="start"):
     startdate = _maybe_decode(what[f"{point}date"])
     starttime = _maybe_decode(what[f"{point}time"])
     start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
-    start = start.replace(tzinfo=dt.timezone.utc).timestamp()
+    start = np.array(start.replace(tzinfo=dt.timezone.utc)).astype("<M8[s]")
     return start
 
 

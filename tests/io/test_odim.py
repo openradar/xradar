@@ -130,13 +130,24 @@ def test_get_range(rscale):
     assert bin_range == rscale
 
 
-@pytest.mark.parametrize("point", [("start", 946684800.0), ("end", 946684830.0)])
+@pytest.mark.parametrize(
+    "point",
+    [
+        ("start", np.datetime64("2000-01-01T00:00:00", "s")),
+        ("end", np.datetime64("2000-01-01T00:00:30", "s")),
+    ],
+)
 def test_get_time(point):
     what = dict(
         startdate="20000101", starttime="000000", enddate="20000101", endtime="000030"
     )
     time = odim._get_time(what, point=point[0])
     assert time == point[1]
+
+
+def test_get_a1gate():
+    where = dict(a1gate=20)
+    assert odim._get_a1gate(where) == 20
 
 
 def test_OdimH5NetCDFMetadata(odim_file):

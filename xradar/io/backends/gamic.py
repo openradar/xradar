@@ -224,7 +224,7 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
     def _get_time(self):
         start = self.how["timestamp"]
         start = dateutil.parser.parse(start)
-        start = start.replace(tzinfo=dt.timezone.utc).timestamp()
+        start = np.array(start.replace(tzinfo=dt.timezone.utc)).astype("<M8[us]")
         return start
 
     @property
