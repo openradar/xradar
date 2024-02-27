@@ -3,6 +3,7 @@
 ## Development Version (unreleased)
 
 * MNT: Update GitHub actions, address DeprecationWarnings ({pull}`153`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* MNT: restructure odim.py/gamic.py, add test_odim.py/test_gamic.py ({pull}`154`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.4.3 (2024-02-24)
 
