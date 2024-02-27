@@ -4,9 +4,11 @@
 
 """Tests for `io` module."""
 
+import io
 import tempfile
 
 import datatree
+import fsspec
 import h5py
 import numpy as np
 import pytest
@@ -98,6 +100,16 @@ def test_open_cfradial1_dataset(cfradial1_file):
     assert ds.sweep_number == 8
 
 
+@pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
+def test_open_odim_datatree_sweep(odim_file, sweep):
+    dtree = open_odim_datatree(odim_file, sweep=sweep)
+    if isinstance(sweep, (str, int)):
+        lswp = len([sweep])
+    else:
+        lswp = len(sweep)
+    assert len(dtree.groups[1:]) == lswp
+
+
 def test_open_odim_datatree(odim_file):
     dtree = open_odim_datatree(odim_file)
 
@@ -173,32 +185,77 @@ def test_open_odim_datatree(odim_file):
         assert ds.sweep_number.values == int(grp[7:])
 
 
-def test_open_odim_dataset(odim_file):
+@pytest.mark.parametrize("first_dim", ["auto", "time"])
+@pytest.mark.parametrize("fix_second_angle", [False, True])
+def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
     # open first sweep group
-    ds = xr.open_dataset(odim_file, group="sweep_0", engine="odim")
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 1200}
+    ds = xr.open_dataset(
+        odim_file,
+        group="sweep_0",
+        engine="odim",
+        first_dim=first_dim,
+        fix_second_angle=fix_second_angle,
+    )
+    dim0 = "time" if first_dim == "time" else "azimuth"
+    assert dict(ds.sizes) == {dim0: 360, "range": 1200}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "TH", "ZDR"}
     assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(odim_file, group="sweep_11", engine="odim")
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 280}
+    ds = xr.open_dataset(
+        odim_file,
+        group="sweep_11",
+        engine="odim",
+        first_dim=first_dim,
+        fix_second_angle=fix_second_angle,
+    )
+    assert dict(ds.sizes) == {dim0: 360, "range": 280}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {"VRADH", "KDP", "WRADH", "TH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
     assert ds.sweep_number == 11
 
-    # open last sweep group, auto
-    ds = xr.open_dataset(
-        odim_file,
-        group="sweep_11",
-        engine="odim",
-        backend_kwargs=dict(first_dim="time"),
+
+def test_open_odim_dataset_stream(odim_file):
+    with open(odim_file, mode="rb") as fhandle:
+        contents = io.BytesIO(fhandle.read())
+        xr.open_dataset(contents, group="sweep_0", engine="odim")
+
+
+def test_open_odim_dataset_fsspec(odim_file):
+    with fsspec.open(odim_file, mode="rb") as fhandle:
+        xr.open_dataset(fhandle, group="sweep_0", engine="odim")
+
+
+def test_open_odim_store(odim_file):
+    store = xradar.io.backends.odim.OdimStore.open(odim_file, group="sweep_0")
+    assert store.substore[0].root.a1gate == 86
+    assert store.substore[0].root.site_coords == (
+        151.20899963378906,
+        -33.700801849365234,
+        195.0,
     )
-    assert dict(ds.sizes) == {"time": 360, "range": 280}
-    assert ds.sweep_number == 11
+    assert store.substore[0].root._get_site_coords() == (
+        151.20899963378906,
+        -33.700801849365234,
+        195.0,
+    )
+    assert store.substore[0].root.sweep_fixed_angle == 0.5
+    assert store.substore[0].root._get_time() == np.datetime64(
+        "2018-12-20T06:06:28", "s"
+    )
+
+
+@pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
+def test_open_gamic_datatree_sweep(gamic_file, sweep):
+    dtree = open_gamic_datatree(gamic_file, sweep=sweep)
+    if isinstance(sweep, (str, int)):
+        lswp = len([sweep])
+    else:
+        lswp = len(sweep)
+    assert len(dtree.groups[1:]) == lswp
 
 
 def test_open_gamic_datatree(gamic_file):
@@ -281,10 +338,19 @@ def test_open_gamic_datatree(gamic_file):
         assert ds.sweep_number == i
 
 
-def test_open_gamic_dataset(gamic_file):
+@pytest.mark.parametrize("first_dim", ["auto", "time"])
+@pytest.mark.parametrize("fix_second_angle", [False, True])
+def test_open_gamic_dataset(gamic_file, first_dim, fix_second_angle):
     # open first sweep group
-    ds = xr.open_dataset(gamic_file, group="sweep_0", engine="gamic")
-    assert dict(ds.sizes) == {"azimuth": 361, "range": 360}
+    ds = xr.open_dataset(
+        gamic_file,
+        group="sweep_0",
+        engine="gamic",
+        first_dim=first_dim,
+        fix_second_angle=fix_second_angle,
+    )
+    dim0 = "time" if first_dim == "time" else "azimuth"
+    assert dict(ds.sizes) == {dim0: 361, "range": 360}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -304,8 +370,14 @@ def test_open_gamic_dataset(gamic_file):
     assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(gamic_file, group="sweep_9", engine="gamic")
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 1000}
+    ds = xr.open_dataset(
+        gamic_file,
+        group="sweep_9",
+        engine="gamic",
+        first_dim=first_dim,
+        fix_second_angle=fix_second_angle,
+    )
+    assert dict(ds.sizes) == {dim0: 360, "range": 1000}
     assert set(ds.data_vars) & (
         sweep_dataset_vars | non_standard_sweep_dataset_vars
     ) == {
@@ -324,15 +396,24 @@ def test_open_gamic_dataset(gamic_file):
     }
     assert ds.sweep_number == 9
 
-    # open last sweep group, auto
-    ds = xr.open_dataset(
-        gamic_file,
-        group="sweep_9",
-        engine="gamic",
-        backend_kwargs=dict(first_dim="time"),
-    )
-    assert dict(ds.sizes) == {"time": 360, "range": 1000}
-    assert ds.sweep_number == 9
+
+def test_open_gamic_dataset_stream(gamic_file):
+    with open(gamic_file, mode="rb") as fhandle:
+        contents = io.BytesIO(fhandle.read())
+        xr.open_dataset(contents, group="sweep_9", engine="gamic")
+
+
+def test_open_gamic_dataset_fsspec(gamic_file):
+    with fsspec.open(gamic_file, mode="rb") as fhandle:
+        xr.open_dataset(fhandle, group="sweep_9", engine="gamic")
+
+
+def test_open_gamic_store(gamic_file):
+    store = xradar.io.backends.gamic.GamicStore.open(gamic_file, group="sweep_0")
+    assert store.root.site_coords == (6.4569489, 50.9287272, 310.0)
+    assert store.root._get_site_coords() == (6.4569489, 50.9287272, 310.0)
+    assert store.root.sweep_fixed_angle == 28.0
+    assert store.root._get_time() == np.datetime64("2018-06-01T05:40:47.041000", "us")
 
 
 def test_open_gamic_dataset_reindex(gamic_file):

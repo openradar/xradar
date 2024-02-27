@@ -9,3 +9,4 @@ twine
 pytest
 black
 isort
+fsspec
