@@ -13,11 +13,11 @@ jobs:
     name: lint and style checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -38,9 +38,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Install micromamba environment
@@ -63,13 +63,14 @@ jobs:
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage_unit.xml
         flags: unittests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN}}
 
   build_1:
     name: xradar notebook tests - linux
@@ -83,9 +84,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Install micromamba environment
@@ -106,15 +107,16 @@ jobs:
         python -c "import xradar; print(xradar.version.version)"
     - name: Test with pytest
       run: |
-        pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_notebooks.xml --cov=xradar --pyargs examples/notebooks
+        pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs examples/notebooks
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage_notebook.xml
         flags: notebooktests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN}}
 
 
   test_build_distribution_testpypi:
@@ -125,13 +127,13 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -143,7 +145,7 @@ jobs:
           python -m build
           cp dist/xradar*.gz dist/xradar1.gz
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: xradar-1-${{github.event.number}}
           path: dist/xradar1.gz
@@ -164,13 +166,13 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -180,7 +182,7 @@ jobs:
           python -m build
           cp dist/xradar*.gz dist/xradar0.gz
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: xradar-0-${{github.event.number}}
           path: dist/xradar0.gz

@@ -18,7 +18,7 @@ def test_create_sweep_dataset():
     assert ds.elevation.shape == (360,)
     assert ds.time.shape == (360,)
     assert ds.range.shape == (1000,)
-    assert ds.dims == {"time": 360, "range": 1000}
+    assert ds.sizes == {"time": 360, "range": 1000}
     assert np.unique(ds.elevation) == [1.0]
     assert ds.azimuth[0] == 0.5
     assert ds.azimuth[-1] == 359.5
@@ -36,7 +36,7 @@ def test_create_sweep_dataset():
     assert ds.elevation.shape == (360,)
     assert ds.time.shape == (360,)
     assert ds.range.shape == (1000,)
-    assert ds.dims == {"time": 360, "range": 1000}
+    assert ds.sizes == {"time": 360, "range": 1000}
     assert np.unique(ds.elevation) == [5.0]
     assert ds.azimuth[0] == 0.5
     assert ds.azimuth[-1] == 359.5
@@ -45,7 +45,7 @@ def test_create_sweep_dataset():
 
     # provide shape and range-res, fixed-elevation
     ds = model.create_sweep_dataset(shape=(180, 100), rng=50.0, elevation=5.0)
-    assert ds.dims == {"time": 180, "range": 100}
+    assert ds.sizes == {"time": 180, "range": 100}
     assert ds.range[-1] == 4975
     assert ds.time[-1].values == np.datetime64("2022-08-27T10:00:44.750000000")
     assert np.unique(ds.elevation) == [5.0]
@@ -54,7 +54,7 @@ def test_create_sweep_dataset():
     ds = model.create_sweep_dataset(
         shape=(90, 100), rng=50.0, azimuth=205.0, sweep="RHI"
     )
-    assert ds.dims == {"time": 90, "range": 100}
+    assert ds.sizes == {"time": 90, "range": 100}
     assert ds.range[-1] == 4975
     assert ds.time[-1].values == np.datetime64("2022-08-27T10:00:22.250000000")
     assert np.unique(ds.azimuth) == [205.0]

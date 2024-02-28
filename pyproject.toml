@@ -74,6 +74,7 @@ exclude = [
     "doc",
 ]
 
+[tool.ruff.lint]
 # E402: module level import not at top of file
 # E501: line too long - let black worry about that
 # E731: do not assign a lambda expression, use a def
@@ -94,5 +95,5 @@ select = [
     "UP",
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["xradar"]

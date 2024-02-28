@@ -7,6 +7,7 @@ dependencies:
   - cmweather
   - coverage
   - dask
+  - fsspec
   - h5netcdf
   - h5py
   - lat_lon_parser
