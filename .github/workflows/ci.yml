@@ -73,6 +73,7 @@ jobs:
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN}}
 
   build_1:
     name: xradar notebook tests - linux
@@ -118,6 +119,7 @@ jobs:
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN}}
 
 
   test_build_distribution_testpypi:
