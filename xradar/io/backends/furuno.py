@@ -602,9 +602,9 @@ class FurunoStore(AbstractDataStore):
                 attrs["scale_factor"] = scale_factor
                 attrs["_FillValue"] = 0.0
             dims = (dim, "range")
-        attrs["coordinates"] = (
-            "elevation azimuth range latitude longitude altitude time"
-        )
+        attrs[
+            "coordinates"
+        ] = "elevation azimuth range latitude longitude altitude time"
         return Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):

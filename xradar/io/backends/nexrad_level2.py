@@ -1,4 +1,3 @@
-
 import struct
 from collections import OrderedDict
 
@@ -301,7 +300,6 @@ class NEXRADRecordFile(NEXRADFile):
 
 
 class NEXRADLevel2File(NEXRADRecordFile):
-
     def __init__(self, filename, **kwargs):
         super().__init__(filename, **kwargs)
 
@@ -334,25 +332,31 @@ class NEXRADLevel2File(NEXRADRecordFile):
     @property
     def data_header(self):
         if self._data_header is None:
-            self._data_header, self._msg_31_header, self._msg_31_data_header = (
-                self.get_data_header()
-            )
+            (
+                self._data_header,
+                self._msg_31_header,
+                self._msg_31_data_header,
+            ) = self.get_data_header()
         return self._data_header
 
     @property
     def msg_31_header(self):
         if self._msg_31_header is None:
-            self._data_header, self._msg_31_header, self._msg_31_data_header = (
-                self.get_data_header()
-            )
+            (
+                self._data_header,
+                self._msg_31_header,
+                self._msg_31_data_header,
+            ) = self.get_data_header()
         return self._msg_31_header
 
     @property
     def msg_31_data_header(self):
         if self._msg_31_data_header is None:
-            self._data_header, self._msg_31_header, self._msg_31_data_header = (
-                self.get_data_header()
-            )
+            (
+                self._data_header,
+                self._msg_31_header,
+                self._msg_31_data_header,
+            ) = self.get_data_header()
         return self._msg_31_data_header
 
     @property
@@ -1162,7 +1166,6 @@ class NexradLevel2ArrayWrapper(BackendArray):
 
 
 class NexradLevel2Store(AbstractDataStore):
-
     def __init__(self, manager, group=None):
         self._manager = manager
         self._group = int(group[6:])
@@ -1208,9 +1211,9 @@ class NexradLevel2Store(AbstractDataStore):
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         attrs["scale_factor"] = 1.0 / var["scale"]
         attrs["add_offset"] = -var["offset"] / var["scale"]
-        attrs["coordinates"] = (
-            "elevation azimuth range latitude longitude altitude time"
-        )
+        attrs[
+            "coordinates"
+        ] = "elevation azimuth range latitude longitude altitude time"
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self):
