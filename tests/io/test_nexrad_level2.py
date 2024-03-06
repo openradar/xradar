@@ -56,16 +56,19 @@ def test_open_nexrad_level2_file_ds(nexradlevel2_file):
 
     plt.figure(figsize=(12, 12))
     ds = ds.set_coords("sweep_mode")
-    ds = ds.wrl.georef.georeference()
+    ds = ds.xradar.georeference()
 
     print(ds.DBZH.attrs)
     print(ds.DBZH.encoding)
     print(ds.PHIDP.encoding)
     print(ds.PHIDP.values)
-    ds.DBZH.wrl.vis.plot(ax=221)
-    ds.ZDR.wrl.vis.plot(ax=222)
-    ds.RHOHV.wrl.vis.plot(ax=223)
-    ds.PHIDP.wrl.vis.plot(ax=224)
+    ds.DBZH.plot(x="x", y="y")
+    plt.show()
+    ds.ZDR.plot(x="x", y="y")
+    plt.show()
+    ds.RHOHV.plot(x="x", y="y")
+    plt.show()
+    ds.PHIDP.plot(x="x", y="y")
     plt.show()
 
     # import matplotlib.pyplot as plt
