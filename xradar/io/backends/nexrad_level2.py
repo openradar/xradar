@@ -1211,9 +1211,9 @@ class NexradLevel2Store(AbstractDataStore):
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         attrs["scale_factor"] = 1.0 / var["scale"]
         attrs["add_offset"] = -var["offset"] / var["scale"]
-        attrs[
-            "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time"
+        attrs["coordinates"] = (
+            "elevation azimuth range latitude longitude altitude time"
+        )
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self):
