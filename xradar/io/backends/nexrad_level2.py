@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# Copyright (c) 2024, openradar developers.
+# Distributed under the MIT License. See LICENSE for more info.
+
+
+import bz2
 import struct
 from collections import OrderedDict
 
@@ -109,6 +115,7 @@ class NEXRADFile:
         self._filepos = 0
         self._rawdata = False
         self._loaddata = loaddata
+        self._bz2_indices = None
         self.volume_header = self.get_header(VOLUME_HEADER)
         return
 
@@ -146,11 +153,25 @@ class NEXRADFile:
         return self._fh[start : self._filepos]
 
     def get_header(self, header):
-        from .iris import _get_fmt_string, _unpack_dictionary
-
         len = struct.calcsize(_get_fmt_string(header))
         head = _unpack_dictionary(self.read_from_file(len), header, self._rawdata)
         return head
+
+    @property
+    def bz2_record_indices(self):
+        """Get file offsets of bz2 records."""
+        if self._bz2_indices is None:
+            # magic number inside BZ2
+            seq = np.array([49, 65, 89, 38, 83, 89], dtype=np.uint8)
+            rd = util.rolling_dim(self._fh, 6)
+            self._bz2_indices = np.nonzero((rd == seq).all(1))[0] - 8
+        return self._bz2_indices
+
+    @property
+    def is_compressed(self):
+        """File contains bz2 compressed data."""
+        size = self._fh[24:28].view(dtype=">u4")[0]
+        return size > 0
 
     def close(self):
         if self._fp is not None:
@@ -171,6 +192,8 @@ class NEXRADRecordFile(NEXRADFile):
     def __init__(self, filename, **kwargs):
         super().__init__(filename=filename, **kwargs)
         self._rh = None
+        self._rc = None
+        self._ldm = dict()
         self._record_number = None
 
     @property
@@ -210,38 +233,79 @@ class NEXRADRecordFile(NEXRADFile):
         """
         return True
 
-    def init_record(self, recnum):
-        """Initialize record using given number."""
-        if recnum < 134:
-            # 24 -  file header offset
-            start = recnum * RECORD_BYTES + 24
-            stop = start + RECORD_BYTES
-        else:
-            start = self.record_size + self.filepos
-            buf = self.fh[start + 12 : start + 12 + LEN_MSG_HEADER]
-            if len(buf) < 16:
-                return False
-            header = _unpack_dictionary(buf, MSG_HEADER, self._rawdata, byte_order=">")
-            size = header["size"] * 2 + 12
-            if header["type"] != 31:
-                size = size if size >= RECORD_BYTES else RECORD_BYTES
-            stop = start + size
-        self.record_number = recnum
-        self.record_size = stop - start
-        self.rh = IrisRecord(self.fh[start:stop], recnum)
-        self.filepos = start
-        return self._check_record()
-
-    def init_record_by_filepos(self, recnum, filepos):
-        """Initialize record using given number."""
-        start = filepos
-        buf = self.fh[start + 12 : start + 12 + LEN_MSG_HEADER]
+    def get_end(self, buf):
         if len(buf) < 16:
-            return False
+            return 0
         header = _unpack_dictionary(buf, MSG_HEADER, self._rawdata, byte_order=">")
         size = header["size"] * 2 + 12
         if header["type"] != 31:
             size = size if size >= RECORD_BYTES else RECORD_BYTES
+        return size
+
+    def init_record(self, recnum):
+        """Initialize record using given number."""
+
+        # map record numbers to ldm compressed records
+        def get_ldm(recnum):
+            if recnum < 134:
+                return 0
+            mod = ((recnum - 134) // 120) + 1
+            return mod
+
+        if self.is_compressed:
+            ldm = get_ldm(recnum)
+            # get uncompressed ldm record
+            if self._ldm.get(ldm, None) is None:
+                # otherwise extract wanted ldm compressed record
+                if ldm >= len(self.bz2_record_indices):
+                    return False
+                start = self.bz2_record_indices[ldm]
+                size = self._fh[start : start + 4].view(dtype=">u4")[0]
+                self._fp.seek(start + 4)
+                dec = bz2.BZ2Decompressor()
+                self._ldm[ldm] = np.frombuffer(
+                    dec.decompress(self._fp.read(size)), dtype=np.uint8
+                )
+
+        # rectrieve wanted record and put into self.rh
+        if recnum < 134:
+            start = recnum * RECORD_BYTES
+            if not self.is_compressed:
+                start += 24
+            stop = start + RECORD_BYTES
+        else:
+            if self.is_compressed:
+                # get index into current compressed ldm record
+                rnum = (recnum - 134) % 120
+                start = self.record_size + self.filepos if rnum else 0
+                buf = self._ldm[ldm][start + 12 : start + 12 + LEN_MSG_HEADER]
+                size = self.get_end(buf)
+                if not size:
+                    return False
+                stop = start + size
+            else:
+                start = self.record_size + self.filepos
+                buf = self.fh[start + 12 : start + 12 + LEN_MSG_HEADER]
+                size = self.get_end(buf)
+                if not size:
+                    return False
+                stop = start + size
+        self.record_number = recnum
+        self.record_size = stop - start
+        if self.is_compressed:
+            self.rh = IrisRecord(self._ldm[ldm][start:stop], recnum)
+        else:
+            self.rh = IrisRecord(self.fh[start:stop], recnum)
+        self.filepos = start
+        return self._check_record()
+
+    def init_record_by_filepos(self, recnum, filepos):
+        """Initialize record using given record number and position."""
+        start = filepos
+        buf = self.fh[start + 12 : start + 12 + LEN_MSG_HEADER]
+        size = self.get_end(buf)
+        if not size:
+            return False
         stop = start + size
         self.record_number = recnum
         self.record_size = stop - start
@@ -303,6 +367,8 @@ class NEXRADLevel2File(NEXRADRecordFile):
     def __init__(self, filename, **kwargs):
         super().__init__(filename, **kwargs)
 
+        # check compression
+
         self._data_header = None
         # get all metadata headers
         # message 15, 13, 18, 3, 5 and 2
@@ -331,6 +397,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
 
     @property
     def data_header(self):
+        """Retrieve data header."""
         if self._data_header is None:
             (
                 self._data_header,
@@ -341,6 +408,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
 
     @property
     def msg_31_header(self):
+        """Retrieve MSG31 Header."""
         if self._msg_31_header is None:
             (
                 self._data_header,
@@ -351,6 +419,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
 
     @property
     def msg_31_data_header(self):
+        """Retrieve MSG31 data header."""
         if self._msg_31_data_header is None:
             (
                 self._data_header,
@@ -361,24 +430,27 @@ class NEXRADLevel2File(NEXRADRecordFile):
 
     @property
     def meta_header(self):
+        """Retrieve metadat header."""
         if self._meta_header is None:
             self._meta_header = self.get_metadata_header()
         return self._meta_header
 
     @property
     def msg_5(self):
+        """Retrieve MSG5 data."""
         if self._msg_5_data is None:
             self._msg_5_data = self.get_msg_5_data()
         return self._msg_5_data
 
     @property
     def data(self):
+        """Retrieve data."""
         return self._data
 
     def get_sweep(self, sweep_number, moments=None):
+        """Retrieve sweep according sweep_number."""
         if moments is None:
             moments = self.msg_31_data_header[sweep_number]["msg_31_data_header"].keys()
-
         # get selected coordinate type names
         selected = [k for k in DATA_BLOCK_CONSTANT_IDENTIFIERS.keys() if k in moments]
         for moment in selected:
@@ -390,6 +462,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
             self.get_moment(sweep_number, moment, "sweep_data")
 
     def get_moment(self, sweep_number, moment, mtype):
+        """Retrieve Moment according sweep_number and moment."""
         sweep = self.data[sweep_number]
         # create new sweep_data OrderedDict
         if not sweep.get(mtype, False):
@@ -407,6 +480,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
         sweep[mtype].update(data)
 
     def get_metadata_header(self):
+        """Get metadaata header"""
         # data offsets
         # ICD 2620010E
         # 7.3.5 Metadata Record
@@ -435,6 +509,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
         return meta_headers
 
     def get_msg_5_data(self):
+        """Get MSG5 data."""
         self.init_record(132)
         self.rh.pos += LEN_MSG_HEADER + 12
         # unpack msg header
@@ -481,7 +556,10 @@ class NEXRADLevel2File(NEXRADRecordFile):
         elif isinstance(moment, str):
             moment = [moment]
         for name in moment:
-            self.init_record_by_filepos(start, filepos)
+            if self.is_compressed:
+                self.init_record(start)
+            else:
+                self.init_record_by_filepos(start, filepos)
             ngates = moments[name]["ngates"]
             word_size = moments[name]["word_size"]
             data_offset = moments[name]["data_offset"]
@@ -501,6 +579,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
         """Load all data header from file."""
         self.init_record(133)
         current_sweep = -1
+        current_header = -1
         sweep_msg_31_header = []
         sweep_intermediate_records = []
         sweep = OrderedDict()
@@ -510,17 +589,17 @@ class NEXRADLevel2File(NEXRADRecordFile):
         _msg_31_data_header = []
 
         while self.init_next_record():
+            current_header += 1
             # get message headers
             msg_header = self.get_message_header()
             # append to data headers list
             msg_header["record_number"] = self.record_number
             msg_header["filepos"] = self.filepos
+
             # keep all data headers
             data_header.append(msg_header)
-
             # only check type 31 for now
             if msg_header["type"] == 31:
-                # LEN_MSG_31 = struct.calcsize(_get_fmt_string(MSG_31, byte_order=">"))
                 # get msg_31_header
                 msg_31_header = _unpack_dictionary(
                     self._rh.read(LEN_MSG_31, width=1),
@@ -531,7 +610,6 @@ class NEXRADLevel2File(NEXRADRecordFile):
                 # add record_number/filepos
                 msg_31_header["record_number"] = self.record_number
                 msg_31_header["filepos"] = self.filepos
-
                 # retrieve data/const headers from msg 31
                 # check if this is a new sweep
                 if msg_31_header["radial_status"] in [0, 3]:
@@ -594,7 +672,6 @@ class NEXRADLevel2File(NEXRADRecordFile):
         sweep["intermediate_records"] = sweep_intermediate_records
         self._data[current_sweep] = sweep
         _msg_31_header.append(sweep_msg_31_header)
-
         return data_header, _msg_31_header, _msg_31_data_header
 
     def _check_record(self):

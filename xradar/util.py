@@ -21,6 +21,7 @@ __all__ = [
     "reindex_angle",
     "extract_angle_parameters",
     "ipol_time",
+    "rolling_dim",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -479,3 +480,10 @@ def _get_data_file(file, file_or_filelike):
             yield io.BytesIO(f.read())
     else:
         yield file
+
+
+def rolling_dim(data, window):
+    """Return array with rolling dimension of window-length added at the end."""
+    shape = data.shape[:-1] + (data.shape[-1] - window + 1, window)
+    strides = data.strides + (data.strides[-1],)
+    return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
