@@ -16,6 +16,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.rainbow
 .. automodule:: xradar.io.backends.iris
 .. automodule:: xradar.io.backends.nexrad_level2
+.. automodule:: xradar.io.backends.metek
 
 """
 
@@ -25,6 +26,10 @@ from .gamic import *  # noqa
 from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
+<<<<<<< HEAD
 from .nexrad_level2 import *  # noqa
+=======
+from .metek import * # noqa
+>>>>>>> 06ab429 (ADD: First commit of MRR2 backend for xradar)
 
 __all__ = [s for s in dir() if not s.startswith("_")]

@@ -41,6 +41,7 @@ odim = "xradar.io.backends:OdimBackendEntrypoint"
 rainbow = "xradar.io.backends:RainbowBackendEntrypoint"
 nexradlevel2 = "xradar.io.backends:NexradLevel2BackendEntrypoint"
 
+metek = "xradar.io.backends:MRRBackendEntrypoint"
 
 [build-system]
 requires = [
