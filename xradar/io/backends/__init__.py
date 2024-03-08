@@ -15,6 +15,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.furuno
 .. automodule:: xradar.io.backends.rainbow
 .. automodule:: xradar.io.backends.iris
+.. automodule:: xradar.io.backends.metek
 
 """
 
@@ -24,5 +25,6 @@ from .gamic import *  # noqa
 from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
+from .metek import * # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
