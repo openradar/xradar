@@ -17,7 +17,8 @@ from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core.utils import FrozenDict
 
-from ...model import get_azimuth_attrs, get_elevation_attrs, get_time_attrs, get_moment_attrs
+from ...model import get_azimuth_attrs, get_elevation_attrs, get_time_attrs
+from .common import _assign_root
 
 variable_attr_dict = {}
 variable_attr_dict["transfer_function"] = {
@@ -167,6 +168,7 @@ class MRR2File(object):
         self._data["liquid_water_content"] = []
         self._data["velocity"] = []
         self.filename = None
+        self.n_gates = 32
         if not file_name == "":
             self.filename = file_name
             self.open(file_name)
@@ -180,9 +182,7 @@ class MRR2File(object):
             self.filename = filename_or_obj
             self._fp = open(filename_or_obj, "r")
 
-        temp_spectra = np.zeros((31, 64))
-        temp_drops = np.zeros((31, 64))
-        temp_number = np.zeros((31, 64))
+        
         num_times = 0
         for file_line in self._fp:
             if file_line[:3] == "MRR":
@@ -190,10 +190,7 @@ class MRR2File(object):
                     self._data["spectral_reflectivity"].append(temp_spectra)
                     self._data["drop_number_density"].append(temp_number)
                     self._data["drop_size"].append(temp_drops)
-                temp_spectra = np.zeros((31, 64))
-                temp_drops = np.zeros((31, 64))
-                temp_number = np.zeros((31, 64))
-
+                
                 string_split = file_line.split()
                 time_str = string_split[1]
                 parsed_datetime = datetime.strptime(time_str, "%y%m%d%H%M%S")
@@ -207,21 +204,26 @@ class MRR2File(object):
                     self._data["percentage_valid_spectra"].append(int(string_split[12]))
                     self._data["number_valid_spectra"].append(int(string_split[13]))
                     self._data["total_number_spectra"].append(int(string_split[14]))
-                elif self.filetype == "AVG" or self.filetype == "PRO":
+                    self.n_gates = 32
+                elif self.filetype == "AVE" or self.filetype == "PRO":
                     self.altitude = int(string_split[8])
                     self.sampling_rate = float(string_split[10])
                     self.mrr_service_version = string_split[12]
                     self.device_version = string_split[14]
                     self.calibration_constant.append(int(string_split[16]))
                     self._data["percentage_valid_spectra"].append(int(string_split[18]))
+                    self.n_gates = 31
                 else:
                     raise IOError(
                         "Invalid file type flag in file! Must be RAW, AVG, or PRO!"
                     )
+                temp_spectra = np.zeros((self.n_gates, 64))
+                temp_drops = np.zeros((self.n_gates, 64))
+                temp_number = np.zeros((self.n_gates, 64))
                 num_times = num_times + 1
 
             if file_line[0] == "H":
-                in_array = _parse_spectra_line(file_line)
+                in_array = _parse_spectra_line(file_line, self.n_gates)
                 if num_times > 1:
                     after_res = in_array[1] - in_array[0]
                     before_res = self._data["range"][1] - self._data["range"][0]
@@ -235,39 +237,39 @@ class MRR2File(object):
                 self._data["range"] = in_array
 
             if file_line[0:2] == "TF":
-                self._data["transfer_function"].append(_parse_spectra_line(file_line))
+                self._data["transfer_function"].append(_parse_spectra_line(file_line, self.n_gates))
             if file_line[0] == "F":
                 spectra_bin_no = int(file_line[1:3])
-                temp_spectra[:, spectra_bin_no] = _parse_spectra_line(file_line)
+                temp_spectra[:, spectra_bin_no] = _parse_spectra_line(file_line, self.n_gates)
             if file_line[0] == "D":
                 spectra_bin_no = int(file_line[1:3])
-                temp_drops[:, spectra_bin_no] = _parse_spectra_line(file_line)
+                temp_drops[:, spectra_bin_no] = _parse_spectra_line(file_line, self.n_gates)
             if file_line[0] == "N":
                 spectra_bin_no = int(file_line[1:3])
-                temp_number[:, spectra_bin_no] = _parse_spectra_line(file_line)
+                temp_number[:, spectra_bin_no] = _parse_spectra_line(file_line, self.n_gates)
             if file_line[0:3] == "PIA":
                 self._data["path_integrated_attenuation"] = self._data[
                     "path_integrated_attenuation"
-                ] + [_parse_spectra_line(file_line)]
+                ] + [_parse_spectra_line(file_line, self.n_gates)]
             if file_line[0:3] == "z  ":
                 self._data["radar_reflectivity"] = self._data["radar_reflectivity"] + [
-                    _parse_spectra_line(file_line)
+                    _parse_spectra_line(file_line, self.n_gates)
                 ]
             if file_line[0:3] == "Z  ":
                 self._data["corrected_radar_reflectivity"] = self._data[
                     "corrected_radar_reflectivity"
-                ] + [_parse_spectra_line(file_line)]
+                ] + [_parse_spectra_line(file_line, self.n_gates)]
             if file_line[0:3] == "RR ":
                 self._data["rainfall_rate"] = self._data["rainfall_rate"] + [
-                    _parse_spectra_line(file_line)
+                    _parse_spectra_line(file_line, self.n_gates)
                 ]
             if file_line[0:3] == "LWC":
                 self._data["liquid_water_content"] = self._data[
                     "liquid_water_content"
-                ] + [_parse_spectra_line(file_line)]
+                ] + [_parse_spectra_line(file_line, self.n_gates)]
             if file_line[0:3] == "W  ":
                 self._data["velocity"] = self._data["velocity"] + [
-                    _parse_spectra_line(file_line)
+                    _parse_spectra_line(file_line, self.n_gates)
                 ]
 
         self._data["spectral_reflectivity"].append(temp_spectra)
@@ -291,14 +293,16 @@ class MRR2File(object):
             self._data["number_valid_spectra"] = np.stack(
                 self._data["number_valid_spectra"], axis=0
             )
+            
             del self._data["radar_reflectivity"]
             del self._data["corrected_radar_reflectivity"]
             del self._data["liquid_water_content"]
-            del self._data["fallspeed"]
             del self._data["rainfall_rate"]
             del self._data["percentage_valid_spectra"]
             del self._data["drop_number_density"]
             del self._data["drop_size"]
+            del self._data["path_integrated_attenuation"]
+            del self._data["velocity"]
         else:
             del self._data["total_number_spectra"], self._data["number_valid_spectra"]
             self._data["radar_reflectivity"] = np.stack(
@@ -341,28 +345,28 @@ class MRR2File(object):
         self._data["spectral_reflectivity"] = self._data["spectral_reflectivity"][
             where_valid_spectra
         ]
-
-        self._data["drop_number_density"] = self._data["drop_number_density"].reshape(
-            self._data["drop_number_density"].shape[0]
-            * self._data["drop_number_density"].shape[1],
-            self._data["drop_number_density"].shape[2],
-        )
-        self._data["drop_number_density"] = self._data["drop_number_density"][
-            where_valid_spectra
-        ]
-        self._data["drop_size"] = self._data["drop_size"].reshape(
-            self._data["drop_size"].shape[0] * self._data["drop_size"].shape[1],
-            self._data["drop_size"].shape[2],
-        )
-        self._data["drop_size"] = self._data["drop_size"][where_valid_spectra]
+        if self.filetype == "PRO" or self.filetype == "AVE":
+            self._data["drop_number_density"] = self._data["drop_number_density"].reshape(
+                self._data["drop_number_density"].shape[0]
+                * self._data["drop_number_density"].shape[1],
+                self._data["drop_number_density"].shape[2],
+            )
+            self._data["drop_number_density"] = self._data["drop_number_density"][
+                where_valid_spectra
+            ]
+            self._data["drop_size"] = self._data["drop_size"].reshape(
+                self._data["drop_size"].shape[0] * self._data["drop_size"].shape[1],
+                self._data["drop_size"].shape[2],
+            )
+            self._data["drop_size"] = self._data["drop_size"][where_valid_spectra]
         cur_index = 0
         for i in range(len(inds)):
             if inds[i] > -1:
                 inds[i] = cur_index
                 cur_index += 1
         self._data["spectrum_index"] = inds.reshape(
-            self._data["corrected_radar_reflectivity"].shape
-        )
+            (len(self._data["time"]), len(self._data["range"])))
+        
         self._data["azimuth"] = np.zeros_like(self._data["time"])
         self._data["elevation"] = 90 * np.ones_like(self._data["time"])
         self._data["time"] = np.array(self._data["time"])
@@ -390,10 +394,14 @@ class MRR2File(object):
         self.close()
 
 
-def _parse_spectra_line(input_str):
-    out_array = np.zeros(31)
-    for i, pos in enumerate(range(3, len(input_str) - 7, 7)):
-        input_num_str = input_str[pos : pos + 7]
+def _parse_spectra_line(input_str, num_gates):
+    out_array = np.zeros(num_gates)
+    if num_gates == 32:
+        increment = 9
+    elif num_gates == 31:
+        increment = 7
+    for i, pos in enumerate(range(3, len(input_str) - increment, increment)):
+        input_num_str = input_str[pos : pos + increment]
         try:
             out_array[i] = float(input_num_str)
         except ValueError:
@@ -456,17 +464,19 @@ class MRR2DataStore(AbstractDataStore):
     def open_store_variable(self, name, var):
         data = indexing.LazilyOuterIndexedArray(MRR2ArrayWrapper(var))
         encoding = {"group": self._group, "source": self._filename}
-        attrs = variable_attr_dict[name]
-        dims = attrs.pop("dims")
+        attrs = variable_attr_dict[name].copy()
+        dims = attrs["dims"]
+        del attrs["dims"]
         return xr.Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):
         coord_keys = ["time", "range", "velocity_bins"]
-        coord_dims = {'time': ("time",), "range": ("range",), "velocity_bins": ("sample")}
         coords = {}
         for k in coord_keys:
-            dims = coord_dims[k]
-            coords[k] = xr.Variable(dims, self.ds.data[k])
+            attrs = variable_attr_dict[k].copy()
+            dims = attrs["dims"]
+            del attrs["dims"]
+            coords[k] = xr.Variable(dims, self.ds.data[k], attrs=attrs)
 
         return coords
 
@@ -549,3 +559,67 @@ class MRRBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "metek"
 
         return ds
+
+def open_metek_datatree(filename_or_obj, **kwargs):
+    """Open Metek MRR2 dataset as :py:class:`datatree.DataTree`.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path, file-like or DataStore
+        Strings and Path objects are interpreted as a path to a local or remote
+        radar file
+
+    Keyword Arguments
+    -----------------
+    sweep : int, list of int, optional
+        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+        extracted into a list.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to ``False``.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
+
+    Returns
+    -------
+    dtree: datatree.DataTree
+        DataTree
+    """
+    # handle kwargs, extract first_dim
+    backend_kwargs = kwargs.pop("backend_kwargs", {})
+    # first_dim = backend_kwargs.pop("first_dim", None)
+    sweep = kwargs.pop("sweep", None)
+    sweeps = []
+    kwargs["backend_kwargs"] = backend_kwargs
+
+    if isinstance(sweep, str):
+        sweeps = [sweep]
+    elif isinstance(sweep, int):
+        sweeps = [f"sweep_{sweep}"]
+    elif isinstance(sweep, list):
+        if isinstance(sweep[0], int):
+            sweeps = [f"sweep_{i + 1}" for i in sweep]
+        else:
+            sweeps.extend(sweep)
+    else:
+        sweeps = _get_rainbow_group_names(filename_or_obj)
+
+    ds = [
+        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kwargs)
+        for swp in sweeps
+    ]
+
+    ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
+
+    # create datatree root node with required data
+    dtree = DataTree(data=_assign_root(ds), name="root")
+    # return datatree with attached sweep child nodes
+    return _attach_sweep_groups(dtree, ds[1:])
