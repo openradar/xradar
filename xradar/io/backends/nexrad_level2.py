@@ -2,6 +2,38 @@
 # Copyright (c) 2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
+"""
+NEXRAD Level2 Data I/O
+^^^^^^^^^^^^^^^^^^^^^^
+
+Reads data from NEXRAD Level2 data format
+
+See https://www.roc.noaa.gov/WSR88D/BuildInfo/Files.aspx
+
+Documents:
+ - ICD 2620002 M ICD FOR RDA/RPG - Build RDA 11.5/RPG 13.0 (PDF)
+ - ICD 2620010 E ICD FOR ARCHIVE II/USER - Build 12.0 (PDF)
+
+To read from NEXRAD Level2 files :class:`numpy:numpy.memmap` is used for
+uncompressed files (pre 2016-06-01) and :class:`bz2:BZ2Decompressor` for BZ2
+compressed data. The NEXRAD header (`VOLUME_HEADER`, `MSG_HEADER`) are read in
+any case into dedicated OrderedDict's. Reading sweep data can be skipped by
+setting `loaddata=False`. By default, the data is decoded on the fly.
+Using `rawdata=True` the data will be kept undecoded.
+
+Code adapted from Py-ART.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated/
+
+   {}
+"""
+__all__ = [
+    "NexradLevel2BackendEntrypoint",
+    "open_nexradlevel2_datatree",
+]
+__doc__ = __doc__.format("\n   ".join(__all__))
 
 import bz2
 import struct
@@ -46,7 +78,7 @@ from .iris import (
 nexrad_mapping = {
     "REF": "DBZH",
     "VEL": "VRADH",
-    "SW": "WRADH",
+    "SW ": "WRADH",
     "ZDR": "ZDR",
     "PHI": "PHIDP",
     "RHO": "RHOHV",

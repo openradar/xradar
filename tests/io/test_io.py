@@ -852,16 +852,16 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     # iterate over subgroups and check some values
     moments = [
         ["DBZH", "PHIDP", "RHOHV", "ZDR"],
-        ["DBZH", "VRADH"],
+        ["DBZH", "WRADH", "VRADH"],
         ["DBZH", "PHIDP", "RHOHV", "ZDR"],
-        ["DBZH", "VRADH"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
-        ["DBZH", "PHIDP", "RHOHV", "VRADH", "ZDR"],
+        ["DBZH", "WRADH", "VRADH"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
     ]
     elevations = [
         0.5,
@@ -904,6 +904,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     ]
     assert len(dtree.groups[1:]) == 11
     for i, grp in enumerate(dtree.groups[1:]):
+        print(i)
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
