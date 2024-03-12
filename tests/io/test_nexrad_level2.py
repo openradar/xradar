@@ -4,10 +4,13 @@
 
 """Tests for `xradar.io.nexrad_archive` module."""
 
-import matplotlib.pyplot as plt
+from collections import OrderedDict
+
 import pytest
+import xarray
 
 from xradar.io.backends.nexrad_level2 import (
+    NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
     open_nexradlevel2_datatree,
 )
@@ -18,332 +21,414 @@ from xradar.io.backends.nexrad_level2 import (
 )
 def test_open_nexradlevel2_datatree(nexradlevel2_files):
     dtree = open_nexradlevel2_datatree(nexradlevel2_files)
-    print(dtree.data_vars)
     ds = dtree["sweep_0"].ds
-    print(ds)
     assert ds.attrs["instrument_name"] == "KLBB"
-    # assert ds.attrs["nsweeps"] == 16
-    # assert ds.attrs["Conventions"] == "CF/Radial instrument_parameters"
     assert ds["DBZH"].shape == (720, 1832)
     assert ds["DBZH"].dims == ("azimuth", "range")
     assert int(ds.sweep_number.values) == 0
 
-    # plt.figure()
-    # plt.imshow(ds["DBZH"].values)
-    # plt.figure()
-    # plt.imshow(ds["RHOHV"].values)
-    # plt.figure()
-    # plt.imshow(ds["ZDR"].values)
-    # plt.figure()
-    # plt.imshow(ds["PHIDP"].values)
-    # plt.show()
+
+@pytest.mark.parametrize(
+    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+)
+def test_open_nexrad_level2_backend(nexradlevel2_files):
+    with NEXRADLevel2File(nexradlevel2_files, loaddata=False) as nex:
+        nsweeps = nex.msg_5["number_elevation_cuts"]
+    sweeps = [f"sweep_{i}" for i in range(nsweeps)]
+    assert nsweeps == 11
+    for i, group in enumerate(sweeps):
+        ds = xarray.open_dataset(
+            nexradlevel2_files, engine=NexradLevel2BackendEntrypoint, group=group
+        )
+        assert ds.attrs["instrument_name"] == "KLBB"
+        assert int(ds.sweep_number.values) == i
 
 
-def test_open_nexradlevel2_gzfile_datatree(nexradlevel2_gzfile):
-    dtree = open_nexradlevel2_datatree(nexradlevel2_gzfile)
-    ds = dtree["sweep_0"]
-    # assert ds.attrs["instrument_name"] == "KLBB"
-    # assert ds.attrs["nsweeps"] == 16
-    # assert ds.attrs["Conventions"] == "CF/Radial instrument_parameters"
-    assert ds["DBZH"].shape == (720, 1832)
-    assert ds["DBZH"].dims == ("azimuth", "range")
-    assert int(ds.sweep_number.values) == 0
+@pytest.mark.parametrize(
+    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+)
+def test_open_nexradlevel2_file(nexradlevel2_files):
+    fh = NEXRADLevel2File(nexradlevel2_files)
 
-    plt.figure()
-    plt.imshow(ds["DBZH"].values)
-    plt.figure()
-    plt.imshow(ds["RHOHV"].values)
-    plt.figure()
-    plt.imshow(ds["ZDR"].values)
-    plt.figure()
-    plt.imshow(ds["PHIDP"].values)
-    plt.show()
+    # volume header
+    assert fh.volume_header["tape"] == b"AR2V0006."
+    assert fh.volume_header["extension"] == b"736"
+    assert fh.volume_header["date"] == 977403904
+    assert fh.volume_header["time"] == 274675715
+    assert fh.volume_header["icao"] == b"KLBB"
 
+    # meta_header 15
+    assert len(fh.meta_header["msg_15"]) == 5
+    assert fh.meta_header["msg_15"][0]["size"] == 1208
+    assert fh.meta_header["msg_15"][0]["channels"] == 8
+    assert fh.meta_header["msg_15"][0]["type"] == 15
+    assert fh.meta_header["msg_15"][0]["seq_id"] == 5
+    assert fh.meta_header["msg_15"][0]["date"] == 16940
+    assert fh.meta_header["msg_15"][0]["ms"] == 65175863
+    assert fh.meta_header["msg_15"][0]["segments"] == 5
+    assert fh.meta_header["msg_15"][0]["seg_num"] == 1
+    assert fh.meta_header["msg_15"][0]["record_number"] == 0
+    # meta_header 13
+    assert len(fh.meta_header["msg_13"]) == 49
+    assert fh.meta_header["msg_13"][0]["size"] == 1208
+    assert fh.meta_header["msg_13"][0]["channels"] == 8
+    assert fh.meta_header["msg_13"][0]["type"] == 13
+    assert fh.meta_header["msg_13"][0]["seq_id"] == 15690
+    assert fh.meta_header["msg_13"][0]["date"] == 16954
+    assert fh.meta_header["msg_13"][0]["ms"] == 54016980
+    assert fh.meta_header["msg_13"][0]["segments"] == 49
+    assert fh.meta_header["msg_13"][0]["seg_num"] == 1
+    assert fh.meta_header["msg_13"][0]["record_number"] == 77
+    # meta header 18
+    assert len(fh.meta_header["msg_18"]) == 4
+    assert fh.meta_header["msg_18"][0]["size"] == 1208
+    assert fh.meta_header["msg_18"][0]["channels"] == 8
+    assert fh.meta_header["msg_18"][0]["type"] == 18
+    assert fh.meta_header["msg_18"][0]["seq_id"] == 6
+    assert fh.meta_header["msg_18"][0]["date"] == 16940
+    assert fh.meta_header["msg_18"][0]["ms"] == 65175864
+    assert fh.meta_header["msg_18"][0]["segments"] == 4
+    assert fh.meta_header["msg_18"][0]["seg_num"] == 1
+    assert fh.meta_header["msg_18"][0]["record_number"] == 126
+    # meta header 3
+    assert len(fh.meta_header["msg_3"]) == 1
+    assert fh.meta_header["msg_3"][0]["size"] == 488
+    assert fh.meta_header["msg_3"][0]["channels"] == 8
+    assert fh.meta_header["msg_3"][0]["type"] == 3
+    assert fh.meta_header["msg_3"][0]["seq_id"] == 15694
+    assert fh.meta_header["msg_3"][0]["date"] == 16954
+    assert fh.meta_header["msg_3"][0]["ms"] == 54025336
+    assert fh.meta_header["msg_3"][0]["segments"] == 1
+    assert fh.meta_header["msg_3"][0]["seg_num"] == 1
+    assert fh.meta_header["msg_3"][0]["record_number"] == 131
+    # meta header 5
+    assert len(fh.meta_header["msg_5"]) == 1
+    assert fh.meta_header["msg_5"][0]["size"] == 272
+    assert fh.meta_header["msg_5"][0]["channels"] == 8
+    assert fh.meta_header["msg_5"][0]["type"] == 5
+    assert fh.meta_header["msg_5"][0]["seq_id"] == 15695
+    assert fh.meta_header["msg_5"][0]["date"] == 16954
+    assert fh.meta_header["msg_5"][0]["ms"] == 54025336
+    assert fh.meta_header["msg_5"][0]["segments"] == 1
+    assert fh.meta_header["msg_5"][0]["seg_num"] == 1
+    assert fh.meta_header["msg_5"][0]["record_number"] == 132
+    assert fh.msg_5 == OrderedDict(
+        [
+            ("message_size", 264),
+            ("pattern_type", 2),
+            ("pattern_number", 21),
+            ("number_elevation_cuts", 11),
+            ("clutter_map_group_number", 1),
+            ("doppler_velocity_resolution", 2),
+            ("pulse_width", 2),
+            (
+                "elevation_data",
+                [
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 0.4833984375),
+                            ("channel_config", 0),
+                            ("waveform_type", 1),
+                            ("super_resolution", 11),
+                            ("prf_number", 1),
+                            ("prf_pulse_count", 28),
+                            ("azimuth_rate", 8256),
+                            ("ref_thresh", 16),
+                            ("vel_thresh", 16),
+                            ("sw_thresh", 16),
+                            ("zdr_thres", 16),
+                            ("phi_thres", 16),
+                            ("rho_thres", 16),
+                            ("edge_angle_1", 0),
+                            ("dop_prf_num_1", 0),
+                            ("dop_prf_pulse_count_1", 0),
+                            ("edge_angle_2", 0),
+                            ("dop_prf_num_2", 0),
+                            ("dop_prf_pulse_count_2", 0),
+                            ("edge_angle_3", 0),
+                            ("dop_prf_num_3", 0),
+                            ("dop_prf_pulse_count_3", 0),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 0.4833984375),
+                            ("channel_config", 0),
+                            ("waveform_type", 2),
+                            ("super_resolution", 7),
+                            ("prf_number", 0),
+                            ("prf_pulse_count", 0),
+                            ("azimuth_rate", 8272),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 4),
+                            ("dop_prf_pulse_count_1", 75),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 4),
+                            ("dop_prf_pulse_count_2", 75),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 4),
+                            ("dop_prf_pulse_count_3", 75),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 1.4501953125),
+                            ("channel_config", 0),
+                            ("waveform_type", 1),
+                            ("super_resolution", 11),
+                            ("prf_number", 1),
+                            ("prf_pulse_count", 28),
+                            ("azimuth_rate", 8256),
+                            ("ref_thresh", 16),
+                            ("vel_thresh", 16),
+                            ("sw_thresh", 16),
+                            ("zdr_thres", 16),
+                            ("phi_thres", 16),
+                            ("rho_thres", 16),
+                            ("edge_angle_1", 0),
+                            ("dop_prf_num_1", 0),
+                            ("dop_prf_pulse_count_1", 0),
+                            ("edge_angle_2", 0),
+                            ("dop_prf_num_2", 0),
+                            ("dop_prf_pulse_count_2", 0),
+                            ("edge_angle_3", 0),
+                            ("dop_prf_num_3", 0),
+                            ("dop_prf_pulse_count_3", 0),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 1.4501953125),
+                            ("channel_config", 0),
+                            ("waveform_type", 2),
+                            ("super_resolution", 7),
+                            ("prf_number", 0),
+                            ("prf_pulse_count", 0),
+                            ("azimuth_rate", 8272),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 4),
+                            ("dop_prf_pulse_count_1", 75),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 4),
+                            ("dop_prf_pulse_count_2", 75),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 4),
+                            ("dop_prf_pulse_count_3", 75),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 2.4169921875),
+                            ("channel_config", 0),
+                            ("waveform_type", 4),
+                            ("super_resolution", 14),
+                            ("prf_number", 2),
+                            ("prf_pulse_count", 8),
+                            ("azimuth_rate", 8144),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 4),
+                            ("dop_prf_pulse_count_1", 59),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 4),
+                            ("dop_prf_pulse_count_2", 59),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 4),
+                            ("dop_prf_pulse_count_3", 59),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 3.3837890625),
+                            ("channel_config", 0),
+                            ("waveform_type", 4),
+                            ("super_resolution", 14),
+                            ("prf_number", 2),
+                            ("prf_pulse_count", 8),
+                            ("azimuth_rate", 8144),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 4),
+                            ("dop_prf_pulse_count_1", 59),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 4),
+                            ("dop_prf_pulse_count_2", 59),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 4),
+                            ("dop_prf_pulse_count_3", 59),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 4.306640625),
+                            ("channel_config", 0),
+                            ("waveform_type", 4),
+                            ("super_resolution", 14),
+                            ("prf_number", 2),
+                            ("prf_pulse_count", 8),
+                            ("azimuth_rate", 8144),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 4),
+                            ("dop_prf_pulse_count_1", 59),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 4),
+                            ("dop_prf_pulse_count_2", 59),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 4),
+                            ("dop_prf_pulse_count_3", 59),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 6.0205078125),
+                            ("channel_config", 0),
+                            ("waveform_type", 4),
+                            ("super_resolution", 14),
+                            ("prf_number", 3),
+                            ("prf_pulse_count", 12),
+                            ("azimuth_rate", 8144),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 4),
+                            ("dop_prf_pulse_count_1", 59),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 4),
+                            ("dop_prf_pulse_count_2", 59),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 4),
+                            ("dop_prf_pulse_count_3", 59),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 9.8876953125),
+                            ("channel_config", 0),
+                            ("waveform_type", 3),
+                            ("super_resolution", 10),
+                            ("prf_number", 0),
+                            ("prf_pulse_count", 0),
+                            ("azimuth_rate", 10384),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 7),
+                            ("dop_prf_pulse_count_1", 82),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 7),
+                            ("dop_prf_pulse_count_2", 82),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 7),
+                            ("dop_prf_pulse_count_3", 82),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 14.58984375),
+                            ("channel_config", 0),
+                            ("waveform_type", 3),
+                            ("super_resolution", 10),
+                            ("prf_number", 0),
+                            ("prf_pulse_count", 0),
+                            ("azimuth_rate", 10432),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 7),
+                            ("dop_prf_pulse_count_1", 82),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 7),
+                            ("dop_prf_pulse_count_2", 82),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 7),
+                            ("dop_prf_pulse_count_3", 82),
+                        ]
+                    ),
+                    OrderedDict(
+                        [
+                            ("elevation_angle", 19.51171875),
+                            ("channel_config", 0),
+                            ("waveform_type", 3),
+                            ("super_resolution", 10),
+                            ("prf_number", 0),
+                            ("prf_pulse_count", 0),
+                            ("azimuth_rate", 10496),
+                            ("ref_thresh", 28),
+                            ("vel_thresh", 28),
+                            ("sw_thresh", 28),
+                            ("zdr_thres", 28),
+                            ("phi_thres", 28),
+                            ("rho_thres", 28),
+                            ("edge_angle_1", 5464),
+                            ("dop_prf_num_1", 7),
+                            ("dop_prf_pulse_count_1", 82),
+                            ("edge_angle_2", 38232),
+                            ("dop_prf_num_2", 7),
+                            ("dop_prf_pulse_count_2", 82),
+                            ("edge_angle_3", 60984),
+                            ("dop_prf_num_3", 7),
+                            ("dop_prf_pulse_count_3", 82),
+                        ]
+                    ),
+                ],
+            ),
+        ]
+    )
 
-#
-#
-# @pytest.mark.parametrize("switch", [0, 1])
-# def test_open_nexrad_level2_backend(switch, nexradlevel2_bzfile, nexradlevel2_gzfile):
-#     fname = [nexradlevel2_gzfile, nexradlevel2_bzfile][switch]
-#     with NEXRADLevel2File(fname, loaddata=False) as nex:
-#         nsweeps = nex.msg_5["number_elevation_cuts"]
-#     sweeps = [f"sweep_{i}" for i in range(nsweeps)]
-#     for group in sweeps:
-#         ds = xr.open_dataset(
-#             fname, engine=NexradLevel2BackendEntrypoint, group=group
-#         )
-#         print(ds)
-#
-#         plt.figure()
-#         plt.imshow(ds["DBZH"].values)
-#         # assert ds.attrs["instrument_name"] == "KATX"
-#         # assert ds.attrs["nsweeps"] == 16
-#         # assert ds.attrs["Conventions"] == "CF/Radial instrument_parameters"
-#         # assert ds["DBZH"].shape == (720, 1832)
-#         # assert ds["DBZH"].dims == ("azimuth", "range")
-#         # assert int(ds.sweep_number.values) == 0
-#     plt.show()
-#
-#
-#
-# def test_open_nexrad_level2_file_ds(nexradlevel2_gzfile):
-#     ds = xr.open_dataset(nexradlevel2_gzfile, engine="nexradlevel2", group="sweep_0")
-#     import matplotlib.pyplot as plt
-#
-#     plt.figure(figsize=(12, 12))
-#     ds = ds.set_coords("sweep_mode")
-#     ds = ds.xradar.georeference()
-#
-#     print(ds.DBZH.attrs)
-#     print(ds.DBZH.encoding)
-#     print(ds.PHIDP.encoding)
-#     print(ds.PHIDP.values)
-#     ds.DBZH.plot(x="x", y="y")
-#     plt.show()
-#     ds.ZDR.plot(x="x", y="y")
-#     plt.show()
-#     ds.RHOHV.plot(x="x", y="y")
-#     plt.show()
-#     ds.PHIDP.plot(x="x", y="y")
-#     plt.show()
-#
-#
-# def test_open_nexrad_level2_file_peek_a():
-#     fname_bz = "/home/kai/data/daten/daten/radar_all_over_the_world/NEXRAD/KATX20160601_090111_V06_bz2"
-#     fh = NEXRADLevel2File(fname_bz)
-#     if fh.is_compressed:
-#         x = fh.get_bz2_record_indices()
-#     print(len(x))
-#     peek_into(fh, x, 1, True)
-#
-#
-# def test_open_nexrad_level2_file_peek_b(benchmark):
-#     fname_bz = "/home/kai/data/daten/daten/radar_all_over_the_world/NEXRAD/KATX20160601_090111_V06_bz2"
-#     fh = NEXRADLevel2File(fname_bz)
-#     x = get_bz2_indices(fh)
-#     benchmark(peek_into, fh, x, 1, False)
-#
-#
-# def test_open_nexrad_level2_file_read_a(benchmark):
-#     fname_bz = "/home/kai/data/daten/daten/radar_all_over_the_world/NEXRAD/KATX20160601_090111_V06_bz2"
-#     fh = NEXRADLevel2File(fname_bz)
-#     x = get_bz2_indices(fh)
-#     benchmark(peek_into, fh, x, 2, True)
-#
-#
-# def test_open_nexrad_level2_file_read_b(benchmark):
-#     fname_bz = "/home/kai/data/daten/daten/radar_all_over_the_world/NEXRAD/KATX20160601_090111_V06_bz2"
-#     fh = NEXRADLevel2File(fname_bz)
-#     x = get_bz2_indices(fh)
-#     benchmark(peek_into, fh, x, 2, False)
-#
-#
-# def test_open_nexrad_level2_file_decompress_a(benchmark):
-#     fname_bz = "/home/kai/data/daten/daten/radar_all_over_the_world/NEXRAD/KATX20160601_090111_V06_bz2"
-#     fh = NEXRADLevel2File(fname_bz)
-#     x = get_bz2_indices(fh)
-#     benchmark(peek_into, fh, x, 3, True)
-#
-#
-# def test_open_nexrad_level2_file_decompress_b(benchmark):
-#     pass
-#     # fname_bz = "/home/kai/data/daten/daten/radar_all_over_the_world/NEXRAD/KATX20160601_090111_V06_bz2"
-#     # fh = NEXRADLevel2File(fname_bz)
-#     # x = get_bz2_indices(fh)
-#     # result = benchmark(peek_into, fh, x, 3, False)
-#
-#     # result = benchmark(peek_into, fh, x, 2, True)
-#     # result = benchmark(peek_into, fh, x, 2, False)
-#     # result = benchmark(peek_into, fh, x, 3, True)
-#     # result = benchmark(peek_into ,fh, x, 3, False)
-#
-#     #
-#     #
-#     # fb = open(fname_bz, "rb")
-#     # fb.seek(28)
-#     # fbc = bz2.open(fb)
-#     # import numpy as np
-#     # import io
-#     # for i, L in enumerate(io.BufferedReader(fbc)):
-#     #     print(i, L)
-#     #
-#     # fbc.seek(2432 * 132)
-#     #
-#
-#     # fh = NEXRADLevel2File(fname_gz)
-#     # print("--- Data Header ---")
-#     # print(len(fh.meta_header))
-#     # print(len(fh.data_header))
-#     # print(sum([len(m31) for m31 in fh.msg_31_header]))
-#     # #print(fh._data_headers[2000:3000])
-#     #
-#     # print("--- Meta Header ---")
-#     # #print(len(fh.meta_header))
-#     # print(sum([len(x) for x in fh.meta_header]))
-#     #
-#     # print(fh._msg_5_data)
-#     #
-#     # print("--- MSG 31 Header ---")
-#     # print("elevs", len(fh.msg_31_header))
-#     # for i, el in enumerate(fh.msg_31_header):
-#     #     print(f"Sweep {i}")
-#     #     print("nrays", len(el), el[-1]["record_number"] - el[0]["record_number"])
-#     #     print("start -->", el[0])
-#     #     print("start+1 >", el[1])
-#     #     print("stop  -->", el[-1])
-#     #
-#     # print("--- MSG 31 Data Header ---")
-#     # print("msg31 data", len(fh.msg_31_data_header))
-#     # for i, dh in enumerate(fh.msg_31_data_header):
-#     #     print(i, dh)
-#     # #
-#     # # # print("--- Data Header ---")
-#     # # # for i in range(len(scans_idx) - 1):
-#     # # #     start = scans_idx[i]
-#     # # #     stop = scans_idx[i+1] - 1
-#     # # #     print(f"Sweep Data {i}")
-#     # # #     print("start -->", start, fh._msg_31_data_headers[start])
-#     # # #     print("stop -->", stop, fh._msg_31_data_headers[stop])
-#     # #
-#     # # # for i, hd in enumerate(fh._msg_31_data_headers):
-#     # # #     print("elevation:", i)
-#     # # #     for name, bh in hd.items():
-#     # # #         print("--->:", name, bh)
-#     # #
-#     # # # fh.get_moment(0, "REF")
-#     # # #for i in range(nelev):
-#     # # i = 0
-#     # # fh.get_sweep(i)
-#     # # fh.get_data(i)
-#     # #
-#     # #
-#     # # print("--- Moments Data ---")
-#     # # for swpnr, sweep in fh._data.items():
-#     # #     print("sweep nr:", swpnr)
-#     # #     for name, bh in sweep.items():
-#     # #         if name in ["sweep_data", "sweep_constant_data"]:
-#     # #             print("--->:", name)
-#     # #             for mom, mh in bh.items():
-#     # #                 print("----->:", mom, mh)
-#     # #         else:
-#     # #             print("--->:", name, bh)
-#     # #
-#     # # import matplotlib.pyplot as plt
-#     # #
-#     # # plt.figure()
-#     # # print(fh.data[0]["sweep_data"]["PHI"]["data"])
-#     # # plt.imshow(fh.data[0]["sweep_data"]["REF"]["data"])
-#     # # plt.figure()
-#     # # plt.imshow(fh.data[0]["sweep_data"]["ZDR"]["data"])
-#     # # plt.figure()
-#     # # plt.imshow(fh.data[0]["sweep_data"]["PHI"]["data"])
-#     # # plt.figure()
-#     # # plt.imshow(fh.data[0]["sweep_data"]["RHO"]["data"])
-#     # # plt.show()
-#     #
-#     # # print(fh._data[0]["sweep_data"]["REF"])
-#     #
-#     # # for sidx in scans_idx:
-#     # #     msg = fh._msg_31_headers[sidx]
-#     # #     block_pointers = [
-#     # #         v for k, v in msg.items() if k.startswith("block_pointer") and v > 0
-#     # #     ]
-#     # #     print(block_pointers)
-#     # #     print(msg)
-#     # #     # for block_pointer in block_pointers[:msg["block_count"]]:
-#     # #     #     fh.rh.pos = block_pointer + LEN_MSG_HEADER
-#     # #     #     # print(block_pointer)
-#     # #     #     # print(self.filepos)
-#     # #     #
-#     # #     #     dheader = _unpack_dictionary(self._rh.read(4, width=1), DATA_BLOCK_HEADER,
-#     # #     #                                  self._rawdata, byte_order=">")
-#     # #     #
-#     # #     #     block = DATA_BLOCK_TYPE_IDENTIFIER[dheader["block_type"]][
-#     # #     #         dheader["data_name"]]
-#     # #     #     LEN_BLOCK = struct.calcsize(_get_fmt_string(block, byte_order=">"))
-#     # #     #     block_header = _unpack_dictionary(
-#     # #     #         self._rh.read(LEN_BLOCK, width=1),
-#     # #     #         block,
-#     # #     #         self._rawdata,
-#     # #     #         byte_order=">",
-#     # #     #     )
-#     # #
-#     # # nscans = len(scan_msgs)
-#     # #
-#     # # print("nscans:", nscans)
-#     #
-#     # # print(fh._msg_5_data["elevation_data"])
-#     # # print([(rec["type"], rec["size"], rec["seg_num"]) for rec in fh.raw_product_bhdrs])
-#     #
-#     # # elev_nums = np.array(
-#     # #     [m["elevation_number"] for m in fh.raw_product_bhdrs]
-#     # # )
-#     # # print(elev_nums)
-#     # # msg_18 = xradar.io.backends.nexrad_level2_new.MSG_18
-#     # # print(xradar.io.backends.nexrad_level2_new.LEN_MSG_18)
-#     # # print(xradar.io.backends.iris._get_fmt_string(msg_18, byte_order=">"))
-#     # # for k, v in msg_18.items():
-#     # #    print(k, v)
-#     # # import time
-#     # # time.sleep(3)
-#     # # assert 1 == 2
-#
-#
-# def test_open_nexrad_level2_file_compressed(nexradlevel2_bzfile):
-#
-#     fh = NEXRADLevel2File(nexradlevel2_bzfile)
-#     for k, v in fh.meta_header.items():
-#         print(k)
-#         print(v)
-#
-#     # print(len(fh.data_header))
-#     # for x, head in enumerate(fh.msg_31_header):
-#     #     print(x, len(head))
-#
-#     print("done")
+    # meta header 2
+    assert len(fh.meta_header["msg_2"]) == 1
+    assert fh.meta_header["msg_2"][0]["size"] == 48
+    assert fh.meta_header["msg_2"][0]["channels"] == 8
+    assert fh.meta_header["msg_2"][0]["type"] == 2
+    assert fh.meta_header["msg_2"][0]["seq_id"] == 15693
+    assert fh.meta_header["msg_2"][0]["date"] == 16954
+    assert fh.meta_header["msg_2"][0]["ms"] == 54025336
+    assert fh.meta_header["msg_2"][0]["segments"] == 1
+    assert fh.meta_header["msg_2"][0]["seg_num"] == 1
+    assert fh.meta_header["msg_2"][0]["record_number"] == 133
 
-
-def test_open_nexrad_level2_bzfile0(nexradlevel2_bzfile):
-    fh = NEXRADLevel2File(nexradlevel2_bzfile)
-    for k, v in fh.meta_header.items():
-        print(k)
-        print(v)
-
-    # print(len(fh.data_header))
-    # for x, head in enumerate(fh.msg_31_header):
-    #     print(x, len(head))
-
-    print("done")
-
-
-def test_open_nexrad_level2_bzfile1(nexradlevel2_bzfile):
-    fh = NEXRADLevel2File(nexradlevel2_bzfile)
-    for k, v in fh.meta_header.items():
-        print(k)
-        print(v)
-
-    print(len(fh.data_header))
-    for x, head in enumerate(fh.msg_31_header):
-        print(x, len(head))
-
-    print("done")
-
-
-def test_open_nexrad_level2_gzfile0(nexradlevel2_gzfile):
-    fh = NEXRADLevel2File(nexradlevel2_gzfile)
-    for k, v in fh.meta_header.items():
-        print(k)
-        print(v)
-
-
-def test_open_nexrad_level2_gzfile1(nexradlevel2_gzfile):
-    fh = NEXRADLevel2File(nexradlevel2_gzfile)
-    for k, v in fh.meta_header.items():
-        print(k)
-        print(v)
-
-    print(len(fh.data_header))
-    for x, head in enumerate(fh.msg_31_header):
-        print(x, len(head))
-
-    print("done")
+    # data header
+    assert len(fh.data_header) == 5400
+    msg_31_header_length = [720, 720, 720, 720, 360, 360, 360, 360, 360, 360, 360]
+    for i, head in enumerate(fh.msg_31_header):
+        assert len(head) == msg_31_header_length[i]
