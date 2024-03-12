@@ -1359,7 +1359,8 @@ class NexradLevel2Store(AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {}
+        attributes = [("instrument_name", self.root.volume_header["icao"].decode())]
+
         return FrozenDict(attributes)
 
 

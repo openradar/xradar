@@ -5,6 +5,7 @@
 """Tests for `xradar.io.nexrad_archive` module."""
 
 import matplotlib.pyplot as plt
+import pytest
 
 from xradar.io.backends.nexrad_level2 import (
     NEXRADLevel2File,
@@ -12,25 +13,30 @@ from xradar.io.backends.nexrad_level2 import (
 )
 
 
-def test_open_nexradlevel2_bzfile_datatree(nexradlevel2_bzfile):
-    dtree = open_nexradlevel2_datatree(nexradlevel2_bzfile)
-    ds = dtree["sweep_0"]
-    # assert ds.attrs["instrument_name"] == "KLBB"
+@pytest.mark.parametrize(
+    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+)
+def test_open_nexradlevel2_datatree(nexradlevel2_files):
+    dtree = open_nexradlevel2_datatree(nexradlevel2_files)
+    print(dtree.data_vars)
+    ds = dtree["sweep_0"].ds
+    print(ds)
+    assert ds.attrs["instrument_name"] == "KLBB"
     # assert ds.attrs["nsweeps"] == 16
     # assert ds.attrs["Conventions"] == "CF/Radial instrument_parameters"
     assert ds["DBZH"].shape == (720, 1832)
     assert ds["DBZH"].dims == ("azimuth", "range")
     assert int(ds.sweep_number.values) == 0
 
-    plt.figure()
-    plt.imshow(ds["DBZH"].values)
-    plt.figure()
-    plt.imshow(ds["RHOHV"].values)
-    plt.figure()
-    plt.imshow(ds["ZDR"].values)
-    plt.figure()
-    plt.imshow(ds["PHIDP"].values)
-    plt.show()
+    # plt.figure()
+    # plt.imshow(ds["DBZH"].values)
+    # plt.figure()
+    # plt.imshow(ds["RHOHV"].values)
+    # plt.figure()
+    # plt.imshow(ds["ZDR"].values)
+    # plt.figure()
+    # plt.imshow(ds["PHIDP"].values)
+    # plt.show()
 
 
 def test_open_nexradlevel2_gzfile_datatree(nexradlevel2_gzfile):
