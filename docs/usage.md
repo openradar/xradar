@@ -32,6 +32,7 @@ notebooks/GAMIC
 notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
+notebooks/NexradLevel2
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
 notebooks/angle_reindexing

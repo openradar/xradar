@@ -271,8 +271,8 @@ SINT4 = {"fmt": "i", "dtype": "int32"}
 UINT1 = {"fmt": "B", "dtype": "unit8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "unint32"}
-FLT4 = {"fmt": "f"}
-FLT8 = {"fmt": "d"}
+FLT4 = {"fmt": "f", "dtype": "float32"}
+FLT8 = {"fmt": "d", "dtype": "float64"}
 BIN1 = {
     "name": "BIN1",
     "dtype": "uint8",
@@ -358,7 +358,7 @@ def _get_struct_dtype(dictionary):
     return np.dtype(dtypes)
 
 
-def _unpack_dictionary(buffer, dictionary, rawdata=False):
+def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
     """Unpacks binary data using the given dictionary structure.
 
     Parameters
@@ -373,7 +373,7 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
         Ordered Dictionary with unpacked data
     """
     # get format and substructures of dictionary
-    fmt, sub = _get_fmt_string(dictionary, retsub=True)
+    fmt, sub = _get_fmt_string(dictionary, retsub=True, byte_order=byte_order)
 
     # unpack into OrderedDict
     data = OrderedDict(zip(dictionary, struct.unpack(fmt, buffer)))
@@ -398,7 +398,9 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
                     pass
         # unpack sub dictionary
         try:
-            data[k] = _unpack_dictionary(data[k], v, rawdata=rawdata)
+            data[k] = _unpack_dictionary(
+                data[k], v, rawdata=rawdata, byte_order=byte_order
+            )
         except TypeError:
             pass
 
