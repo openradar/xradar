@@ -6,6 +6,7 @@
 
 from collections import OrderedDict
 
+import numpy as np
 import pytest
 import xarray
 
@@ -26,6 +27,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     assert ds["DBZH"].shape == (720, 1832)
     assert ds["DBZH"].dims == ("azimuth", "range")
     assert int(ds.sweep_number.values) == 0
+    np.testing.assert_almost_equal(ds.sweep_fixed_angle.values, 0.4833984)
 
 
 @pytest.mark.parametrize(
