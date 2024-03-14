@@ -1359,7 +1359,7 @@ class NexradLevel2Store(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        fixed_angle = self.root.msg_5["elevation_data"][self._group]
+        fixed_angle = self.root.msg_5["elevation_data"][self._group]["elevation_angle"]
 
         coords = {
             "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(), encoding),

@@ -7,6 +7,7 @@
 * MNT: use CODECOV token ({pull}`155`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: fix path for notebook coverage ({pull}`157`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ADD: NEXRAD Level2 structured reader ({pull}`158`) by [@kmuehlbauer](https://github.com/kmuehlbauer) and [@mgrover1](https://github.com/mgrover1).
+* FIX: Add the proper elevation angle to fixed angle ({pull}`162`) by [@mgrover1](https://github.com/mgrover1).
 
 ## 0.4.3 (2024-02-24)
 
