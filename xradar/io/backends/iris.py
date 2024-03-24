@@ -61,6 +61,11 @@ from ...model import (
     get_range_attrs,
     moment_attrs,
     sweep_vars_mapping,
+    required_root_vars,
+    optional_root_vars,
+    required_global_attrs,
+    optional_root_attrs,
+    radar_parameters_subgroup,
 )
 from .common import _assign_root, _attach_sweep_groups
 
@@ -3917,6 +3922,68 @@ def _get_iris_group_names(filename):
     return keys
 
 
+def _get_required_root_dataset(ls_ds, optional=True):
+    """Extract Root Dataset."""
+    # keep only defined mandatory and defined optional variables per default
+    data_var = set([x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs])
+    remove_root = set(data_var) ^ set(required_root_vars)
+    if optional:
+        remove_root ^= set(optional_root_vars)
+    remove_root ^= {"sweep_number", "fixed_angle"}
+    remove_root &= data_var
+    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
+    root_vars = set([x for xs in [sweep.variables.keys() for sweep in root] for x in xs])
+    # rename variables
+    # todo: find a more easy method not iterating over all variables
+    for k in root_vars:
+        rename = optional_root_vars.get(k, None)
+        if rename:
+            root = [sweep.rename_vars({k: rename}) for sweep in root]
+
+    root_vars = set([x for xs in [sweep.variables.keys() for sweep in root] for x in xs])
+    ds_vars = [sweep[root_vars] for sweep in ls_ds]
+
+    root = xr.concat(ds_vars, dim='sweep')
+    # keep only defined mandatory and defined optional attributes per default
+    attrs = root.attrs.keys()
+    remove_attrs = set(attrs) ^ set(required_global_attrs)
+    if optional:
+        remove_attrs ^= set(optional_root_attrs)
+    for k in remove_attrs:
+        root.attrs.pop(k, None)
+
+    # handle sweep variables and dimension
+    root = root.rename_vars(
+        {"sweep_number": "sweep_group_name"}
+    )
+    root["sweep_group_name"].values = np.array(
+        [f"sweep_{i}" for i in root["sweep_group_name"].values]
+    )
+    # fix dtype in encoding
+    root.sweep_group_name.encoding["dtype"] = root.sweep_group_name.dtype
+    # remove cf standard name
+    root.sweep_group_name.attrs = []
+    return root
+
+
+def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+    """Get iris-sigmet root metadata group.
+
+    Variables are fetched from the provided Dataset according to the subdict dictionary.
+    """
+    print(1)
+    meta_vars = subdict
+    data_vars = set([x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs])
+    extract_vars = set(data_vars) & set(meta_vars)
+    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], 'sweep')
+    for k in subgroup.data_vars:
+        rename = meta_vars[k]
+        if rename:
+            subgroup = subgroup.rename_vars({k: rename})
+    subgroup.attrs = {}
+    return subgroup
+
+
 class IrisBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for IRIS/Sigmet data."""
 
@@ -4054,14 +4121,18 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_iris_group_names(filename_or_obj)
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
         for swp in sweeps
     ]
-
-    ds.insert(0, xr.Dataset())
-
+    # get the datatree root
+    root = _get_required_root_dataset(ls_ds)
     # create datatree root node with required data
-    dtree = DataTree(data=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree = DataTree(data=root, name="root")
+    # get radar_parameters group
+    subgroup = _get_subgroup(ls_ds, radar_parameters_subgroup)
+    # attach radar_parameter group
+    DataTree(subgroup, name="radar_parameters", parent=dtree)
+    # return Datatree attaching the sweep child nodes
+    return _attach_sweep_groups(dtree, ls_ds)
+
