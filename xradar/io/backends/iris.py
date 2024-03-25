@@ -4005,7 +4005,6 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
     """Get iris-sigmet root metadata group.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
     """
-    print(1)
     meta_vars = subdict
     data_vars = set([x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs])
     extract_vars = set(data_vars) & set(meta_vars)
