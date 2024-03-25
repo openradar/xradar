@@ -60,14 +60,14 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
-    sweep_vars_mapping,
-    required_root_vars,
-    optional_root_vars,
-    required_global_attrs,
     optional_root_attrs,
+    optional_root_vars,
     radar_parameters_subgroup,
+    required_global_attrs,
+    required_root_vars,
+    sweep_vars_mapping,
 )
-from .common import _assign_root, _attach_sweep_groups
+from .common import _attach_sweep_groups
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
