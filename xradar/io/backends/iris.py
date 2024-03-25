@@ -3802,9 +3802,9 @@ class IrisStore(AbstractDataStore):
         mname = iris_mapping.get(name, name)
         mapping = sweep_vars_mapping.get(mname, {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
-        attrs[
-            "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+        attrs["coordinates"] = (
+            "elevation azimuth range latitude longitude altitude time rtime sweep_mode"
+        )
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self, var):
@@ -3925,14 +3925,18 @@ def _get_iris_group_names(filename):
 def _get_required_root_dataset(ls_ds, optional=True):
     """Extract Root Dataset."""
     # keep only defined mandatory and defined optional variables per default
-    data_var = set([x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs])
+    data_var = set(
+        [x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs]
+    )
     remove_root = set(data_var) ^ set(required_root_vars)
     if optional:
         remove_root ^= set(optional_root_vars)
     remove_root ^= {"sweep_number", "fixed_angle"}
     remove_root &= data_var
     root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
-    root_vars = set([x for xs in [sweep.variables.keys() for sweep in root] for x in xs])
+    root_vars = set(
+        [x for xs in [sweep.variables.keys() for sweep in root] for x in xs]
+    )
     # rename variables
     # todo: find a more easy method not iterating over all variables
     for k in root_vars:
@@ -3940,10 +3944,12 @@ def _get_required_root_dataset(ls_ds, optional=True):
         if rename:
             root = [sweep.rename_vars({k: rename}) for sweep in root]
 
-    root_vars = set([x for xs in [sweep.variables.keys() for sweep in root] for x in xs])
+    root_vars = set(
+        [x for xs in [sweep.variables.keys() for sweep in root] for x in xs]
+    )
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
 
-    root = xr.concat(ds_vars, dim='sweep')
+    root = xr.concat(ds_vars, dim="sweep")
     # keep only defined mandatory and defined optional attributes per default
     attrs = root.attrs.keys()
     remove_attrs = set(attrs) ^ set(required_global_attrs)
@@ -3953,9 +3959,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
         root.attrs.pop(k, None)
 
     # handle sweep variables and dimension
-    root = root.rename_vars(
-        {"sweep_number": "sweep_group_name"}
-    )
+    root = root.rename_vars({"sweep_number": "sweep_group_name"})
     root["sweep_group_name"].values = np.array(
         [f"sweep_{i}" for i in root["sweep_group_name"].values]
     )
@@ -3975,7 +3979,7 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
     meta_vars = subdict
     data_vars = set([x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs])
     extract_vars = set(data_vars) & set(meta_vars)
-    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], 'sweep')
+    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
     for k in subgroup.data_vars:
         rename = meta_vars[k]
         if rename:
@@ -4135,4 +4139,3 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     DataTree(subgroup, name="radar_parameters", parent=dtree)
     # return Datatree attaching the sweep child nodes
     return _attach_sweep_groups(dtree, ls_ds)
-
