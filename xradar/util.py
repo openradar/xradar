@@ -22,6 +22,7 @@ __all__ = [
     "extract_angle_parameters",
     "ipol_time",
     "rolling_dim",
+    "get_sweep_keys",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -487,3 +488,37 @@ def rolling_dim(data, window):
     shape = data.shape[:-1] + (data.shape[-1] - window + 1, window)
     strides = data.strides + (data.strides[-1],)
     return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
+
+
+def get_sweep_keys(dt):
+    """Return which nodes in the datatree contain sweep variables
+
+    Parameters
+    ----------
+    dt : xarray.DataTree
+        Datatree to check for sweep_n keys
+
+    Returns
+    -------
+    keys : list
+        List of associated keys with sweep_n
+    """
+    sweep_group_keys = []
+    for key in list(dt.children):
+        parts = key.split("_")
+        try:
+            # Try to set the second part of the tree key to an int
+            int(parts[1])
+            # Check for "sweep" in the first part of the key
+            assert "sweep" in parts[0]
+            sweep_group_keys.append(key)
+
+        # This would fail with strings - ex. sweep_group_attrs
+        except ValueError:
+            pass
+
+        # This would fail if "sweep" not in key - ex. radar_parameters
+        except AssertionError:
+            pass
+
+    return sweep_group_keys
