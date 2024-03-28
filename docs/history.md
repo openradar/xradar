@@ -2,12 +2,15 @@
 
 ## Development Version (unreleased)
 
+## 0.5.0 (2024-03-28)
+
 * MNT: Update GitHub actions, address DeprecationWarnings ({pull}`153`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: restructure odim.py/gamic.py, add test_odim.py/test_gamic.py ({pull}`154`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: use CODECOV token ({pull}`155`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: fix path for notebook coverage ({pull}`157`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ADD: NEXRAD Level2 structured reader ({pull}`158`) by [@kmuehlbauer](https://github.com/kmuehlbauer) and [@mgrover1](https://github.com/mgrover1).
 * FIX: Add the proper elevation angle to fixed angle ({pull}`162`) by [@mgrover1](https://github.com/mgrover1).
+* ENH: Add a utility for finding sweep number keys ({pull}`167`) by [@mgrover1](https://github.com/mgrover1).
 
 ## 0.4.3 (2024-02-24)
 
