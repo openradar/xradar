@@ -260,5 +260,7 @@ def test_get_sweep_keys():
     # Test finding sweep keys
     filename = DATASETS.fetch("sample_sgp_data.nc")
     dt = io.open_cfradial1_datatree(filename)
+    # set a fake group
+    dt["sneep_1"] = dt["sweep_1"]
     keys = util.get_sweep_keys(dt)
     assert keys == ["sweep_0", "sweep_1", "sweep_2", "sweep_3", "sweep_4", "sweep_5"]
