@@ -509,9 +509,16 @@ def get_sweep_keys(dt):
         try:
             # Try to set the second part of the tree key to an int
             int(parts[1])
+            # Check for "sweep" in the first part of the key
+            assert "sweep" in parts[0]
             sweep_group_keys.append(key)
 
         # This would fail with strings - ex. sweep_group_attrs
         except ValueError:
             pass
+
+        # This would fail if "sweep" not in key - ex. radar_parameters
+        except AssertionError:
+            pass
+
     return sweep_group_keys
