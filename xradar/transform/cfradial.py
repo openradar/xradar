@@ -27,7 +27,8 @@ Example::
 
 __all__ = [
     "CfRadial1BackendEntrypoint",
-    "open_cfradial1_datatree",
+    "to_cfradial2",
+    "to_cfradial1",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -36,15 +37,15 @@ from collections.abc import Mapping
 
 import numpy as np
 from datatree import DataTree
-from xarray import open_dataset
 from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core.dataarray import DataArray
 from xarray.core.dataset import Dataset
 
-from ... import util
-from ...model import (
+from .. import util
+from ..io.backends.common import _attach_sweep_groups, _maybe_decode
+from ..model import (
     conform_cfradial2_sweep_group,
     georeferencing_correction_subgroup,
     optional_root_attrs,
@@ -54,8 +55,6 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from ...transform import to_cfradial1
-from .common import _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -150,7 +149,7 @@ def _get_sweep_groups(
         sweep = [f"sweep_{sweep}"]
 
     # iterate over sweeps
-    for i in range(root.sizes["sweep"]):
+    for i in range(root.dims["sweep"]):
         sw = f"sweep_{i}"
         if sweep is not None and not (sw in sweep or i in sweep):
             continue
@@ -160,8 +159,8 @@ def _get_sweep_groups(
         swslice = slice(i, i + 1)
         ds = data.isel(time=tslice, sweep=swslice).squeeze("sweep")
 
-        ds["sweep_mode"] = _maybe_decode(ds.sweep_mode).compute()
-        dim0 = "elevation" if ds["sweep_mode"] == "rhi" else "azimuth"
+        sweep_mode = _maybe_decode(ds.sweep_mode).compute()
+        dim0 = "elevation" if sweep_mode == "rhi" else "azimuth"
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
@@ -302,22 +301,19 @@ class Cfradial2(DataTree):
         super().__init__(data, parent, children, name)
 
     def to_cfradial1_dataset(self):
-        """Transforms Cfradial2 to Cfradial1"""
         ds = to_cfradial1(self)
         return ds
 
     def to_cf1(self):
-        """Transforms Cfradial2 to Cfradial1"""
         ds = to_cfradial1(self)
         return ds
 
     def to_cf1_dataset(self):
-        """Transforms Cfradial2 to Cfradial1"""
         ds = to_cfradial1(self)
         return ds
 
 
-def open_cfradial1_datatree(filename_or_obj, **kwargs):
+def to_cfradial2(ds, **kwargs):
     """Open CfRadial1 dataset as :py:class:`datatree.DataTree`.
 
     Parameters
@@ -353,13 +349,13 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     # handle kwargs, extract first_dim
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
-    site_coords = kwargs.pop("site_coords", True)
+    kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
 
     # open root group, cfradial1 only has one group
     # open_cfradial1_datatree only opens the file once using netcdf4
     # and retrieves the different groups from the loaded object
-    ds = open_dataset(filename_or_obj, engine="netcdf4", **kwargs)
+    # ds = open_dataset(filename_or_obj, engine="netcdf4", **kwargs)
 
     # create datatree root node with required data
     root = _get_required_root_dataset(ds, optional=optional)
@@ -389,7 +385,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
                 sweep=sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=site_coords,
+                site_coords=False,
             ).values()
         ),
     )
@@ -474,3 +470,349 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
             ds = ds.pipe(util.ipol_time, **reindex_angle)
 
         return ds
+
+
+from collections.abc import Mapping
+from typing import Any
+
+import xarray as xr
+from xarray import Dataset
+
+
+class Cfradial1(Dataset):
+    """
+    A class for transforming data from Cfradial1 format to Cfradial2 format.
+    """
+
+    __slots__ = ()
+
+    def __init__(
+        self,
+        data_vars: Mapping[Any, Any] | None = None,
+        coords: Mapping[Any, Any] | None = None,
+        attrs: Mapping[Any, Any] | None = None,
+    ) -> None:
+        """
+        Initialize a Cfradial1 instance.
+
+        Parameters
+        ----------
+        - data_vars (Mapping[Any, Any] | None): A dictionary-like object containing data variables.
+        - coords (Mapping[Any, Any] | None): A dictionary-like object containing coordinate variables.
+        - attrs (Mapping[Any, Any] | None): A dictionary-like object containing attributes.
+        """
+        super().__init__(data_vars, coords, attrs)
+
+    def to_cfradial2_datatree(self):
+        """
+        Transform the Cfradial1 data to Cfradial2 format.
+
+        Returns
+        -------
+        - Cfradial2DataTree: An instance of Cfradial2DataTree containing the transformed data.
+        """
+        dtree = to_cfradial2(self)
+        return dtree
+
+    def to_cf2(self):
+        """
+        Transform the Cfradial1 data to Cfradial2 format.
+
+        Returns
+        -------
+        - Cfradial2DataTree: An instance of Cfradial2DataTree containing the transformed data.
+        """
+        dtree = to_cfradial2(self)
+        return dtree
+
+    def to_cf2_datatree(self):
+        """
+        Transform the Cfradial1 data to Cfradial2 format.
+
+        Returns
+        -------
+        - Cfradial2DataTree: An instance of Cfradial2DataTree containing the transformed data.
+        """
+        dtree = to_cfradial2(self)
+        return dtree
+
+
+def _calib_mapper(calib_params):
+    """
+    Map calibration parameters to a new dataset format.
+
+    Parameters
+    ----------
+    calib_params: xarray.Dataset
+        Calibration parameters dataset.
+
+    Returns
+    -------
+    xarray.Dataset
+        New dataset with mapped calibration parameters.
+    """
+    new_data_vars = {}
+    for var in calib_params.data_vars:
+        data_array = calib_params[var]
+        new_data_vars["r_calib_" + var] = xr.DataArray(
+            data=data_array.data[np.newaxis, ...],
+            dims=["r_calib"] + list(data_array.dims),
+            coords={"r_calib": [0]},
+            attrs=data_array.attrs,
+        )
+    radar_calib_renamed = xr.Dataset(new_data_vars)
+    dummy_ds = radar_calib_renamed.rename_vars({"r_calib": "fake_coord"})
+    del dummy_ds["fake_coord"]
+    return dummy_ds
+
+
+def _main_info_mapper(dtree):
+    """
+    Map main radar information from a radar datatree dataset.
+
+    Parameters
+    ----------
+    dtree: datatree.DataTree
+        Radar datatree.
+
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing the mapped radar information.
+    """
+    dataset = (
+        dtree.root.to_dataset()
+        .drop_vars("sweep_group_name", errors="ignore")
+        .rename({"sweep_fixed_angle": "fixed_angle"})
+    )
+    return dataset
+
+
+def _variable_mapper(dtree, dim0=None):
+    """
+    Map radar variables for different sweep groups.
+
+    Parameters
+    ----------
+    dtree: datatree.DataTree
+        Radar datatree.
+    dim0: str
+        Either `azimuth` or `elevation`
+
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing mapped radar variables.
+    """
+
+    sweep_info = _sweep_info_mapper(dtree)
+    vol_info = _main_info_mapper(dtree).drop_vars(
+        "fixed_angle",
+    )
+    sweep_datasets = []
+    for grp in dtree.groups:
+        if "sweep" in grp:
+            data = dtree[grp]
+
+            # handling first dimension
+            if dim0 is None:
+                dim0 = (
+                    "elevation"
+                    if data.sweep_mode.load().astype(str) == "rhi"
+                    else "azimuth"
+                )
+                if dim0 not in data.dims:
+                    dim0 = "time"
+                    assert dim0 in data.dims
+
+            # swap dims, if needed
+            if dim0 != "time" and dim0 in data.dims:
+                data = data.swap_dims({dim0: "time"})
+
+            # sort in any case
+            data = data.sortby("time")
+
+            data = data.drop_vars(["x", "y", "z"], errors="ignore")
+
+            # Convert to a dataset and append to the list
+            sweep_datasets.append(data.to_dataset())
+
+    result_dataset = xr.concat(
+        sweep_datasets,
+        dim="time",
+        compat="no_conflicts",
+        join="right",
+        combine_attrs="drop_conflicts",
+    )
+
+    # Check if specific variables exist before dropping them
+    drop_variables = [
+        "sweep_fixed_angle",
+        "sweep_number",
+        "sweep_mode",
+        "prt_mode",
+        "follow_mode",
+    ]
+    result_dataset = result_dataset.drop_vars(drop_variables, errors="ignore")
+
+    drop_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
+    result_dataset = result_dataset.drop_vars(drop_coords, errors="ignore")
+
+    result_dataset = result_dataset.update(sweep_info)
+    sweep_indices = calculate_sweep_indices(dtree, result_dataset)
+    result_dataset = result_dataset.update(sweep_indices)
+    result_dataset = result_dataset.reset_coords(["elevation", "azimuth"])
+    result_dataset = result_dataset.update(vol_info)
+    return result_dataset
+
+
+def _sweep_info_mapper(dtree):
+    """
+    Extract specified sweep information variables from a radar datatree
+
+    Parameters
+    ----------
+    dtree: datatree.DataTree
+        Radar datatree.
+
+    Returns
+    -------
+    xarray.Dataset
+        Dataset containing the specified sweep information variables.
+    """
+    dataset = xr.Dataset()
+
+    sweep_vars = [
+        "sweep_number",
+        "sweep_mode",
+        "polarization_mode",
+        "prt_mode",
+        "follow_mode",
+        "sweep_fixed_angle",
+        "sweep_start_ray_index",
+        "sweep_end_ray_index",
+    ]
+
+    for var_name in sweep_vars:
+        var_data_list = [
+            np.unique(dtree[s][var_name].values[np.newaxis, ...])
+            if var_name in dtree[s]
+            else np.array([np.nan])
+            for s in dtree.groups
+            if "sweep" in s
+        ]
+
+        var_attrs_list = [
+            dtree[s][var_name].attrs if var_name in dtree[s] else {}
+            for s in dtree.groups
+            if "sweep" in s
+        ]
+
+        if not var_data_list:
+            var_data = np.array([np.nan])
+        else:
+            var_data = np.concatenate(var_data_list)
+
+        var_attrs = {}
+        for attrs in var_attrs_list:
+            var_attrs.update(attrs)
+
+        var_data_array = xr.DataArray(var_data, dims=("sweep",), attrs=var_attrs)
+        dataset[var_name] = var_data_array
+
+    dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
+
+    return dataset
+
+
+def calculate_sweep_indices(dtree, dataset=None):
+    """
+    Calculate sweep start and end ray indices for elevation
+    values in a radar dataset.
+
+    Parameters
+    ----------
+    dtree: datatree.DataTree
+        Radar datatree containing elevation values for different sweep groups.
+    dataset: xarray.Dataset, optional
+        An optional dataset to which the calculated indices will be added.
+        If None, a new dataset will be created.
+
+    Returns:
+    xarray.Dataset
+        Dataset with sweep start and end ray indices.
+    """
+    if dataset is None:
+        dataset = xr.Dataset()
+
+    sweep_start_ray_index = []
+    sweep_end_ray_index = []
+
+    cumulative_size = 0
+
+    try:
+        for group_name in dtree.groups:
+            if "sweep" in group_name:
+                ele_size = dtree[group_name].elevation.size
+                sweep_start_ray_index.append(cumulative_size)
+                sweep_end_ray_index.append(cumulative_size + ele_size - 1)
+                cumulative_size += ele_size
+
+    except KeyError as e:
+        print(
+            f"Error: The sweep group '{e.args[0]}' was not found in radar datatree. Skipping..."
+        )
+
+    dataset["sweep_start_ray_index"] = xr.DataArray(
+        sweep_start_ray_index,
+        dims=("sweep",),
+        attrs={"standard_name": "index_of_first_ray_in_sweep"},
+    )
+
+    dataset["sweep_end_ray_index"] = xr.DataArray(
+        sweep_end_ray_index,
+        dims=("sweep",),
+        attrs={"standard_name": "index_of_last_ray_in_sweep"},
+    )
+
+    return dataset
+
+
+def to_cfradial1(dtree=None, calibs=True):
+    """
+    Convert a radar datatree.DataTree to the CFRadial1 format
+    and save it to a file.
+
+    Parameters
+    ----------
+    dtree: datatree.DataTree
+        Radar datatree object.
+    filename: str, optional
+        The name of the output netCDF file.
+    calibs: Bool, optional
+        calibration parameters
+    """
+    dataset = _variable_mapper(dtree)
+
+    # Check if radar_parameters, radar_calibration, and
+    # georeferencing_correction exist in dtree
+    if calibs:
+        if "radar_calibration" in dtree:
+            calib_params = dtree["radar_calibration"].to_dataset()
+            calibs = _calib_mapper(calib_params)
+            dataset.update(calibs)
+
+    if "radar_parameters" in dtree:
+        radar_params = dtree["radar_parameters"].to_dataset()
+        dataset.update(radar_params)
+
+    if "georeferencing_correction" in dtree:
+        radar_georef = dtree["georeferencing_correction"].to_dataset()
+        dataset.update(radar_georef)
+
+    dataset.attrs = dtree.attrs
+
+    dataset.attrs["Conventions"] = "Cf/Radial"
+    dataset.attrs["version"] = "1.4"
+    dataset = Cfradial1(dataset)
+    return dataset
