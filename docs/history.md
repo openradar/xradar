@@ -2,6 +2,8 @@
 
 ## Development Version (unreleased)
 
+## 0.5.0 (2024-03-28)
+
 * MNT: Update GitHub actions, address DeprecationWarnings ({pull}`153`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: restructure odim.py/gamic.py, add test_odim.py/test_gamic.py ({pull}`154`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: use CODECOV token ({pull}`155`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
