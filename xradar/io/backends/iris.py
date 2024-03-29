@@ -67,7 +67,7 @@ from ...model import (
     required_root_vars,
     sweep_vars_mapping,
 )
-from .common import _attach_sweep_groups, _assign_root
+from .common import _assign_root, _attach_sweep_groups
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
