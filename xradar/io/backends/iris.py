@@ -67,7 +67,7 @@ from ...model import (
     required_root_vars,
     sweep_vars_mapping,
 )
-from .common import _attach_sweep_groups
+from .common import _attach_sweep_groups, _assign_root
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
@@ -3962,17 +3962,14 @@ def _get_required_root_dataset(ls_ds, optional=True):
     data_var = set(
         [x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs]
     )
-    # new_req_root_vars = [var for var in required_root_vars if var not in ['sweep_group_name', 'sweep_fixed_angle']]
     remove_root = set(data_var) ^ set(required_root_vars)
     if optional:
         remove_root ^= set(optional_root_vars)
     remove_root ^= {
-        "sweep_number",
         "fixed_angle",
         "sweep_group_name",
         "sweep_fixed_angle",
     }
-    # remove_root ^= {"sweep_number", "fixed_angle", "sweep_group_name", "sweep_fixed_angle"}
     remove_root &= data_var
     root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
     root_vars = set(
@@ -3990,7 +3987,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     )
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
 
-    root = xr.concat(ds_vars, dim="sweep")
+    root = xr.concat(ds_vars, dim="sweep").reset_coords()
     # keep only defined mandatory and defined optional attributes per default
     attrs = root.attrs.keys()
     remove_attrs = set(attrs) ^ set(required_global_attrs)
@@ -3998,6 +3995,13 @@ def _get_required_root_dataset(ls_ds, optional=True):
         remove_attrs ^= set(optional_root_attrs)
     for k in remove_attrs:
         root.attrs.pop(k, None)
+    # creating a copy of the dataset list for using the _assing_root function.
+    # and get the variabes/attributes for the root dataset
+    ls = ls_ds.copy()
+    ls.insert(0, xr.Dataset())
+    dtree = DataTree(data=_assign_root(ls), name="root")
+    root = root.assign(dtree.variables)
+    root.attrs = dtree.attrs
     return root
 
 
