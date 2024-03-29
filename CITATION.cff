@@ -23,6 +23,10 @@ authors:
   family-names: Syed
   affiliation: Purdue University
   orcid: https://orcid.org/0000-0002-7188-2544
+- given-names: Alfonso
+  family-names: Ladino
+  affiliation: University of Illinois at Urbana Champaign
+  orcid: https://orcid.org/0000-0001-8081-7827
 version: 0.4.0
 date-released: 2023-09-27
 repository-code: https://github.com/openradar/xradar
