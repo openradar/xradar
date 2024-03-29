@@ -618,7 +618,7 @@ def test_open_iris_datatree(iris0_file):
     ranges = [664] * 10
     i = 0
     for grp in dtree.groups:
-        if grp.startswith('/sweep_'):
+        if grp.startswith("/sweep_"):
             ds = dtree[grp].ds
             assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
             assert set(ds.data_vars) & (
