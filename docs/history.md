@@ -2,6 +2,7 @@
 
 ## Development Version (unreleased)
 
+* ADD: Add Alfonso to citation doc ({pull}`169`) by [@mgrover1](https://github.com/mgrover1)
 * ENH: Adding global variables and attributes to iris datatree ({pull}`166`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.5.0 (2024-03-28)
