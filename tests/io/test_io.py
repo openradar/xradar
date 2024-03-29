@@ -616,26 +616,29 @@ def test_open_iris_datatree(iris0_file):
     ]
     azimuths = [360] * 10
     ranges = [664] * 10
-    for i, grp in enumerate(dtree.groups[1:]):
-        ds = dtree[grp].ds
-        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
-        assert set(ds.data_vars) & (
-            sweep_dataset_vars | non_standard_sweep_dataset_vars
-        ) == set(moments)
-        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
-            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
-        )
-        assert set(ds.coords) == {
-            "azimuth",
-            "elevation",
-            "time",
-            "latitude",
-            "longitude",
-            "altitude",
-            "range",
-        }
-        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-        assert ds.sweep_number == i
+    i = 0
+    for grp in dtree.groups:
+        if grp.startswith("/sweep_"):
+            ds = dtree[grp].ds
+            assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+            assert set(ds.data_vars) & (
+                sweep_dataset_vars | non_standard_sweep_dataset_vars
+            ) == set(moments)
+            assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+                required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+            )
+            assert set(ds.coords) == {
+                "azimuth",
+                "elevation",
+                "time",
+                "latitude",
+                "longitude",
+                "altitude",
+                "range",
+            }
+            assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+            assert ds.sweep_number == i
+            i += 1
 
 
 def test_open_iris0_dataset(iris0_file):

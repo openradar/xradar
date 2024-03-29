@@ -2,6 +2,8 @@
 
 ## Development Version (unreleased)
 
+* ENH: Adding global variables and attributes to iris datatree ({pull}`166`) by [@aladinor](https://github.com/aladinor)
+
 ## 0.5.0 (2024-03-28)
 
 * MNT: Update GitHub actions, address DeprecationWarnings ({pull}`153`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
