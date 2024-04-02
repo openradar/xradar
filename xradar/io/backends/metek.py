@@ -16,9 +16,16 @@ from xarray.core import indexing
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core.utils import FrozenDict
-
-from ...model import get_azimuth_attrs, get_elevation_attrs, get_time_attrs
-from .common import _assign_root
+from datatree import DataTree
+from ...model import (
+    get_azimuth_attrs,
+    get_elevation_attrs,
+    get_time_attrs,
+    get_latitude_attrs,
+    get_longitude_attrs,
+    get_altitude_attrs,
+)
+from .common import _assign_root, _attach_sweep_groups
 
 variable_attr_dict = {}
 variable_attr_dict["transfer_function"] = {
@@ -31,6 +38,13 @@ variable_attr_dict["spectral_reflectivity"] = {
     "long_name": "Spectral reflectivity",
     "standard_name": "equivalent_reflectivity_factor",
     "units": "dB",
+    "dims": ("index", "sample"),
+}
+
+variable_attr_dict["raw_spectra_counts"] = {
+    "long_name": "Raw spectra counts",
+    "standard_name": "raw_spectra",
+    "units": "",
     "dims": ("index", "sample"),
 }
 
@@ -69,14 +83,14 @@ variable_attr_dict["path_integrated_attenuation"] = {
     "dims": ("time", "range"),
 }
 
-variable_attr_dict["corrected_radar_reflectivity"] = {
+variable_attr_dict["corrected_reflectivity"] = {
     "long_name": "Attenuation-corrected Radar reflectivity factor",
     "standard_name": "equivalent_radar_reflectivity_factor",
     "units": "dBZ",
     "dims": ("time", "range"),
 }
 
-variable_attr_dict["radar_reflectivity"] = {
+variable_attr_dict["reflectivity"] = {
     "long_name": "Radar reflectivity factor",
     "standard_name": "equivalent_radar_reflectivity_factor",
     "units": "dBZ",
@@ -130,10 +144,19 @@ variable_attr_dict["azimuth"] = get_azimuth_attrs()
 variable_attr_dict["azimuth"]["dims"] = ("time",)
 variable_attr_dict["elevation"] = get_elevation_attrs()
 variable_attr_dict["elevation"]["dims"] = ("time",)
-variable_attr_dict["velocity"] = {'long_name': 'Radial velocity of scatterers toward instrument',
-                                  'standard_name': 'radial_velocity_of_scatterers_toward_instrument',
-                                  "units": 'm s-1'}
+variable_attr_dict["velocity"] = {
+    "long_name": "Radial velocity of scatterers toward instrument",
+    "standard_name": "radial_velocity_of_scatterers_toward_instrument",
+    "units": "m s-1",
+}
 variable_attr_dict["velocity"]["dims"] = ("time", "range")
+variable_attr_dict["latitude"] = get_latitude_attrs()
+variable_attr_dict["latitude"]["dims"] = ()
+variable_attr_dict["longitude"] = get_longitude_attrs()
+variable_attr_dict["longitude"]["dims"] = ()
+variable_attr_dict["altitude"] = get_altitude_attrs()
+variable_attr_dict["altitude"]["dims"] = ()
+
 
 class MRR2File(object):
     def __init__(self, file_name="", **kwargs):
@@ -146,6 +169,7 @@ class MRR2File(object):
         self._data["range"] = []
         self._data["transfer_function"] = []
         self._data["spectral_reflectivity"] = []
+        self._data["raw_spectra_counts"] = []
         self._data["drop_size"] = []
         self._data["drop_number_density"] = []
         self._data["time"] = []
@@ -162,11 +186,14 @@ class MRR2File(object):
         self.altitude = None
         self.sampling_rate = 125000.0
         self._data["path_integrated_attenuation"] = []
-        self._data["corrected_radar_reflectivity"] = []
-        self._data["radar_reflectivity"] = []
+        self._data["corrected_reflectivity"] = []
+        self._data["reflectivity"] = []
         self._data["rainfall_rate"] = []
         self._data["liquid_water_content"] = []
         self._data["velocity"] = []
+        self._data["altitude"] = np.array(np.nan)
+        self._data["longitude"] = np.array(np.nan)
+        self._data["latitude"] = np.array(np.nan)
         self.filename = None
         self.n_gates = 32
         if not file_name == "":
@@ -182,15 +209,14 @@ class MRR2File(object):
             self.filename = filename_or_obj
             self._fp = open(filename_or_obj, "r")
 
-        
         num_times = 0
         for file_line in self._fp:
             if file_line[:3] == "MRR":
                 if num_times > 0:
-                    self._data["spectral_reflectivity"].append(temp_spectra)
+                    self._data[spec_var].append(temp_spectra)
                     self._data["drop_number_density"].append(temp_number)
                     self._data["drop_size"].append(temp_drops)
-                
+
                 string_split = file_line.split()
                 time_str = string_split[1]
                 parsed_datetime = datetime.strptime(time_str, "%y%m%d%H%M%S")
@@ -205,14 +231,16 @@ class MRR2File(object):
                     self._data["number_valid_spectra"].append(int(string_split[13]))
                     self._data["total_number_spectra"].append(int(string_split[14]))
                     self.n_gates = 32
+                    spec_var = "raw_spectra_counts"
                 elif self.filetype == "AVE" or self.filetype == "PRO":
-                    self.altitude = int(string_split[8])
+                    self._data["altitude"] = np.array(float(string_split[8]))
                     self.sampling_rate = float(string_split[10])
                     self.mrr_service_version = string_split[12]
                     self.device_version = string_split[14]
                     self.calibration_constant.append(int(string_split[16]))
                     self._data["percentage_valid_spectra"].append(int(string_split[18]))
                     self.n_gates = 31
+                    spec_var = "spectral_reflectivity"
                 else:
                     raise IOError(
                         "Invalid file type flag in file! Must be RAW, AVG, or PRO!"
@@ -231,33 +259,42 @@ class MRR2File(object):
                         warnings.warn(
                             "MRR2 resolution was changed mid file. Before time period %s the"
                             % parsed_datetime
-                            + "resolution was %d, and %d after." % (before_res, after_res),
+                            + "resolution was %d, and %d after."
+                            % (before_res, after_res),
                             UserWarning,
                         )
                 self._data["range"] = in_array
 
             if file_line[0:2] == "TF":
-                self._data["transfer_function"].append(_parse_spectra_line(file_line, self.n_gates))
+                self._data["transfer_function"].append(
+                    _parse_spectra_line(file_line, self.n_gates)
+                )
             if file_line[0] == "F":
                 spectra_bin_no = int(file_line[1:3])
-                temp_spectra[:, spectra_bin_no] = _parse_spectra_line(file_line, self.n_gates)
+                temp_spectra[:, spectra_bin_no] = _parse_spectra_line(
+                    file_line, self.n_gates
+                )
             if file_line[0] == "D":
                 spectra_bin_no = int(file_line[1:3])
-                temp_drops[:, spectra_bin_no] = _parse_spectra_line(file_line, self.n_gates)
+                temp_drops[:, spectra_bin_no] = _parse_spectra_line(
+                    file_line, self.n_gates
+                )
             if file_line[0] == "N":
                 spectra_bin_no = int(file_line[1:3])
-                temp_number[:, spectra_bin_no] = _parse_spectra_line(file_line, self.n_gates)
+                temp_number[:, spectra_bin_no] = _parse_spectra_line(
+                    file_line, self.n_gates
+                )
             if file_line[0:3] == "PIA":
                 self._data["path_integrated_attenuation"] = self._data[
                     "path_integrated_attenuation"
                 ] + [_parse_spectra_line(file_line, self.n_gates)]
             if file_line[0:3] == "z  ":
-                self._data["radar_reflectivity"] = self._data["radar_reflectivity"] + [
+                self._data["reflectivity"] = self._data["reflectivity"] + [
                     _parse_spectra_line(file_line, self.n_gates)
                 ]
             if file_line[0:3] == "Z  ":
-                self._data["corrected_radar_reflectivity"] = self._data[
-                    "corrected_radar_reflectivity"
+                self._data["corrected_reflectivity"] = self._data[
+                    "corrected_reflectivity"
                 ] + [_parse_spectra_line(file_line, self.n_gates)]
             if file_line[0:3] == "RR ":
                 self._data["rainfall_rate"] = self._data["rainfall_rate"] + [
@@ -271,21 +308,21 @@ class MRR2File(object):
                 self._data["velocity"] = self._data["velocity"] + [
                     _parse_spectra_line(file_line, self.n_gates)
                 ]
-
-        self._data["spectral_reflectivity"].append(temp_spectra)
+        
+        self._data[spec_var].append(temp_spectra)
         self._data["drop_number_density"].append(temp_number)
         self._data["drop_size"].append(temp_drops)
         self._data["transfer_function"] = np.stack(
             self._data["transfer_function"], axis=0
         )
-        self._data["spectral_reflectivity"] = np.stack(
-            self._data["spectral_reflectivity"], axis=0
+        self._data[spec_var] = np.stack(
+            self._data[spec_var], axis=0
         )
         self._data["drop_number_density"] = np.stack(
             self._data["drop_number_density"], axis=0
         )
         self._data["drop_size"] = np.stack(self._data["drop_size"], axis=0)
-        
+
         if self.filetype == "RAW":
             self._data["total_number_spectra"] = np.stack(
                 self._data["total_number_spectra"], axis=0
@@ -293,9 +330,9 @@ class MRR2File(object):
             self._data["number_valid_spectra"] = np.stack(
                 self._data["number_valid_spectra"], axis=0
             )
-            
-            del self._data["radar_reflectivity"]
-            del self._data["corrected_radar_reflectivity"]
+
+            del self._data["reflectivity"]
+            del self._data["corrected_reflectivity"]
             del self._data["liquid_water_content"]
             del self._data["rainfall_rate"]
             del self._data["percentage_valid_spectra"]
@@ -303,16 +340,17 @@ class MRR2File(object):
             del self._data["drop_size"]
             del self._data["path_integrated_attenuation"]
             del self._data["velocity"]
+            del self._data["spectral_reflectivity"]
         else:
             del self._data["total_number_spectra"], self._data["number_valid_spectra"]
-            self._data["radar_reflectivity"] = np.stack(
-                self._data["radar_reflectivity"], axis=0
+            self._data["reflectivity"] = np.stack(
+                self._data["reflectivity"], axis=0
             )
             self._data["path_integrated_attenuation"] = np.stack(
                 self._data["path_integrated_attenuation"], axis=0
             )
-            self._data["corrected_radar_reflectivity"] = np.stack(
-                self._data["corrected_radar_reflectivity"], axis=0
+            self._data["corrected_reflectivity"] = np.stack(
+                self._data["corrected_reflectivity"], axis=0
             )
 
             self._data["liquid_water_content"] = np.stack(
@@ -327,26 +365,29 @@ class MRR2File(object):
                 self._data["drop_number_density"], axis=0
             )
             self._data["drop_size"] = np.stack(self._data["drop_size"], axis=0)
-        
+            del self._data["raw_spectra_counts"]
+
         self._data["range"] = np.squeeze(self._data["range"])
         # Now we compress the spectrum variables to remove invalid spectra
-        self._data["spectral_reflectivity"] = self._data[
-            "spectral_reflectivity"
+        self._data[spec_var] = self._data[
+            spec_var
         ].reshape(
-            self._data["spectral_reflectivity"].shape[0]
-            * self._data["spectral_reflectivity"].shape[1],
-            self._data["spectral_reflectivity"].shape[2],
+            self._data[spec_var].shape[0]
+            * self._data[spec_var].shape[1],
+            self._data[spec_var].shape[2],
         )
         where_valid_spectra = np.any(
-            np.isfinite(self._data["spectral_reflectivity"]), axis=1
+            np.isfinite(self._data[spec_var]), axis=1
         )
         inds = np.where(where_valid_spectra, 1, -1)
 
-        self._data["spectral_reflectivity"] = self._data["spectral_reflectivity"][
+        self._data[spec_var] = self._data[spec_var][
             where_valid_spectra
         ]
         if self.filetype == "PRO" or self.filetype == "AVE":
-            self._data["drop_number_density"] = self._data["drop_number_density"].reshape(
+            self._data["drop_number_density"] = self._data[
+                "drop_number_density"
+            ].reshape(
                 self._data["drop_number_density"].shape[0]
                 * self._data["drop_number_density"].shape[1],
                 self._data["drop_number_density"].shape[2],
@@ -365,8 +406,9 @@ class MRR2File(object):
                 inds[i] = cur_index
                 cur_index += 1
         self._data["spectrum_index"] = inds.reshape(
-            (len(self._data["time"]), len(self._data["range"])))
-        
+            (len(self._data["time"]), len(self._data["range"]))
+        )
+
         self._data["azimuth"] = np.zeros_like(self._data["time"])
         self._data["elevation"] = 90 * np.ones_like(self._data["time"])
         self._data["time"] = np.array(self._data["time"])
@@ -560,6 +602,7 @@ class MRRBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+
 def open_metek_datatree(filename_or_obj, **kwargs):
     """Open Metek MRR2 dataset as :py:class:`datatree.DataTree`.
 
@@ -610,7 +653,7 @@ def open_metek_datatree(filename_or_obj, **kwargs):
         else:
             sweeps.extend(sweep)
     else:
-        sweeps = _get_rainbow_group_names(filename_or_obj)
+        sweeps = ["sweep_0"]
 
     ds = [
         xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kwargs)
