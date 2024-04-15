@@ -36,5 +36,6 @@ Xradar is considered stable for the implemented readers and writers which have b
 * Import Rainbow5
 * Import Iris/Sigmet
 * Import Furuno SCN/SCNX
+* Import Metek MRR2 raw and processed data
 * Georeferencing (AEQD)
 * Angle Reindexing

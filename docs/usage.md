@@ -38,4 +38,5 @@ notebooks/plot-ppi
 notebooks/angle_reindexing
 notebooks/Multi-Volume-Concatenation.ipynb
 notebooks/multiple-sweeps-into-volume-scan.ipynb
+notebooks/MRR.ipynb
 ```
