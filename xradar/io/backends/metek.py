@@ -16,24 +16,25 @@ Example::
 """
 
 import io
-import xarray as xr
-import numpy as np
 import warnings
-
 from datetime import datetime
+
+import numpy as np
+import xarray as xr
+from datatree import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
-from xarray.core import indexing
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
+from xarray.core import indexing
 from xarray.core.utils import FrozenDict
-from datatree import DataTree
+
 from ...model import (
+    get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
-    get_time_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
-    get_altitude_attrs,
+    get_time_attrs,
 )
 from .common import _assign_root, _attach_sweep_groups
 
@@ -175,7 +176,7 @@ variable_attr_dict["altitude"] = get_altitude_attrs()
 variable_attr_dict["altitude"]["dims"] = ()
 
 
-class MRR2File(object):
+class MRR2File:
     def __init__(self, file_name="", **kwargs):
         self.vel_bin_spacing = 0.1887
         self.nyquist_velocity = self.vel_bin_spacing * 64
@@ -224,9 +225,13 @@ class MRR2File(object):
 
         if isinstance(filename_or_obj, str):
             self.filename = filename_or_obj
-            self._fp = open(filename_or_obj, "r")
+            self._fp = open(filename_or_obj)
 
         num_times = 0
+        temp_spectra = np.zeros((self.n_gates, 64))
+        temp_drops = np.zeros((self.n_gates, 64))
+        temp_number = np.zeros((self.n_gates, 64))
+        spec_var = ""
         for file_line in self._fp:
             if file_line[:3] == "MRR":
                 if num_times > 0:
@@ -259,7 +264,7 @@ class MRR2File(object):
                     self.n_gates = 31
                     spec_var = "spectral_reflectivity"
                 else:
-                    raise IOError(
+                    raise OSError(
                         "Invalid file type flag in file! Must be RAW, AVG, or PRO!"
                     )
                 temp_spectra = np.zeros((self.n_gates, 64))
