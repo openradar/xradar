@@ -58,3 +58,31 @@ def iris0_file():
 @pytest.fixture(scope="session")
 def iris1_file():
     return DATASETS.fetch("SUR210819000227.RAWKPJV")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_file():
+    return DATASETS.fetch("KATX20130717_195021_V06")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_gzfile():
+    fnamei = DATASETS.fetch("KLBB20160601_150025_V06.gz")
+    fnameo = f"{fnamei[:-3]}_gz"
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_bzfile():
+    return DATASETS.fetch("KLBB20160601_150025_V06")
+
+
+@pytest.fixture
+def nexradlevel2_files(request):
+    return request.getfixturevalue(request.param)

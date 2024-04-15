@@ -60,6 +60,11 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
+    optional_root_attrs,
+    optional_root_vars,
+    radar_parameters_subgroup,
+    required_global_attrs,
+    required_root_vars,
     sweep_vars_mapping,
 )
 from .common import _assign_root, _attach_sweep_groups
@@ -271,8 +276,8 @@ SINT4 = {"fmt": "i", "dtype": "int32"}
 UINT1 = {"fmt": "B", "dtype": "unit8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "unint32"}
-FLT4 = {"fmt": "f"}
-FLT8 = {"fmt": "d"}
+FLT4 = {"fmt": "f", "dtype": "float32"}
+FLT8 = {"fmt": "d", "dtype": "float64"}
 BIN1 = {
     "name": "BIN1",
     "dtype": "uint8",
@@ -358,7 +363,7 @@ def _get_struct_dtype(dictionary):
     return np.dtype(dtypes)
 
 
-def _unpack_dictionary(buffer, dictionary, rawdata=False):
+def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
     """Unpacks binary data using the given dictionary structure.
 
     Parameters
@@ -373,7 +378,7 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
         Ordered Dictionary with unpacked data
     """
     # get format and substructures of dictionary
-    fmt, sub = _get_fmt_string(dictionary, retsub=True)
+    fmt, sub = _get_fmt_string(dictionary, retsub=True, byte_order=byte_order)
 
     # unpack into OrderedDict
     data = OrderedDict(zip(dictionary, struct.unpack(fmt, buffer)))
@@ -398,7 +403,9 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
                     pass
         # unpack sub dictionary
         try:
-            data[k] = _unpack_dictionary(data[k], v, rawdata=rawdata)
+            data[k] = _unpack_dictionary(
+                data[k], v, rawdata=rawdata, byte_order=byte_order
+            )
         except TypeError:
             pass
 
@@ -978,7 +985,6 @@ WIND_RESULTS = OrderedDict(
         ("spare_0", {"fmt": "10s"}),
     ]
 )
-
 
 # status_antenna_info Structure
 # 4.3.40, page 51
@@ -1694,7 +1700,6 @@ EXTENDED_HEADER_V2 = OrderedDict(
         # todo: implement customer remainder
     ]
 )
-
 
 # some length's of data structures
 LEN_STRUCTURE_HEADER = struct.calcsize(_get_fmt_string(STRUCTURE_HEADER))
@@ -2464,7 +2469,6 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
-
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -2526,7 +2530,6 @@ PRODUCT_DATA_TYPE_CODES = OrderedDict(
         (40, {"name": "MLHGT", "struct": MLHGT_PSI_STRUCT}),
     ]
 )
-
 
 RECORD_BYTES = 6144
 
@@ -3949,8 +3952,73 @@ def _get_iris_group_names(filename):
     sid, opener = _check_iris_file(filename)
     with opener(filename, loaddata=False) as ds:
         # make this CfRadial2 conform
-        keys = [f"sweep_{i-1}" for i in list(ds.data.keys())]
+        keys = [f"sweep_{i - 1}" for i in list(ds.data.keys())]
     return keys
+
+
+def _get_required_root_dataset(ls_ds, optional=True):
+    """Extract Root Dataset."""
+    # keep only defined mandatory and defined optional variables per default
+    data_var = set(
+        [x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs]
+    )
+    remove_root = set(data_var) ^ set(required_root_vars)
+    if optional:
+        remove_root ^= set(optional_root_vars)
+    remove_root ^= {
+        "fixed_angle",
+        "sweep_group_name",
+        "sweep_fixed_angle",
+    }
+    remove_root &= data_var
+    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
+    root_vars = set(
+        [x for xs in [sweep.variables.keys() for sweep in root] for x in xs]
+    )
+    # rename variables
+    # todo: find a more easy method not iterating over all variables
+    for k in root_vars:
+        rename = optional_root_vars.get(k, None)
+        if rename:
+            root = [sweep.rename_vars({k: rename}) for sweep in root]
+
+    root_vars = set(
+        [x for xs in [sweep.variables.keys() for sweep in root] for x in xs]
+    )
+    ds_vars = [sweep[root_vars] for sweep in ls_ds]
+
+    root = xr.concat(ds_vars, dim="sweep").reset_coords()
+    # keep only defined mandatory and defined optional attributes per default
+    attrs = root.attrs.keys()
+    remove_attrs = set(attrs) ^ set(required_global_attrs)
+    if optional:
+        remove_attrs ^= set(optional_root_attrs)
+    for k in remove_attrs:
+        root.attrs.pop(k, None)
+    # creating a copy of the dataset list for using the _assing_root function.
+    # and get the variabes/attributes for the root dataset
+    ls = ls_ds.copy()
+    ls.insert(0, xr.Dataset())
+    dtree = DataTree(data=_assign_root(ls), name="root")
+    root = root.assign(dtree.variables)
+    root.attrs = dtree.attrs
+    return root
+
+
+def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+    """Get iris-sigmet root metadata group.
+    Variables are fetched from the provided Dataset according to the subdict dictionary.
+    """
+    meta_vars = subdict
+    data_vars = set([x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs])
+    extract_vars = set(data_vars) & set(meta_vars)
+    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
+    for k in subgroup.data_vars:
+        rename = meta_vars[k]
+        if rename:
+            subgroup = subgroup.rename_vars({k: rename})
+    subgroup.attrs = {}
+    return subgroup
 
 
 class IrisBackendEntrypoint(BackendEntrypoint):
@@ -4090,14 +4158,17 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_iris_group_names(filename_or_obj)
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
         for swp in sweeps
     ]
-
-    ds.insert(0, xr.Dataset())
-
+    # get the datatree root
+    root = _get_required_root_dataset(ls_ds)
     # create datatree root node with required data
-    dtree = DataTree(data=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree = DataTree(data=root, name="root")
+    # get radar_parameters group
+    subgroup = _get_subgroup(ls_ds, radar_parameters_subgroup)
+    # attach radar_parameter group
+    DataTree(subgroup, name="radar_parameters", parent=dtree)
+    # return Datatree attaching the sweep child nodes
+    return _attach_sweep_groups(dtree, ls_ds)

@@ -19,6 +19,7 @@ from xradar.io import (
     open_cfradial1_datatree,
     open_gamic_datatree,
     open_iris_datatree,
+    open_nexradlevel2_datatree,
     open_odim_datatree,
     open_rainbow_datatree,
 )
@@ -615,26 +616,29 @@ def test_open_iris_datatree(iris0_file):
     ]
     azimuths = [360] * 10
     ranges = [664] * 10
-    for i, grp in enumerate(dtree.groups[1:]):
-        ds = dtree[grp].ds
-        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
-        assert set(ds.data_vars) & (
-            sweep_dataset_vars | non_standard_sweep_dataset_vars
-        ) == set(moments)
-        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
-            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
-        )
-        assert set(ds.coords) == {
-            "azimuth",
-            "elevation",
-            "time",
-            "latitude",
-            "longitude",
-            "altitude",
-            "range",
-        }
-        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-        assert ds.sweep_number == i
+    i = 0
+    for grp in dtree.groups:
+        if grp.startswith("/sweep_"):
+            ds = dtree[grp].ds
+            assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+            assert set(ds.data_vars) & (
+                sweep_dataset_vars | non_standard_sweep_dataset_vars
+            ) == set(moments)
+            assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+                required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+            )
+            assert set(ds.coords) == {
+                "azimuth",
+                "elevation",
+                "time",
+                "latitude",
+                "longitude",
+                "altitude",
+                "range",
+            }
+            assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+            assert ds.sweep_number == i
+            i += 1
 
 
 def test_open_iris0_dataset(iris0_file):
@@ -811,3 +815,115 @@ def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
             assert "time" in dtree1[d1].dims
             assert "time" in dtree2[d2].dims
         xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
+
+
+@pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
+@pytest.mark.parametrize(
+    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+)
+def test_open_nexradlevel2_datatree_sweep(nexradlevel2_files, sweep):
+    dtree = open_nexradlevel2_datatree(nexradlevel2_files, sweep=sweep)
+    if isinstance(sweep, (str, int)):
+        lswp = len([sweep])
+    else:
+        lswp = len(sweep)
+    assert len(dtree.groups[1:]) == lswp
+
+
+@pytest.mark.parametrize(
+    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+)
+def test_open_nexradlevel2_datatree(nexradlevel2_files):
+    dtree = open_nexradlevel2_datatree(nexradlevel2_files)
+
+    # root_attrs
+    attrs = dtree.attrs
+    assert attrs["Conventions"] == "None"
+    assert attrs["instrument_name"] == "KLBB"
+
+    # root vars
+    rvars = dtree.data_vars
+    assert rvars["volume_number"] == 0
+    assert rvars["platform_type"] == "fixed"
+    assert rvars["instrument_type"] == "radar"
+    assert rvars["time_coverage_start"] == "2016-06-02T15:00:25Z"
+    assert rvars["time_coverage_end"] == "2016-06-02T15:06:06Z"
+    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(33.65414047))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-101.81416321))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(1029))
+
+    # iterate over subgroups and check some values
+    moments = [
+        ["DBZH", "PHIDP", "RHOHV", "ZDR"],
+        ["DBZH", "WRADH", "VRADH"],
+        ["DBZH", "PHIDP", "RHOHV", "ZDR"],
+        ["DBZH", "WRADH", "VRADH"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+        ["DBZH", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"],
+    ]
+    elevations = [
+        0.5,
+        0.5,
+        1.5,
+        1.5,
+        2.4,
+        3.4,
+        4.3,
+        6.0,
+        9.9,
+        14.6,
+        19.5,
+    ]
+    azimuths = [
+        720,
+        720,
+        720,
+        720,
+        360,
+        360,
+        360,
+        360,
+        360,
+        360,
+        360,
+    ]
+    ranges = [
+        1832,
+        1192,
+        1632,
+        1192,
+        1312,
+        1076,
+        908,
+        696,
+        448,
+        308,
+        232,
+    ]
+    assert len(dtree.groups[1:]) == 11
+    for i, grp in enumerate(dtree.groups[1:]):
+        print(i)
+        ds = dtree[grp].ds
+        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments[i])
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number.values == int(grp[7:])

@@ -118,6 +118,7 @@ def _assign_root(sweeps):
     # assign root attributes
     attrs = {}
     attrs["Conventions"] = sweeps[0].attrs.get("Conventions", "None")
+    attrs["instrument_name"] = sweeps[0].attrs.get("instrument_name", "None")
     attrs.update(
         {
             "version": "None",
@@ -127,7 +128,6 @@ def _assign_root(sweeps):
             "source": "None",
             "history": "None",
             "comment": "im/exported using xradar",
-            "instrument_name": "None",
         }
     )
     root = root.assign_attrs(attrs)

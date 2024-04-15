@@ -16,6 +16,7 @@ dependencies:
   - netCDF4
   - notebook
   - numpy
+  - open-radar-data>=0.1.0
   - pip
   - pyproj
   - pytest
@@ -32,5 +33,3 @@ dependencies:
   - arm_pyart
   - ffmpeg
   - zarr
-  - pip:
-    - git+https://github.com/openradar/open-radar-data.git
