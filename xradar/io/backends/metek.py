@@ -1,8 +1,18 @@
 """
+Metek MRR2 raw and processed data
+=================================
+Read data from METEK's MRR-2 raw (.raw) and processed (.pro, .avg) files.
 
-Read data from METEK's MRR-2, raw and processed files.
+Example::
 
+   import xradar as xd
+   ds = xr.open_dataset('0308.pro', engine='metek')
 
+.. autosummary::
+   :nosignatures:
+   :toctree: generated/
+
+   {}
 """
 
 import io
@@ -26,6 +36,13 @@ from ...model import (
     get_altitude_attrs,
 )
 from .common import _assign_root, _attach_sweep_groups
+
+__all__ = [
+    "MRRBackendEntrypoint",
+    "open_metek_datatree",
+]
+
+__doc__ = __doc__.format("\n   ".join(__all__))
 
 variable_attr_dict = {}
 variable_attr_dict["transfer_function"] = {
