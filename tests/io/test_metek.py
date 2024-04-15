@@ -2,13 +2,13 @@
 Tests for the MRR2 backend for xradar
 """
 
-import numpy as np
 import gzip
-import xarray as xr
 
-from xradar.io.backends import metek
+import numpy as np
+import xarray as xr
 from open_radar_data import DATASETS
 
+from xradar.io.backends import metek
 
 test_arr_ave = np.array(
     [
