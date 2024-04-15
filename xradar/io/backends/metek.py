@@ -325,16 +325,14 @@ class MRR2File(object):
                 self._data["velocity"] = self._data["velocity"] + [
                     _parse_spectra_line(file_line, self.n_gates)
                 ]
-        
+
         self._data[spec_var].append(temp_spectra)
         self._data["drop_number_density"].append(temp_number)
         self._data["drop_size"].append(temp_drops)
         self._data["transfer_function"] = np.stack(
             self._data["transfer_function"], axis=0
         )
-        self._data[spec_var] = np.stack(
-            self._data[spec_var], axis=0
-        )
+        self._data[spec_var] = np.stack(self._data[spec_var], axis=0)
         self._data["drop_number_density"] = np.stack(
             self._data["drop_number_density"], axis=0
         )
@@ -360,9 +358,7 @@ class MRR2File(object):
             del self._data["spectral_reflectivity"]
         else:
             del self._data["total_number_spectra"], self._data["number_valid_spectra"]
-            self._data["reflectivity"] = np.stack(
-                self._data["reflectivity"], axis=0
-            )
+            self._data["reflectivity"] = np.stack(self._data["reflectivity"], axis=0)
             self._data["path_integrated_attenuation"] = np.stack(
                 self._data["path_integrated_attenuation"], axis=0
             )
@@ -386,21 +382,14 @@ class MRR2File(object):
 
         self._data["range"] = np.squeeze(self._data["range"])
         # Now we compress the spectrum variables to remove invalid spectra
-        self._data[spec_var] = self._data[
-            spec_var
-        ].reshape(
-            self._data[spec_var].shape[0]
-            * self._data[spec_var].shape[1],
+        self._data[spec_var] = self._data[spec_var].reshape(
+            self._data[spec_var].shape[0] * self._data[spec_var].shape[1],
             self._data[spec_var].shape[2],
         )
-        where_valid_spectra = np.any(
-            np.isfinite(self._data[spec_var]), axis=1
-        )
+        where_valid_spectra = np.any(np.isfinite(self._data[spec_var]), axis=1)
         inds = np.where(where_valid_spectra, 1, -1)
 
-        self._data[spec_var] = self._data[spec_var][
-            where_valid_spectra
-        ]
+        self._data[spec_var] = self._data[spec_var][where_valid_spectra]
         if self.filetype == "PRO" or self.filetype == "AVE":
             self._data["drop_number_density"] = self._data[
                 "drop_number_density"
