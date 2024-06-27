@@ -1,23 +1,19 @@
-import numpy as np
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import math
-from collections import defaultdict
-import tarfile
-import xarray as xr
-from datatree import DataTree
+import gzip
 import io
-from functools import partial
 import os
-from xarray import open_dataset
+import tarfile
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+import numpy as np
+from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
-from xarray.backends import NetCDF4DataStore
-from xarray.backends.common import BackendEntrypoint, BackendArray, AbstractDataStore
 from xarray.backends.store import StoreBackendEntrypoint
-from xarray.core.utils import FrozenDict
 from xarray.core import indexing
+from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
+from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -27,15 +23,10 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    optional_root_attrs,
-    optional_root_vars,
-    radar_parameters_subgroup,
-    required_global_attrs,
-    required_root_vars,
     sweep_vars_mapping,
 )
 
-#: mapping from IRIS names to CfRadial2/ODIM
+#: mapping from DataMet names to CfRadial2/ODIM
 datamet_mapping = {
     "UZ": "DBTH",
     "CZ": "DBZH",
@@ -64,16 +55,23 @@ def convert_value(value):
 
     return value
 
-class DataMetFile(object):
+class DataMetFile:
     def __init__(self, filename):
         self.filename = filename
-        self.tarfile = tarfile.open(self.filename, 'r')
+        # Handle .tar.gz case
+        if self.filename.endswith('.gz'):
+            with gzip.open(self.filename, 'rb') as gzip_file:
+                tar_bytes = io.BytesIO(gzip_file.read())
+            self.tarfile = tarfile.open(fileobj=tar_bytes)
+        else:
+            self.tarfile = tarfile.open(self.filename, 'r')
         self.first_dimension = "azimuth" # No idea if other scan types are available
         self.scan_metadata = self.get_scan_metadata()
         self.moments = self.scan_metadata['measure']
-        self.data = dict() 
+        self.data = dict()
 
     def extract_parameters(self, parameter_path):
+        # Extract set of parameters from a file in the tarball
         member = self.tarfile.getmember(parameter_path)
         file = self.tarfile.extractfile(member)
         labels = np.loadtxt(file, delimiter='=', dtype=str, usecols=[0])
@@ -88,32 +86,39 @@ class DataMetFile(object):
         parameters = dict(parameters)
         # Convert lists with a single element to individual values
         parameters = {k: convert_value(v[0]) if len(v) == 1 else v for k, v in parameters.items()}
-
-
         return parameters
 
     def extract_data(self, data_path, dtype):
+        # Extract moment data from a file in the tarball
         member = self.tarfile.getmember(data_path + '/SCAN.dat')
         file = self.tarfile.extractfile(member)
         data = np.frombuffer(file.read(), dtype=dtype)
         return data
 
     def get_scan_metadata(self):
+        # Get all metadata at scan level (valid for all sweeps/moments)
         navigation = self.extract_parameters(os.path.join('.', 'navigation.txt'))
         archiviation = self.extract_parameters(os.path.join('.', 'archiviation.txt'))
         return {**navigation, **archiviation}
 
     def get_mom_metadata(self, mom, sweep):
+        # Get all metadata that is moment and/or sweep dependent
+        # Note that DataMet uses 1-indexed but we switch to 0-indexed
+        # as is done in other backends
         mom_path = os.path.join('.', mom)
-        sweep_path = os.path.join('.', mom, str(sweep))
+        sweep_path = os.path.join('.', mom, str(sweep + 1))
 
         generic = self.extract_parameters(os.path.join(sweep_path, 'generic.txt'))
-        calibration = self.extract_parameters(os.path.join(mom_path, 'calibration.txt'))
+        calibration_momlvl = self.extract_parameters(os.path.join(mom_path, 'calibration.txt'))
+        calibration_sweeplvl = self.extract_parameters(os.path.join(sweep_path, 'calibration.txt'))
         navigation_var = self.extract_parameters(os.path.join(sweep_path, 'navigation.txt'))
-        return {**navigation_var, **generic, **calibration}
+        return {**navigation_var, **generic, **calibration_sweeplvl, **calibration_momlvl}
 
     def get_moment(self, mom, sweep):
-        mom_path = os.path.join('.', mom, str(sweep))
+        # Get the data for a moment and apply byte to float conversion
+        # Note that DataMet uses 1-indexed but we switch to 0-indexed
+        # as is done in other backends
+        mom_path = os.path.join('.', mom, str(sweep + 1))
         mom_medata = self.get_mom_metadata(mom, sweep)
 
         offset = float(mom_medata.get('offset') or 1.0)
@@ -123,14 +128,12 @@ class DataMetFile(object):
         if maxval:
             maxval = float(maxval)
             top = 255
-            bottom = float(par['bottom'])
+            bottom = float(mom_medata['bottom'])
             slope = (maxval - offset) / (top - bottom)
 
-        unit = mom_medata.get('unit')
         bitplanes = 16 if mom == 'PHIDP' else int(mom_medata['bitplanes'] or 8)
         nazim = int(mom_medata.get('nlines'))
         nrange = int(mom_medata.get('ncols'))
-        fname = mom_medata.get('datafile')
 
         dtype = np.uint16 if bitplanes == 16 else np.uint8
         data = self.extract_data(mom_path, dtype)
@@ -141,7 +144,6 @@ class DataMetFile(object):
 
     def get_sweep(self, sweep):
         # Get data for all moments and sweeps
-        """Load all sweeps from file."""
         moment_names = self.moments
         if sweep not in self.data:
             self.data[sweep] = dict()
@@ -151,6 +153,7 @@ class DataMetFile(object):
                 self.data[sweep][moment] = self.get_moment(moment, sweep)
 
     def close(self):
+        # Clase tarfile
         if self.tarfile is not None:
             self.tarfile.close()
 
@@ -169,7 +172,7 @@ class DataMetArrayWrapper(BackendArray):
     def _getitem(self, key):
         # read the data and put it into dict
         key = tuple(list(k) if isinstance(k, np.ndarray) else k for k in key)
-        array = self.get_array(needs_lock=False)
+        array = self.get_array()
         return array[key]
 
     def __getitem__(self, key):
@@ -180,13 +183,13 @@ class DataMetArrayWrapper(BackendArray):
             self._getitem,
         )
 
-    def get_array(self, needs_lock=True):
-        ds = self.datastore._acquire(needs_lock)
+    def get_array(self):
+        ds = self.datastore._acquire()
         ds.get_sweep(self.group)
         return ds.data[self.group][self.variable_name]
 
 class DataMetStore(AbstractDataStore):
-    """Store for reading DATAMET sweeps."""
+    """Store for reading DataMet sweeps."""
 
     def __init__(self, manager, group=None):
         self._manager = manager
@@ -209,9 +212,9 @@ class DataMetStore(AbstractDataStore):
         with self._manager.acquire_context(False) as root:
             return root
 
-    def _acquire(self, needs_lock=True):
-        with self._manager.acquire_context(needs_lock) as root:
-            ds = self.root
+    def _acquire(self):
+        # Does it need a lock as other backends ?
+        ds = self.root
         return ds
 
     @property
@@ -237,10 +240,10 @@ class DataMetStore(AbstractDataStore):
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
-        return Variable((dim, "range"), data, attrs, encoding)
+        return {mname: Variable((dim, "range"), data, attrs, encoding)}
 
     def open_store_coordinates(self, mom):
-        scan_mdata = self.root.get_scan_metadata()
+        scan_mdata = self.root.scan_metadata
         mom_mdata = self.root.get_mom_metadata(mom, self._group)
         dim = self.root.first_dimension
 
@@ -254,7 +257,7 @@ class DataMetStore(AbstractDataStore):
         # Unravel azimuth
         azimuth[azimuth > 360] -= 360
         elevation = mom_mdata['Eloff'] + np.arange(mom_mdata['nlines']) * 0
-        
+
         sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
         sweep_number = self._group
         prt_mode = "not_set"
@@ -302,14 +305,15 @@ class DataMetStore(AbstractDataStore):
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
-                **{k: self.open_store_variable(k) for k in self.ds.moments},
+                **{k:v for list_item in [self.open_store_variable(k) for
+                    k in self.ds.moments] for (k,v) in list_item.items()},
                 **self.open_store_coordinates( self.ds.moments[0]),
             }.items()
         )
 
     def get_attrs(self):
         return FrozenDict()
-        
+
 class DataMetEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for DataMet data."""
 
