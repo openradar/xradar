@@ -75,7 +75,7 @@ class NotebookItem(pytest.Item):
         return super().repr_failure(excinfo)
 
     def reportinfo(self):
-        return self.path, 0, "TestCase: %s" % self.name
+        return self.path, 0, f"TestCase: {self.name}"
 
 
 class NotebookException(Exception):
