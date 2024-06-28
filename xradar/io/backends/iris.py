@@ -179,6 +179,9 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
         data = to_float(data)
     if mask is not None:
         data = np.ma.masked_equal(data, mask)
+    # numpy 2 changed casting rules
+    # so we need to cast to float beforehand
+    data = data.astype(np.float64)
     return (data + offset) / scale + offset2
 
 
@@ -3959,9 +3962,7 @@ def _get_iris_group_names(filename):
 def _get_required_root_dataset(ls_ds, optional=True):
     """Extract Root Dataset."""
     # keep only defined mandatory and defined optional variables per default
-    data_var = set(
-        [x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs]
-    )
+    data_var = {x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs}
     remove_root = set(data_var) ^ set(required_root_vars)
     if optional:
         remove_root ^= set(optional_root_vars)
@@ -3972,9 +3973,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     }
     remove_root &= data_var
     root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
-    root_vars = set(
-        [x for xs in [sweep.variables.keys() for sweep in root] for x in xs]
-    )
+    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     # rename variables
     # todo: find a more easy method not iterating over all variables
     for k in root_vars:
@@ -3982,9 +3981,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
         if rename:
             root = [sweep.rename_vars({k: rename}) for sweep in root]
 
-    root_vars = set(
-        [x for xs in [sweep.variables.keys() for sweep in root] for x in xs]
-    )
+    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
 
     root = xr.concat(ds_vars, dim="sweep").reset_coords()
@@ -4010,7 +4007,7 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
     Variables are fetched from the provided Dataset according to the subdict dictionary.
     """
     meta_vars = subdict
-    data_vars = set([x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs])
+    data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
     extract_vars = set(data_vars) & set(meta_vars)
     subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
     for k in subgroup.data_vars:
