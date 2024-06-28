@@ -1,3 +1,29 @@
+#!/usr/bin/env python
+# Copyright (c) 2024, openradar developers.
+# Distributed under the MIT License. See LICENSE for more info.
+
+"""
+
+Datamet
+=======
+
+This sub-module contains the Datamet xarray backend for reading Datamet-based radar
+data into Xarray structures.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated/
+
+   {}
+
+"""
+
+__all__ = [
+    "DataMetEntrypoint",
+]
+
+__doc__ = __doc__.format("\n   ".join(__all__))
+
 import gzip
 import io
 import os
