@@ -742,7 +742,7 @@ def test_odim_optional_how(odim_file2):
     ds = h5py.File(outfile)
 
     for i in range(1, 6):
-        ds_how = ds["dataset%s" % (i)]["how"].attrs
+        ds_how = ds[f"dataset{i}"]["how"].attrs
         assert "scan_index" in ds_how
         assert "scan_count" in ds_how
         assert "startazA" in ds_how
@@ -762,7 +762,7 @@ def test_odim_optional_how(odim_file2):
     ds = h5py.File(outfile)
 
     for i in range(1, 6):
-        ds_how = ds["dataset%s" % (i)]["how"].attrs
+        ds_how = ds[f"dataset{i}"]["how"].attrs
         assert "scan_index" not in ds_how
         assert "scan_count" not in ds_how
         assert "startazA" not in ds_how
