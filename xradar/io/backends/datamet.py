@@ -19,7 +19,7 @@ data into Xarray structures.
 """
 
 __all__ = [
-    "DataMetEntrypoint",
+    "DataMetBackendEntrypoint",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -368,7 +368,7 @@ class DataMetStore(AbstractDataStore):
         return FrozenDict()
 
 
-class DataMetEntrypoint(BackendEntrypoint):
+class DataMetBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for DataMet data."""
 
     description = "Open DataMet files in Xarray"
