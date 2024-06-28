@@ -3341,7 +3341,8 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
         cmp_val = self.read_from_record(1, "int16")[0]
         cmp_msb = np.sign(cmp_val) == -1
         if cmp_msb:
-            cmp_val = cmp_val + 32768
+            # prevent OverflowError in numpy 2
+            cmp_val = cmp_val + 32767 + 1
         if self._debug:
             print(
                 "--- Sub CMP Code:",
