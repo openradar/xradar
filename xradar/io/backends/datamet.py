@@ -18,9 +18,7 @@ data into Xarray structures.
 
 """
 
-__all__ = [
-    "DataMetBackendEntrypoint",
-]
+__all__ = ["DataMetBackendEntrypoint", "open_datamet_datatree"]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
@@ -32,6 +30,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 import numpy as np
+import xarray as xr
+from datatree import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -51,6 +51,7 @@ from ...model import (
     moment_attrs,
     sweep_vars_mapping,
 )
+from .common import _assign_root, _attach_sweep_groups
 
 #: mapping from DataMet names to CfRadial2/ODIM
 datamet_mapping = {
@@ -443,3 +444,76 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
             )
 
         return ds
+
+
+def open_datamet_datatree(filename_or_obj, **kwargs):
+    """Open DataMet dataset as :py:class:`datatree.DataTree`.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path, file-like or DataStore
+        Strings and Path objects are interpreted as a path to a local or remote
+        radar file
+
+    Keyword Arguments
+    -----------------
+    sweep : int, list of int, optional
+        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
+        extracted into a list.
+    first_dim : str
+        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
+        first dimension will be either ``azimuth`` or ``elevation`` depending on
+        type of sweep. Defaults to ``auto``.
+    reindex_angle : bool or dict
+        Defaults to False, no reindexing. Given dict should contain the kwargs to
+        reindex_angle. Only invoked if `decode_coord=True`.
+    fix_second_angle : bool
+        If True, fixes erroneous second angle data. Defaults to ``False``.
+    site_coords : bool
+        Attach radar site-coordinates to Dataset, defaults to ``True``.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
+
+    Returns
+    -------
+    dtree: datatree.DataTree
+        DataTree
+    """
+    # handle kwargs, extract first_dim
+    backend_kwargs = kwargs.pop("backend_kwargs", {})
+    # first_dim = backend_kwargs.pop("first_dim", None)
+    kwargs["backend_kwargs"] = backend_kwargs
+
+    sweep = kwargs.pop("sweep", None)
+    sweeps = []
+    kwargs["backend_kwargs"] = backend_kwargs
+
+    if isinstance(sweep, str):
+        sweeps = [sweep]
+    elif isinstance(sweep, int):
+        sweeps = [f"sweep_{sweep}"]
+    elif isinstance(sweep, list):
+        if isinstance(sweep[0], int):
+            sweeps = [f"sweep_{i}" for i in sweep]
+        else:
+            sweeps.extend(sweep)
+    else:
+        # Get number of sweeps from data
+        dmet = DataMetFile(filename_or_obj)
+        sweeps = [
+            f"sweep_{i}" for i in range(0, dmet.scan_metadata["elevation_number"])
+        ]
+
+    ds = [
+        xr.open_dataset(
+            filename_or_obj, group=swp, engine=DataMetBackendEntrypoint, **kwargs
+        )
+        for swp in sweeps
+    ]
+
+    ds.insert(0, xr.Dataset())
+
+    # create datatree root node with required data
+    dtree = DataTree(data=_assign_root(ds), name="root")
+    # return datatree with attached sweep child nodes
+    return _attach_sweep_groups(dtree, ds[1:])
