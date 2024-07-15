@@ -819,6 +819,17 @@ def test_open_datamet_dataset(datamet_file):
     ) == {"DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"}
     assert ds.sweep_number == 10
 
+def test_open_datamet_dataset_reindex(datamet_file):
+    # open first sweep group
+    reindex_angle = dict(start_angle=0, stop_angle=360, angle_res=2.0, direction=1)
+    ds = xr.open_dataset(
+        datamet_file,
+        group="sweep_10",
+        engine=xradar.io.backends.DataMetBackendEntrypoint,
+        decode_coords = True,
+        reindex_angle = reindex_angle
+    )
+    assert dict(ds.sizes) == {"azimuth": 180, "range": 1332}
 
 def test_open_datamet_datatree(datamet_file):
     dtree = open_datamet_datatree(datamet_file)
@@ -866,6 +877,12 @@ def test_open_datamet_datatree(datamet_file):
             assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
             assert ds.sweep_number == i
             i += 1
+    # Try to reed single sweep
+    dtree = open_datamet_datatree(datamet_file, sweep = 1)
+    assert len(dtree.groups) == 2
+    # Try to read list of sweeps
+    dtree = open_datamet_datatree(datamet_file, sweep = [1,2])
+    assert len(dtree.groups) == 3
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
