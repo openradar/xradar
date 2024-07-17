@@ -17,6 +17,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.iris
 .. automodule:: xradar.io.backends.nexrad_level2
 .. automodule:: xradar.io.backends.metek
+.. automodule:: xradar.io.backends.datamet
 
 """
 
@@ -28,5 +29,6 @@ from .odim import *  # noqa
 from .rainbow import *  # noqa
 from .nexrad_level2 import *  # noqa
 from .metek import * # noqa
+from .datamet import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

@@ -26,6 +26,11 @@ def odim_file2():
 
 
 @pytest.fixture(scope="session")
+def datamet_file():
+    return DATASETS.fetch("H-000-VOL-ILMONTE-201907100700.tar.gz")
+
+
+@pytest.fixture(scope="session")
 def furuno_scn_file():
     return DATASETS.fetch("0080_20210730_160000_01_02.scn.gz")
 

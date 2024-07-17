@@ -1,6 +1,7 @@
 # History
 
 ## Development Version (unreleased)
+* ADD: DataMet reader ({pull}`175`) by [@wolfidan](https://github.com/wolfidan).
 * FIX: Fix use of ruff, CI and numpy2 ({pull}`177`) by [@mgrover1](https://github.com/mgrover1) and [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ADD: Add Alfonso to citation doc ({pull}`169`) by [@mgrover1](https://github.com/mgrover1).
 * ENH: Adding global variables and attributes to iris datatree ({pull}`166`) by [@aladinor](https://github.com/aladinor).
