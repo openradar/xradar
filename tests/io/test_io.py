@@ -799,7 +799,7 @@ def test_open_datamet_dataset(datamet_file):
     ds = xr.open_dataset(
         datamet_file,
         group="sweep_0",
-        engine='datamet',
+        engine="datamet",
     )
     assert dict(ds.sizes) == {"azimuth": 360, "range": 493}
     assert set(ds.data_vars) & (
@@ -811,7 +811,7 @@ def test_open_datamet_dataset(datamet_file):
     ds = xr.open_dataset(
         datamet_file,
         group="sweep_10",
-        engine='datamet',
+        engine="datamet",
     )
     assert dict(ds.sizes) == {"azimuth": 360, "range": 1332}
     assert set(ds.data_vars) & (
@@ -826,7 +826,7 @@ def test_open_datamet_dataset_reindex(datamet_file):
     ds = xr.open_dataset(
         datamet_file,
         group="sweep_10",
-        engine='datamet',
+        engine="datamet",
         decode_coords=True,
         reindex_angle=reindex_angle,
     )
