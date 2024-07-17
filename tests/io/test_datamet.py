@@ -17,7 +17,7 @@ def data(datamet_file):
     return data
 
 
-def test_file_tyes(data):
+def test_file_types(data):
     assert isinstance(data, datamet.DataMetFile)
     assert isinstance(data.tarfile, tarfile.TarFile)
 
