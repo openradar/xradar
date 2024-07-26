@@ -25,7 +25,7 @@ from datatree import DataTree
 def _maybe_decode(attr):
     try:
         # Decode the xr.DataArray differently than a byte string
-        if type(attr) == xr.core.dataarray.DataArray:
+        if type(attr) is xr.core.dataarray.DataArray:
             decoded_attr = attr.astype(str).str.rstrip()
         else:
             decoded_attr = attr.decode()
@@ -118,6 +118,7 @@ def _assign_root(sweeps):
     # assign root attributes
     attrs = {}
     attrs["Conventions"] = sweeps[0].attrs.get("Conventions", "None")
+    attrs["instrument_name"] = sweeps[0].attrs.get("instrument_name", "None")
     attrs.update(
         {
             "version": "None",
@@ -127,7 +128,6 @@ def _assign_root(sweeps):
             "source": "None",
             "history": "None",
             "comment": "im/exported using xradar",
-            "instrument_name": "None",
         }
     )
     root = root.assign_attrs(attrs)

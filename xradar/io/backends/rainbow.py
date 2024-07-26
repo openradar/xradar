@@ -519,7 +519,7 @@ class RainbowFile(RainbowFileBase):
         if value is None:
             value = self.pargroup.get(name, default)
         if dtype is not None:
-            if dtype == bool:
+            if dtype is bool:
                 value = int(value)
             value = dtype(value)
         return value

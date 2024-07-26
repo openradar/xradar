@@ -9,7 +9,7 @@ import pytest
 import xarray as xr
 from open_radar_data import DATASETS
 
-from xradar import model, util
+from xradar import io, model, util
 
 
 @pytest.fixture(
@@ -254,3 +254,13 @@ def test_ipol_time2(missing, a1gate, rot):
             UserWarning, match="Rays might miss on beginning and/or end of sweep."
         ):
             dsx.pipe(util.ipol_time, direction=direction)
+
+
+def test_get_sweep_keys():
+    # Test finding sweep keys
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+    dt = io.open_cfradial1_datatree(filename)
+    # set a fake group
+    dt["sneep_1"] = dt["sweep_1"]
+    keys = util.get_sweep_keys(dt)
+    assert keys == ["sweep_0", "sweep_1", "sweep_2", "sweep_3", "sweep_4", "sweep_5"]
