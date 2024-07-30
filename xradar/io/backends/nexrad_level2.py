@@ -658,7 +658,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
                 if status in [0, 3, 5]:
                     # 0 - start of new elevation
                     # 3 - start of new volume
-                    # 5 - ???
+                    # 5 - start of new elevation, last elevation in VCP
                     current_sweep += 1
                     # create new sweep object
                     sweep = OrderedDict()
