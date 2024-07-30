@@ -6,6 +6,8 @@
 * ADD: Add Alfonso to citation doc ({pull}`169`) by [@mgrover1](https://github.com/mgrover1).
 * ENH: Adding global variables and attributes to iris datatree ({pull}`166`) by [@aladinor](https://github.com/aladinor).
 * FIX: Set fillvalue before applying scale/offset when exporting to odim ({issue}`122`) by [@pavlikp](https://github.com/pavlikp), ({pull}`173`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: Nexrad level2 time offset of 1 day, skip reading missing elevations, introduce new radial_status of 5
+ ({issue}`180`) by [@ghiggi](https://github.com/ghiggi), ({pull}`180`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.5.0 (2024-03-28)
 
