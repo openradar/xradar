@@ -644,18 +644,26 @@ class NEXRADLevel2File(NEXRADRecordFile):
                 msg_31_header["filepos"] = self.filepos
                 # retrieve data/const headers from msg 31
                 # check if this is a new sweep
-                if msg_31_header["radial_status"] in [0, 3]:
-                    # do not run for the first time
-                    if current_sweep > -1:
-                        sweep["record_end"] = self.rh.recnum - 1
-                        sweep["intermediate_records"] = sweep_intermediate_records
-                        self._data[current_sweep] = sweep
-                        # create new sweep object
-                        sweep = OrderedDict()
-                        _msg_31_header.append(sweep_msg_31_header)
-                        sweep_msg_31_header = []
-                        sweep_intermediate_records = []
+                status = msg_31_header["radial_status"]
+                if status == 1:
+                    # 1 - intermediate radial
+                    pass
+                if status in [2, 4]:
+                    # 2 - end of elevation
+                    # 4 - end of volume
+                    sweep["record_end"] = self.rh.recnum
+                    sweep["intermediate_records"] = sweep_intermediate_records
+                    self._data[current_sweep] = sweep
+                    _msg_31_header.append(sweep_msg_31_header)
+                if status in [0, 3, 5]:
+                    # 0 - start of new elevation
+                    # 3 - start of new volume
+                    # 5 - ???
                     current_sweep += 1
+                    # create new sweep object
+                    sweep = OrderedDict()
+                    sweep_msg_31_header = []
+                    sweep_intermediate_records = []
                     sweep["record_number"] = self.rh.recnum
                     sweep["filepos"] = self.filepos
                     sweep["msg_31_header"] = msg_31_header
@@ -699,11 +707,6 @@ class NEXRADLevel2File(NEXRADRecordFile):
             else:
                 sweep_intermediate_records.append(msg_header)
 
-        # finalize last sweep
-        sweep["record_end"] = self.rh.recnum
-        sweep["intermediate_records"] = sweep_intermediate_records
-        self._data[current_sweep] = sweep
-        _msg_31_header.append(sweep_msg_31_header)
         return data_header, _msg_31_header, _msg_31_data_header
 
     def _check_record(self):
@@ -1534,10 +1537,15 @@ def open_nexradlevel2_datatree(filename_or_obj, **kwargs):
 
     engine = NexradLevel2BackendEntrypoint
 
-    ds = [
-        xr.open_dataset(filename_or_obj, group=swp, engine=engine, **kwargs)
-        for swp in sweeps
-    ]
+    # todo: only open once! Needs new xarray built in datatree!
+    ds = []
+    for swp in sweeps:
+        try:
+            dsx = xr.open_dataset(filename_or_obj, group=swp, engine=engine, **kwargs)
+        except IndexError:
+            break
+        else:
+            ds.append(dsx)
 
     ds.insert(0, xr.Dataset())
 
