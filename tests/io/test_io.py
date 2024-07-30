@@ -940,8 +940,8 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     assert rvars["volume_number"] == 0
     assert rvars["platform_type"] == "fixed"
     assert rvars["instrument_type"] == "radar"
-    assert rvars["time_coverage_start"] == "2016-06-02T15:00:25Z"
-    assert rvars["time_coverage_end"] == "2016-06-02T15:06:06Z"
+    assert rvars["time_coverage_start"] == "2016-06-01T15:00:25Z"
+    assert rvars["time_coverage_end"] == "2016-06-01T15:06:06Z"
     np.testing.assert_almost_equal(rvars["latitude"].values, np.array(33.65414047))
     np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-101.81416321))
     np.testing.assert_almost_equal(rvars["altitude"].values, np.array(1029))

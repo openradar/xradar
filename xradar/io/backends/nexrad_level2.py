@@ -1333,7 +1333,8 @@ class NexradLevel2Store(AbstractDataStore):
         elevation = np.array([ms["elevation_angle"] for ms in msg_31_header])
 
         # time
-        date = np.array([ms["collect_date"] for ms in msg_31_header]) * 86400e3
+        # date is 1-based (1 -> 1970-01-01T00:00:00), so we need to subtract 1
+        date = (np.array([ms["collect_date"] for ms in msg_31_header]) - 1) * 86400e3
         milliseconds = np.array([ms["collect_ms"] for ms in msg_31_header])
         rtime = date + milliseconds
         time_prefix = "milli"
