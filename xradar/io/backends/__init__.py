@@ -26,6 +26,7 @@ from .gamic import *  # noqa
 from .iris import *  # noqa
 from .odim import *  # noqa
 from .rainbow import *  # noqa
+from .hpl import *  # noqa
 from .nexrad_level2 import *  # noqa
 from .datamet import *  # noqa
 
