@@ -1,6 +1,6 @@
 # History
 
-## 0.6.0 (2024-08-02)
+## 0.6.0 (2024-08-05)
 
 * ADD: DataMet reader ({pull}`175`) by [@wolfidan](https://github.com/wolfidan).
 * FIX: Nexrad level2 time offset of 1 day, skip reading missing elevations, introduce new radial_status of 5
