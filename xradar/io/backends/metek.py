@@ -45,135 +45,136 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-variable_attr_dict = {}
-variable_attr_dict["transfer_function"] = {
-    "long_name": "Transfer function",
-    "standard_name": "transfer_function",
-    "units": "1",
-    "dims": ("time", "range"),
-}
-variable_attr_dict["spectral_reflectivity"] = {
-    "long_name": "Spectral reflectivity",
-    "standard_name": "equivalent_reflectivity_factor",
-    "units": "dB",
-    "dims": ("index", "sample"),
-}
+variable_attr_dict = dict(
+    transfer_function={
+        "long_name": "Transfer function",
+        "standard_name": "transfer_function",
+        "units": "1",
+        "dims": ("time", "range"),
+    },
+    spectral_reflectivity={
+        "long_name": "Spectral reflectivity",
+        "standard_name": "equivalent_reflectivity_factor",
+        "units": "dB",
+        "dims": ("index", "sample"),
+    },
+    raw_spectra_counts={
+        "long_name": "Raw spectra counts",
+        "standard_name": "raw_spectra",
+        "units": "",
+        "dims": ("index", "sample"),
+    },
+    drop_size={
+        "long_name": "Drop size",
+        "standard_name": "drop_size",
+        "units": "mm",
+        "dims": ("index", "sample"),
+    },
+    drop_number_density={
+        "long_name": "Raindrop number density",
+        "standard_name": "raindrop_number_density",
+        "units": "m-4",
+        "dims": ("index", "sample"),
+    },
+    rainfall_rate={
+        "long_name": "Rainfall rate",
+        "standard_name": "rainfall_rate",
+        "units": "mm hr-1",
+        "dims": ("time", "range"),
+    },
+    liquid_water_content={
+        "long_name": "Liquid water content",
+        "standard_name": "liquid_water_content",
+        "units": "g m-3",
+        "dims": ("time", "range"),
+    },
+    path_integrated_attenuation={
+        "long_name": "Path integrated attenuation",
+        "standard_name": "path_integrated_attenuation",
+        "units": "dB",
+        "dims": ("time", "range"),
+    },
+    corrected_reflectivity={
+        "long_name": "Attenuation-corrected Radar reflectivity factor",
+        "standard_name": "equivalent_radar_reflectivity_factor",
+        "units": "dBZ",
+        "dims": ("time", "range"),
+    },
+    reflectivity={
+        "long_name": "Radar reflectivity factor",
+        "standard_name": "equivalent_radar_reflectivity_factor",
+        "units": "dBZ",
+        "dims": ("time", "range"),
+    },
+    spectrum_index={
+        "long_name": "Spectrum index",
+        "standard_name": "spectrum_index",
+        "units": "1",
+        "dims": ("time", "range"),
+    },
+    percentage_valid_spectra={
+        "long_name": "Percentage of spectra that are valid",
+        "standard_name": "percentage_valid_spectra",
+        "units": "percent",
+        "dims": ("time"),
+    },
+    number_valid_spectra={
+        "long_name": "number of spectra that are valid",
+        "standard_name": "number_valid_spectra",
+        "units": "1",
+        "dims": ("time"),
+    },
+    total_number_spectra={
+        "long_name": "Total number of spectra",
+        "standard_name": "total_number_spectra",
+        "units": "1",
+        "dims": ("time"),
+    },
+    velocity_bins={
+        "long_name": "Doppler velocity bins",
+        "standard_name": "doppler_velocity_bins",
+        "units": "m s-1",
+        "dims": ("sample"),
+    },
+    range={
+        "long_name": "Range from radar",
+        "standard_name": "range",
+        "units": "m",
+        "dims": ("range",),
+    },
+    time=get_time_attrs(),
+    azimuth=get_azimuth_attrs(),
+    elevation=get_elevation_attrs(),
+    velocity={
+        "long_name": "Radial velocity of scatterers toward instrument",
+        "standard_name": "radial_velocity_of_scatterers_toward_instrument",
+        "units": "m s-1",
+    },
+    latitude=get_latitude_attrs(),
+    longitude=get_longitude_attrs(),
+    altitude=get_altitude_attrs(),
+)
 
-variable_attr_dict["raw_spectra_counts"] = {
-    "long_name": "Raw spectra counts",
-    "standard_name": "raw_spectra",
-    "units": "",
-    "dims": ("index", "sample"),
-}
-
-variable_attr_dict["drop_size"] = {
-    "long_name": "Drop size",
-    "standard_name": "drop_size",
-    "units": "mm",
-    "dims": ("index", "sample"),
-}
-
-variable_attr_dict["drop_number_density"] = {
-    "long_name": "Raindrop number density",
-    "standard_name": "raindrop_number_density",
-    "units": "m-4",
-    "dims": ("index", "sample"),
-}
-
-variable_attr_dict["rainfall_rate"] = {
-    "long_name": "Rainfall rate",
-    "standard_name": "rainfall_rate",
-    "units": "mm hr-1",
-    "dims": ("time", "range"),
-}
-
-variable_attr_dict["liquid_water_content"] = {
-    "long_name": "Liquid water content",
-    "standard_name": "liquid_water_content",
-    "units": "g m-3",
-    "dims": ("time", "range"),
-}
-
-variable_attr_dict["path_integrated_attenuation"] = {
-    "long_name": "Path integrated attenuation",
-    "standard_name": "path_integrated_attenuation",
-    "units": "dB",
-    "dims": ("time", "range"),
-}
-
-variable_attr_dict["corrected_reflectivity"] = {
-    "long_name": "Attenuation-corrected Radar reflectivity factor",
-    "standard_name": "equivalent_radar_reflectivity_factor",
-    "units": "dBZ",
-    "dims": ("time", "range"),
-}
-
-variable_attr_dict["reflectivity"] = {
-    "long_name": "Radar reflectivity factor",
-    "standard_name": "equivalent_radar_reflectivity_factor",
-    "units": "dBZ",
-    "dims": ("time", "range"),
-}
-
-variable_attr_dict["spectrum_index"] = {
-    "long_name": "Spectrum index",
-    "standard_name": "spectrum_index",
-    "units": "1",
-    "dims": ("time", "range"),
-}
-variable_attr_dict["percentage_valid_spectra"] = {
-    "long_name": "Percentage of spectra that are valid",
-    "standard_name": "percentage_valid_spectra",
-    "units": "percent",
-    "dims": ("time"),
-}
-
-variable_attr_dict["number_valid_spectra"] = {
-    "long_name": "number of spectra that are valid",
-    "standard_name": "number_valid_spectra",
-    "units": "1",
-    "dims": ("time"),
-}
-
-variable_attr_dict["total_number_spectra"] = {
-    "long_name": "Total number of spectra",
-    "standard_name": "total_number_spectra",
-    "units": "1",
-    "dims": ("time"),
-}
-
-variable_attr_dict["velocity_bins"] = {
-    "long_name": "Doppler velocity bins",
-    "standard_name": "doppler_velocity_bins",
-    "units": "m s-1",
-    "dims": ("sample"),
-}
-
-variable_attr_dict["range"] = {
-    "long_name": "Range from radar",
-    "standard_name": "range",
-    "units": "m",
-    "dims": ("range",),
-}
-
-variable_attr_dict["time"] = get_time_attrs()
 variable_attr_dict["time"]["dims"] = ("time",)
-variable_attr_dict["azimuth"] = get_azimuth_attrs()
 variable_attr_dict["azimuth"]["dims"] = ("time",)
-variable_attr_dict["elevation"] = get_elevation_attrs()
 variable_attr_dict["elevation"]["dims"] = ("time",)
-variable_attr_dict["velocity"] = {
-    "long_name": "Radial velocity of scatterers toward instrument",
-    "standard_name": "radial_velocity_of_scatterers_toward_instrument",
-    "units": "m s-1",
-}
 variable_attr_dict["velocity"]["dims"] = ("time", "range")
-variable_attr_dict["latitude"] = get_latitude_attrs()
 variable_attr_dict["latitude"]["dims"] = ()
-variable_attr_dict["longitude"] = get_longitude_attrs()
 variable_attr_dict["longitude"]["dims"] = ()
-variable_attr_dict["altitude"] = get_altitude_attrs()
 variable_attr_dict["altitude"]["dims"] = ()
+
+
+def _parse_spectra_line(input_str, num_gates):
+    out_array = np.zeros(num_gates)
+    increment = {32: 9, 31: 7}[num_gates]
+    for i, pos in enumerate(range(3, len(input_str) - increment, increment)):
+        input_num_str = input_str[pos : pos + increment]
+        try:
+            out_array[i] = float(input_num_str)
+        except ValueError:
+            out_array[i] = np.nan
+
+    return out_array
 
 
 class MRR2File:
@@ -279,10 +280,9 @@ class MRR2File:
                     before_res = self._data["range"][1] - self._data["range"][0]
                     if not after_res == before_res:
                         warnings.warn(
-                            "MRR2 resolution was changed mid file. Before time period %s the"
-                            % parsed_datetime
-                            + "resolution was %d, and %d after."
-                            % (before_res, after_res),
+                            f"MRR2 resolution was changed mid file. Before time period "
+                            f"{parsed_datetime} the resolution was {before_res}, "
+                            f"and {after_res} after.",
                             UserWarning,
                         )
                 self._data["range"] = in_array
@@ -445,22 +445,6 @@ class MRR2File:
 
     def __exit__(self, type, value, traceback):
         self.close()
-
-
-def _parse_spectra_line(input_str, num_gates):
-    out_array = np.zeros(num_gates)
-    if num_gates == 32:
-        increment = 9
-    elif num_gates == 31:
-        increment = 7
-    for i, pos in enumerate(range(3, len(input_str) - increment, increment)):
-        input_num_str = input_str[pos : pos + increment]
-        try:
-            out_array[i] = float(input_num_str)
-        except ValueError:
-            out_array[i] = np.nan
-
-    return out_array
 
 
 class MRR2ArrayWrapper(BackendArray):
