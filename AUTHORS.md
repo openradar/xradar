@@ -11,3 +11,5 @@
 * Edouard Goudenhoofdt <edouard.goudenhoofdt@meteo.be>
 * Hamid Ali Syed <hamidsyed37@gmail.com>
 * Alfonso Ladino <alfonso8@illinois.edu>
+* Bobby Jackson
+* Daniel Wolfensberger
