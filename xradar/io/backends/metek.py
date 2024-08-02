@@ -428,6 +428,8 @@ class MRR2File:
         if self._fp is not None:
             self._fp.close()
 
+    __del__ = close
+
     @property
     def data(self):
         return self._data
