@@ -6,6 +6,7 @@
 * FIX: Nexrad level2 time offset of 1 day, skip reading missing elevations, introduce new radial_status of 5
  ({issue}`180`) by [@ghiggi](https://github.com/ghiggi), ({pull}`180`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ADD: Reader for Halo Photonics Doppler lidar data by [@rcjackson](https://github.com/rcjackson)
+* ADD: Metek MRR2 backend by [@rcjackson](https://github.com/rcjackson)
 
 ## 0.5.1 (2024-07-05)
 
@@ -23,6 +24,7 @@
 * ADD: NEXRAD Level2 structured reader ({pull}`158`) by [@kmuehlbauer](https://github.com/kmuehlbauer) and [@mgrover1](https://github.com/mgrover1).
 * FIX: Add the proper elevation angle to fixed angle ({pull}`162`) by [@mgrover1](https://github.com/mgrover1).
 * ENH: Add a utility for finding sweep number keys ({pull}`167`) by [@mgrover1](https://github.com/mgrover1).
+
 
 ## 0.4.3 (2024-02-24)
 
