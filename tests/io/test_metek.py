@@ -2,11 +2,8 @@
 Tests for the MRR2 backend for xradar
 """
 
-import gzip
-
 import numpy as np
 import xarray as xr
-from open_radar_data import DATASETS
 
 from xradar.io.backends import metek
 
@@ -152,65 +149,49 @@ test_raw = np.array(
 )
 
 
-def test_open_average():
-    mrr_test_file = DATASETS.fetch("0308.ave.gz")
-    with gzip.open(mrr_test_file, "rt") as test_file:
-        ds = xr.open_dataset(test_file, engine="metek")
-        assert "corrected_reflectivity" in ds.variables.keys()
-        assert "velocity" in ds.variables.keys()
-        rainfall = ds["rainfall_rate"].isel(range=0).cumsum() / 60.0
-        np.testing.assert_allclose(rainfall.values[-1], 0.938)
-        np.testing.assert_allclose(ds["reflectivity"].values[0], test_arr_ave)
+def test_open_average(metek_ave_gz_file):
+    ds = xr.open_dataset(metek_ave_gz_file, engine="metek")
+    assert "corrected_reflectivity" in ds.variables.keys()
+    assert "velocity" in ds.variables.keys()
+    rainfall = ds["rainfall_rate"].isel(range=0).cumsum() / 60.0
+    np.testing.assert_allclose(rainfall.values[-1], 0.938)
+    np.testing.assert_allclose(ds["reflectivity"].values[0], test_arr_ave)
 
 
-def test_open_average_datatree():
-    mrr_test_file = DATASETS.fetch("0308.ave.gz")
-    with gzip.open(mrr_test_file, "rt") as test_file:
-        ds = metek.open_metek_datatree(test_file)
-        assert "corrected_reflectivity" in ds["sweep_0"].variables.keys()
-        assert "velocity" in ds["sweep_0"].variables.keys()
-        rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 60.0
-        np.testing.assert_allclose(rainfall.values[-1], 0.938)
-        np.testing.assert_allclose(
-            ds["sweep_0"]["reflectivity"].values[0], test_arr_ave
-        )
+def test_open_average_datatree(metek_ave_gz_file):
+    ds = metek.open_metek_datatree(metek_ave_gz_file)
+    assert "corrected_reflectivity" in ds["sweep_0"].variables.keys()
+    assert "velocity" in ds["sweep_0"].variables.keys()
+    rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 60.0
+    np.testing.assert_allclose(rainfall.values[-1], 0.938)
+    np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr_ave)
 
 
-def test_open_processed():
-    mrr_test_file = DATASETS.fetch("0308.pro.gz")
-    with gzip.open(mrr_test_file, "rt") as test_file:
-        ds = xr.open_dataset(test_file, engine="metek")
-        assert "corrected_reflectivity" in ds.variables.keys()
-        assert "velocity" in ds.variables.keys()
-        rainfall = ds["rainfall_rate"].isel(range=0).cumsum() / 360.0
-        np.testing.assert_allclose(rainfall.values[-1], 0.93)
-        np.testing.assert_allclose(ds["reflectivity"].values[0], test_arr)
+def test_open_processed(metek_pro_gz_file):
+    ds = xr.open_dataset(metek_pro_gz_file, engine="metek")
+    assert "corrected_reflectivity" in ds.variables.keys()
+    assert "velocity" in ds.variables.keys()
+    rainfall = ds["rainfall_rate"].isel(range=0).cumsum() / 360.0
+    np.testing.assert_allclose(rainfall.values[-1], 0.93)
+    np.testing.assert_allclose(ds["reflectivity"].values[0], test_arr)
 
 
-def test_open_processed_datatree():
-    mrr_test_file = DATASETS.fetch("0308.pro.gz")
-    with gzip.open(mrr_test_file, "rt") as test_file:
-        ds = metek.open_metek_datatree(test_file)
-        assert "corrected_reflectivity" in ds["sweep_0"].variables.keys()
-        assert "velocity" in ds["sweep_0"].variables.keys()
-        rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 360.0
-        np.testing.assert_allclose(rainfall.values[-1], 0.93)
-        np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr)
+def test_open_processed_datatree(metek_pro_gz_file):
+    ds = metek.open_metek_datatree(metek_pro_gz_file)
+    assert "corrected_reflectivity" in ds["sweep_0"].variables.keys()
+    assert "velocity" in ds["sweep_0"].variables.keys()
+    rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 360.0
+    np.testing.assert_allclose(rainfall.values[-1], 0.93)
+    np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr)
 
 
-def test_open_raw():
-    mrr_test_file = DATASETS.fetch("0308.raw.gz")
-    with gzip.open(mrr_test_file, "rt") as test_file:
-        ds = xr.open_dataset(test_file, engine="metek")
-        assert "raw_spectra_counts" in ds.variables.keys()
-        np.testing.assert_allclose(ds["raw_spectra_counts"].values[0], test_raw)
+def test_open_raw(metek_raw_gz_file):
+    ds = xr.open_dataset(metek_raw_gz_file, engine="metek")
+    assert "raw_spectra_counts" in ds.variables.keys()
+    np.testing.assert_allclose(ds["raw_spectra_counts"].values[0], test_raw)
 
 
-def test_open_raw_datatree():
-    mrr_test_file = DATASETS.fetch("0308.raw.gz")
-    with gzip.open(mrr_test_file, "rt") as test_file:
-        ds = metek.open_metek_datatree(test_file)
-        assert "raw_spectra_counts" in ds["sweep_0"].variables.keys()
-        np.testing.assert_allclose(
-            ds["sweep_0"]["raw_spectra_counts"].values[0], test_raw
-        )
+def test_open_raw_datatree(metek_raw_gz_file):
+    ds = metek.open_metek_datatree(metek_raw_gz_file)
+    assert "raw_spectra_counts" in ds["sweep_0"].variables.keys()
+    np.testing.assert_allclose(ds["sweep_0"]["raw_spectra_counts"].values[0], test_raw)
