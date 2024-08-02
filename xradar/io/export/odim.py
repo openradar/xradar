@@ -110,8 +110,8 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
         val = value.sortby(dim0).values
         fillval = _fillvalue * scale_factor
         fillval += add_offset
-        val = (val - add_offset) / scale_factor
         val[np.isnan(val)] = fillval
+        val = (val - add_offset) / scale_factor
         if np.issubdtype(dtype, np.integer):
             val = np.rint(val).astype(dtype)
         ds = h5_data.create_dataset(

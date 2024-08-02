@@ -34,14 +34,15 @@ changelog = "https://github.com/openradar/xradar/blob/main/docs/history.md"
 
 [project.entry-points."xarray.backends"]
 cfradial1 = "xradar.io.backends:CfRadial1BackendEntrypoint"
+datamet = "xradar.io.backends:DataMetBackendEntrypoint"
 furuno = "xradar.io.backends:FurunoBackendEntrypoint"
 gamic = "xradar.io.backends:GamicBackendEntrypoint"
+hpl = "xradar.io.backends:HPLBackendEntrypoint"
 iris = "xradar.io.backends:IrisBackendEntrypoint"
-odim = "xradar.io.backends:OdimBackendEntrypoint"
-rainbow = "xradar.io.backends:RainbowBackendEntrypoint"
 metek = "xradar.io.backends:MRRBackendEntrypoint"
 nexradlevel2 = "xradar.io.backends:NexradLevel2BackendEntrypoint"
-
+odim = "xradar.io.backends:OdimBackendEntrypoint"
+rainbow = "xradar.io.backends:RainbowBackendEntrypoint"
 
 [build-system]
 requires = [
