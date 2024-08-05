@@ -1,28 +1,42 @@
-"""
-Conversion tool for StreamLine .hpl files into netCDF (.nc) files:
-
-    - hpl2dict(): import .hpl files and save as dictionary
-    - hpl_to_netcdf(): save .hpl files into level0 (l0) .nc files
-    - to_netcdf_l1(): correct raw data (l0) and create level1 (l1) netCDF files
+#!/usr/bin/env python
+# Copyright (c) 2024, openradar developers.
+# Distributed under the MIT License. See LICENSE for more info.
 
 """
 
-import io
+StreamLine HPL
+==============
 
-import numpy as np
-import pandas as pd
-import xarray as xr
+This sub-module contains the StreamLine HPL xarray backend for reading StreamLine-based lidar
+data into Xarray structures.
 
-"""
 Import of StreamLine .hpl (txt) files and save locally in directory. Therefore
 the data is converted into matrices with dimension "number of range gates" x "time stamp/rays".
 In newer versions of the StreamLine software, the spectral width can be
 stored as additional parameter in the .hpl files.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated/
+
+   {}
+
 """
 
+__all__ = [
+    "HPLBackendEntrypoint",
+    "open_hpl_datatree",
+]
+
+__doc__ = __doc__.format("\n   ".join(__all__))
+
+import io
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
+import numpy as np
+import pandas as pd
+import xarray as xr
 from datatree import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
@@ -39,13 +53,6 @@ from ...model import (
     get_time_attrs,
 )
 from .common import _assign_root, _attach_sweep_groups
-
-__all__ = [
-    "HPLBackendEntrypoint",
-    "open_hpl_datatree",
-]
-
-__doc__ = __doc__.format("\n   ".join(__all__))
 
 variable_attr_dict = {}
 variable_attr_dict["intensity"] = {
