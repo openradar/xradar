@@ -27,6 +27,15 @@ authors:
   family-names: Ladino
   affiliation: University of Illinois at Urbana Champaign
   orcid: https://orcid.org/0000-0001-8081-7827
+- given-names: Robert
+  family-names: Jackson
+  affiliation: Argonne National Laboratory
+  orcid: https://orcid.org/0000-0003-2518-1234
+- given-names: Daniel
+  family-names: Wolfensberger
+  affiliation: Federal Office of Meteorology and Climatology MeteoSwiss
+  orcid: https://orcid.org/0009-0006-1419-0556
+
 version: 0.6.0
 date-released: 2024-08-05
 repository-code: https://github.com/openradar/xradar
