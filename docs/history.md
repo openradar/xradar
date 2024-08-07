@@ -1,5 +1,9 @@
 # History
 
+## Development Version
+
+* FIX: properly read CfRadial1 n_points files ({issue}`188`) by [@aladinor](https://github.com/aladinor), ({pull}`190`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
 ## 0.6.0 (2024-08-05)
 
 * ADD: DataMet reader ({pull}`175`) by [@wolfidan](https://github.com/wolfidan).
