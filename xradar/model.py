@@ -995,7 +995,12 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
     keep_vars |= required_sweep_metadata_vars
     # all moment fields
     # todo: strip off non-conforming
-    keep_vars |= {k for k, v in obj.data_vars.items() if "range" in v.dims}
+    # this also handles cfradial1 n_points layout
+    keep_vars |= {
+        k
+        for k, v in obj.data_vars.items()
+        if any(d in v.dims for d in ["range", "n_points"])
+    }
     # optional variables
     if optional:
         keep_vars |= {k for k, v in obj.data_vars.items() if dim0 in v.dims}

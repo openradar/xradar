@@ -16,6 +16,11 @@ def cfradial1_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
+def cfradial1n_file(tmp_path_factory):
+    return DATASETS.fetch("DES_VOL_RAW_20240522_1600.nc")
+
+
+@pytest.fixture(scope="session")
 def odim_file():
     return DATASETS.fetch("71_20181220_060628.pvol.h5")
 
