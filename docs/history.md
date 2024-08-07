@@ -1,5 +1,9 @@
 # History
 
+## Development Version
+
+* MNT: minimize CI ({pull}`192`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
 ## 0.6.0 (2024-08-05)
 
 * ADD: DataMet reader ({pull}`175`) by [@wolfidan](https://github.com/wolfidan).
