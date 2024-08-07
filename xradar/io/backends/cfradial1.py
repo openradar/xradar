@@ -128,7 +128,9 @@ def _get_sweep_groups(
     ray_start_index = root.get("ray_start_index", False)
 
     # strip variables and attributes
-    anc_dims = list(set(root.dims) ^ {"time", "range", "sweep", "n_points"})
+    anc_dims = set(root.dims) ^ {"time", "range", "sweep", "n_points"}
+    anc_dims &= set(root.dims)
+
     root = root.drop_dims(anc_dims)
 
     root = root.rename({"fixed_angle": "sweep_fixed_angle"})
