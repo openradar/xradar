@@ -13,7 +13,7 @@ dependencies:
   - lat_lon_parser
   - netCDF4
   - numpy
-  - open-radar-data>=0.1.0
+  - open-radar-data>=0.3.0
   - pip
   - pyproj
   - pytest
