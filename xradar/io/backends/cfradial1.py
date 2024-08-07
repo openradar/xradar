@@ -186,6 +186,17 @@ def _get_sweep_groups(
             ds = ds.drop_vars(ds_vars.data_vars)
             ds = merge([ds, ds_vars])
 
+        # assign site_coords
+        if site_coords:
+
+            ds = ds.assign_coords(
+                {
+                    "latitude": root.latitude,
+                    "longitude": root.longitude,
+                    "altitude": root.altitude,
+                }
+            )
+
         # handling first dimension
         # for CfRadial1 first dimension is time
         if first_dim == "auto":
@@ -198,18 +209,7 @@ def _get_sweep_groups(
             ds = ds.sortby("time")
 
         # reassign azimuth/elevation coordinates
-        ds = ds.assign_coords({"azimuth": ds.azimuth})
-        ds = ds.assign_coords({"elevation": ds.elevation})
-
-        # assign site_coords
-        if site_coords:
-            ds = ds.assign_coords(
-                {
-                    "latitude": root.latitude,
-                    "longitude": root.longitude,
-                    "altitude": root.altitude,
-                }
-            )
+        ds = ds.set_coords(["azimuth", "elevation"])
 
         sweep_groups[sw] = ds
 
