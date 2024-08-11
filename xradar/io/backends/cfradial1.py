@@ -342,7 +342,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     # open root group, cfradial1 only has one group
     # open_cfradial1_datatree only opens the file once using netcdf4
     # and retrieves the different groups from the loaded object
-    ds = open_dataset(filename_or_obj, engine="netcdf4", **kwargs)
+    ds = open_dataset(filename_or_obj, engine="h5netcdf", **kwargs)
 
     # create datatree root node with required data
     root = _get_required_root_dataset(ds, optional=optional)
