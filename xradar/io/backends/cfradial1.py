@@ -335,12 +335,13 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     dtree: datatree.DataTree
         DataTree with CfRadial2 groups.
     """
+
     # handle kwargs, extract first_dim
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
-    engine = kwargs.pop("engine", 'netcdf4')
+    engine = kwargs.pop("engine", "netcdf4")
 
     # open root group, cfradial1 only has one group
     # open_cfradial1_datatree only opens the file once using netcdf4
