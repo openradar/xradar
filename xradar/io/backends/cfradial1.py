@@ -327,22 +327,26 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         Import optional mandatory data and metadata, defaults to ``True``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
+    engine: str
+        Engine that will be passed to Xarray.open_dataset, defaults to "netcdf4"
 
     Returns
     -------
     dtree: datatree.DataTree
         DataTree with CfRadial2 groups.
     """
+
     # handle kwargs, extract first_dim
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
+    engine = kwargs.pop("engine", "netcdf4")
 
     # open root group, cfradial1 only has one group
     # open_cfradial1_datatree only opens the file once using netcdf4
     # and retrieves the different groups from the loaded object
-    ds = open_dataset(filename_or_obj, engine="netcdf4", **kwargs)
+    ds = open_dataset(filename_or_obj, engine=engine, **kwargs)
 
     # create datatree root node with required data
     root = _get_required_root_dataset(ds, optional=optional)
