@@ -1,5 +1,7 @@
 # History
 
+* FIX: Passing 'engine' kwarg in "open_cfradial1_datatree" method to enable fsspec.open when using url ({issue}`194`) by [@aladinor], ({pull}`195`) by [@aladinor]
+
 ## 0.6.1 (2024-08-07)
 
 * MNT: minimize CI ({pull}`192`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
