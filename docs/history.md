@@ -1,5 +1,9 @@
 # History
 
+## 0.6.3 (2024-08-13)
+
+FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
 ## 0.6.2 (2024-08-12)
 
 * FIX: Passing 'engine' kwarg in "open_cfradial1_datatree" method to enable fsspec.open when using url ({issue}`194`) by [@aladinor](https://github.com/aladinor), ({pull}`195`) by [@aladinor](https://github.com/aladinor)
