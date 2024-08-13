@@ -156,6 +156,7 @@ def test_open_average(metek_ave_gz_file):
     rainfall = ds["rainfall_rate"].isel(range=0).cumsum() / 60.0
     np.testing.assert_allclose(rainfall.values[-1], 0.938)
     np.testing.assert_allclose(ds["reflectivity"].values[0], test_arr_ave)
+    ds.close()
 
 
 def test_open_average_datatree(metek_ave_gz_file):
@@ -165,7 +166,7 @@ def test_open_average_datatree(metek_ave_gz_file):
     rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 60.0
     np.testing.assert_allclose(rainfall.values[-1], 0.938)
     np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr_ave)
-
+    del ds
 
 def test_open_processed(metek_pro_gz_file):
     ds = xr.open_dataset(metek_pro_gz_file, engine="metek")
