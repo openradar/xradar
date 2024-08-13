@@ -1,6 +1,19 @@
 # History
 
-## Development Version (unreleased)
+## 0.6.3 (2024-08-13)
+
+FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.6.2 (2024-08-12)
+
+* FIX: Passing 'engine' kwarg in "open_cfradial1_datatree" method to enable fsspec.open when using url ({issue}`194`) by [@aladinor](https://github.com/aladinor), ({pull}`195`) by [@aladinor](https://github.com/aladinor)
+
+## 0.6.1 (2024-08-07)
+
+* MNT: minimize CI ({pull}`192`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: properly read CfRadial1 n_points files ({issue}`188`) by [@aladinor](https://github.com/aladinor), ({pull}`190`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.6.0 (2024-08-05)
 
 * ADD: DataMet reader ({pull}`175`) by [@wolfidan](https://github.com/wolfidan).
 * FIX: Nexrad level2 time offset of 1 day, skip reading missing elevations, introduce new radial_status of 5

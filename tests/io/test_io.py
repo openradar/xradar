@@ -911,6 +911,59 @@ def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
         xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
 
 
+def test_cfradial_n_points_file(cfradial1n_file):
+    dtree = open_cfradial1_datatree(
+        cfradial1n_file, first_dim="auto", site_coords=False
+    )
+    attrs = dtree.attrs
+
+    # root_attrs
+    assert attrs["Conventions"] == "CF-1.7"
+    assert attrs["version"] == "CF-Radial-1.4"
+    assert attrs["title"] == "VOL_A"
+    assert attrs["instrument_name"] == "Desio_Radar"
+    assert attrs["platform_is_mobile"] == "false"
+
+    # root vars
+    rvars = dtree.data_vars
+    assert rvars["volume_number"] == 1
+    assert rvars["platform_type"] == b"fixed"
+    assert rvars["instrument_type"] == b"radar"
+    assert rvars["time_coverage_start"] == b"2024-05-22T16:00:47Z"
+    assert rvars["time_coverage_end"] == b"2024-05-22T16:03:20Z"
+    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(45.6272661))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(9.1963181))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(241.0))
+
+    # iterate over subgroups and check some values
+    moments = ["ZDR", "RHOHV", "KDP", "DBZ", "VEL", "PHIDP"]
+    elevations = [0.7, 1.3, 3.0, 5.0, 7.0, 10.0, 15.0, 25.0]
+    azimuths = [360] * 8
+    ranges = [416] * 5 + [383, 257, 157]
+    for grp in dtree.groups:
+        # only iterate sweep groups
+        if "sweep" not in grp:
+            continue
+        ds = dtree[grp].ds
+        i = int(ds.sweep_number.values)
+        assert i == int(grp[7:])
+        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments)
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "range",
+        }
+        assert np.round(ds.sweep_fixed_angle.values.item(), 1) == elevations[i]
+        assert ds.sweep_mode == "azimuth_surveillance"
+
+
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True

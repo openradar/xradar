@@ -17,6 +17,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.hpl
 .. automodule:: xradar.io.backends.iris
 .. automodule:: xradar.io.backends.metek
+.. automodule:: xradar.io.backends.hpl
 .. automodule:: xradar.io.backends.nexrad_level2
 .. automodule:: xradar.io.backends.datamet
 
