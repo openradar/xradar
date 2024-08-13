@@ -168,6 +168,7 @@ def test_open_average_datatree(metek_ave_gz_file):
     np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr_ave)
     del ds
 
+
 def test_open_processed(metek_pro_gz_file):
     ds = xr.open_dataset(metek_pro_gz_file, engine="metek")
     assert "corrected_reflectivity" in ds.variables.keys()
@@ -186,6 +187,7 @@ def test_open_processed_datatree(metek_pro_gz_file):
     np.testing.assert_allclose(rainfall.values[-1], 0.93)
     np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr)
     del ds
+
 
 def test_open_raw(metek_raw_gz_file):
     ds = xr.open_dataset(metek_raw_gz_file, engine="metek")
