@@ -350,7 +350,7 @@ class MRR2File:
             self._data["number_valid_spectra"] = np.stack(
                 self._data["number_valid_spectra"], axis=0
             )
-            
+
             del self._data["reflectivity"]
             del self._data["corrected_reflectivity"]
             del self._data["liquid_water_content"]
@@ -426,15 +426,13 @@ class MRR2File:
         temp_drops = None
         temp_number = None
         temp_spectra = None
-       
 
     def close(self):
         if self._fp is not None:
             self._fp.close()
-        
+
         for k in self._data.keys():
             self._data[k] = None
-        
 
     __del__ = close
 
