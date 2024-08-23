@@ -350,7 +350,7 @@ class MRR2File:
             self._data["number_valid_spectra"] = np.stack(
                 self._data["number_valid_spectra"], axis=0
             )
-
+            
             del self._data["reflectivity"]
             del self._data["corrected_reflectivity"]
             del self._data["liquid_water_content"]
@@ -423,10 +423,18 @@ class MRR2File:
         self._data["azimuth"] = np.zeros_like(self._data["time"])
         self._data["elevation"] = 90 * np.ones_like(self._data["time"])
         self._data["time"] = np.array(self._data["time"])
+        temp_drops = None
+        temp_number = None
+        temp_spectra = None
+       
 
     def close(self):
         if self._fp is not None:
             self._fp.close()
+        
+        for k in self._data.keys():
+            self._data[k] = None
+        
 
     __del__ = close
 
