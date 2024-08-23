@@ -96,3 +96,41 @@ def nexradlevel2_bzfile():
 @pytest.fixture
 def nexradlevel2_files(request):
     return request.getfixturevalue(request.param)
+
+@pytest.fixture(scope="session")
+def metek_ave_gz_file():
+    fnamei = DATASETS.fetch("0308.ave.gz")
+    fnameo = f"{fnamei[:-3]}_gz"
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def metek_pro_gz_file():
+    fnamei = DATASETS.fetch("0308.pro.gz")
+    fnameo = f"{fnamei[:-3]}_gz"
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def metek_raw_gz_file():
+    fnamei = DATASETS.fetch("0308.raw.gz")
+    fnameo = f"{fnamei[:-3]}_gz"
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
