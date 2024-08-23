@@ -2,9 +2,9 @@
 
 ## Development version (2024-08-23)
 
-FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
+* FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
 
-* ADD: Metek Micro Rain Radar 2 reader by [@rcjackson]
+* ADD: Metek Micro Rain Radar 2 reader by [@rcjackson](https://github.com/rcjackson), ({pull}`200`) by [@rcjackson](https://github.com/rcjackson).
 
 ## 0.6.3 (2024-08-13)
 
