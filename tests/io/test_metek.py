@@ -196,10 +196,11 @@ def test_open_raw(metek_raw_gz_file):
     assert "raw_spectra_counts" in ds.variables.keys()
     np.testing.assert_allclose(ds["raw_spectra_counts"].values[0], test_raw)
     ds.close()
+    ds = None
 
 
 def test_open_raw_datatree(metek_raw_gz_file):
     ds = metek.open_metek_datatree(metek_raw_gz_file)
     assert "raw_spectra_counts" in ds["sweep_0"].variables.keys()
     np.testing.assert_allclose(ds["sweep_0"]["raw_spectra_counts"].values[0], test_raw)
-    del ds
+    ds = None
