@@ -2,8 +2,6 @@
 # Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import pytest
-import gzip
-import shutil
 from open_radar_data import DATASETS
 
 
@@ -75,45 +73,6 @@ def iris1_file():
 @pytest.fixture(scope="session")
 def nexradlevel2_file():
     return DATASETS.fetch("KATX20130717_195021_V06")
-
-
-@pytest.fixture(scope="session")
-def metek_ave_gz_file():
-    fnamei = DATASETS.fetch("0308.ave.gz")
-    fnameo = f"{fnamei[:-3]}_gz"
-    import gzip
-    import shutil
-
-    with gzip.open(fnamei) as fin:
-        with open(fnameo, "wb") as fout:
-            shutil.copyfileobj(fin, fout)
-    return fnameo
-
-
-@pytest.fixture(scope="session")
-def metek_pro_gz_file():
-    fnamei = DATASETS.fetch("0308.pro.gz")
-    fnameo = f"{fnamei[:-3]}_gz"
-    import gzip
-    import shutil
-
-    with gzip.open(fnamei) as fin:
-        with open(fnameo, "wb") as fout:
-            shutil.copyfileobj(fin, fout)
-    return fnameo
-
-
-@pytest.fixture(scope="session")
-def metek_raw_gz_file():
-    fnamei = DATASETS.fetch("0308.raw.gz")
-    fnameo = f"{fnamei[:-3]}_gz"
-    import gzip
-    import shutil
-
-    with gzip.open(fnamei) as fin:
-        with open(fnameo, "wb") as fout:
-            shutil.copyfileobj(fin, fout)
-    return fnameo
 
 
 @pytest.fixture(scope="session")
