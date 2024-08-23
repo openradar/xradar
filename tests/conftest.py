@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 # Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
-import pytest
 import os
+
+import pytest
 from open_radar_data import DATASETS
 
 
