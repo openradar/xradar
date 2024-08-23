@@ -97,6 +97,7 @@ def nexradlevel2_bzfile():
 def nexradlevel2_files(request):
     return request.getfixturevalue(request.param)
 
+
 @pytest.fixture(scope="session")
 def metek_ave_gz_file():
     fnamei = DATASETS.fetch("0308.ave.gz")
