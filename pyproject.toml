@@ -42,7 +42,7 @@ rainbow = "xradar.io.backends:RainbowBackendEntrypoint"
 hpl = "xradar.io.backends:HPLBackendEntrypoint"
 nexradlevel2 = "xradar.io.backends:NexradLevel2BackendEntrypoint"
 datamet = "xradar.io.backends:DataMetBackendEntrypoint"
-
+metek = "xradar.io.backends:MRRBackendEntrypoint"
 
 [build-system]
 requires = [
