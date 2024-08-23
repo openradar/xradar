@@ -1,5 +1,9 @@
 # History
 
+## Development version (2024-08-23)
+
+FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
+
 ## 0.6.3 (2024-08-13)
 
 FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
