@@ -350,6 +350,16 @@ class MRR2File:
             self._data["number_valid_spectra"] = np.stack(
                 self._data["number_valid_spectra"], axis=0
             )
+            self._data["reflectivity"] = None
+            self._data["corrected_reflectivity"] = None
+            self._data["liquid_water_content"] = None
+            self._data["rainfall_rate"] = None
+            self._data["percentage_valid_spectra"] = None
+            self._data["drop_number_density"] = None
+            self._data["drop_size"] = None
+            self._data["path_integrated_attenuation"] = None
+            self._data["velocity"] = None
+            self._data["spectral_reflectivity"] = None
 
             del self._data["reflectivity"]
             del self._data["corrected_reflectivity"]
@@ -383,6 +393,7 @@ class MRR2File:
                 self._data["drop_number_density"], axis=0
             )
             self._data["drop_size"] = np.stack(self._data["drop_size"], axis=0)
+            self._data["raw_spectra_counts"] = None
             del self._data["raw_spectra_counts"]
 
         self._data["range"] = np.squeeze(self._data["range"])
