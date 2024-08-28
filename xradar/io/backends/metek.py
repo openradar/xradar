@@ -437,17 +437,11 @@ class MRR2File:
         temp_drops = None
         temp_number = None
         temp_spectra = None
-        self._fp.close()
-        self._fp = None
 
     def close(self):
         if self._fp is not None:
             self._fp.close()
-
-        for k in self._data.keys():
-            self._data[k] = None
-        del self._data
-
+  
     __del__ = close
 
     @property
