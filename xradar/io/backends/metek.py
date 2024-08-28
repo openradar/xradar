@@ -441,7 +441,7 @@ class MRR2File:
     def close(self):
         if self._fp is not None:
             self._fp.close()
-  
+
     __del__ = close
 
     @property
