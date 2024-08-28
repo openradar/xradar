@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
-import os
-
 import pytest
 from open_radar_data import DATASETS
 
@@ -110,7 +108,6 @@ def metek_ave_gz_file():
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
             shutil.copyfileobj(fin, fout)
-    os.remove(fnamei)
     return fnameo
 
 
@@ -124,7 +121,6 @@ def metek_pro_gz_file():
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
             shutil.copyfileobj(fin, fout)
-    os.remove(fnamei)
     return fnameo
 
 
@@ -138,5 +134,4 @@ def metek_raw_gz_file():
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
             shutil.copyfileobj(fin, fout)
-    os.remove(fnamei)
     return fnameo
