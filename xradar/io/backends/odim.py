@@ -307,7 +307,7 @@ class _H5NetCDFMetadata:
         return self._where
 
     def _get_odim_version(self):
-        version = self._root.attrs["Conventions"]
+        version = self._root.attrs.get("Conventions", "None")
         return version
 
     def _get_site_coords(self):
