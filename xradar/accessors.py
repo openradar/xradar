@@ -28,6 +28,7 @@ import datatree as dt
 import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
+from .util import apply_to_sweeps
 
 
 def accessor_constructor(self, xarray_obj):
@@ -115,6 +116,13 @@ class XradarDataArrayAccessor(XradarAccessor):
         radar = self.xarray_obj
         return radar.pipe(get_crs)
 
+    def apply(self, func, *args, **kwargs):
+        """
+        Apply a function to the DataArray object.
+        """
+        da = self.xarray_obj
+        return func(da, *args, **kwargs)
+
 
 @xr.register_dataset_accessor("xradar")
 class XradarDataSetAccessor(XradarAccessor):
@@ -165,6 +173,13 @@ class XradarDataSetAccessor(XradarAccessor):
         radar = self.xarray_obj
         return radar.pipe(get_crs)
 
+    def apply(self, func, *args, **kwargs):
+        """
+        Apply a function to the Dataset object.
+        """
+        ds = self.xarray_obj
+        return func(ds, *args, **kwargs)
+
 
 @dt.register_datatree_accessor("xradar")
 class XradarDataTreeAccessor(XradarAccessor):
@@ -204,3 +219,25 @@ class XradarDataTreeAccessor(XradarAccessor):
         """
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
+
+    def apply(self, func, pass_sweep_name=False, *args, **kwargs):
+        """
+        Applies a given function to all sweeps in the radar volume.
+
+        Parameters
+        ----------
+        func : function
+            The function to apply to each sweep.
+        pass_sweep_name : bool, optional
+            Whether to pass the sweep name to the function. Defaults to False.
+        *args : tuple
+            Additional positional arguments to pass to the function.
+        **kwargs : dict
+            Additional keyword arguments to pass to the function.
+
+        Returns
+        -------
+        DataTree
+            The DataTree object after applying the function to all sweeps.
+        """
+        return apply_to_sweeps(self.xarray_obj, func, pass_sweep_name, *args, **kwargs)
