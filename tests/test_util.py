@@ -264,3 +264,42 @@ def test_get_sweep_keys():
     dt["sneep_1"] = dt["sweep_1"]
     keys = util.get_sweep_keys(dt)
     assert keys == ["sweep_0", "sweep_1", "sweep_2", "sweep_3", "sweep_4", "sweep_5"]
+
+
+def test_apply_to_sweeps():
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object
+    dtree = io.open_cfradial1_datatree(filename)
+
+    # Define a simple function to test with apply_to_sweeps
+    def dummy_function(ds):
+        """A dummy function that adds a constant field to the dataset."""
+        ds["dummy_field"] = (
+            ds["reflectivity_horizontal"] * 0
+        )  # Adding a field with all zeros
+        ds["dummy_field"].attrs = {"unit": "dBZ", "long_name": "Dummy Field"}
+        return ds
+
+    # Apply the dummy function to all sweeps using apply_to_sweeps
+    dtree = util.apply_to_sweeps(dtree, dummy_function)
+
+    # Verify that the dummy field has been added to each sweep
+    for key in util.get_sweep_keys(dtree):
+        assert "dummy_field" in dtree[key].data_vars, f"dummy_field not found in {key}"
+        assert dtree[key]["dummy_field"].attrs["unit"] == "dBZ"
+        assert dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
+
+    # Check that the original data has not been modified
+    assert (
+        "dummy_field" not in dtree["root"].data_vars
+    ), "dummy_field should not be in the root node"
+
+    # Test that an exception is raised when a function that causes an error is applied
+    with pytest.raises(RuntimeError, match="An error occurred while processing sweep"):
+
+        def error_function(ds):
+            raise ValueError("This is an intentional error")
+
+        util.apply_to_sweeps(dtree, error_function)
