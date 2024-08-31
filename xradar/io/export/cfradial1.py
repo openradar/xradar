@@ -76,11 +76,12 @@ def _main_info_mapper(dtree):
     xarray.Dataset
         Dataset containing the mapped radar information.
     """
-    dataset = (
-        dtree.root.to_dataset()
-        .drop_vars("sweep_group_name", errors="ignore")
-        .rename({"sweep_fixed_angle": "fixed_angle"})
-    )
+    dataset = dtree.root.to_dataset().drop_vars("sweep_group_name", errors="ignore")
+
+    # Only rename 'sweep_fixed_angle' if it exists in the dataset
+    if "sweep_fixed_angle" in dataset.variables:
+        dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
+
     return dataset
 
 
@@ -102,7 +103,7 @@ def _variable_mapper(dtree, dim0=None):
     """
 
     sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle")
+    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle", errors='ignore')
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
