@@ -23,6 +23,7 @@ __all__ = [
     "ipol_time",
     "rolling_dim",
     "get_sweep_keys",
+    "apply_to_sweeps",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -522,3 +523,38 @@ def get_sweep_keys(dt):
             pass
 
     return sweep_group_keys
+
+
+def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
+    """
+    Applies a given function to all sweeps in the radar volume within a DataTree.
+
+    Parameters
+    ----------
+    dtree : DataTree
+        The DataTree object containing radar data.
+    func : function
+        The function to apply to each sweep.
+    pass_sweep_name : bool, optional
+        Whether to pass the sweep name to the function. Defaults to False.
+    *args : tuple
+        Additional positional arguments to pass to the function.
+    **kwargs : dict
+        Additional keyword arguments to pass to the function.
+
+    Returns
+    -------
+    DataTree
+        The DataTree object after applying the function to all sweeps.
+    """
+    try:
+        for key in list(dtree.children):
+            if "sweep" in key:
+                if pass_sweep_name:
+                    dtree[key] = func(dtree[key], sweep=key, *args, **kwargs)
+                else:
+                    dtree[key] = func(dtree[key], *args, **kwargs)
+    except Exception:
+        pass
+
+    return dtree
