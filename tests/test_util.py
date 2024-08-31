@@ -298,34 +298,11 @@ def test_apply_to_sweeps():
     ), "dummy_field should not be in the root node"
 
     # Test that an exception is raised when a function that causes an error is applied
-    with pytest.raises(RuntimeError, match="An error occurred while processing sweep"):
+    with pytest.raises(
+        RuntimeError, match=r"An error occurred while processing 'sweep_0'"
+    ):
 
         def error_function(ds):
             raise ValueError("This is an intentional error")
 
         util.apply_to_sweeps(dtree, error_function)
-
-
-def test_apply_to_sweeps_with_sweep_name():
-    # Fetch the sample radar file
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-    dtree = io.open_cfradial1_datatree(filename)
-
-    # Define a function that requires the sweep name
-    def function_with_sweep_name(ds, sweep):
-        """A function that adds a field including the sweep name."""
-        ds["sweep_name_field"] = sweep  # Add the sweep name as a new variable
-        return ds
-
-    # Apply the function to all sweeps, passing the sweep name
-    dtree = util.apply_to_sweeps(dtree, function_with_sweep_name, pass_sweep_name=True)
-
-    # Verify that the sweep_name_field has been added and contains the correct sweep name
-    sweep_keys = util.get_sweep_keys(dtree)
-    for key in sweep_keys:
-        assert (
-            "sweep_name_field" in dtree[key].data_vars
-        ), f"sweep_name_field not found in {key}"
-        assert (
-            dtree[key]["sweep_name_field"].values == key
-        ), f"sweep_name_field value is incorrect in {key}"

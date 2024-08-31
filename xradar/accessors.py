@@ -28,7 +28,6 @@ import datatree as dt
 import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
-from .util import apply_to_sweeps
 
 
 def accessor_constructor(self, xarray_obj):
@@ -121,7 +120,7 @@ class XradarDataArrayAccessor(XradarAccessor):
         Apply a function to the DataArray object.
         """
         da = self.xarray_obj
-        return func(da, *args, **kwargs)
+        return da.pipe(func, *args, **kwargs)
 
 
 @xr.register_dataset_accessor("xradar")
@@ -178,7 +177,7 @@ class XradarDataSetAccessor(XradarAccessor):
         Apply a function to the Dataset object.
         """
         ds = self.xarray_obj
-        return func(ds, *args, **kwargs)
+        return ds.pipe(func, *args, **kwargs)
 
 
 @dt.register_datatree_accessor("xradar")
@@ -220,7 +219,7 @@ class XradarDataTreeAccessor(XradarAccessor):
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
 
-    def apply(self, func, pass_sweep_name=False, *args, **kwargs):
+    def apply(self, func, *args, **kwargs):
         """
         Applies a given function to all sweeps in the radar volume.
 
@@ -228,8 +227,6 @@ class XradarDataTreeAccessor(XradarAccessor):
         ----------
         func : function
             The function to apply to each sweep.
-        pass_sweep_name : bool, optional
-            Whether to pass the sweep name to the function. Defaults to False.
         *args : tuple
             Additional positional arguments to pass to the function.
         **kwargs : dict
@@ -240,4 +237,9 @@ class XradarDataTreeAccessor(XradarAccessor):
         DataTree
             The DataTree object after applying the function to all sweeps.
         """
-        return apply_to_sweeps(self.xarray_obj, func, pass_sweep_name, *args, **kwargs)
+        radar = self.xarray_obj
+        for key in list(radar.children):
+            if "sweep" in key:
+                radar[key].ds = func(radar[key].to_dataset(), *args, **kwargs)
+        return radar
+        # return apply_to_sweeps(self.xarray_obj, func, *args, **kwargs)

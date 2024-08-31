@@ -525,7 +525,7 @@ def get_sweep_keys(dt):
     return sweep_group_keys
 
 
-def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
+def apply_to_sweeps(dtree, func, *args, **kwargs):
     """
     Applies a given function to all sweeps in the radar volume within a DataTree.
 
@@ -535,8 +535,6 @@ def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
         The DataTree object containing radar data.
     func : function
         The function to apply to each sweep.
-    pass_sweep_name : bool, optional
-        Whether to pass the sweep name to the function. Defaults to False.
     *args : tuple
         Additional positional arguments to pass to the function.
     **kwargs : dict
@@ -555,11 +553,8 @@ def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
     for key in list(dtree.children):
         if "sweep" in key:
             try:
-                if pass_sweep_name:
-                    dtree[key] = func(dtree[key], sweep=key, *args, **kwargs)
-                else:
-                    dtree[key] = func(dtree[key], *args, **kwargs)
+                dtree[key] = func(dtree[key], *args, **kwargs)
             except Exception as e:
-                raise RuntimeError(f"An error occurred while processing {key}: {e}")
+                raise RuntimeError(f"An error occurred while processing {key!r}") from e
 
     return dtree
