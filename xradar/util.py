@@ -546,15 +546,20 @@ def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
     -------
     DataTree
         The DataTree object after applying the function to all sweeps.
+
+    Raises
+    ------
+    Exception
+        Re-raises any exception that occurs during the function application.
     """
-    try:
-        for key in list(dtree.children):
-            if "sweep" in key:
+    for key in list(dtree.children):
+        if "sweep" in key:
+            try:
                 if pass_sweep_name:
                     dtree[key] = func(dtree[key], sweep=key, *args, **kwargs)
                 else:
                     dtree[key] = func(dtree[key], *args, **kwargs)
-    except Exception:
-        pass
+            except Exception as e:
+                raise RuntimeError(f"An error occurred while processing {key}: {e}")
 
     return dtree
