@@ -519,7 +519,7 @@ class RainbowFile(RainbowFileBase):
         if value is None:
             value = self.pargroup.get(name, default)
         if dtype is not None:
-            if dtype == bool:
+            if dtype is bool:
                 value = int(value)
             value = dtype(value)
         return value
@@ -638,9 +638,9 @@ class RainbowStore(AbstractDataStore):
         attrs["add_offset"] = vmin - scale_factor
         attrs["scale_factor"] = scale_factor
         attrs["_FillValue"] = 0
-        attrs[
-            "coordinates"
-        ] = "elevation azimuth range latitude longitude altitude time"
+        attrs["coordinates"] = (
+            "elevation azimuth range latitude longitude altitude time"
+        )
         return {mname: Variable((dim, "range"), data, attrs, encoding)}
 
     def open_store_coordinates(self, var):

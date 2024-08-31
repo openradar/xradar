@@ -5,11 +5,12 @@ To import different radar data different approaches are used.
 Currently xradar can import:
 
 - [](#cfradial1)
-- [](#odim_h5)
+- [](#odim-h5)
 - [](#gamic-hdf5)
 - [](#furuno-scn-and-scnx)
 - [](#rainbow)
-- [](#irissigmet)
+- [](#iris-sigmet)
+- [](#nexradlevel2)
 
 ## CfRadial1
 
@@ -115,3 +116,21 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 With {func}`~xradar.io.backends.iris.open_iris_datatree` all groups (eg. ``1``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
 ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+
+
+## NexradLevel2
+
+### NexradLevel2BackendEntryPoint
+
+The xarray backend {class}`~xradar.io.backends.nexrad_level2.NexradLevel2BackendEntryPoint`
+opens the file with {class}`~xradar.io.backends.nexrad_level2.NexradLevel2Store`. Several
+private helper functions are used to conveniently access data and
+metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
+with wanted group (eg. ``0``). Depending on the used backend kwargs several
+more functions are applied on that {py:class}`xarray:xarray.Dataset`.
+
+### open_nexradlevel2_datatree
+
+With {func}`~xradar.io.backends.nexrad_level2.open_nexradlevel2_datatree`
+all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.

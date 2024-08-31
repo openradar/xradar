@@ -7,11 +7,13 @@ dependencies:
   - cmweather
   - coverage
   - dask
+  - fsspec
   - h5netcdf
   - h5py
   - lat_lon_parser
   - netCDF4
   - numpy
+  - open-radar-data>=0.3.0
   - pip
   - pyproj
   - pytest
@@ -24,5 +26,3 @@ dependencies:
   - xarray
   - xarray-datatree>=0.0.10
   - xmltodict
-  - pip:
-    - git+https://github.com/openradar/open-radar-data.git

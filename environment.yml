@@ -3,18 +3,20 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.9
+  - python >=3.9,<3.12
   - pydata-sphinx-theme
   - pip
   - myst-parser
   - sphinx
   - sphinx-copybutton
+  - sphinx-favicon
   - nbsphinx
   - ipykernel
   - h5netcdf
   - h5py
   - lat_lon_parser
   - netCDF4
+  - open-radar-data>=0.1.0
   - pyproj
   - xarray
   - xarray-datatree>=0.0.10
@@ -28,5 +30,3 @@ dependencies:
   - arm_pyart
   - ffmpeg
   - zarr
-  - pip:
-    - git+https://github.com/openradar/open-radar-data.git

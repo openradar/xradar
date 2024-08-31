@@ -39,6 +39,10 @@ gamic = "xradar.io.backends:GamicBackendEntrypoint"
 iris = "xradar.io.backends:IrisBackendEntrypoint"
 odim = "xradar.io.backends:OdimBackendEntrypoint"
 rainbow = "xradar.io.backends:RainbowBackendEntrypoint"
+hpl = "xradar.io.backends:HPLBackendEntrypoint"
+nexradlevel2 = "xradar.io.backends:NexradLevel2BackendEntrypoint"
+datamet = "xradar.io.backends:DataMetBackendEntrypoint"
+
 
 [build-system]
 requires = [
@@ -72,6 +76,7 @@ exclude = [
     "doc",
 ]
 
+[tool.ruff.lint]
 # E402: module level import not at top of file
 # E501: line too long - let black worry about that
 # E731: do not assign a lambda expression, use a def
@@ -92,5 +97,5 @@ select = [
     "UP",
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["xradar"]

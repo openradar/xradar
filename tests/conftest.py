@@ -16,6 +16,11 @@ def cfradial1_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
+def cfradial1n_file(tmp_path_factory):
+    return DATASETS.fetch("DES_VOL_RAW_20240522_1600.nc")
+
+
+@pytest.fixture(scope="session")
 def odim_file():
     return DATASETS.fetch("71_20181220_060628.pvol.h5")
 
@@ -23,6 +28,11 @@ def odim_file():
 @pytest.fixture(scope="session")
 def odim_file2():
     return DATASETS.fetch("T_PAGZ35_C_ENMI_20170421090837.hdf")
+
+
+@pytest.fixture(scope="session")
+def datamet_file():
+    return DATASETS.fetch("H-000-VOL-ILMONTE-201907100700.tar.gz")
 
 
 @pytest.fixture(scope="session")
@@ -58,3 +68,31 @@ def iris0_file():
 @pytest.fixture(scope="session")
 def iris1_file():
     return DATASETS.fetch("SUR210819000227.RAWKPJV")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_file():
+    return DATASETS.fetch("KATX20130717_195021_V06")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_gzfile():
+    fnamei = DATASETS.fetch("KLBB20160601_150025_V06.gz")
+    fnameo = f"{fnamei[:-3]}_gz"
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_bzfile():
+    return DATASETS.fetch("KLBB20160601_150025_V06")
+
+
+@pytest.fixture
+def nexradlevel2_files(request):
+    return request.getfixturevalue(request.param)

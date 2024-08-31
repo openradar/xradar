@@ -1,8 +1,63 @@
 # History
 
-## Development version (unreleased)
+## 0.6.4 (2024-08-30)
+
+FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
+FIX: use dict.get() to retrieve attribute key and return "None" if not available, ({pull}`200`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
+## 0.6.3 (2024-08-13)
+
+FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.6.2 (2024-08-12)
+
+* FIX: Passing 'engine' kwarg in "open_cfradial1_datatree" method to enable fsspec.open when using url ({issue}`194`) by [@aladinor](https://github.com/aladinor), ({pull}`195`) by [@aladinor](https://github.com/aladinor)
+
+## 0.6.1 (2024-08-07)
+
+* MNT: minimize CI ({pull}`192`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: properly read CfRadial1 n_points files ({issue}`188`) by [@aladinor](https://github.com/aladinor), ({pull}`190`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.6.0 (2024-08-05)
+
+* ADD: DataMet reader ({pull}`175`) by [@wolfidan](https://github.com/wolfidan).
+* FIX: Nexrad level2 time offset of 1 day, skip reading missing elevations, introduce new radial_status of 5
+ ({issue}`180`) by [@ghiggi](https://github.com/ghiggi), ({pull}`180`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ADD: Reader for Halo Photonics Doppler lidar data by [@rcjackson](https://github.com/rcjackson)
+
+## 0.5.1 (2024-07-05)
+
+* ADD: Add Alfonso to citation doc ({pull}`169`) by [@mgrover1](https://github.com/mgrover1).
+* ENH: Adding global variables and attributes to iris datatree ({pull}`166`) by [@aladinor](https://github.com/aladinor).
+* FIX: Set fillvalue before applying scale/offset when exporting to odim ({issue}`122`) by [@pavlikp](https://github.com/pavlikp), ({pull}`173`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: Fix use of ruff, CI and numpy2 ({pull}`177`) by [@mgrover1](https://github.com/mgrover1) and [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.5.0 (2024-03-28)
+
+* MNT: Update GitHub actions, address DeprecationWarnings ({pull}`153`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* MNT: restructure odim.py/gamic.py, add test_odim.py/test_gamic.py ({pull}`154`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* MNT: use CODECOV token ({pull}`155`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* MNT: fix path for notebook coverage ({pull}`157`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ADD: NEXRAD Level2 structured reader ({pull}`158`) by [@kmuehlbauer](https://github.com/kmuehlbauer) and [@mgrover1](https://github.com/mgrover1).
+* FIX: Add the proper elevation angle to fixed angle ({pull}`162`) by [@mgrover1](https://github.com/mgrover1).
+* ENH: Add a utility for finding sweep number keys ({pull}`167`) by [@mgrover1](https://github.com/mgrover1).
+
+## 0.4.3 (2024-02-24)
+
+* MNT:  address black style changes, update pre-commit-config.yaml ({pull}`152`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: use len(unique) to estimate unique entry for odim range ({pull}`151`) by [@martinpaule](https://github.com/martinpaule).
+
+## 0.4.2 (2023-11-02)
+
+* FIX: Fix handling of sweep_mode attributes ({pull}`143`) by [@mgrover1](https://github.com/mgrover1)
+* FIX: explicitely check for "False" in get_crs() {pull}`142`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.4.1 (2023-10-26)
 
 * FIX: Add history to cfradial1 output, and fix minor error in CfRadial1_Export.ipynb notebook({pull}`132`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: fix readthedocs build for python 3.12 ({pull}`140`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: align coordinates in backends, pin python >3.9,<=3.12 in environment.yml ({pull}`139`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: prevent integer overflow when calculating azimuth in FURUNO scn files ({issue}`137`) by [@giacant](https://github.com/giacant) , ({pull}`138`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.4.0 (2023-09-27)
 

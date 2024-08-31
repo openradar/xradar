@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2023, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -627,7 +627,7 @@ def get_range_attrs(rng=None):
     if rng is not None:
         diff = np.diff(rng)
         unique = np.unique(diff)
-        if unique:
+        if len(unique) == 1:
             spacing = "true"
             range_attrs["meters_between_gates"] = diff[0]
         else:
@@ -701,10 +701,10 @@ def get_elevation_attrs(ele=None):
     return el_attrs
 
 
-def get_time_attrs(date_str):
+def get_time_attrs(date_str="1970-01-01T00:00:00Z", date_unit="seconds"):
     time_attrs = {
         "standard_name": "time",
-        "units": f"seconds since {date_str}",
+        "units": f"{date_unit} since {date_str}",
     }
     return time_attrs
 
@@ -995,7 +995,12 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
     keep_vars |= required_sweep_metadata_vars
     # all moment fields
     # todo: strip off non-conforming
-    keep_vars |= {k for k, v in obj.data_vars.items() if "range" in v.dims}
+    # this also handles cfradial1 n_points layout
+    keep_vars |= {
+        k
+        for k, v in obj.data_vars.items()
+        if any(d in v.dims for d in ["range", "n_points"])
+    }
     # optional variables
     if optional:
         keep_vars |= {k for k, v in obj.data_vars.items() if dim0 in v.dims}

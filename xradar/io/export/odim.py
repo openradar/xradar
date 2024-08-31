@@ -32,6 +32,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
+import sys
 
 import h5py
 import numpy as np
@@ -109,8 +110,8 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
         val = value.sortby(dim0).values
         fillval = _fillvalue * scale_factor
         fillval += add_offset
-        val = (val - add_offset) / scale_factor
         val[np.isnan(val)] = fillval
+        val = (val - add_offset) / scale_factor
         if np.issubdtype(dtype, np.integer):
             val = np.rint(val).astype(dtype)
         ds = h5_data.create_dataset(
@@ -227,8 +228,12 @@ def to_odim(
         # skip NaT values
         valid_times = ~np.isnat(ds.time.values)
         t = sorted(ds.time.values[valid_times])
-        start = dt.datetime.utcfromtimestamp(np.rint(t[0].astype("O") / 1e9))
-        end = dt.datetime.utcfromtimestamp(np.rint(t[-1].astype("O") / 1e9))
+        if sys.version_info.major == 3 and sys.version_info.minor <= 10:
+            start = dt.datetime.utcfromtimestamp(np.rint(t[0].astype("O") / 1e9))
+            end = dt.datetime.utcfromtimestamp(np.rint(t[-1].astype("O") / 1e9))
+        else:
+            start = dt.datetime.fromtimestamp(np.rint(t[0].astype("O") / 1e9), dt.UTC)
+            end = dt.datetime.fromtimestamp(np.rint(t[-1].astype("O") / 1e9), dt.UTC)
         ds_what["product"] = "SCAN"
         ds_what["startdate"] = start.strftime("%Y%m%d")
         ds_what["starttime"] = start.strftime("%H%M%S")

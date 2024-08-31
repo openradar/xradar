@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -34,12 +34,12 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
 import io
+import warnings
 
 import h5netcdf
 import numpy as np
 import xarray as xr
 from datatree import DataTree
-from packaging.version import Version
 from xarray.backends.common import (
     AbstractDataStore,
     BackendArray,
@@ -88,8 +88,122 @@ def _calculate_angle_res(dim):
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
 
 
-class _OdimH5NetCDFMetadata:
-    """Wrapper around OdimH5 data fileobj for easy access of metadata.
+def _get_azimuth_how(how):
+    startaz = how["startazA"]
+    stopaz = how.get("stopazA", False)
+    if stopaz is False:
+        # stopazA missing
+        # create from startazA
+        stopaz = np.roll(startaz, -1)
+        stopaz[-1] += 360
+    zero_index = np.where(stopaz < startaz)
+    stopaz[zero_index[0]] += 360
+    azimuth_data = (startaz + stopaz) / 2.0
+    azimuth_data[azimuth_data >= 360] -= 360
+    return azimuth_data
+
+
+def _get_azimuth_where(where):
+    res = 360.0 / where["nrays"]
+    return np.arange(res / 2.0, 360.0, res, dtype="float32")
+
+
+def _get_fixed_dim_and_angle(where):
+    dim = "elevation"
+
+    # try RHI first
+    angle_keys = ["az_angle", "azangle"]
+    angle = None
+    for ak in angle_keys:
+        angle = where.get(ak, None)
+        if angle is not None:
+            break
+    if angle is None:
+        dim = "azimuth"
+        angle = where["elangle"]
+
+    # do not round angle
+    # angle = np.round(angle, decimals=1)
+    return dim, angle
+
+
+def _get_elevation_how(how):
+    startel = how.get("startelA", False)
+    stopel = how.get("stopelA", False)
+    if startel is not False and stopel is not False:
+        elevation_data = (startel + stopel) / 2.0
+    else:
+        elevation_data = how["elangles"]
+    return elevation_data
+
+
+def _get_elevation_where(where):
+    return np.ones(where["nrays"], dtype="float32") * where["elangle"]
+
+
+def _get_time_how(how):
+    return (how["startazT"] + how["stopazT"]) / 2.0
+
+
+def _get_time_what(what, where, nrays=None):
+    startdate = _maybe_decode(what["startdate"])
+    starttime = _maybe_decode(what["starttime"])
+    # take care for missing enddate/endtime
+    # see https://github.com/wradlib/wradlib/issues/563
+    enddate = _maybe_decode(what.get("enddate", what["startdate"]))
+    endtime = _maybe_decode(what.get("endtime", what["starttime"]))
+    start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
+    end = dt.datetime.strptime(enddate + endtime, "%Y%m%d%H%M%S")
+    start = start.replace(tzinfo=dt.timezone.utc).timestamp()
+    end = end.replace(tzinfo=dt.timezone.utc).timestamp()
+    if nrays is None:
+        nrays = where["nrays"]
+    if start == end:
+        import warnings
+
+        warnings.warn(
+            "xradar: Equal ODIM `starttime` and `endtime` "
+            "values. Can't determine correct sweep start-, "
+            "end- and raytimes.",
+            UserWarning,
+        )
+
+        time_data = np.ones(nrays) * start
+    else:
+        delta = (end - start) / nrays
+        time_data = np.arange(start + delta / 2.0, end, delta)
+        time_data = np.roll(time_data, shift=+where["a1gate"])
+    return time_data
+
+
+def _get_range(where, odim_version=None):
+    scale = 1000.0
+    if odim_version == "ODIM_H5/V2_4":
+        scale = 1.0
+    ngates = where["nbins"]
+    range_start = where["rstart"] * scale
+    bin_range = where["rscale"]
+    cent_first = range_start + bin_range / 2.0
+    range_data = np.arange(
+        cent_first, range_start + bin_range * ngates, bin_range, dtype="float32"
+    )
+    return range_data, cent_first, bin_range
+
+
+def _get_time(what, point="start"):
+    startdate = _maybe_decode(what[f"{point}date"])
+    starttime = _maybe_decode(what[f"{point}time"])
+    start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
+    start = np.array(start.replace(tzinfo=dt.timezone.utc)).astype("<M8[s]")
+    return start
+
+
+def _get_a1gate(where):
+    return where["a1gate"]
+
+
+class _H5NetCDFMetadata:
+    """Wrapper around OdimH5/Gamic data fileobj for easy access of metadata.
 
     Parameters
     ----------
@@ -106,39 +220,18 @@ class _OdimH5NetCDFMetadata:
     def __init__(self, fileobj, group):
         self._root = fileobj
         self._group = group
-
-    @property
-    def first_dim(self):
-        dim, _ = self._get_fixed_dim_and_angle()
-        return dim
-
-    def get_variable_dimensions(self, dims):
-        dimensions = []
-        for n, _ in enumerate(dims):
-            if n == 0:
-                dimensions.append(self.first_dim)
-            elif n == 1:
-                dimensions.append("range")
-            else:
-                pass
-        return tuple(dimensions)
+        self._how = None
+        self._what = None
+        self._where = None
+        self._dim0 = None
+        self._fixed_angle = None
 
     @property
     def coordinates(self):
-        azimuth = self.azimuth
-        elevation = self.elevation
-        a1gate = self.a1gate
-        rtime = self.ray_times
-        dim, angle = self.fixed_dim_and_angle
-        angle_res = _calculate_angle_res(locals()[dim])
-        dims = ("azimuth", "elevation")
-        if dim == dims[1]:
-            dims = (dims[1], dims[0])
-
-        az_attrs = get_azimuth_attrs()
-        el_attrs = get_elevation_attrs()
-
+        # additional metadata which might come in handy in the future
         # do not forward a1gate and angle_res for now
+        # a1gate = self.a1gate
+        # angle_res = _calculate_angle_res(locals()[dim])
         # az_attrs["a1gate"] = a1gate
         #
         # if dim == "azimuth":
@@ -146,204 +239,189 @@ class _OdimH5NetCDFMetadata:
         # else:
         #     el_attrs["angle_res"] = angle_res
 
-        sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
-        sweep_number = int(self._group.split("/")[0][7:]) - 1
-        prt_mode = "not_set"
-        follow_mode = "not_set"
-
-        rtime_attrs = {
-            "units": "seconds since 1970-01-01T00:00:00Z",
-            "standard_name": "time",
-        }
-
-        range_data, cent_first, bin_range = self.range
-        range_attrs = get_range_attrs(range_data)
-
-        lon_attrs = get_longitude_attrs()
-        lat_attrs = get_latitude_attrs()
-        alt_attrs = get_altitude_attrs()
-
-        time_attrs = get_time_attrs("1970-01-01T00:00:00Z")
-
-        lon, lat, alt = self.site_coords
-
-        # todo: add CF attributes where not yet available
         coordinates = {
-            "azimuth": Variable((dims[0],), azimuth, az_attrs),
-            "elevation": Variable((dims[0],), elevation, el_attrs),
-            "time": Variable((dims[0],), rtime, rtime_attrs),
-            "range": Variable(("range",), range_data, range_attrs),
-            # "time": Variable((), self.time, time_attrs),
-            "sweep_mode": Variable((), sweep_mode),
-            "sweep_number": Variable((), sweep_number),
-            "prt_mode": Variable((), prt_mode),
-            "follow_mode": Variable((), follow_mode),
-            "sweep_fixed_angle": Variable((), angle),
-            "longitude": Variable((), lon, lon_attrs),
-            "latitude": Variable((), lat, lat_attrs),
-            "altitude": Variable((), alt, alt_attrs),
+            "azimuth": self.azimuth,
+            "elevation": self.elevation,
+            "time": self.time,
+            "range": self.range,
+            "sweep_mode": self.sweep_mode,
+            "sweep_number": self.sweep_number,
+            "prt_mode": self.prt_mode,
+            "follow_mode": self.follow_mode,
+            "sweep_fixed_angle": self.sweep_fixed_angle,
+            "longitude": self.longitude,
+            "latitude": self.latitude,
+            "altitude": self.altitude,
         }
         return coordinates
+
+    @property
+    def first_dim(self):
+        warnings.warn(
+            "xradar: use of `first_dim` is deprecated, please use `dim0` instead.",
+            DeprecationWarning,
+        )
+        if self._dim0 is None:
+            self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
+        return self._dim0
+
+    @property
+    def dim0(self):
+        """Get name of first dimension."""
+        if self._dim0 is None:
+            self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
+        return self._dim0
+
+    def get_variable_dimensions(self, dims):
+        dimensions = []
+        for n, _ in enumerate(dims):
+            if n == 0:
+                dimensions.append(self.dim0)
+            elif n == 1:
+                dimensions.append("range")
+        return tuple(dimensions)
 
     @property
     def site_coords(self):
         return self._get_site_coords()
 
     @property
-    def time(self):
-        return self._get_time()
-
-    @property
-    def fixed_dim_and_angle(self):
-        return self._get_fixed_dim_and_angle()
-
-    @property
-    def range(self):
-        return self._get_range()
+    def how(self):
+        """Get how-group attributes."""
+        if self._how is None:
+            self._how = self.grp["how"].attrs
+        return self._how
 
     @property
     def what(self):
-        return self._get_dset_what()
+        """Get what-group attributes."""
+        if self._what is None:
+            self._what = self.grp["what"].attrs
+        return self._what
 
-    def _get_azimuth_how(self):
-        grp = self._group.split("/")[0]
-        how = self._root[grp]["how"].attrs
-        startaz = how["startazA"]
-        stopaz = how.get("stopazA", False)
-        if stopaz is False:
-            # stopazA missing
-            # create from startazA
-            stopaz = np.roll(startaz, -1)
-            stopaz[-1] += 360
-        zero_index = np.where(stopaz < startaz)
-        stopaz[zero_index[0]] += 360
-        azimuth_data = (startaz + stopaz) / 2.0
-        azimuth_data[azimuth_data >= 360] -= 360
-        return azimuth_data
+    @property
+    def where(self):
+        """Get where-group attributes."""
+        if self._where is None:
+            self._where = self.grp["where"].attrs
+        return self._where
 
-    def _get_azimuth_where(self):
-        grp = self._group.split("/")[0]
-        nrays = self._root[grp]["where"].attrs["nrays"]
-        res = 360.0 / nrays
-        azimuth_data = np.arange(res / 2.0, 360.0, res, dtype="float32")
-        return azimuth_data
-
-    def _get_fixed_dim_and_angle(self):
-        grp = self._group.split("/")[0]
-        dim = "elevation"
-
-        # try RHI first
-        angle_keys = ["az_angle", "azangle"]
-        angle = None
-        for ak in angle_keys:
-            angle = self._root[grp]["where"].attrs.get(ak, None)
-            if angle is not None:
-                break
-        if angle is None:
-            dim = "azimuth"
-            angle = self._root[grp]["where"].attrs["elangle"]
-
-        # do not round angle
-        # angle = np.round(angle, decimals=1)
-        return dim, angle
-
-    def _get_elevation_how(self):
-        grp = self._group.split("/")[0]
-        how = self._root[grp]["how"].attrs
-        startaz = how.get("startelA", False)
-        stopaz = how.get("stopelA", False)
-        if startaz is not False and stopaz is not False:
-            elevation_data = (startaz + stopaz) / 2.0
-        else:
-            elevation_data = how["elangles"]
-        return elevation_data
-
-    def _get_elevation_where(self):
-        grp = self._group.split("/")[0]
-        nrays = self._root[grp]["where"].attrs["nrays"]
-        elangle = self._root[grp]["where"].attrs["elangle"]
-        elevation_data = np.ones(nrays, dtype="float32") * elangle
-        return elevation_data
-
-    def _get_time_how(self):
-        grp = self._group.split("/")[0]
-        startT = self._root[grp]["how"].attrs["startazT"]
-        stopT = self._root[grp]["how"].attrs["stopazT"]
-        time_data = (startT + stopT) / 2.0
-        return time_data
-
-    def _get_time_what(self, nrays=None):
-        grp = self._group.split("/")[0]
-        what = self._root[grp]["what"].attrs
-        startdate = _maybe_decode(what["startdate"])
-        starttime = _maybe_decode(what["starttime"])
-        # take care for missing enddate/endtime
-        # see https://github.com/wradlib/wradlib/issues/563
-        enddate = _maybe_decode(what.get("enddate", what["startdate"]))
-        endtime = _maybe_decode(what.get("endtime", what["starttime"]))
-        start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
-        end = dt.datetime.strptime(enddate + endtime, "%Y%m%d%H%M%S")
-        start = start.replace(tzinfo=dt.timezone.utc).timestamp()
-        end = end.replace(tzinfo=dt.timezone.utc).timestamp()
-        if nrays is None:
-            nrays = self._root[grp]["where"].attrs["nrays"]
-        if start == end:
-            import warnings
-
-            warnings.warn(
-                "xradar: Equal ODIM `starttime` and `endtime` "
-                "values. Can't determine correct sweep start-, "
-                "end- and raytimes.",
-                UserWarning,
-            )
-
-            time_data = np.ones(nrays) * start
-        else:
-            delta = (end - start) / nrays
-            time_data = np.arange(start + delta / 2.0, end, delta)
-            time_data = np.roll(time_data, shift=+self.a1gate)
-        return time_data
-
-    def _get_ray_times(self, nrays=None):
-        try:
-            time_data = self._get_time_how()
-            self._need_time_recalc = False
-        except (AttributeError, KeyError, TypeError):
-            time_data = self._get_time_what(nrays=nrays)
-            self._need_time_recalc = True
-        return time_data
-
-    def _get_range(self):
-        grp = self._group.split("/")[0]
-        where = self._root[grp]["where"].attrs
-        ngates = where["nbins"]
-        range_start = where["rstart"] * 1000.0
-        bin_range = where["rscale"]
-        cent_first = range_start + bin_range / 2.0
-        range_data = np.arange(
-            cent_first, range_start + bin_range * ngates, bin_range, dtype="float32"
-        )
-        return range_data, cent_first, bin_range
-
-    def _get_time(self, point="start"):
-        grp = self._group.split("/")[0]
-        what = self._root[grp]["what"].attrs
-        startdate = _maybe_decode(what[f"{point}date"])
-        starttime = _maybe_decode(what[f"{point}time"])
-        start = dt.datetime.strptime(startdate + starttime, "%Y%m%d%H%M%S")
-        start = start.replace(tzinfo=dt.timezone.utc).timestamp()
-        return start
-
-    def _get_a1gate(self):
-        grp = self._group.split("/")[0]
-        a1gate = self._root[grp]["where"].attrs["a1gate"]
-        return a1gate
+    def _get_odim_version(self):
+        version = self._root.attrs.get("Conventions", "None")
+        return version
 
     def _get_site_coords(self):
         lon = self._root["where"].attrs["lon"]
         lat = self._root["where"].attrs["lat"]
         alt = self._root["where"].attrs["height"]
         return lon, lat, alt
+
+    @property
+    def azimuth(self):
+        """Return azimuth Variable."""
+        return self._azimuth
+
+    @property
+    def elevation(self):
+        """Return elevation Variable."""
+        return self._elevation
+
+    @property
+    def time(self):
+        """Return time Variable."""
+        return self._time
+
+    @property
+    def range(self):
+        """Return range Variable."""
+        range_data, cent_first, bin_range = self._get_range()
+        range_attrs = get_range_attrs(range_data)
+        return Variable(("range",), range_data, range_attrs)
+
+    @property
+    def longitude(self):
+        """Return longitude Variable."""
+        return Variable((), self._root["where"].attrs["lon"], get_longitude_attrs())
+
+    @property
+    def latitude(self):
+        """Return latitude Variable."""
+        return Variable((), self._root["where"].attrs["lat"], get_latitude_attrs())
+
+    @property
+    def altitude(self):
+        """Return altitude Variable."""
+        return Variable((), self._root["where"].attrs["height"], get_altitude_attrs())
+
+    @property
+    def sweep_fixed_angle(self):
+        """Return sweep_fixed_angle Variable."""
+        if self._fixed_angle is None:
+            self._dim0, self._fixed_angle = self._get_fixed_dim_and_angle()
+        return Variable((), self._fixed_angle)
+
+    @property
+    def sweep_mode(self):
+        """Return sweep_mode Variable."""
+        sweep_mode = "azimuth_surveillance" if self.dim0 == "azimuth" else "rhi"
+        return Variable((), sweep_mode)
+
+    @property
+    def sweep_number(self):
+        """Return sweep_number Variable."""
+        return Variable((), self._sweep_number)
+
+    @property
+    def prt_mode(self):
+        """Return prt_mode Variable."""
+        return Variable((), "not_set")
+
+    @property
+    def follow_mode(self):
+        """Return follow_mode Variable."""
+        return Variable((), "not_set")
+
+
+class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
+    """Wrapper around OdimH5 data fileobj for easy access of metadata.
+
+    Parameters
+    ----------
+    fileobj : file-like
+        h5netcdf filehandle.
+    group : str
+        odim group to acquire
+
+    Returns
+    -------
+    object : metadata object
+    """
+
+    @property
+    def ds_what(self):
+        return self._get_dset_what()
+
+    @property
+    def grp(self):
+        return self._root[self._group.split("/")[0]]
+
+    def _get_fixed_dim_and_angle(self):
+        return _get_fixed_dim_and_angle(self.where)
+
+    def _get_ray_times(self, nrays=None):
+        try:
+            time_data = _get_time_how(self.how)
+            self._need_time_recalc = False
+        except (AttributeError, KeyError, TypeError):
+            time_data = _get_time_what(self.what, self.where, nrays)
+            self._need_time_recalc = True
+        return time_data
+
+    def _get_range(self):
+        return _get_range(self.where, odim_version=self._odim_version)
+
+    def _get_time(self, point="start"):
+        return _get_time(self.what, point=point)
 
     def _get_dset_what(self):
         attrs = {}
@@ -363,27 +441,36 @@ class _OdimH5NetCDFMetadata:
 
     @property
     def a1gate(self):
-        return self._get_a1gate()
+        return _get_a1gate(self.where)
 
     @property
-    def azimuth(self):
+    def _azimuth(self):
         try:
-            azimuth = self._get_azimuth_how()
+            azimuth = _get_azimuth_how(self.how)
         except (AttributeError, KeyError, TypeError):
-            azimuth = self._get_azimuth_where()
-        return azimuth
+            azimuth = _get_azimuth_where(self.where)
+        return Variable((self.dim0,), azimuth, get_azimuth_attrs())
 
     @property
-    def elevation(self):
+    def _elevation(self):
         try:
-            elevation = self._get_elevation_how()
+            elevation = _get_elevation_how(self.how)
         except (AttributeError, KeyError, TypeError):
-            elevation = self._get_elevation_where()
-        return elevation
+            elevation = _get_elevation_where(self.where)
+        return Variable((self.dim0,), elevation, get_elevation_attrs())
 
     @property
-    def ray_times(self):
-        return self._get_ray_times()
+    def _time(self):
+        return Variable((self.dim0,), self._get_ray_times(), get_time_attrs())
+
+    @property
+    def _sweep_number(self):
+        """Return sweep number."""
+        return int(self._group.split("/")[0][7:]) - 1
+
+    @property
+    def _odim_version(self):
+        return self._get_odim_version()
 
 
 class H5NetCDFArrayWrapper(BackendArray):
@@ -464,6 +551,7 @@ def _get_h5netcdf_encoding(self, var):
     vlen_dtype = h5py.check_dtype(vlen=var.dtype)
     if vlen_dtype is str:
         encoding["dtype"] = str
+    # todo: this might be removed, since xarray is capable from version 2023.X.Y
     elif vlen_dtype is not None:  # pragma: no cover
         # xarray doesn't support writing arbitrary vlen dtypes yet.
         pass
@@ -482,7 +570,9 @@ def _get_odim_variable_name_and_attrs(name, attrs):
             pass
         else:
             attrs.update({key: mapping[key] for key in moment_attrs})
-        attrs["coordinates"] = "elevation azimuth range"
+        attrs["coordinates"] = (
+            "elevation azimuth range latitude longitude altitude time"
+        )
     return name, attrs
 
 
@@ -526,7 +616,7 @@ class OdimSubStore(AbstractDataStore):
         data = indexing.LazilyOuterIndexedArray(H5NetCDFArrayWrapper(name, self))
         encoding = _get_h5netcdf_encoding(self, var)
         encoding["group"] = self._group
-        name, attrs = _get_odim_variable_name_and_attrs(name, self.root.what)
+        name, attrs = _get_odim_variable_name_and_attrs(name, self.root.ds_what)
 
         return name, Variable(dimensions, data, attrs, encoding)
 
@@ -594,17 +684,8 @@ class OdimStore(AbstractDataStore):
 
         kwargs = {"invalid_netcdf": invalid_netcdf}
         if phony_dims is not None:
-            if Version(h5netcdf.__version__) >= Version("0.8.0"):
-                kwargs["phony_dims"] = phony_dims
-            else:
-                raise ValueError(
-                    "h5netcdf backend keyword argument 'phony_dims' needs "
-                    "h5netcdf >= 0.8.0."
-                )
-        if Version(h5netcdf.__version__) >= Version("0.10.0") and Version(
-            h5netcdf.core.h5py.__version__
-        ) >= Version("3.0.0"):
-            kwargs["decode_vlen_strings"] = decode_vlen_strings
+            kwargs["phony_dims"] = phony_dims
+        kwargs["decode_vlen_strings"] = decode_vlen_strings
 
         if lock is None:
             if util.has_import("dask"):
@@ -662,10 +743,7 @@ class OdimStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        dim, angle = self.substore[0].root.fixed_dim_and_angle
-        attributes = {}
-        # attributes["fixed_angle"] = angle.item()
-        return FrozenDict(attributes)
+        return FrozenDict()
 
 
 class OdimBackendEntrypoint(BackendEntrypoint):

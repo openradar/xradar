@@ -36,7 +36,7 @@ from collections.abc import Mapping
 
 import numpy as np
 from datatree import DataTree
-from xarray import open_dataset
+from xarray import merge, open_dataset
 from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
@@ -133,13 +133,20 @@ def _get_sweep_groups(
     ray_start_index = root.get("ray_start_index", False)
 
     # strip variables and attributes
-    anc_dims = list(set(root.dims) ^ {"time", "range", "sweep"})
+    anc_dims = set(root.dims) ^ {"time", "range", "sweep", "n_points"}
+    anc_dims &= set(root.dims)
+
     root = root.drop_dims(anc_dims)
 
     root = root.rename({"fixed_angle": "sweep_fixed_angle"})
 
     # conform to cfradial2 standard
     data = conform_cfradial2_sweep_group(root, optional, "time")
+    data_vars = {
+        k
+        for k, v in data.data_vars.items()
+        if any(d in v.dims for d in ["range", "n_points"])
+    }
 
     # which sweeps to load
     # sweep is assumed a list of strings with elements like "sweep_0"
@@ -150,7 +157,7 @@ def _get_sweep_groups(
         sweep = [f"sweep_{sweep}"]
 
     # iterate over sweeps
-    for i in range(root.dims["sweep"]):
+    for i in range(root.sizes["sweep"]):
         sw = f"sweep_{i}"
         if sweep is not None and not (sw in sweep or i in sweep):
             continue
@@ -160,8 +167,8 @@ def _get_sweep_groups(
         swslice = slice(i, i + 1)
         ds = data.isel(time=tslice, sweep=swslice).squeeze("sweep")
 
-        sweep_mode = _maybe_decode(ds.sweep_mode).compute()
-        dim0 = "elevation" if sweep_mode == "rhi" else "azimuth"
+        ds["sweep_mode"] = _maybe_decode(ds.sweep_mode).compute()
+        dim0 = "elevation" if ds["sweep_mode"] == "rhi" else "azimuth"
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
@@ -177,23 +184,16 @@ def _get_sweep_groups(
             rslice = slice(0, current_ray_n_gates[0].values.astype(int))
             ds = ds.isel(range=rslice)
             ds = ds.isel(n_points=nslice)
-            ds = ds.stack(n_points=[dim0, "range"])
-            ds = ds.unstack("n_points")
-            # fix elevation/time additional range dimension in coordinate
-            ds = ds.assign_coords({"elevation": ds.elevation.isel(range=0, drop=True)})
-
-        # handling first dimension
-        # for CfRadial1 first dimension is time
-        if first_dim == "auto":
-            ds = ds.swap_dims({"time": dim0})
-            ds = ds.sortby(dim0)
-
-        # reassign azimuth/elevation coordinates
-        ds = ds.assign_coords({"azimuth": ds.azimuth})
-        ds = ds.assign_coords({"elevation": ds.elevation})
+            ds_vars = ds[data_vars]
+            ds_vars = merge([ds_vars, ds[[dim0, "range"]]])
+            ds_vars = ds_vars.stack(n_points=[dim0, "range"])
+            ds_vars = ds_vars.unstack("n_points")
+            ds = ds.drop_vars(ds_vars.data_vars)
+            ds = merge([ds, ds_vars])
 
         # assign site_coords
         if site_coords:
+
             ds = ds.assign_coords(
                 {
                     "latitude": root.latitude,
@@ -201,6 +201,20 @@ def _get_sweep_groups(
                     "altitude": root.altitude,
                 }
             )
+
+        # handling first dimension
+        # for CfRadial1 first dimension is time
+        if first_dim == "auto":
+            if "time" in ds.dims:
+                ds = ds.swap_dims({"time": dim0})
+            ds = ds.sortby(dim0)
+        else:
+            if "time" not in ds.dims:
+                ds = ds.swap_dims({dim0: "time"})
+            ds = ds.sortby("time")
+
+        # reassign azimuth/elevation coordinates
+        ds = ds.set_coords(["azimuth", "elevation"])
 
         sweep_groups[sw] = ds
 
@@ -344,22 +358,26 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         Import optional mandatory data and metadata, defaults to ``True``.
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
+    engine: str
+        Engine that will be passed to Xarray.open_dataset, defaults to "netcdf4"
 
     Returns
     -------
     dtree: datatree.DataTree
         DataTree with CfRadial2 groups.
     """
+
     # handle kwargs, extract first_dim
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
+    engine = kwargs.pop("engine", "netcdf4")
 
     # open root group, cfradial1 only has one group
     # open_cfradial1_datatree only opens the file once using netcdf4
     # and retrieves the different groups from the loaded object
-    ds = open_dataset(filename_or_obj, engine="netcdf4", **kwargs)
+    ds = open_dataset(filename_or_obj, engine=engine, **kwargs)
 
     # create datatree root node with required data
     root = _get_required_root_dataset(ds, optional=optional)

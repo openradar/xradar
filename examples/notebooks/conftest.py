@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Copyright (c) 2019-2022, wradlib developers.
-# Copyright (c) 2022, openradar developers.
+# Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE.txt for more info.
 
 import os
@@ -45,7 +45,8 @@ class NotebookItem(pytest.Item):
             return cls(parent=parent, name=name)
 
     def runtest(self):
-        cur_dir = os.path.dirname(self.path)
+        # use current path to get coverage working
+        cur_dir = os.getcwd()
 
         # See https://bugs.python.org/issue37373
         if (
@@ -74,7 +75,7 @@ class NotebookItem(pytest.Item):
         return super().repr_failure(excinfo)
 
     def reportinfo(self):
-        return self.path, 0, "TestCase: %s" % self.name
+        return self.path, 0, f"TestCase: {self.name}"
 
 
 class NotebookException(Exception):

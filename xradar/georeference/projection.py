@@ -73,11 +73,9 @@ def get_crs(ds, datum="WGS84"):
     crs_wkt = (
         ds["crs_wkt"]
         if "crs_wkt" in ds
-        else ds["spatial_ref"]
-        if "spatial_ref" in ds
-        else False
+        else ds["spatial_ref"] if "spatial_ref" in ds else False
     )
-    if crs_wkt:
+    if crs_wkt is not False:
         proj_crs = pyproj.CRS.from_cf(crs_wkt.attrs)
     else:
         proj_crs = pyproj.CRS(
