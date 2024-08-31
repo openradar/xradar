@@ -286,14 +286,15 @@ def test_apply_to_sweeps():
     dtree = util.apply_to_sweeps(dtree, dummy_function)
 
     # Verify that the dummy field has been added to each sweep
-    for key in util.get_sweep_keys(dtree):
+    sweep_keys = util.get_sweep_keys(dtree)
+    for key in sweep_keys:
         assert "dummy_field" in dtree[key].data_vars, f"dummy_field not found in {key}"
         assert dtree[key]["dummy_field"].attrs["unit"] == "dBZ"
         assert dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
 
     # Check that the original data has not been modified
     assert (
-        "dummy_field" not in dtree["root"].data_vars
+        "dummy_field" not in dtree.data_vars
     ), "dummy_field should not be in the root node"
 
     # Test that an exception is raised when a function that causes an error is applied
