@@ -219,76 +219,75 @@ class XradarDataTreeAccessor(XradarAccessor):
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
 
+    def apply(self, func, *args, **kwargs):
+        """
+        Applies a given function to all sweep nodes in the radar volume.
 
-def apply(self, func, *args, **kwargs):
-    """
-    Applies a given function to all sweep nodes in the radar volume.
+        This function allows you to apply a custom function to each sweep in the radar
+        volume, modifying the data within each sweep as needed. The function will be
+        applied to each sweep node in the `DataTree`, and the results will be collected
+        into a new `DataTree` object.
 
-    This function allows you to apply a custom function to each sweep in the radar
-    volume, modifying the data within each sweep as needed. The function will be
-    applied to each sweep node in the `DataTree`, and the results will be collected
-    into a new `DataTree` object.
+        Parameters
+        ----------
+        func : function
+            The function to apply to each sweep. This function should take an
+            `xarray.Dataset` as its first argument and return a modified `xarray.Dataset`.
+        *args : tuple
+            Additional positional arguments to pass to the function.
+        **kwargs : dict
+            Additional keyword arguments to pass to the function.
 
-    Parameters
-    ----------
-    func : function
-        The function to apply to each sweep. This function should take an
-        `xarray.Dataset` as its first argument and return a modified `xarray.Dataset`.
-    *args : tuple
-        Additional positional arguments to pass to the function.
-    **kwargs : dict
-        Additional keyword arguments to pass to the function.
+        Returns
+        -------
+        DataTree
+            A new `DataTree` object with the function applied to all sweeps.
 
-    Returns
-    -------
-    DataTree
-        A new `DataTree` object with the function applied to all sweeps.
+        Examples
+        --------
+        Suppose you want to apply a simple filtering function that removes all data points
+        with reflectivity below 10 dBZ and rhoHV below 0.8 across all sweeps in the radar
+        volume:
 
-    Examples
-    --------
-    Suppose you want to apply a simple filtering function that removes all data points
-    with reflectivity below 10 dBZ and rhoHV below 0.8 across all sweeps in the radar
-    volume:
+        >>> import xradar as xd
+        >>> from open_radar_data import DATASETS
 
-    >>> import xradar as xd
-    >>> from open_radar_data import DATASETS
+        >>> # Fetch the sample radar file
+        >>> filename = DATASETS.fetch("sample_sgp_data.nc")
 
-    >>> # Fetch the sample radar file
-    >>> filename = DATASETS.fetch("sample_sgp_data.nc")
+        >>> # Open the radar file into a DataTree object
+        >>> dtree = xd.io.open_cfradial1_datatree(filename)
 
-    >>> # Open the radar file into a DataTree object
-    >>> dtree = xd.io.open_cfradial1_datatree(filename)
+        >>> # Define a simple filtering function
+        >>> def filter_radar(ds, ref_field='DBZH', rho_field='RHOHV'):
+        >>>     return ds.where((ds[ref_field] > 10) & (ds[rho_field] > 0.8))
 
-    >>> # Define a simple filtering function
-    >>> def filter_radar(ds, ref_field='DBZH', rho_field='RHOHV'):
-    >>>     return ds.where((ds[ref_field] > 10) & (ds[rho_field] > 0.8))
+        >>> # Apply the filter function to all sweeps
+        >>> filtered_dtree = dtree.xradar.apply(filter_radar, ref_field='DBZH', rho_field='RHOHV')
 
-    >>> # Apply the filter function to all sweeps
-    >>> filtered_dtree = dtree.xradar.apply(filter_radar, ref_field='DBZH', rho_field='RHOHV')
+        >>> # The filtered_dtree now contains only data points that meet the filter criteria.
+        >>> print(filtered_dtree)
 
-    >>> # The filtered_dtree now contains only data points that meet the filter criteria.
-    >>> print(filtered_dtree)
+        This function can be customized to perform any kind of operation on the radar
+        data, such as adding new derived fields, applying corrections, or filtering
+        unwanted data points.
+        """
+        radar = self.xarray_obj
 
-    This function can be customized to perform any kind of operation on the radar
-    data, such as adding new derived fields, applying corrections, or filtering
-    unwanted data points.
-    """
-    radar = self.xarray_obj
+        # Create a new tree dictionary
+        tree = {"/": radar.ds}  # Start with the root Dataset
 
-    # Create a new tree dictionary
-    tree = {"/": radar.ds}  # Start with the root Dataset
+        # Add all nodes except the root
+        tree.update({node.path: node.ds for node in radar.subtree if node.path != "/"})
 
-    # Add all nodes except the root
-    tree.update({node.path: node.ds for node in radar.subtree if node.path != "/"})
+        # Apply the function to all sweep nodes and update the tree dictionary
+        tree.update(
+            {
+                node.path: func(radar[node.path].to_dataset(), *args, **kwargs)
+                for node in radar.match("sweep*").subtree
+                if node.path.startswith("/sweep")
+            }
+        )
 
-    # Apply the function to all sweep nodes and update the tree dictionary
-    tree.update(
-        {
-            node.path: func(radar[node.path].to_dataset(), *args, **kwargs)
-            for node in radar.match("sweep*").subtree
-            if node.path.startswith("/sweep")
-        }
-    )
-
-    # Return a new DataTree constructed from the modified tree dictionary
-    return dt.DataTree.from_dict(tree)
+        # Return a new DataTree constructed from the modified tree dictionary
+        return dt.DataTree.from_dict(tree)
