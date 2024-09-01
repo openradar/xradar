@@ -3,7 +3,6 @@
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
-
 CfRadial1 output
 ================
 
@@ -20,7 +19,6 @@ Example::
    :toctree: generated/
 
    {}
-
 """
 
 __all__ = [
@@ -76,12 +74,11 @@ def _main_info_mapper(dtree):
     xarray.Dataset
         Dataset containing the mapped radar information.
     """
-    dataset = dtree.root.to_dataset().drop_vars("sweep_group_name", errors="ignore")
-
-    # Only rename 'sweep_fixed_angle' if it exists in the dataset
-    if "sweep_fixed_angle" in dataset.variables:
-        dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
-
+    dataset = (
+        dtree.root.to_dataset()
+        .drop_vars("sweep_group_name", errors="ignore")
+        .rename({"sweep_fixed_angle": "fixed_angle"})
+    )
     return dataset
 
 
@@ -103,7 +100,7 @@ def _variable_mapper(dtree, dim0=None):
     """
 
     sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle", errors="ignore")
+    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle")
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
@@ -140,7 +137,6 @@ def _variable_mapper(dtree, dim0=None):
         combine_attrs="drop_conflicts",
     )
 
-    # Check if specific variables exist before dropping them
     drop_variables = [
         "sweep_fixed_angle",
         "sweep_number",
@@ -278,7 +274,8 @@ def calculate_sweep_indices(dtree, dataset=None):
 def to_cfradial1(dtree=None, filename=None, calibs=True):
     """
     Convert a radar datatree.DataTree to the CFRadial1 format
-    and save it to a file.
+    and save it to a file. Ensure that the resulting dataset
+    is well-formed and does not include specified extraneous variables.
 
     Parameters
     ----------
@@ -287,18 +284,19 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
     filename: str, optional
         The name of the output netCDF file.
     calibs: Bool, optional
-        calibration parameters
+        Whether to include calibration parameters.
     """
+    # Generate the initial ds_cf using the existing mapping functions
     dataset = _variable_mapper(dtree)
 
-    # Check if radar_parameters, radar_calibration, and
-    # georeferencing_correction exist in dtree
+    # Handle calibration parameters
     if calibs:
         if "radar_calibration" in dtree:
             calib_params = dtree["radar_calibration"].to_dataset()
             calibs = _calib_mapper(calib_params)
             dataset.update(calibs)
 
+    # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
         radar_params = dtree["radar_parameters"].to_dataset()
         dataset.update(radar_params)
@@ -307,8 +305,12 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
         radar_georef = dtree["georeferencing_correction"].to_dataset()
         dataset.update(radar_georef)
 
-    dataset.attrs = dtree.attrs
+    # Ensure that the data type of sweep_mode and similar variables matches
+    if "sweep_mode" in dataset.variables:
+        dataset["sweep_mode"] = dataset["sweep_mode"].astype("S")
 
+    # Update global attributes
+    dataset.attrs = dtree.attrs
     dataset.attrs["Conventions"] = "Cf/Radial"
     dataset.attrs["version"] = "1.2"
     xradar_version = version("xradar")
