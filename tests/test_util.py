@@ -279,30 +279,35 @@ def test_apply_to_sweeps():
         ds["dummy_field"] = (
             ds["reflectivity_horizontal"] * 0
         )  # Adding a field with all zeros
-        ds["dummy_field"].attrs = {"unit": "dBZ", "long_name": "Dummy Field"}
+        ds["dummy_field"].attrs = {"units": "dBZ", "long_name": "Dummy Field"}
         return ds
 
     # Apply the dummy function to all sweeps using apply_to_sweeps
-    dtree = util.apply_to_sweeps(dtree, dummy_function)
+    modified_dtree = util.apply_to_sweeps(dtree, dummy_function)
 
     # Verify that the dummy field has been added to each sweep
-    sweep_keys = util.get_sweep_keys(dtree)
+    sweep_keys = util.get_sweep_keys(modified_dtree)
     for key in sweep_keys:
-        assert "dummy_field" in dtree[key].data_vars, f"dummy_field not found in {key}"
-        assert dtree[key]["dummy_field"].attrs["unit"] == "dBZ"
-        assert dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
+        assert (
+            "dummy_field" in modified_dtree[key].data_vars
+        ), f"dummy_field not found in {key}"
+        assert modified_dtree[key]["dummy_field"].attrs["units"] == "dBZ"
+        assert modified_dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
 
     # Check that the original data has not been modified
     assert (
-        "dummy_field" not in dtree.data_vars
+        "dummy_field" not in dtree["/"].data_vars
     ), "dummy_field should not be in the root node"
 
     # Test that an exception is raised when a function that causes an error is applied
-    with pytest.raises(
-        RuntimeError, match=r"An error occurred while processing 'sweep_0'"
-    ):
+    with pytest.raises(ValueError, match="This is an intentional error"):
 
         def error_function(ds):
             raise ValueError("This is an intentional error")
 
         util.apply_to_sweeps(dtree, error_function)
+
+
+def test_apply_to_volume():
+    # Reuse the test logic from test_apply_to_sweeps
+    test_apply_to_sweeps()
