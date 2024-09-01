@@ -221,7 +221,7 @@ class XradarDataTreeAccessor(XradarAccessor):
 
     def apply(self, func, *args, **kwargs):
         """
-        Applies a given function to all sweeps in the radar volume.
+        Applies a given function to all sweep nodes in the radar volume.
 
         Parameters
         ----------
@@ -235,11 +235,24 @@ class XradarDataTreeAccessor(XradarAccessor):
         Returns
         -------
         DataTree
-            The DataTree object after applying the function to all sweeps.
+            A new DataTree object with the function applied to all sweeps.
         """
         radar = self.xarray_obj
-        for key in list(radar.children):
-            if "sweep" in key:
-                radar[key].ds = func(radar[key].to_dataset(), *args, **kwargs)
-        return radar
-        # return apply_to_sweeps(self.xarray_obj, func, *args, **kwargs)
+
+        # Create a new tree dictionary
+        tree = {"/": radar.ds}  # Start with the root Dataset
+
+        # Add all nodes except the root
+        tree.update({node.path: node.ds for node in radar.subtree if node.path != "/"})
+
+        # Apply the function to all sweep nodes and update the tree dictionary
+        tree.update(
+            {
+                node.path: func(radar[node.path].to_dataset(), *args, **kwargs)
+                for node in radar.match("sweep*").subtree
+                if node.path.startswith("/sweep")
+            }
+        )
+
+        # Return a new DataTree constructed from the modified tree dictionary
+        return dt.DataTree.from_dict(tree)
