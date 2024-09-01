@@ -566,13 +566,15 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     return dt.DataTree.from_dict(tree)
 
 
-def apply_to_volume(self, func, *args, **kwargs):
+def apply_to_volume(dtree, func, *args, **kwargs):
     """
     Alias for apply_to_sweeps.
     Applies a given function to all sweep nodes in the radar volume.
 
     Parameters
     ----------
+    dtree : DataTree
+        The DataTree object representing the radar volume.
     func : function
         The function to apply to each sweep.
     *args : tuple
@@ -585,4 +587,4 @@ def apply_to_volume(self, func, *args, **kwargs):
     DataTree
         A new DataTree object with the function applied to all sweeps.
     """
-    return self.apply_to_sweeps(func, *args, **kwargs)
+    return apply_to_sweeps(dtree, func, *args, **kwargs)
