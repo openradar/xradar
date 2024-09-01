@@ -1,6 +1,6 @@
 # History
 
-## 0.6.4 (2024-08-31)
+## Development version
 
 ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume. This function allows users to apply a specified function to each sweep, with options for passing additional arguments and handling errors gracefully. Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).
 
