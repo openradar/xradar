@@ -53,7 +53,6 @@ from ...model import (
     get_time_attrs,
 )
 from .common import _assign_root, _attach_sweep_groups
-from .cfradial1 import _get_required_root_dataset
 
 variable_attr_dict = {}
 variable_attr_dict["intensity"] = {
@@ -358,8 +357,7 @@ class HplFile:
                 if k == "fixed_angle":
                     sweep_dict["sweep_fixed_angle"] = data_unsorted["fixed_angle"][i]
                 elif k == "sweep_number":
-                    sweep_dict["sweep_group_name"] = np.array(
-                        "sweep_{}".format(i - 1))
+                    sweep_dict["sweep_group_name"] = np.array(f"sweep_{i - 1}")
                     sweep_dict["sweep_number"] = np.array(i - 1)
                 elif len(variable_attr_dict[k]["dims"]) == 0:
                     sweep_dict[k] = data_unsorted[k]
@@ -558,7 +556,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             ds = ds.assign_coords({"longitude": ds.longitude})
             ds = ds.assign_coords({"latitude": ds.latitude})
             ds = ds.assign_coords({"altitude": ds.altitude})
-        
+
         ds.encoding["engine"] = "hpl"
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -570,7 +568,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             if "time" not in ds.dims:
                 ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
-        
+
         return ds
 
 
@@ -635,8 +633,8 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
 
     # create datatree root node with required data
     root = _assign_root(ds)
-    root["fixed_angle"] = ("sweep", [x['sweep_fixed_angle'].values for x in ds[1:]])
-    root["sweep_group_name"] = ("sweep", [x['sweep_group_name'].values for x in ds[1:]])                      
+    root["fixed_angle"] = ("sweep", [x["sweep_fixed_angle"].values for x in ds[1:]])
+    root["sweep_group_name"] = ("sweep", [x["sweep_group_name"].values for x in ds[1:]])
     dtree = DataTree(data=root, name="root")
     # return datatree with attached sweep child nodes
     return _attach_sweep_groups(dtree, ds[1:])
