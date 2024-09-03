@@ -15,6 +15,6 @@ Radar Data IO
 """
 from .backends import *  # noqa
 from .export import *  # noqa
-from .auto_read import * # noqa
+from .auto_read import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
