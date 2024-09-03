@@ -1,5 +1,9 @@
 # History
 
+## Development version
+
+FIX: Azimuth dimension now labelled correctly for Halo Photonics data by by [@rcjackson](https://github.com/rcjackson), ({pull}`201`) by [@rcjackson](https://github.com/rcjackson).
+
 ## 0.6.4 (2024-08-30)
 
 FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
