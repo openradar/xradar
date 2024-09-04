@@ -81,8 +81,31 @@ def test_read_nonlocal_dtree(sample_file):
         assert dtree is not None
 
 
-def test_verbose_failure_output(sample_file, capsys):
-    # Test that the failure message is printed when verbose is True.
+# Test for georeferencing and verbose output
+def test_read_with_georeferencing_and_verbose(sample_file, capsys):
+    # Test successful reading with georeferencing and verbose mode.
+    with (
+        patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
+        patch(
+            "xradar.io.auto_read.io.open_nexradlevel2_datatree",
+            side_effect=mock_open_success,
+        ),
+        patch("xarray.core.dataset.Dataset.pipe", side_effect=mock_georeference),
+    ):
+        dtree = auto_read.read(sample_file, georeference=True, verbose=True)
+        assert dtree is not None
+
+        # Capture the printed output
+        captured = capsys.readouterr()
+        assert "Georeferencing radar data..." in captured.out
+        assert (
+            "File opened successfully using open_nexradlevel2_datatree." in captured.out
+        )
+
+
+# Test for exception handling and verbose output during failure
+def test_read_failure_with_verbose_output(sample_file, capsys):
+    # Test that it handles exceptions and prints the verbose failure message.
     with (
         patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
         patch(
@@ -90,15 +113,38 @@ def test_verbose_failure_output(sample_file, capsys):
             side_effect=mock_open_failure,
         ),
     ):
-        with pytest.raises(ValueError, match="File could not be opened"):
+        with pytest.raises(
+            ValueError,
+            match="File could not be opened by any supported format in xradar.io.",
+        ):
             auto_read.read(sample_file, georeference=True, verbose=True)
 
         # Capture the printed output
         captured = capsys.readouterr()
-        assert (
-            "Failed to open with open_nexradlevel2_datatree: Failed to open the file."
-            in captured.out
-        )
+        assert "Failed to open with open_nexradlevel2_datatree" in captured.out
+
+
+# Test for raising ValueError when no format can open the file
+def test_read_failure_raises_value_error(sample_file):
+    # Test that it raises ValueError when no format can open the file.
+    with (
+        patch(
+            "xradar.io.auto_read.io.__all__",
+            ["open_nexradlevel2_datatree", "open_odim_datatree"],
+        ),
+        patch(
+            "xradar.io.auto_read.io.open_nexradlevel2_datatree",
+            side_effect=mock_open_failure,
+        ),
+        patch(
+            "xradar.io.auto_read.io.open_odim_datatree", side_effect=mock_open_failure
+        ),
+    ):
+        with pytest.raises(
+            ValueError,
+            match="File could not be opened by any supported format in xradar.io.",
+        ):
+            auto_read.read(sample_file)
 
 
 # Test read success with georeferencing
@@ -116,21 +162,18 @@ def test_read_success(sample_file):
         assert dtree is not None
 
 
-# Test read failure when no format can open the file
-def test_read_failure(sample_file):
-    # Test that it raises ValueError when no format can open the file
+# Test read success without georeferencing
+def test_read_success_without_georeference(sample_file):
+    # Test successful reading without georeferencing
     with (
         patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
         patch(
             "xradar.io.auto_read.io.open_nexradlevel2_datatree",
-            side_effect=mock_open_failure,
+            side_effect=mock_open_success,
         ),
     ):
-        with pytest.raises(
-            ValueError,
-            match="File could not be opened by any supported format in xradar.io.",
-        ):
-            auto_read.read(sample_file)
+        dtree = auto_read.read(sample_file, georeference=False)
+        assert dtree is not None
 
 
 # Test read with timeout raising a TimeoutException
@@ -152,17 +195,3 @@ def test_read_with_timeout(sample_file):
             auto_read.TimeoutException, match="Radar file reading timed out."
         ):
             auto_read.read(sample_file, timeout=1)
-
-
-# Test read success without georeferencing
-def test_read_success_without_georeference(sample_file):
-    # Test successful reading without georeferencing
-    with (
-        patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
-        patch(
-            "xradar.io.auto_read.io.open_nexradlevel2_datatree",
-            side_effect=mock_open_success,
-        ),
-    ):
-        dtree = auto_read.read(sample_file, georeference=False)
-        assert dtree is not None
