@@ -14,7 +14,7 @@ types, georeferencing, and logging, as well as a timeout mechanism for file read
    :nosignatures:
    :toctree: generated/
 
-   read
+   {}
 """
 
 __all__ = [
