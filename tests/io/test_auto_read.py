@@ -1,3 +1,4 @@
+import logging
 import signal
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,8 @@ from xradar.io import auto_read
 # Mocked functions for testing
 def mock_open_success(file):
     mock_dtree = MagicMock(name="DataTree")
+    # Mock the behavior of georeference to return the same object without changing attrs
+    mock_dtree.xradar.georeference.return_value = mock_dtree
     return mock_dtree
 
 
@@ -82,8 +85,8 @@ def test_read_nonlocal_dtree(sample_file):
 
 
 # Test for georeferencing and verbose output
-def test_read_with_georeferencing_and_verbose(sample_file, capsys):
-    # Test successful reading with georeferencing and verbose mode.
+def test_read_with_georeferencing_and_logging(sample_file, caplog):
+    # Test successful reading with georeferencing and log output.
     with (
         patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
         patch(
@@ -92,20 +95,21 @@ def test_read_with_georeferencing_and_verbose(sample_file, capsys):
         ),
         patch("xarray.core.dataset.Dataset.pipe", side_effect=mock_georeference),
     ):
-        dtree = auto_read.read(sample_file, georeference=True, verbose=True)
-        assert dtree is not None
+        with caplog.at_level(logging.DEBUG):
+            dtree = auto_read.read(sample_file, georeference=True, verbose=True)
+            assert dtree is not None
 
-        # Capture the printed output
-        captured = capsys.readouterr()
-        assert "Georeferencing radar data..." in captured.out
-        assert (
-            "File opened successfully using open_nexradlevel2_datatree." in captured.out
-        )
+            # Check that the log messages contain the correct information
+            assert "Georeferencing radar data..." in caplog.text
+            assert (
+                "File opened successfully using open_nexradlevel2_datatree."
+                in caplog.text
+            )
 
 
 # Test for exception handling and verbose output during failure
-def test_read_failure_with_verbose_output(sample_file, capsys):
-    # Test that it handles exceptions and prints the verbose failure message.
+def test_read_failure_with_verbose_output(sample_file, caplog):
+    # Test that it handles exceptions and logs the verbose failure message.
     with (
         patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
         patch(
@@ -113,15 +117,17 @@ def test_read_failure_with_verbose_output(sample_file, capsys):
             side_effect=mock_open_failure,
         ),
     ):
-        with pytest.raises(
-            ValueError,
-            match="File could not be opened by any supported format in xradar.io.",
-        ):
-            auto_read.read(sample_file, georeference=True, verbose=True)
+        with caplog.at_level(logging.DEBUG):
+            with pytest.raises(
+                ValueError,
+                match="File could not be opened by any supported format in xradar.io.",
+            ):
+                auto_read.read(sample_file, georeference=True, verbose=True)
 
-        # Capture the printed output
-        captured = capsys.readouterr()
-        assert "Failed to open with open_nexradlevel2_datatree" in captured.out
+            # Check that the failure log messages contain the correct information
+            assert (
+                "Failed to open with open_nexradlevel2_datatree" in caplog.text
+            )  # Capturing log instead of print
 
 
 # Test for raising ValueError when no format can open the file
@@ -195,3 +201,28 @@ def test_read_with_timeout(sample_file):
             auto_read.TimeoutException, match="Radar file reading timed out."
         ):
             auto_read.read(sample_file, timeout=1)
+
+
+def test_read_comment_update(sample_file):
+    with (
+        patch("xradar.io.auto_read.io.__all__", ["open_nexradlevel2_datatree"]),
+        patch(
+            "xradar.io.auto_read.io.open_nexradlevel2_datatree",
+            side_effect=mock_open_success,
+        ),
+    ):
+        dtree = auto_read.read(sample_file)
+        assert dtree is not None
+
+        # Print the actual value of the 'comment' attribute for debugging
+        print(f"Actual comment: {dtree.attrs['comment']}")
+
+        # The initial comment is "im/exported using xradar" (lowercase 'i')
+        expected_comment_start = "im/exported using xradar"
+
+        # Ensure the comment starts with the correct initial value
+        assert dtree.attrs["comment"].startswith(expected_comment_start)
+
+        # Ensure the comment has the correct format with 'nexradlevel2'
+        expected_comment_end = ",\n'nexradlevel2'"
+        assert dtree.attrs["comment"].endswith(expected_comment_end)
