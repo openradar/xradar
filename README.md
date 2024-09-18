@@ -25,6 +25,8 @@ Any software package that uses xarray in any way will then be able to directly u
 
 ## Status
 
+[![Project Status: Beta](https://img.shields.io/badge/status-beta-blue.svg)](https://www.repostatus.org/#beta)
+
 Xradar is considered stable for the implemented readers and writers which have been ported from wradlib. It will remain in beta status until the standard is finalized and the API as well as data model will move into stable/production status.
 
 ## Features
