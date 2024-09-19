@@ -163,24 +163,13 @@ class DataMetFile:
         mom_path = os.path.join(".", mom, str(sweep + 1))
         mom_medata = self.get_mom_metadata(mom, sweep)
 
-        offset = float(mom_medata.get("offset") or 1.0)
-        slope = float(mom_medata.get("slope") or 1.0)
-        maxval = mom_medata.get("maxval")
-
-        if maxval:
-            maxval = float(maxval)
-            top = 255
-            bottom = float(mom_medata["bottom"])
-            slope = (maxval - offset) / (top - bottom)
-
         bitplanes = 16 if mom == "PHIDP" else int(mom_medata["bitplanes"] or 8)
         nazim = int(mom_medata.get("nlines"))
         nrange = int(mom_medata.get("ncols"))
 
         dtype = np.uint16 if bitplanes == 16 else np.uint8
         data = self.extract_data(mom_path, dtype)
-        data = slope * np.reshape(data, (nazim, nrange)) + offset
-        data[data < offset + 1e-5] = np.nan
+        data = np.reshape(data, (nazim, nrange))
 
         return data
 
@@ -272,8 +261,15 @@ class DataMetStore(AbstractDataStore):
         encoding = {"group": self._group, "source": self._filename}
 
         mom_metadata = self.root.get_mom_metadata(mom, self._group)
-        add_offset = mom_metadata.get("offset")
-        scale_factor = mom_metadata.get("slope")
+        add_offset = float(mom_metadata.get("offset") or 0.0)
+        scale_factor = float(mom_metadata.get("slope") or 1.0)
+        maxval = mom_metadata.get("maxval", None)
+
+        if maxval is not None:
+            maxval = float(maxval)
+            top = 255
+            bottom = float(mom_metadata["bottom"])
+            scale_factor = (maxval + add_offset) / (top - bottom)
 
         mname = datamet_mapping.get(mom, mom)
         mapping = sweep_vars_mapping.get(mname, {})

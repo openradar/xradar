@@ -122,22 +122,11 @@ variable_attr_dict["range"] = {
     "dims": ("range",),
 }
 
-variable_attr_dict["sweep_start_ray_index"] = {
-    "standard_name": "index_of_first_ray_in_sweep",
-    "long_name": "Index of first ray in sweep",
-    "units": "",
-    "dims": ("sweep",),
-}
-variable_attr_dict["sweep_end_ray_index"] = {
-    "standard_name": "index_of_last_ray_in_sweep",
-    "long_name": "Index of last ray in sweep",
-    "units": "",
-    "dims": ("sweep",),
-}
 
 variable_attr_dict["sweep_mode"] = {"dims": ()}
-variable_attr_dict["fixed_angle"] = {"dims": ("sweep")}
-variable_attr_dict["sweep_number"] = {"dims": ("sweep")}
+variable_attr_dict["sweep_fixed_angle"] = {"dims": ()}
+variable_attr_dict["sweep_group_name"] = {"dims": ()}
+variable_attr_dict["sweep_number"] = {"dims": ()}
 variable_attr_dict["time"] = get_time_attrs()
 variable_attr_dict["time"]["dims"] = ("time",)
 variable_attr_dict["azimuth"] = get_azimuth_attrs()
@@ -363,13 +352,22 @@ class HplFile:
                 data_unsorted["sweep_end_ray_index"][i],
             )
             for k in data_unsorted.keys():
-                if len(variable_attr_dict[k]["dims"]) == 0:
+                if k == "sweep_start_ray_index" or k == "sweep_end_ray_index":
+                    continue
+                if k == "fixed_angle":
+                    sweep_dict["sweep_fixed_angle"] = data_unsorted["fixed_angle"][i]
+                elif k == "sweep_number":
+                    sweep_dict["sweep_group_name"] = np.array(f"sweep_{i - 1}")
+                    sweep_dict["sweep_number"] = np.array(i - 1)
+                elif len(variable_attr_dict[k]["dims"]) == 0:
                     sweep_dict[k] = data_unsorted[k]
                 elif variable_attr_dict[k]["dims"][0] == "time":
                     sweep_dict[k] = data_unsorted[k][time_inds]
                 else:
                     sweep_dict[k] = data_unsorted[k]
             self._data["sweep_%d" % i] = sweep_dict
+        self._data["sweep_number"] = data_unsorted["sweep_number"]
+        self._data["fixed_angle"] = data_unsorted["fixed_angle"]
 
     def get_sweep(self, sweep_number, moments=None):
         if moments is None:
@@ -462,7 +460,7 @@ class HplStore(AbstractDataStore):
         return xr.Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):
-        coord_keys = ["time", "range"]
+        coord_keys = ["time", "azimuth", "range"]
         coords = {}
         for k in coord_keys:
             attrs = variable_attr_dict[k].copy()
@@ -550,10 +548,26 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
         )
-
-        ds = ds.assign_coords({"range": ds.range})
+        # reassign azimuth/elevation/time coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
+        if site_coords is True:
+            ds = ds.assign_coords({"longitude": ds.longitude})
+            ds = ds.assign_coords({"latitude": ds.latitude})
+            ds = ds.assign_coords({"altitude": ds.altitude})
+
         ds.encoding["engine"] = "hpl"
+        # handling first dimension
+        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+        if first_dim == "auto":
+            if "time" in ds.dims:
+                ds = ds.swap_dims({"time": dim0})
+            ds = ds.sortby(dim0)
+        else:
+            if "time" not in ds.dims:
+                ds = ds.swap_dims({dim0: "time"})
+            ds = ds.sortby("time")
 
         return ds
 
@@ -618,6 +632,9 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
 
     # create datatree root node with required data
-    dtree = DataTree(data=_assign_root(ds), name="root")
+    root = _assign_root(ds)
+    root["fixed_angle"] = ("sweep", [x["sweep_fixed_angle"].values for x in ds[1:]])
+    root["sweep_group_name"] = ("sweep", [x["sweep_group_name"].values for x in ds[1:]])
+    dtree = DataTree(data=root, name="root")
     # return datatree with attached sweep child nodes
     return _attach_sweep_groups(dtree, ds[1:])
