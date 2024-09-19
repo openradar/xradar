@@ -2,7 +2,7 @@
 
 ## Development version
 
-FIX: Azimuth dimension now labelled correctly for Halo Photonics data by by [@rcjackson](https://github.com/rcjackson), ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
+FIX: Azimuth dimension now labelled correctly for Halo Photonics data ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
 
 ## 0.6.4 (2024-08-30)
 
