@@ -279,26 +279,28 @@ def test_apply_to_sweeps():
         ds["dummy_field"] = (
             ds["reflectivity_horizontal"] * 0
         )  # Adding a field with all zeros
-        ds["dummy_field"].attrs = {"unit": "dBZ", "long_name": "Dummy Field"}
+        ds["dummy_field"].attrs = {"units": "dBZ", "long_name": "Dummy Field"}
         return ds
 
     # Apply the dummy function to all sweeps using apply_to_sweeps
-    dtree = util.apply_to_sweeps(dtree, dummy_function)
+    modified_dtree = util.apply_to_sweeps(dtree, dummy_function)
 
     # Verify that the dummy field has been added to each sweep
-    sweep_keys = util.get_sweep_keys(dtree)
+    sweep_keys = util.get_sweep_keys(modified_dtree)
     for key in sweep_keys:
-        assert "dummy_field" in dtree[key].data_vars, f"dummy_field not found in {key}"
-        assert dtree[key]["dummy_field"].attrs["unit"] == "dBZ"
-        assert dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
+        assert (
+            "dummy_field" in modified_dtree[key].data_vars
+        ), f"dummy_field not found in {key}"
+        assert modified_dtree[key]["dummy_field"].attrs["units"] == "dBZ"
+        assert modified_dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
 
     # Check that the original data has not been modified
     assert (
-        "dummy_field" not in dtree.data_vars
+        "dummy_field" not in dtree["/"].data_vars
     ), "dummy_field should not be in the root node"
 
     # Test that an exception is raised when a function that causes an error is applied
-    with pytest.raises(RuntimeError, match="An error occurred while processing sweep"):
+    with pytest.raises(ValueError, match="This is an intentional error"):
 
         def error_function(ds):
             raise ValueError("This is an intentional error")
@@ -306,26 +308,6 @@ def test_apply_to_sweeps():
         util.apply_to_sweeps(dtree, error_function)
 
 
-def test_apply_to_sweeps_with_sweep_name():
-    # Fetch the sample radar file
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-    dtree = io.open_cfradial1_datatree(filename)
-
-    # Define a function that requires the sweep name
-    def function_with_sweep_name(ds, sweep):
-        """A function that adds a field including the sweep name."""
-        ds["sweep_name_field"] = sweep  # Add the sweep name as a new variable
-        return ds
-
-    # Apply the function to all sweeps, passing the sweep name
-    dtree = util.apply_to_sweeps(dtree, function_with_sweep_name, pass_sweep_name=True)
-
-    # Verify that the sweep_name_field has been added and contains the correct sweep name
-    sweep_keys = util.get_sweep_keys(dtree)
-    for key in sweep_keys:
-        assert (
-            "sweep_name_field" in dtree[key].data_vars
-        ), f"sweep_name_field not found in {key}"
-        assert (
-            dtree[key]["sweep_name_field"].values == key
-        ), f"sweep_name_field value is incorrect in {key}"
+def test_apply_to_volume():
+    # Reuse the test logic from test_apply_to_sweeps
+    test_apply_to_sweeps()

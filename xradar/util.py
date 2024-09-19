@@ -34,6 +34,7 @@ import importlib.util
 import io
 import warnings
 
+import datatree as dt
 import numpy as np
 from scipy import interpolate
 
@@ -525,18 +526,16 @@ def get_sweep_keys(dt):
     return sweep_group_keys
 
 
-def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
+def apply_to_sweeps(dtree, func, *args, **kwargs):
     """
-    Applies a given function to all sweeps in the radar volume within a DataTree.
+    Applies a given function to all sweep nodes in the radar volume.
 
     Parameters
     ----------
     dtree : DataTree
-        The DataTree object containing radar data.
+        The DataTree object representing the radar volume.
     func : function
         The function to apply to each sweep.
-    pass_sweep_name : bool, optional
-        Whether to pass the sweep name to the function. Defaults to False.
     *args : tuple
         Additional positional arguments to pass to the function.
     **kwargs : dict
@@ -545,21 +544,46 @@ def apply_to_sweeps(dtree, func, pass_sweep_name=False, *args, **kwargs):
     Returns
     -------
     DataTree
-        The DataTree object after applying the function to all sweeps.
-
-    Raises
-    ------
-    Exception
-        Re-raises any exception that occurs during the function application.
+        A new DataTree object with the function applied to all sweeps.
     """
-    for key in list(dtree.children):
-        if "sweep" in key:
-            try:
-                if pass_sweep_name:
-                    dtree[key] = func(dtree[key], sweep=key, *args, **kwargs)
-                else:
-                    dtree[key] = func(dtree[key], *args, **kwargs)
-            except Exception as e:
-                raise RuntimeError(f"An error occurred while processing {key}: {e}")
+    # Create a new tree dictionary
+    tree = {"/": dtree.ds}  # Start with the root Dataset
 
-    return dtree
+    # Add all nodes except the root
+    tree.update({node.path: node.ds for node in dtree.subtree if node.path != "/"})
+
+    # Apply the function to all sweep nodes and update the tree dictionary
+    tree.update(
+        {
+            node.path: func(dtree[node.path].to_dataset(), *args, **kwargs)
+            for node in dtree.match("sweep*").subtree
+            if node.path.startswith("/sweep")
+        }
+    )
+
+    # Return a new DataTree constructed from the modified tree dictionary
+    return dt.DataTree.from_dict(tree)
+
+
+def apply_to_volume(dtree, func, *args, **kwargs):
+    """
+    Alias for apply_to_sweeps.
+    Applies a given function to all sweep nodes in the radar volume.
+
+    Parameters
+    ----------
+    dtree : DataTree
+        The DataTree object representing the radar volume.
+    func : function
+        The function to apply to each sweep.
+    *args : tuple
+        Additional positional arguments to pass to the function.
+    **kwargs : dict
+        Additional keyword arguments to pass to the function.
+
+    Returns
+    -------
+    DataTree
+        A new DataTree object with the function applied to all sweeps.
+    """
+    return apply_to_sweeps(dtree, func, *args, **kwargs)
