@@ -4,7 +4,9 @@
 
 * FIX: Azimuth dimension now labelled correctly for Halo Photonics data ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
 * FIX: do not apply scale/offset in datamet reader, leave it to xarray instead ({pull}`209`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
-* ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume. Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).
+* ADD: Auto_Read function to read the data automatically using `xd.io.read` ({pull})`205` by [@syedhamidali](https://github.com/syedhamidali).
+* ADD: Added a new function apply accessor for volume operations ({pull})`203` by [@syedhamidali](https://github.com/syedhamidali).
+* ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).
 
 ## 0.6.4 (2024-08-30)
 
