@@ -25,6 +25,8 @@ __all__ = [
     "to_cfradial1",
 ]
 
+__doc__ = __doc__.format("\n   ".join(__all__))
+
 from importlib.metadata import version
 
 import numpy as np
