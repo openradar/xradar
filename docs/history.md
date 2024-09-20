@@ -1,9 +1,9 @@
 # History
 
-## Development version
+## 0.6.5 (2024-09-20)
 
 FIX: Azimuth dimension now labelled correctly for Halo Photonics data ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
-FIX: do not apply scale/offset in datamet reader, leave it to xarray instead ({pull}`209`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+FIX: Do not apply scale/offset in datamet reader, leave it to xarray instead ({pull}`209`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.6.4 (2024-08-30)
 
