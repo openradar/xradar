@@ -18,6 +18,7 @@ datamodel
 importers
 exporters
 notebooks/Accessors
+notebooks/Apply_Accessor
 ```
 
 ```{toctree}
