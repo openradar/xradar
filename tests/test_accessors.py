@@ -4,7 +4,9 @@
 
 import datatree as dt
 import numpy as np
+import pytest
 from numpy.testing import assert_almost_equal
+from open_radar_data import DATASETS
 
 import xradar as xd
 
@@ -48,3 +50,105 @@ def test_georeference_datatree():
     assert_almost_equal(
         geo["z"].values[:3, 0], np.array([375.8727675, 375.8727675, 375.8727675])
     )
+
+
+def test_xradar_datatree_accessor_apply():
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object
+    dtree = xd.io.open_cfradial1_datatree(filename)
+
+    # Define a simple function to test with the apply method
+    def dummy_function(ds):
+        """A dummy function that adds a constant field to the dataset."""
+        ds["dummy_field"] = (
+            ds["reflectivity_horizontal"] * 0
+        )  # Adding a field with all zeros
+        ds["dummy_field"].attrs = {
+            "unit": "dBZ",
+            "long_name": "Dummy Field",
+        }
+        return ds
+
+    # Apply the dummy function using the xradar accessor
+    dtree = dtree.xradar.apply(dummy_function)
+
+    # Verify that the dummy field has been added to each sweep
+    for key in xd.util.get_sweep_keys(dtree):
+        assert "dummy_field" in dtree[key].data_vars, f"dummy_field not found in {key}"
+        assert dtree[key]["dummy_field"].attrs["unit"] == "dBZ"
+        assert dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
+
+    # Test that the original ValueError is raised when a function that causes an error is applied
+    with pytest.raises(ValueError, match="This is an intentional error"):
+
+        def error_function(ds):
+            raise ValueError("This is an intentional error")
+
+        dtree.xradar.apply(error_function)
+
+
+def test_xradar_dataset_accessor_apply():
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object and extract a Dataset
+    dtree = xd.io.open_cfradial1_datatree(filename)
+    ds = dtree["sweep_0"].to_dataset()  # Extracting the Dataset from one sweep
+
+    # Define a simple function to test with the apply method
+    def dummy_function(ds):
+        """A dummy function that adds a constant field to the dataset."""
+        ds["dummy_field"] = (
+            ds["reflectivity_horizontal"] * 0
+        )  # Adding a field with all zeros
+        ds["dummy_field"].attrs = {"unit": "dBZ", "long_name": "Dummy Field"}
+        return ds
+
+    # Apply the dummy function using the xradar accessor
+    ds = ds.xradar.apply(dummy_function)
+
+    # Verify that the dummy field has been added
+    assert "dummy_field" in ds.data_vars, "dummy_field not found in dataset"
+    assert ds["dummy_field"].attrs["unit"] == "dBZ"
+    assert ds["dummy_field"].attrs["long_name"] == "Dummy Field"
+
+    # Test that the original ValueError is raised when a function that causes an error is applied
+    with pytest.raises(ValueError, match="This is an intentional error"):
+
+        def error_function(ds):
+            raise ValueError("This is an intentional error")
+
+        ds.xradar.apply(error_function)
+
+
+def test_xradar_dataarray_accessor_apply():
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object, extract a Dataset, and then a DataArray
+    dtree = xd.io.open_cfradial1_datatree(filename)
+    ds = dtree["sweep_0"].to_dataset()  # Extracting the Dataset from one sweep
+    da = ds["reflectivity_horizontal"]  # Extracting a DataArray from the Dataset
+
+    # Define a simple function to test with the apply method
+    def dummy_function(da):
+        """A dummy function that adds a constant value to the data."""
+        return da + 10  # Add 10 to every element in the DataArray
+
+    # Apply the dummy function using the xradar accessor
+    da_modified = da.xradar.apply(dummy_function)
+
+    # Verify that the data was modified correctly using numpy's allclose
+    assert np.allclose(
+        da_modified.values, ds["reflectivity_horizontal"].values + 10, equal_nan=True
+    ), "DataArray values not correctly modified"
+
+    # Test that the original ValueError is raised when a function that causes an error is applied
+    with pytest.raises(ValueError, match="This is an intentional error"):
+
+        def error_function(da):
+            raise ValueError("This is an intentional error")
+
+        da.xradar.apply(error_function)

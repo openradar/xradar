@@ -24,6 +24,7 @@ __all__ = [
     "rolling_dim",
     "get_sweep_keys",
     "apply_to_sweeps",
+    "apply_to_volume",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
