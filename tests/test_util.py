@@ -4,6 +4,7 @@
 
 """Tests for `xradar` util package."""
 
+import datatree as dt
 import numpy as np
 import pytest
 import xarray as xr
@@ -264,3 +265,115 @@ def test_get_sweep_keys():
     dt["sneep_1"] = dt["sweep_1"]
     keys = util.get_sweep_keys(dt)
     assert keys == ["sweep_0", "sweep_1", "sweep_2", "sweep_3", "sweep_4", "sweep_5"]
+
+
+def test_apply_to_sweeps():
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object
+    dtree = io.open_cfradial1_datatree(filename)
+
+    # Define a simple function to test with apply_to_sweeps
+    def dummy_function(ds):
+        """A dummy function that adds a constant field to the dataset."""
+        ds["dummy_field"] = (
+            ds["reflectivity_horizontal"] * 0
+        )  # Adding a field with all zeros
+        ds["dummy_field"].attrs = {"units": "dBZ", "long_name": "Dummy Field"}
+        return ds
+
+    # Apply the dummy function to all sweeps using apply_to_sweeps
+    modified_dtree = util.apply_to_sweeps(dtree, dummy_function)
+
+    # Verify that the dummy field has been added to each sweep
+    sweep_keys = util.get_sweep_keys(modified_dtree)
+    for key in sweep_keys:
+        assert (
+            "dummy_field" in modified_dtree[key].data_vars
+        ), f"dummy_field not found in {key}"
+        assert modified_dtree[key]["dummy_field"].attrs["units"] == "dBZ"
+        assert modified_dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
+
+    # Check that the original data has not been modified
+    assert (
+        "dummy_field" not in dtree["/"].data_vars
+    ), "dummy_field should not be in the root node"
+
+    # Test that an exception is raised when a function that causes an error is applied
+    with pytest.raises(ValueError, match="This is an intentional error"):
+
+        def error_function(ds):
+            raise ValueError("This is an intentional error")
+
+        util.apply_to_sweeps(dtree, error_function)
+
+
+def test_apply_to_volume():
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object
+    dtree = io.open_cfradial1_datatree(filename)
+
+    # Define a simple function to test with apply_to_volume
+    def dummy_function(ds):
+        """A dummy function that adds a constant field to the dataset."""
+        ds["dummy_field"] = (
+            ds["reflectivity_horizontal"] * 0
+        )  # Adding a field with all zeros
+        ds["dummy_field"].attrs = {"units": "dBZ", "long_name": "Dummy Field"}
+        return ds
+
+    # Apply the dummy function to all sweeps using apply_to_volume
+    modified_dtree = util.apply_to_volume(dtree, dummy_function)
+
+    # Verify that the modified_dtree is an instance of DataTree
+    assert isinstance(
+        modified_dtree, dt.DataTree
+    ), "The result should be a DataTree instance."
+
+    # Verify that the dummy field has been added to each sweep
+    sweep_keys = util.get_sweep_keys(modified_dtree)
+    for key in sweep_keys:
+        assert (
+            "dummy_field" in modified_dtree[key].data_vars
+        ), f"dummy_field not found in {key}"
+        assert modified_dtree[key]["dummy_field"].attrs["units"] == "dBZ"
+        assert modified_dtree[key]["dummy_field"].attrs["long_name"] == "Dummy Field"
+
+    # Check that the original DataTree (dtree) has not been modified
+    original_sweep_keys = util.get_sweep_keys(dtree)
+    for key in original_sweep_keys:
+        assert (
+            "dummy_field" not in dtree[key].data_vars
+        ), f"dummy_field should not be in the original DataTree at {key}"
+
+    # Test edge case: Apply a function that modifies only certain sweeps
+    def selective_function(ds):
+        """Only modifies sweeps with a specific condition."""
+        if "reflectivity_horizontal" in ds:
+            ds["selective_field"] = ds["reflectivity_horizontal"] * 1
+        return ds
+
+    # Apply the selective function to all sweeps using apply_to_volume
+    selectively_modified_dtree = util.apply_to_volume(dtree, selective_function)
+
+    # Verify that the selective field was added only where the condition was met
+    for key in sweep_keys:
+        if "reflectivity_horizontal" in modified_dtree[key].data_vars:
+            assert (
+                "selective_field" in selectively_modified_dtree[key].data_vars
+            ), f"selective_field not found in {key} where it should have been added."
+        else:
+            assert (
+                "selective_field" not in selectively_modified_dtree[key].data_vars
+            ), f"selective_field should not be present in {key}"
+
+    # Test that an exception is raised when a function that causes an error is applied
+    with pytest.raises(ValueError, match="This is an intentional error"):
+
+        def error_function(ds):
+            raise ValueError("This is an intentional error")
+
+        util.apply_to_volume(dtree, error_function)
