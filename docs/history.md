@@ -1,14 +1,18 @@
 # History
 
+## Development Version
+
+* ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).
+
 ## 0.6.5 (2024-09-20)
 
-FIX: Azimuth dimension now labelled correctly for Halo Photonics data ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
-FIX: Do not apply scale/offset in datamet reader, leave it to xarray instead ({pull}`209`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: Azimuth dimension now labelled correctly for Halo Photonics data ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
+* FIX: do not apply scale/offset in datamet reader, leave it to xarray instead ({pull}`209`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.6.4 (2024-08-30)
 
-FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
-FIX: use dict.get() to retrieve attribute key and return "None" if not available, ({pull}`200`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
+* FIX: use dict.get() to retrieve attribute key and return "None" if not available, ({pull}`200`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.6.3 (2024-08-13)
 
