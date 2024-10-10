@@ -4,7 +4,6 @@
 
 """Tests for `xradar` util package."""
 
-import datatree as dt
 import numpy as np
 import pytest
 import xarray as xr
@@ -330,7 +329,7 @@ def test_apply_to_volume():
 
     # Verify that the modified_dtree is an instance of DataTree
     assert isinstance(
-        modified_dtree, dt.DataTree
+        modified_dtree, xr.DataTree
     ), "The result should be a DataTree instance."
 
     # Verify that the dummy field has been added to each sweep

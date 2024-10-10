@@ -147,7 +147,7 @@ def to_odim(
 
     Parameters
     ----------
-    dtree : datatree.DataTree
+    dtree : xarray.DataTree
     filename : str
         output filename
 

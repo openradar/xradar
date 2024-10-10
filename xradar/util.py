@@ -34,8 +34,8 @@ import importlib.util
 import io
 import warnings
 
-import datatree as dt
 import numpy as np
+import xarray as xr
 from scipy import interpolate
 
 
@@ -492,12 +492,12 @@ def rolling_dim(data, window):
     return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
 
 
-def get_sweep_keys(dt):
+def get_sweep_keys(dtree):
     """Return which nodes in the datatree contain sweep variables
 
     Parameters
     ----------
-    dt : xarray.DataTree
+    dtree : xarray.DataTree
         Datatree to check for sweep_n keys
 
     Returns
@@ -506,7 +506,7 @@ def get_sweep_keys(dt):
         List of associated keys with sweep_n
     """
     sweep_group_keys = []
-    for key in list(dt.children):
+    for key in list(dtree.children):
         parts = key.split("_")
         try:
             # Try to set the second part of the tree key to an int
@@ -532,7 +532,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
 
     Parameters
     ----------
-    dtree : DataTree
+    dtree : xarray.DataTree
         The DataTree object representing the radar volume.
     func : function
         The function to apply to each sweep.
@@ -543,7 +543,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
 
     Returns
     -------
-    DataTree
+    xarray.DataTree
         A new DataTree object with the function applied to all sweeps.
     """
     # Create a new tree dictionary
@@ -562,7 +562,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     )
 
     # Return a new DataTree constructed from the modified tree dictionary
-    return dt.DataTree.from_dict(tree)
+    return xr.DataTree.from_dict(tree)
 
 
 def apply_to_volume(dtree, func, *args, **kwargs):
@@ -572,7 +572,7 @@ def apply_to_volume(dtree, func, *args, **kwargs):
 
     Parameters
     ----------
-    dtree : DataTree
+    dtree : xarray.DataTree
         The DataTree object representing the radar volume.
     func : function
         The function to apply to each sweep.
@@ -583,7 +583,7 @@ def apply_to_volume(dtree, func, *args, **kwargs):
 
     Returns
     -------
-    DataTree
+    xarray.DataTree
         A new DataTree object with the function applied to all sweeps.
     """
     return apply_to_sweeps(dtree, func, *args, **kwargs)

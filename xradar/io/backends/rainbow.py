@@ -39,7 +39,6 @@ import zlib
 import numpy as np
 import xarray as xr
 import xmltodict
-from datatree import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -871,7 +870,7 @@ def _get_rainbow_group_names(filename):
 
 
 def open_rainbow_datatree(filename_or_obj, **kwargs):
-    """Open ODIM_H5 dataset as :py:class:`datatree.DataTree`.
+    """Open ODIM_H5 dataset as :py:class:`xarray.DataTree`.
 
     Parameters
     ----------
@@ -900,7 +899,7 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
 
     Returns
     -------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim
@@ -930,6 +929,6 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
     ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
 
     # create datatree root node with required data
-    dtree = DataTree(data=_assign_root(ds), name="root")
+    dtree = xr.DataTree(data=_assign_root(ds), name="root")
     # return datatree with attached sweep child nodes
     return _attach_sweep_groups(dtree, ds[1:])

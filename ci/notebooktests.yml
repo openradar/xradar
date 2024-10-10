@@ -27,7 +27,6 @@ dependencies:
   - scipy
   - setuptools
   - xarray
-  - xarray-datatree>=0.0.10
   - xmltodict
   - boto3
   - arm_pyart
