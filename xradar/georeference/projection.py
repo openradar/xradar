@@ -126,7 +126,7 @@ def add_crs_tree(radar, datum="WGS84"):
 
     Returns
     -------
-    radar : datatree.DataTree
+    radar : xarray.DataTree
         Datatree with sweep datasets including ``crs_wkt`` coordinate.
     """
     for key in list(radar.children):
