@@ -149,11 +149,31 @@ jobs:
         uses: mamba-org/setup-micromamba@v1
         with:
           environment-name: xradar-unit-tests
-          environment-file: ${{env.CONDA_ENV_FILE}}
           cache-environment: true
           cache-environment-key: "${{runner.os}}-${{runner.arch}}-py${{env.PYTHON_VERSION}}-${{env.TODAY}}-${{hashFiles(env.CONDA_ENV_FILE)}}"
           create-args: >-
             python=${{matrix.python-version}}
+            cmweather
+            dask
+            fsspec
+            h5netcdf
+            h5py
+            lat_lon_parser
+            netCDF4
+            open-radar-data>=0.3.0
+            packaging
+            pandas
+            pip
+            pyproj
+            pytest
+            pytest-doctestplus
+            pytest-sugar
+            pytest-xdist
+            scipy
+            setuptools
+            wheel
+            xarray-datatree>=0.0.10
+            xmltodict
             numpy=${{matrix.numpy-version}}
             conda
       - name: Install xarray
