@@ -2,8 +2,8 @@
 # Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
-import datatree as dt
 import numpy as np
+import xarray as xr
 from numpy.testing import assert_almost_equal
 
 import xradar as xd
@@ -37,7 +37,7 @@ def test_georeference_dataset():
 
 def test_georeference_datatree():
     radar = xd.model.create_sweep_dataset()
-    tree = dt.DataTree.from_dict({"sweep_0": radar})
+    tree = xr.DataTree.from_dict({"sweep_0": radar})
     geo = tree.xradar.georeference()["sweep_0"]
     assert_almost_equal(
         geo["x"].values[:3, 0], np.array([0.436241, 1.3085901, 2.1805407])

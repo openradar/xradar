@@ -7,7 +7,6 @@
 import io
 import tempfile
 
-import datatree
 import fsspec
 import h5py
 import numpy as np
@@ -914,12 +913,12 @@ def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
     outfile = tempfile.NamedTemporaryFile(mode="w+b").name
     xradar.io.to_cfradial2(dtree0.copy(), outfile)
     # then open cfradial2 file
-    dtree1 = datatree.open_datatree(outfile)
+    dtree1 = xr.open_datatree(outfile)
     # and write again
     outfile1 = tempfile.NamedTemporaryFile(mode="w+b").name
     xradar.io.to_cfradial2(dtree1.copy(), outfile1)
     # and open second cfradial2
-    dtree2 = datatree.open_datatree(outfile1)
+    dtree2 = xr.open_datatree(outfile1)
     # check equality
     for d0, d1, d2 in zip(dtree0.groups, dtree1.groups, dtree2.groups):
         if "sweep" in d0:

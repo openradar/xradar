@@ -33,7 +33,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 from importlib.metadata import version
 
-from datatree import DataTree
+import xarray as xr
 
 from ...model import conform_cfradial2_sweep_group
 from ...util import has_import
@@ -44,7 +44,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
 
     Parameters
     ----------
-    dtree : datatree.DataTree
+    dtree : xarray.DataTree
         DataTree with CfRadial2 groups.
     filename : str
         output filename
@@ -69,7 +69,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
     # iterate over DataTree and make subgroups cfradial2 compliant
     for grp in dtree.groups:
         if "sweep" in grp:
-            dtree[grp] = DataTree(
+            dtree[grp] = xr.DataTree(
                 conform_cfradial2_sweep_group(
                     dtree[grp].to_dataset(),
                     optional=False,

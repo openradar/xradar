@@ -172,7 +172,6 @@ jobs:
             scipy
             setuptools
             wheel
-            xarray-datatree>=0.0.10
             xmltodict
             numpy=${{matrix.numpy-version}}
             conda
