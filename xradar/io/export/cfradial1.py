@@ -106,7 +106,7 @@ def _variable_mapper(dtree, dim0=None):
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
-            data = dtree[grp]
+            data = dtree[grp].to_dataset()
 
             # handling first dimension
             if dim0 is None:
@@ -129,7 +129,7 @@ def _variable_mapper(dtree, dim0=None):
             data = data.drop_vars(["x", "y", "z"], errors="ignore")
 
             # Convert to a dataset and append to the list
-            sweep_datasets.append(data.to_dataset())
+            sweep_datasets.append(data)
 
     result_dataset = xr.concat(
         sweep_datasets,

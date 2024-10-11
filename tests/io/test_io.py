@@ -92,13 +92,14 @@ def test_open_cfradial1_dataset(cfradial1_file):
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == {"DBZ", "VR"}
         assert ds.sweep_number == 0
-        # open last sweep group
-        with xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1") as ds:
-            assert list(ds.dims) == ["azimuth", "range"]
-            assert set(ds.data_vars) & (
-                sweep_dataset_vars | non_standard_sweep_dataset_vars
-            ) == {"DBZ", "VR"}
-            assert ds.sweep_number == 8
+
+    # open last sweep group
+    with xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1") as ds:
+        assert list(ds.dims) == ["azimuth", "range"]
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"DBZ", "VR"}
+        assert ds.sweep_number == 8
 
 
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
@@ -113,7 +114,6 @@ def test_open_odim_datatree_sweep(odim_file, sweep):
 
 def test_open_odim_datatree(odim_file):
     dtree = open_odim_datatree(odim_file)
-
     # root_attrs
     attrs = dtree.attrs
     assert attrs["Conventions"] == "ODIM_H5/V2_2"
@@ -222,12 +222,14 @@ def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
 def test_open_odim_dataset_stream(odim_file):
     with open(odim_file, mode="rb") as fhandle:
         contents = io.BytesIO(fhandle.read())
-        xr.open_dataset(contents, group="sweep_0", engine="odim")
+        with xr.open_dataset(contents, group="sweep_0", engine="odim") as ds:
+            assert isinstance(ds, xr.Dataset)
 
 
 def test_open_odim_dataset_fsspec(odim_file):
     with fsspec.open(odim_file, mode="rb") as fhandle:
-        xr.open_dataset(fhandle, group="sweep_0", engine="odim")
+        with xr.open_dataset(fhandle, group="sweep_0", engine="odim") as ds:
+            assert isinstance(ds, xr.Dataset)
 
 
 def test_open_odim_store(odim_file):
@@ -402,12 +404,14 @@ def test_open_gamic_dataset_stream(gamic_file):
     with open(gamic_file, mode="rb") as fhandle:
         contents = io.BytesIO(fhandle.read())
         with xr.open_dataset(contents, group="sweep_9", engine="gamic") as ds:
+            assert isinstance(ds, xr.Dataset)
             print(ds)
 
 
 def test_open_gamic_dataset_fsspec(gamic_file):
     with fsspec.open(gamic_file, mode="rb") as fhandle:
         with xr.open_dataset(fhandle, group="sweep_9", engine="gamic") as ds:
+            assert isinstance(ds, xr.Dataset)
             print(ds)
 
 
@@ -737,80 +741,79 @@ def test_open_iris1_dataset(iris1_file):
 )
 def test_odim_roundtrip(odim_file2, compression, compression_opts):
     dtree = open_odim_datatree(odim_file2)
-    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
-    xradar.io.to_odim(
-        dtree,
-        outfile,
-        source="WMO:01104,NOD:norst",
-        compression=compression,
-        compression_opts=compression_opts,
-    )
-    dtree2 = open_odim_datatree(outfile, reindex_angle=False)
-    for d0, d1 in zip(dtree.groups, dtree2.groups):
-        xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
+    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+        xradar.io.to_odim(
+            dtree,
+            outfile.name,
+            source="WMO:01104,NOD:norst",
+            compression=compression,
+            compression_opts=compression_opts,
+        )
+        dtree2 = open_odim_datatree(outfile.name, reindex_angle=False)
+        for d0, d1 in zip(dtree.groups, dtree2.groups):
+            xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
 
 
 def test_odim_optional_how(odim_file2):
     dtree = open_odim_datatree(odim_file2)
-    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
-    xradar.io.to_odim(
-        dtree,
-        outfile,
-        source="WMO:01104,NOD:norst",
-        optional_how=True,
-    )
-    ds = h5py.File(outfile)
+    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+        xradar.io.to_odim(
+            dtree,
+            outfile.name,
+            source="WMO:01104,NOD:norst",
+            optional_how=True,
+        )
+        ds = h5py.File(outfile.name)
 
-    for i in range(1, 6):
-        ds_how = ds[f"dataset{i}"]["how"].attrs
-        assert "scan_index" in ds_how
-        assert "scan_count" in ds_how
-        assert "startazA" in ds_how
-        assert "stopazA" in ds_how
-        assert "startazT" in ds_how
-        assert "startazT" in ds_how
-        assert "startelA" in ds_how
-        assert "stopelA" in ds_how
+        for i in range(1, 6):
+            ds_how = ds[f"dataset{i}"]["how"].attrs
+            assert "scan_index" in ds_how
+            assert "scan_count" in ds_how
+            assert "startazA" in ds_how
+            assert "stopazA" in ds_how
+            assert "startazT" in ds_how
+            assert "startazT" in ds_how
+            assert "startelA" in ds_how
+            assert "stopelA" in ds_how
 
-    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
-    xradar.io.to_odim(
-        dtree,
-        outfile,
-        source="WMO:01104,NOD:norst",
-        optional_how=False,
-    )
-    ds = h5py.File(outfile)
+    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+        xradar.io.to_odim(
+            dtree,
+            outfile.name,
+            source="WMO:01104,NOD:norst",
+            optional_how=False,
+        )
+        ds = h5py.File(outfile.name)
 
-    for i in range(1, 6):
-        ds_how = ds[f"dataset{i}"]["how"].attrs
-        assert "scan_index" not in ds_how
-        assert "scan_count" not in ds_how
-        assert "startazA" not in ds_how
-        assert "stopazA" not in ds_how
-        assert "startazT" not in ds_how
-        assert "startazT" not in ds_how
-        assert "startelA" not in ds_how
-        assert "stopelA" not in ds_how
+        for i in range(1, 6):
+            ds_how = ds[f"dataset{i}"]["how"].attrs
+            assert "scan_index" not in ds_how
+            assert "scan_count" not in ds_how
+            assert "startazA" not in ds_how
+            assert "stopazA" not in ds_how
+            assert "startazT" not in ds_how
+            assert "startazT" not in ds_how
+            assert "startelA" not in ds_how
+            assert "stopelA" not in ds_how
 
 
 def test_write_odim_source(rainbow_file2):
     dtree = open_rainbow_datatree(rainbow_file2)
-    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
+    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+        with pytest.raises(ValueError):
+            xradar.io.to_odim(
+                dtree,
+                outfile.name,
+                source="PLC:Wideumont",
+            )
 
-    with pytest.raises(ValueError):
         xradar.io.to_odim(
             dtree,
-            outfile,
-            source="PLC:Wideumont",
+            outfile.name,
+            source="NOD:bewid,WMO:06477",
         )
-
-    xradar.io.to_odim(
-        dtree,
-        outfile,
-        source="NOD:bewid,WMO:06477",
-    )
-    ds = h5py.File(outfile)
-    assert ds["what"].attrs["source"].decode("utf-8") == "NOD:bewid,WMO:06477"
+        ds = h5py.File(outfile.name)
+        assert ds["what"].attrs["source"].decode("utf-8") == "NOD:bewid,WMO:06477"
 
 
 def test_open_datamet_dataset(datamet_file):
@@ -898,9 +901,11 @@ def test_open_datamet_datatree(datamet_file):
             assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
             assert ds.sweep_number == i
             i += 1
+
     # Try to reed single sweep
     dtree = open_datamet_datatree(datamet_file, sweep=1)
     assert len(dtree.groups) == 2
+
     # Try to read list of sweeps
     dtree = open_datamet_datatree(datamet_file, sweep=[1, 2])
     assert len(dtree.groups) == 3
@@ -910,24 +915,24 @@ def test_open_datamet_datatree(datamet_file):
 def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
     dtree0 = open_cfradial1_datatree(cfradial1_file, first_dim=first_dim)
     # first write to cfradial2
-    outfile = tempfile.NamedTemporaryFile(mode="w+b").name
-    xradar.io.to_cfradial2(dtree0.copy(), outfile)
-    # then open cfradial2 file
-    dtree1 = xr.open_datatree(outfile)
-    # and write again
-    outfile1 = tempfile.NamedTemporaryFile(mode="w+b").name
-    xradar.io.to_cfradial2(dtree1.copy(), outfile1)
-    # and open second cfradial2
-    dtree2 = xr.open_datatree(outfile1)
-    # check equality
-    for d0, d1, d2 in zip(dtree0.groups, dtree1.groups, dtree2.groups):
-        if "sweep" in d0:
-            if first_dim == "auto":
-                first_dim = "azimuth"
-            assert first_dim in dtree0[d0].dims
-            assert "time" in dtree1[d1].dims
-            assert "time" in dtree2[d2].dims
-        xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
+    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+        xradar.io.to_cfradial2(dtree0.copy(), outfile.name)
+        # then open cfradial2 file
+        dtree1 = xr.open_datatree(outfile.name)
+        # and write again
+        with tempfile.NamedTemporaryFile(mode="w+b") as outfile1:
+            xradar.io.to_cfradial2(dtree1.copy(), outfile1.name)
+            # and open second cfradial2
+            dtree2 = xr.open_datatree(outfile1.name)
+            # check equality
+            for d0, d1, d2 in zip(dtree0.groups, dtree1.groups, dtree2.groups):
+                if "sweep" in d0:
+                    if first_dim == "auto":
+                        first_dim = "azimuth"
+                    assert first_dim in dtree0[d0].dims
+                    assert "time" in dtree1[d1].dims
+                    assert "time" in dtree2[d2].dims
+                xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
 
 
 def test_cfradial_n_points_file(cfradial1n_file):
@@ -966,7 +971,11 @@ def test_cfradial_n_points_file(cfradial1n_file):
         ds = dtree[grp].ds
         i = int(ds.sweep_number.values)
         assert i == int(grp[7:])
-        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert dict(ds.sizes) == {
+            "azimuth": azimuths[i],
+            "range": ranges[i],
+            "frequency": 1,
+        }
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
         ) == set(moments)
@@ -978,6 +987,7 @@ def test_cfradial_n_points_file(cfradial1n_file):
             "elevation",
             "time",
             "range",
+            "frequency",
         }
         assert np.round(ds.sweep_fixed_angle.values.item(), 1) == elevations[i]
         assert ds.sweep_mode == "azimuth_surveillance"
@@ -1001,7 +1011,6 @@ def test_open_nexradlevel2_datatree_sweep(nexradlevel2_files, sweep):
 )
 def test_open_nexradlevel2_datatree(nexradlevel2_files):
     dtree = open_nexradlevel2_datatree(nexradlevel2_files)
-
     # root_attrs
     attrs = dtree.attrs
     assert attrs["Conventions"] == "None"

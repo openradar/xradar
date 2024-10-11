@@ -32,7 +32,6 @@ def test_basic_content(data):
 
 def test_moment_metadata(data):
     mom_metadata = data.get_mom_metadata("UZ", 0)
-    print(mom_metadata)
     assert mom_metadata["Rangeoff"] == 0.0
     assert mom_metadata["Eloff"] == 16.05
     assert mom_metadata["nlines"] == 360

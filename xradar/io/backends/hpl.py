@@ -634,6 +634,6 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     root = _assign_root(ds)
     root["fixed_angle"] = ("sweep", [x["sweep_fixed_angle"].values for x in ds[1:]])
     root["sweep_group_name"] = ("sweep", [x["sweep_group_name"].values for x in ds[1:]])
-    dtree = xr.DataTree(data=root, name="root")
+    dtree = xr.DataTree(dataset=root, name="root")
     # return datatree with attached sweep child nodes
     return _attach_sweep_groups(dtree, ds[1:])

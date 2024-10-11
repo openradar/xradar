@@ -509,6 +509,6 @@ def open_datamet_datatree(filename_or_obj, **kwargs):
     ds.insert(0, xr.Dataset())
 
     # create datatree root node with required data
-    dtree = xr.DataTree(data=_assign_root(ds), name="root")
+    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
     # return datatree with attached sweep child nodes
     return _attach_sweep_groups(dtree, ds[1:])

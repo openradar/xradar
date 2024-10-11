@@ -349,21 +349,21 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
 
     # create datatree root node with required data
     root = _get_required_root_dataset(ds, optional=optional)
-    dtree = DataTree(data=root, name="root")
+    dtree = DataTree(dataset=root, name="root")
 
     # additional root metadata groups
     # radar_parameters
     subgroup = _get_subgroup(ds, radar_parameters_subgroup)
-    DataTree(subgroup, name="radar_parameters", parent=dtree)
+    dtree["radar_parameters"] = DataTree(subgroup)
 
     # radar_calibration (connected with calib-dimension)
     calib = _get_radar_calibration(ds)
     if calib:
-        DataTree(calib, name="radar_calibration", parent=dtree)
+        dtree["radar_calibration"] = DataTree(calib)
 
     # georeferencing_correction
     subgroup = _get_subgroup(ds, georeferencing_correction_subgroup)
-    DataTree(subgroup, name="georeferencing_correction", parent=dtree)
+    dtree["georeferencing_correction"] = DataTree(subgroup)
 
     # return datatree with attached sweep child nodes
     dtree = _attach_sweep_groups(

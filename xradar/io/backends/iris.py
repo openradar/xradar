@@ -3996,7 +3996,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     # and get the variabes/attributes for the root dataset
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
-    dtree = xr.DataTree(data=_assign_root(ls), name="root")
+    dtree = xr.DataTree(dataset=_assign_root(ls), name="root")
     root = root.assign(dtree.variables)
     root.attrs = dtree.attrs
     return root
@@ -4162,10 +4162,10 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     # get the datatree root
     root = _get_required_root_dataset(ls_ds)
     # create datatree root node with required data
-    dtree = xr.DataTree(data=root, name="root")
+    dtree = xr.DataTree(dataset=root, name="root")
     # get radar_parameters group
     subgroup = _get_subgroup(ls_ds, radar_parameters_subgroup)
     # attach radar_parameter group
-    xr.DataTree(subgroup, name="radar_parameters", parent=dtree)
+    dtree["radar_parameters"] = xr.DataTree(subgroup)
     # return Datatree attaching the sweep child nodes
     return _attach_sweep_groups(dtree, ls_ds)
