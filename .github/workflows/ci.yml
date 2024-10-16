@@ -125,6 +125,67 @@ jobs:
         fail_ci_if_error: false
         token: ${{ secrets.CODECOV_TOKEN}}
 
+  build_2:
+    name: xarray nightly tests - linux
+    runs-on: ubuntu-latest
+    needs: [ lint ]
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash -l {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.12" ]
+        numpy-version: [ "2" ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: xarray-nightly
+          fetch-depth: 0
+      - name: Install micromamba environment
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-name: xradar-unit-tests
+          cache-environment: true
+          cache-environment-key: "${{runner.os}}-${{runner.arch}}-py${{env.PYTHON_VERSION}}-${{env.TODAY}}-${{hashFiles(env.CONDA_ENV_FILE)}}"
+          create-args: >-
+            python=${{matrix.python-version}}
+            cmweather
+            dask
+            fsspec
+            h5netcdf
+            h5py
+            lat_lon_parser
+            netCDF4
+            open-radar-data>=0.3.0
+            packaging
+            pandas
+            pip
+            pyproj
+            pytest
+            pytest-doctestplus
+            pytest-sugar
+            pytest-xdist
+            scipy
+            setuptools
+            wheel
+            xmltodict
+            numpy=${{matrix.numpy-version}}
+            conda
+      - name: Install xradar
+        run: |
+          python -m pip install --no-deps .
+      - name: Install xarray
+        run: |
+          python -m pip install --no-deps --ignore-installed --no-cache-dir -vvv \
+          git+https://github.com/pydata/xarray.git@main
+      - name: Version Info
+        run: |
+          python -c "import xradar; print(xradar.version.version)"
+      - name: Test with pytest
+        run: |
+          pytest -n auto --dist loadfile --verbose --durations=15 --pyargs tests
 
   test_build_distribution_testpypi:
     name: test build distribution for testpypi
