@@ -6,13 +6,11 @@ from xradar.io.backends import datamet
 from xradar.util import _get_data_file
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def data(datamet_file):
     with _get_data_file(datamet_file, "file") as datametfile:
-        print(datametfile)
         data = datamet.DataMetFile(datametfile)
         assert data.filename == datametfile
-        print(data.scan_metadata)
     data.get_sweep(0)
     return data
 
