@@ -87,19 +87,19 @@ def test_open_cfradial1_datatree(cfradial1_file):
 
 def test_open_cfradial1_dataset(cfradial1_file):
     # open first sweep group
-    ds = xr.open_dataset(cfradial1_file, group="sweep_0", engine="cfradial1")
-    assert list(ds.dims) == ["azimuth", "range"]
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"DBZ", "VR"}
-    assert ds.sweep_number == 0
-    # open last sweep group
-    ds = xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1")
-    assert list(ds.dims) == ["azimuth", "range"]
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"DBZ", "VR"}
-    assert ds.sweep_number == 8
+    with xr.open_dataset(cfradial1_file, group="sweep_0", engine="cfradial1") as ds:
+        assert list(ds.dims) == ["azimuth", "range"]
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"DBZ", "VR"}
+        assert ds.sweep_number == 0
+        # open last sweep group
+        with xr.open_dataset(cfradial1_file, group="sweep_8", engine="cfradial1") as ds:
+            assert list(ds.dims) == ["azimuth", "range"]
+            assert set(ds.data_vars) & (
+                sweep_dataset_vars | non_standard_sweep_dataset_vars
+            ) == {"DBZ", "VR"}
+            assert ds.sweep_number == 8
 
 
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
@@ -191,33 +191,33 @@ def test_open_odim_datatree(odim_file):
 @pytest.mark.parametrize("fix_second_angle", [False, True])
 def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
     # open first sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         odim_file,
         group="sweep_0",
         engine="odim",
         first_dim=first_dim,
         fix_second_angle=fix_second_angle,
-    )
-    dim0 = "time" if first_dim == "time" else "azimuth"
-    assert dict(ds.sizes) == {dim0: 360, "range": 1200}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "TH", "ZDR"}
-    assert ds.sweep_number == 0
+    ) as ds:
+        dim0 = "time" if first_dim == "time" else "azimuth"
+        assert dict(ds.sizes) == {dim0: 360, "range": 1200}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "TH", "ZDR"}
+        assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         odim_file,
         group="sweep_11",
         engine="odim",
         first_dim=first_dim,
         fix_second_angle=fix_second_angle,
-    )
-    assert dict(ds.sizes) == {dim0: 360, "range": 280}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"VRADH", "KDP", "WRADH", "TH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
-    assert ds.sweep_number == 11
+    ) as ds:
+        assert dict(ds.sizes) == {dim0: 360, "range": 280}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"VRADH", "KDP", "WRADH", "TH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
+        assert ds.sweep_number == 11
 
 
 def test_open_odim_dataset_stream(odim_file):
@@ -344,70 +344,72 @@ def test_open_gamic_datatree(gamic_file):
 @pytest.mark.parametrize("fix_second_angle", [False, True])
 def test_open_gamic_dataset(gamic_file, first_dim, fix_second_angle):
     # open first sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         gamic_file,
         group="sweep_0",
         engine="gamic",
         first_dim=first_dim,
         fix_second_angle=fix_second_angle,
-    )
-    dim0 = "time" if first_dim == "time" else "azimuth"
-    assert dict(ds.sizes) == {dim0: 361, "range": 360}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "WRADH",
-        "WRADV",
-        "VRADH",
-        "VRADV",
-        "PHIDP",
-        "DBTH",
-        "DBTV",
-        "DBZH",
-        "DBZV",
-        "RHOHV",
-        "KDP",
-        "ZDR",
-    }
-    assert ds.sweep_number == 0
+    ) as ds:
+        dim0 = "time" if first_dim == "time" else "azimuth"
+        assert dict(ds.sizes) == {dim0: 361, "range": 360}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "WRADH",
+            "WRADV",
+            "VRADH",
+            "VRADV",
+            "PHIDP",
+            "DBTH",
+            "DBTV",
+            "DBZH",
+            "DBZV",
+            "RHOHV",
+            "KDP",
+            "ZDR",
+        }
+        assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         gamic_file,
         group="sweep_9",
         engine="gamic",
         first_dim=first_dim,
         fix_second_angle=fix_second_angle,
-    )
-    assert dict(ds.sizes) == {dim0: 360, "range": 1000}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "WRADH",
-        "WRADV",
-        "VRADH",
-        "VRADV",
-        "PHIDP",
-        "DBTH",
-        "DBTV",
-        "DBZH",
-        "DBZV",
-        "RHOHV",
-        "KDP",
-        "ZDR",
-    }
-    assert ds.sweep_number == 9
+    ) as ds:
+        assert dict(ds.sizes) == {dim0: 360, "range": 1000}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "WRADH",
+            "WRADV",
+            "VRADH",
+            "VRADV",
+            "PHIDP",
+            "DBTH",
+            "DBTV",
+            "DBZH",
+            "DBZV",
+            "RHOHV",
+            "KDP",
+            "ZDR",
+        }
+        assert ds.sweep_number == 9
 
 
 def test_open_gamic_dataset_stream(gamic_file):
     with open(gamic_file, mode="rb") as fhandle:
         contents = io.BytesIO(fhandle.read())
-        xr.open_dataset(contents, group="sweep_9", engine="gamic")
+        with xr.open_dataset(contents, group="sweep_9", engine="gamic") as ds:
+            print(ds)
 
 
 def test_open_gamic_dataset_fsspec(gamic_file):
     with fsspec.open(gamic_file, mode="rb") as fhandle:
-        xr.open_dataset(fhandle, group="sweep_9", engine="gamic")
+        with xr.open_dataset(fhandle, group="sweep_9", engine="gamic") as ds:
+            print(ds)
 
 
 def test_open_gamic_store(gamic_file):
@@ -421,65 +423,83 @@ def test_open_gamic_store(gamic_file):
 def test_open_gamic_dataset_reindex(gamic_file):
     # open first sweep group
     reindex_angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         gamic_file, group="sweep_0", engine="gamic", reindex_angle=reindex_angle
-    )
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 360}
+    ) as ds:
+        assert dict(ds.sizes) == {"azimuth": 360, "range": 360}
 
 
 def test_open_furuno_scn_dataset(furuno_scn_file):
     # open sweep group
-    ds = xr.open_dataset(furuno_scn_file, first_dim="time", engine="furuno")
-    assert dict(ds.sizes) == {"time": 1376, "range": 602}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
-    for key, value in ds.data_vars.items():
-        if key in ["RATE", "KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"]:
-            assert value.encoding["_FillValue"] == 0.0
-        elif key in ["azimuth", "elevation"]:
-            assert value.encoding["_FillValue"] == np.ma.minimum_fill_value(
-                value.encoding["dtype"]
-            )
-        else:
-            assert value.encoding.get("_FillValue", None) is None
-    assert ds.sweep_number == 0
+    with xr.open_dataset(furuno_scn_file, first_dim="time", engine="furuno") as ds:
+        assert dict(ds.sizes) == {"time": 1376, "range": 602}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+        for key, value in ds.data_vars.items():
+            if key in [
+                "RATE",
+                "KDP",
+                "VRADH",
+                "ZDR",
+                "DBZH",
+                "WRADH",
+                "RHOHV",
+                "PHIDP",
+            ]:
+                assert value.encoding["_FillValue"] == 0.0
+            elif key in ["azimuth", "elevation"]:
+                assert value.encoding["_FillValue"] == np.ma.minimum_fill_value(
+                    value.encoding["dtype"]
+                )
+            else:
+                assert value.encoding.get("_FillValue", None) is None
+        assert ds.sweep_number == 0
 
     # open sweep group, auto
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         furuno_scn_file,
         engine="furuno",
-    )
-    assert dict(ds.sizes) == {"azimuth": 1376, "range": 602}
-    assert ds.sweep_number == 0
+    ) as ds:
+        assert dict(ds.sizes) == {"azimuth": 1376, "range": 602}
+        assert ds.sweep_number == 0
 
 
 def test_open_furuno_scnx_dataset(furuno_scnx_file):
     # open sweep group
-    ds = xr.open_dataset(furuno_scnx_file, first_dim="time", engine="furuno")
-    assert dict(ds.sizes) == {"time": 722, "range": 936}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+    with xr.open_dataset(furuno_scnx_file, first_dim="time", engine="furuno") as ds:
+        assert dict(ds.sizes) == {"time": 722, "range": 936}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
 
-    for key, value in ds.data_vars.items():
-        if key in ["RATE", "KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"]:
-            assert value.encoding["_FillValue"] == 0.0
-        elif key in ["azimuth", "elevation"]:
-            assert value.encoding["_FillValue"] == np.ma.minimum_fill_value(
-                value.encoding["dtype"]
-            )
-        else:
-            assert value.encoding.get("_FillValue", None) is None
-    assert ds.sweep_number == 0
+        for key, value in ds.data_vars.items():
+            if key in [
+                "RATE",
+                "KDP",
+                "VRADH",
+                "ZDR",
+                "DBZH",
+                "WRADH",
+                "RHOHV",
+                "PHIDP",
+            ]:
+                assert value.encoding["_FillValue"] == 0.0
+            elif key in ["azimuth", "elevation"]:
+                assert value.encoding["_FillValue"] == np.ma.minimum_fill_value(
+                    value.encoding["dtype"]
+                )
+            else:
+                assert value.encoding.get("_FillValue", None) is None
+        assert ds.sweep_number == 0
 
     # open sweep group, auto
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         furuno_scnx_file,
         engine="furuno",
-    )
-    assert dict(ds.sizes) == {"azimuth": 722, "range": 936}
-    assert ds.sweep_number == 0
+    ) as ds:
+        assert dict(ds.sizes) == {"azimuth": 722, "range": 936}
+        assert ds.sweep_number == 0
 
 
 def test_open_rainbow_datatree(rainbow_file):
@@ -546,34 +566,34 @@ def test_open_rainbow_datatree(rainbow_file):
 
 def test_open_rainbow_dataset(rainbow_file):
     # open first sweep group
-    ds = xr.open_dataset(rainbow_file, group="sweep_0", engine="rainbow")
-    assert dict(ds.sizes) == {"azimuth": 361, "range": 400}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "DBZH",
-    }
-    assert ds.sweep_number == 0
+    with xr.open_dataset(rainbow_file, group="sweep_0", engine="rainbow") as ds:
+        assert dict(ds.sizes) == {"azimuth": 361, "range": 400}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "DBZH",
+        }
+        assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(rainbow_file, group="sweep_13", engine="rainbow")
-    assert dict(ds.sizes) == {"azimuth": 361, "range": 400}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "DBZH",
-    }
-    assert ds.sweep_number == 13
+    with xr.open_dataset(rainbow_file, group="sweep_13", engine="rainbow") as ds:
+        assert dict(ds.sizes) == {"azimuth": 361, "range": 400}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "DBZH",
+        }
+        assert ds.sweep_number == 13
 
     # open last sweep group, auto
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         rainbow_file,
         group="sweep_13",
         engine="rainbow",
         backend_kwargs=dict(first_dim="time"),
-    )
-    assert dict(ds.sizes) == {"time": 361, "range": 400}
-    assert ds.sweep_number == 13
+    ) as ds:
+        assert dict(ds.sizes) == {"time": 361, "range": 400}
+        assert ds.sweep_number == 13
 
 
 def test_open_iris_datatree(iris0_file):
@@ -644,73 +664,73 @@ def test_open_iris_datatree(iris0_file):
 
 def test_open_iris0_dataset(iris0_file):
     # open first sweep group
-    ds = xr.open_dataset(iris0_file, group="sweep_0", engine="iris")
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 664}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "DBZH",
-        "VRADH",
-        "KDP",
-        "RHOHV",
-        "PHIDP",
-        "ZDR",
-    }
-    assert ds.sweep_number == 0
+    with xr.open_dataset(iris0_file, group="sweep_0", engine="iris") as ds:
+        assert dict(ds.sizes) == {"azimuth": 360, "range": 664}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "DBZH",
+            "VRADH",
+            "KDP",
+            "RHOHV",
+            "PHIDP",
+            "ZDR",
+        }
+        assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(iris0_file, group="sweep_9", engine="iris")
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 664}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "DBZH",
-        "VRADH",
-        "KDP",
-        "RHOHV",
-        "PHIDP",
-        "ZDR",
-    }
-    assert ds.sweep_number == 9
+    with xr.open_dataset(iris0_file, group="sweep_9", engine="iris") as ds:
+        assert dict(ds.sizes) == {"azimuth": 360, "range": 664}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "DBZH",
+            "VRADH",
+            "KDP",
+            "RHOHV",
+            "PHIDP",
+            "ZDR",
+        }
+        assert ds.sweep_number == 9
 
     # open last sweep group, auto
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         iris0_file,
         group="sweep_9",
         engine="iris",
         backend_kwargs=dict(first_dim="time"),
-    )
-    assert dict(ds.sizes) == {"time": 360, "range": 664}
-    assert ds.sweep_number == 9
+    ) as ds:
+        assert dict(ds.sizes) == {"time": 360, "range": 664}
+        assert ds.sweep_number == 9
 
 
 def test_open_iris1_dataset(iris1_file):
     # open first and only sweep group
-    ds = xr.open_dataset(iris1_file, group="sweep_0", engine="iris")
-    assert dict(ds.sizes) == {"azimuth": 359, "range": 833}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {
-        "DBZH",
-        "KDP",
-        "DBTH",
-        "PHIDP",
-        "ZDR",
-        "RHOHV",
-        "VRADH",
-        "WRADH",
-    }
-    assert ds.sweep_number == 0
+    with xr.open_dataset(iris1_file, group="sweep_0", engine="iris") as ds:
+        assert dict(ds.sizes) == {"azimuth": 359, "range": 833}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {
+            "DBZH",
+            "KDP",
+            "DBTH",
+            "PHIDP",
+            "ZDR",
+            "RHOHV",
+            "VRADH",
+            "WRADH",
+        }
+        assert ds.sweep_number == 0
 
     # open first and only sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         iris1_file,
         group="sweep_0",
         engine="iris",
         backend_kwargs=dict(first_dim="time"),
-    )
-    assert dict(ds.sizes) == {"time": 359, "range": 833}
-    assert ds.sweep_number == 0
+    ) as ds:
+        assert dict(ds.sizes) == {"time": 359, "range": 833}
+        assert ds.sweep_number == 0
 
 
 @pytest.mark.parametrize(
@@ -796,41 +816,41 @@ def test_write_odim_source(rainbow_file2):
 
 def test_open_datamet_dataset(datamet_file):
     # open first sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         datamet_file,
         group="sweep_0",
         engine="datamet",
-    )
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 493}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"}
-    assert ds.sweep_number == 0
+    ) as ds:
+        assert dict(ds.sizes) == {"azimuth": 360, "range": 493}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"}
+        assert ds.sweep_number == 0
 
     # open last sweep group
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         datamet_file,
         group="sweep_10",
         engine="datamet",
-    )
-    assert dict(ds.sizes) == {"azimuth": 360, "range": 1332}
-    assert set(ds.data_vars) & (
-        sweep_dataset_vars | non_standard_sweep_dataset_vars
-    ) == {"DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"}
-    assert ds.sweep_number == 10
+    ) as ds:
+        assert dict(ds.sizes) == {"azimuth": 360, "range": 1332}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == {"DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"}
+        assert ds.sweep_number == 10
 
 
 def test_open_datamet_dataset_reindex(datamet_file):
     # open first sweep group
     reindex_angle = dict(start_angle=0, stop_angle=360, angle_res=2.0, direction=1)
-    ds = xr.open_dataset(
+    with xr.open_dataset(
         datamet_file,
         group="sweep_10",
         engine="datamet",
         decode_coords=True,
         reindex_angle=reindex_angle,
-    )
-    assert dict(ds.sizes) == {"azimuth": 180, "range": 1332}
+    ) as ds:
+        assert dict(ds.sizes) == {"azimuth": 180, "range": 1332}
 
 
 def test_open_datamet_datatree(datamet_file):

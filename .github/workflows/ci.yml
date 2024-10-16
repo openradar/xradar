@@ -114,7 +114,7 @@ jobs:
         python -c "import xradar; print(xradar.version.version)"
     - name: Test with pytest
       run: |
-        pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs examples/notebooks
+        pytest -n auto --dist loadscope --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs examples/notebooks
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       with:
