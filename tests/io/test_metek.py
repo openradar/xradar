@@ -150,6 +150,30 @@ test_raw = np.array(
 
 
 def test_open_average(metek_ave_gz_file):
+    with metek.MRR2File(metek_ave_gz_file) as file:
+        assert "corrected_reflectivity" in file._data
+        assert "velocity" in file._data
+        rainfall = np.cumsum(file._data["rainfall_rate"][:, 0]) / 60.0
+        np.testing.assert_allclose(rainfall[-1], 0.938)
+        np.testing.assert_allclose(file._data["reflectivity"][0], test_arr_ave)
+
+
+def test_open_processed(metek_pro_gz_file):
+    with metek.MRR2File(metek_pro_gz_file) as file:
+        assert "corrected_reflectivity" in file._data
+        assert "velocity" in file._data
+        rainfall = np.cumsum(file._data["rainfall_rate"][:, 0]) / 360.0
+        np.testing.assert_allclose(rainfall[-1], 0.93)
+        np.testing.assert_allclose(file._data["reflectivity"][0], test_arr)
+
+
+def test_open_raw(metek_raw_gz_file):
+    with metek.MRR2File(metek_raw_gz_file) as file:
+        assert "raw_spectra_counts" in file._data
+        np.testing.assert_allclose(file._data["raw_spectra_counts"][0], test_raw)
+
+
+def test_open_average_dataset(metek_ave_gz_file):
     with xr.open_dataset(metek_ave_gz_file, engine="metek") as ds:
         assert "corrected_reflectivity" in ds.variables.keys()
         assert "velocity" in ds.variables.keys()
@@ -167,7 +191,7 @@ def test_open_average_datatree(metek_ave_gz_file):
     ds.ds.close()
 
 
-def test_open_processed(metek_pro_gz_file):
+def test_open_processed_dataset(metek_pro_gz_file):
     with xr.open_dataset(metek_pro_gz_file, engine="metek") as ds:
         assert "corrected_reflectivity" in ds.variables.keys()
         assert "velocity" in ds.variables.keys()
@@ -186,7 +210,7 @@ def test_open_processed_datatree(metek_pro_gz_file):
     ds.ds.close()
 
 
-def test_open_raw(metek_raw_gz_file):
+def test_open_raw_dataset(metek_raw_gz_file):
     with xr.open_dataset(metek_raw_gz_file, engine="metek") as ds:
         assert "raw_spectra_counts" in ds.variables.keys()
         np.testing.assert_allclose(ds["raw_spectra_counts"].values[0], test_raw)
