@@ -93,7 +93,7 @@ def nexradlevel2_bzfile():
     return DATASETS.fetch("KLBB20160601_150025_V06")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def nexradlevel2_files(request):
     return request.getfixturevalue(request.param)
 
