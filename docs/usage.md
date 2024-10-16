@@ -32,6 +32,8 @@ notebooks/GAMIC
 notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
+notebooks/HaloPhotonics
+notebooks/MRR
 notebooks/NexradLevel2
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
