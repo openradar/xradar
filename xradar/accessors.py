@@ -24,7 +24,6 @@ __all__ = ["create_xradar_dataarray_accessor"]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-import datatree as dt
 import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
@@ -61,7 +60,7 @@ class XradarAccessor:
     """
 
     def __init__(
-        self, xarray_obj: xr.Dataset | xr.DataArray | dt.DataTree
+        self, xarray_obj: xr.Dataset | xr.DataArray | xr.DataTree
     ) -> XradarAccessor:
         self.xarray_obj = xarray_obj
 
@@ -166,13 +165,13 @@ class XradarDataSetAccessor(XradarAccessor):
         return radar.pipe(get_crs)
 
 
-@dt.register_datatree_accessor("xradar")
+@xr.register_datatree_accessor("xradar")
 class XradarDataTreeAccessor(XradarAccessor):
-    """Adds a number of xradar specific methods to datatree.DataTree objects."""
+    """Adds a number of xradar specific methods to xarray.DataTree objects."""
 
     def georeference(
         self, earth_radius=None, effective_radius_fraction=None
-    ) -> dt.DataTree:
+    ) -> xr.DataTree:
         """
         Add georeference information to an xradar datatree object
         Parameters
@@ -184,7 +183,7 @@ class XradarDataTreeAccessor(XradarAccessor):
             Fraction of earth to use for the effective radius (default is 4/3).
         Returns
         -------
-        da = datatree.Datatree
+        da = xarray.DataTree
             Datatree including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
@@ -194,12 +193,12 @@ class XradarDataTreeAccessor(XradarAccessor):
             effective_radius_fraction=effective_radius_fraction,
         )
 
-    def add_crs(self) -> dt.DataTree:
+    def add_crs(self) -> xr.DataTree:
         """Add 'spatial_ref' coordinate derived from pyproj.CRS
 
         Returns
         -------
-        da : datatree.DataTree
+        da : xarray.DataTree
             Datatree including spatial_ref coordinate.
         """
         ds = self.xarray_obj

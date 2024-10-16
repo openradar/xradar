@@ -4,7 +4,6 @@
 
 """Tests for `xradar` util package."""
 
-import datatree as dt
 import numpy as np
 import pytest
 import xarray as xr
@@ -260,11 +259,18 @@ def test_ipol_time2(missing, a1gate, rot):
 def test_get_sweep_keys():
     # Test finding sweep keys
     filename = DATASETS.fetch("sample_sgp_data.nc")
-    dt = io.open_cfradial1_datatree(filename)
+    dtree = io.open_cfradial1_datatree(filename)
     # set a fake group
-    dt["sneep_1"] = dt["sweep_1"]
-    keys = util.get_sweep_keys(dt)
-    assert keys == ["sweep_0", "sweep_1", "sweep_2", "sweep_3", "sweep_4", "sweep_5"]
+    dtree["sneep_1"] = dtree["sweep_1"]
+    keys = util.get_sweep_keys(dtree)
+    assert keys == [
+        "sweep_0",
+        "sweep_1",
+        "sweep_2",
+        "sweep_3",
+        "sweep_4",
+        "sweep_5",
+    ]
 
 
 def test_apply_to_sweeps():
@@ -330,7 +336,7 @@ def test_apply_to_volume():
 
     # Verify that the modified_dtree is an instance of DataTree
     assert isinstance(
-        modified_dtree, dt.DataTree
+        modified_dtree, xr.DataTree
     ), "The result should be a DataTree instance."
 
     # Verify that the dummy field has been added to each sweep
