@@ -24,6 +24,7 @@ notebooks/Accessors
 :maxdepth: 2
 :caption: Examples
 
+notebooks/Auto_Read
 notebooks/CfRadial1_Model_Transformation
 notebooks/CfRadial1
 notebooks/CfRadial1_Export
