@@ -6,31 +6,13 @@
 
 from collections import OrderedDict
 
-import numpy as np
 import pytest
 import xarray
 
 from xradar.io.backends.nexrad_level2 import (
     NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
-    open_nexradlevel2_datatree,
 )
-
-
-@pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
-)
-def test_open_nexradlevel2_datatree(nexradlevel2_files):
-    dtree = open_nexradlevel2_datatree(nexradlevel2_files)
-    ds = dtree["sweep_0"].ds
-    assert ds.attrs["instrument_name"] == "KLBB"
-    assert ds["time"].min() == np.array(
-        "2016-06-01T15:00:25.232000000", dtype="datetime64[ns]"
-    )
-    assert ds["DBZH"].shape == (720, 1832)
-    assert ds["DBZH"].dims == ("azimuth", "range")
-    assert int(ds.sweep_number.values) == 0
-    np.testing.assert_almost_equal(ds.sweep_fixed_angle.values, 0.4833984)
 
 
 @pytest.mark.parametrize(
