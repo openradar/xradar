@@ -4,12 +4,12 @@
 
 """Tests for `xradar` util package."""
 
-import datatree as dt
 import numpy as np
 import pytest
 import xarray as xr
 from open_radar_data import DATASETS
 
+import xradar as xd
 from xradar import io, model, util
 
 
@@ -260,11 +260,18 @@ def test_ipol_time2(missing, a1gate, rot):
 def test_get_sweep_keys():
     # Test finding sweep keys
     filename = DATASETS.fetch("sample_sgp_data.nc")
-    dt = io.open_cfradial1_datatree(filename)
+    dtree = io.open_cfradial1_datatree(filename)
     # set a fake group
-    dt["sneep_1"] = dt["sweep_1"]
-    keys = util.get_sweep_keys(dt)
-    assert keys == ["sweep_0", "sweep_1", "sweep_2", "sweep_3", "sweep_4", "sweep_5"]
+    dtree["sneep_1"] = dtree["sweep_1"]
+    keys = util.get_sweep_keys(dtree)
+    assert keys == [
+        "sweep_0",
+        "sweep_1",
+        "sweep_2",
+        "sweep_3",
+        "sweep_4",
+        "sweep_5",
+    ]
 
 
 def test_apply_to_sweeps():
@@ -330,7 +337,7 @@ def test_apply_to_volume():
 
     # Verify that the modified_dtree is an instance of DataTree
     assert isinstance(
-        modified_dtree, dt.DataTree
+        modified_dtree, xr.DataTree
     ), "The result should be a DataTree instance."
 
     # Verify that the dummy field has been added to each sweep
@@ -377,3 +384,38 @@ def test_apply_to_volume():
             raise ValueError("This is an intentional error")
 
         util.apply_to_volume(dtree, error_function)
+
+
+def test_map_over_sweeps_decorator_dummy_function():
+    """
+    Test applying a dummy function to all sweep nodes using the map_over_sweeps decorator.
+    """
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object
+    dtree = xd.io.open_cfradial1_datatree(filename)
+
+    # Use the decorator on the dummy function
+    @xd.map_over_sweeps
+    def dummy_function(ds):
+        ds = ds.assign(
+            dummy_field=ds["reflectivity_horizontal"] * 0
+        )  # Field with zeros
+        ds["dummy_field"].attrs = {"unit": "dBZ", "long_name": "Dummy Field"}
+        return ds
+
+    # Apply using pipe and decorator
+    dtree_modified = dtree.pipe(dummy_function)
+
+    # Check that the new field exists in sweep_0 and has the correct attributes
+    sweep_0 = dtree_modified["sweep_0"]
+    assert "dummy_field" in sweep_0.data_vars
+    assert sweep_0.dummy_field.attrs["unit"] == "dBZ"
+    assert sweep_0.dummy_field.attrs["long_name"] == "Dummy Field"
+
+    # Ensure all non-NaN values are 0 (accounting for -0.0 and NaN values)
+    non_nan_values = np.nan_to_num(
+        sweep_0.dummy_field.values
+    )  # Convert NaNs to zero for comparison
+    assert np.all(np.isclose(non_nan_values, 0))

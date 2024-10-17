@@ -25,18 +25,20 @@ __all__ = [
     "get_sweep_keys",
     "apply_to_sweeps",
     "apply_to_volume",
+    "map_over_sweeps",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import contextlib
+import functools
 import gzip
 import importlib.util
 import io
 import warnings
 
-import datatree as dt
 import numpy as np
+import xarray as xr
 from scipy import interpolate
 
 
@@ -493,12 +495,12 @@ def rolling_dim(data, window):
     return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
 
 
-def get_sweep_keys(dt):
+def get_sweep_keys(dtree):
     """Return which nodes in the datatree contain sweep variables
 
     Parameters
     ----------
-    dt : xarray.DataTree
+    dtree : xarray.DataTree
         Datatree to check for sweep_n keys
 
     Returns
@@ -507,7 +509,7 @@ def get_sweep_keys(dt):
         List of associated keys with sweep_n
     """
     sweep_group_keys = []
-    for key in list(dt.children):
+    for key in list(dtree.children):
         parts = key.split("_")
         try:
             # Try to set the second part of the tree key to an int
@@ -533,7 +535,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
 
     Parameters
     ----------
-    dtree : DataTree
+    dtree : xarray.DataTree
         The DataTree object representing the radar volume.
     func : function
         The function to apply to each sweep.
@@ -544,7 +546,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
 
     Returns
     -------
-    DataTree
+    xarray.DataTree
         A new DataTree object with the function applied to all sweeps.
     """
     # Create a new tree dictionary
@@ -563,7 +565,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     )
 
     # Return a new DataTree constructed from the modified tree dictionary
-    return dt.DataTree.from_dict(tree)
+    return xr.DataTree.from_dict(tree)
 
 
 def apply_to_volume(dtree, func, *args, **kwargs):
@@ -573,7 +575,7 @@ def apply_to_volume(dtree, func, *args, **kwargs):
 
     Parameters
     ----------
-    dtree : DataTree
+    dtree : xarray.DataTree
         The DataTree object representing the radar volume.
     func : function
         The function to apply to each sweep.
@@ -584,7 +586,66 @@ def apply_to_volume(dtree, func, *args, **kwargs):
 
     Returns
     -------
-    DataTree
+    xarray.DataTree
         A new DataTree object with the function applied to all sweeps.
     """
     return apply_to_sweeps(dtree, func, *args, **kwargs)
+
+
+def map_over_sweeps(func):
+    """
+    Decorator to apply a function only to sweep nodes in a DataTree.
+
+    This decorator first checks whether the dataset provided to the function has the 'range' dimension,
+    indicating it's a sweep node. If true, the function is applied. Non-sweep nodes are left unchanged.
+
+    Parameters
+    ----------
+    func : callable
+        A function that operates on an xarray Dataset. The function must accept a Dataset as its
+        first argument and return a modified Dataset.
+
+    Returns
+    -------
+    callable
+        A function that can be applied to all sweep nodes in a DataTree.
+
+    Examples
+    --------
+    >>> @map_over_sweeps
+    >>> def calculate_rain_rate(ds, ref_field='DBZH'):
+    >>>     # Function logic to calculate rain rate
+    >>>     return ds
+    """
+
+    @functools.wraps(func)
+    def _func(*args, **kwargs):
+        """
+        Internal function to apply `func` only to sweep nodes.
+
+        Checks for the presence of the 'range' dimension to identify sweep nodes. Non-sweep nodes
+        are left unchanged.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments passed to the function.
+        **kwargs : dict
+            Keyword arguments passed to the function.
+
+        Returns
+        -------
+        Dataset or unchanged object
+            The modified Dataset if applied to a sweep node, otherwise the unchanged object.
+        """
+        if "range" in args[0].dims:
+            return func(*args, **kwargs)
+        else:
+            return args[0]
+
+    # xarray decorator to apply function over datasets in a DataTree
+    @xr.map_over_datasets
+    def _map_over_sweeps(*args, **kwargs):
+        return _func(*args, **kwargs)
+
+    return _map_over_sweeps
