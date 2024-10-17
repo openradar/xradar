@@ -2,6 +2,7 @@
 
 ## Development Version
 
+* ADD: Added a new accessor `apply` for volume operations ({pull}`203`) by [@syedhamidali](https://github.com/syedhamidali).
 * ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).
 * ADD: Metek Micro Rain Radar 2 reader by [@rcjackson](https://github.com/rcjackson), ({pull}`200`) by [@rcjackson](https://github.com/rcjackson).
 
@@ -17,7 +18,7 @@
 
 ## 0.6.3 (2024-08-13)
 
-FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.6.2 (2024-08-12)
 
