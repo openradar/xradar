@@ -50,7 +50,7 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from .common import _attach_sweep_groups, _maybe_decode
+from .common import _maybe_decode
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -348,39 +348,32 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     # and retrieves the different groups from the loaded object
     ds = open_dataset(filename_or_obj, engine=engine, **kwargs)
 
-    # create datatree root node with required data
-    root = _get_required_root_dataset(ds, optional=optional)
-    dtree = DataTree(data=root, name="root")
-
-    # additional root metadata groups
-    # radar_parameters
-    subgroup = _get_subgroup(ds, radar_parameters_subgroup)
-    DataTree(subgroup, name="radar_parameters", parent=dtree)
+    # create datatree root node additional root metadata groups
+    dtree: dict = {
+        "/": _get_required_root_dataset(ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ds, georeferencing_correction_subgroup
+        ),
+    }
 
     # radar_calibration (connected with calib-dimension)
     calib = _get_radar_calibration(ds)
     if calib:
-        DataTree(calib, name="radar_calibration", parent=dtree)
+        dtree["/radar_calibration"] = calib
 
-    # georeferencing_correction
-    subgroup = _get_subgroup(ds, georeferencing_correction_subgroup)
-    DataTree(subgroup, name="georeferencing_correction", parent=dtree)
-
-    # return datatree with attached sweep child nodes
-    dtree = _attach_sweep_groups(
-        dtree,
-        list(
-            _get_sweep_groups(
-                ds,
-                sweep=sweep,
-                first_dim=first_dim,
-                optional=optional,
-                site_coords=site_coords,
-            ).values()
-        ),
+    sweep_child = list(
+        _get_sweep_groups(
+            ds,
+            sweep=sweep,
+            first_dim=first_dim,
+            optional=optional,
+            site_coords=site_coords,
+        ).values()
     )
-
-    return dtree
+    for i, sw in enumerate(sweep_child):
+        dtree[f"sweep_{i:02d}"] = sw
+    return DataTree.from_dict(dtree)
 
 
 class CfRadial1BackendEntrypoint(BackendEntrypoint):
