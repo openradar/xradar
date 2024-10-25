@@ -6,13 +6,11 @@ from xradar.io.backends import datamet
 from xradar.util import _get_data_file
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def data(datamet_file):
     with _get_data_file(datamet_file, "file") as datametfile:
-        print(datametfile)
         data = datamet.DataMetFile(datametfile)
         assert data.filename == datametfile
-        print(data.scan_metadata)
     data.get_sweep(0)
     return data
 
@@ -44,14 +42,14 @@ def test_moment_metadata(data):
 @pytest.mark.parametrize(
     "moment, expected_value",
     [
-        ("UZ", -3.5),
-        ("CZ", -3.5),
-        ("V", 2.3344999999999985),
-        ("W", 16.0),
-        ("ZDR", 0.6859999999999999),
-        ("PHIDP", 94.06648),
-        ("RHOHV", 1.9243000000000001),
-        ("KDP", 0.5190000000000001),
+        ("UZ", 56),
+        ("CZ", 56),
+        ("V", 139),
+        ("W", 30),
+        ("ZDR", 137),
+        ("PHIDP", 16952),
+        ("RHOHV", 237),
+        ("KDP", 67),
     ],
 )
 def test_moment_data(data, moment, expected_value):

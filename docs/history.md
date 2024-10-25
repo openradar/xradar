@@ -1,5 +1,27 @@
 # History
 
+<<<<<<< HEAD
+=======
+## Development Version
+
+* ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).
+* ADD: Metek Micro Rain Radar 2 reader by [@rcjackson](https://github.com/rcjackson), ({pull}`200`) by [@rcjackson](https://github.com/rcjackson).
+
+## 0.6.5 (2024-09-20)
+
+* FIX: Azimuth dimension now labelled correctly for Halo Photonics data ({pull}`206`) by [@rcjackson](https://github.com/rcjackson).
+* FIX: do not apply scale/offset in datamet reader, leave it to xarray instead ({pull}`209`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.6.4 (2024-08-30)
+
+* FIX: Notebooks are now conforming to ruff's style checks by [@rcjackson](https://github.com/rcjackson), ({pull}`199`) by [@rcjackson](https://github.com/rcjackson).
+* FIX: use dict.get() to retrieve attribute key and return "None" if not available, ({pull}`200`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+
+## 0.6.3 (2024-08-13)
+
+FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+>>>>>>> upstream/main
 ## 0.6.2 (2024-08-12)
 
 * FIX: Passing 'engine' kwarg in "open_cfradial1_datatree" method to enable fsspec.open when using url ({issue}`194`) by [@aladinor](https://github.com/aladinor), ({pull}`195`) by [@aladinor](https://github.com/aladinor)

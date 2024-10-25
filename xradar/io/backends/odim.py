@@ -176,9 +176,12 @@ def _get_time_what(what, where, nrays=None):
     return time_data
 
 
-def _get_range(where):
+def _get_range(where, odim_version=None):
+    scale = 1000.0
+    if odim_version == "ODIM_H5/V2_4":
+        scale = 1.0
     ngates = where["nbins"]
-    range_start = where["rstart"] * 1000.0
+    range_start = where["rstart"] * scale
     bin_range = where["rscale"]
     cent_first = range_start + bin_range / 2.0
     range_data = np.arange(
@@ -303,6 +306,10 @@ class _H5NetCDFMetadata:
             self._where = self.grp["where"].attrs
         return self._where
 
+    def _get_odim_version(self):
+        version = self._root.attrs.get("Conventions", "None")
+        return version
+
     def _get_site_coords(self):
         lon = self._root["where"].attrs["lon"]
         lat = self._root["where"].attrs["lat"]
@@ -411,7 +418,7 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         return time_data
 
     def _get_range(self):
-        return _get_range(self.where)
+        return _get_range(self.where, odim_version=self._odim_version)
 
     def _get_time(self, point="start"):
         return _get_time(self.what, point=point)
@@ -460,6 +467,10 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
     def _sweep_number(self):
         """Return sweep number."""
         return int(self._group.split("/")[0][7:]) - 1
+
+    @property
+    def _odim_version(self):
+        return self._get_odim_version()
 
 
 class H5NetCDFArrayWrapper(BackendArray):
