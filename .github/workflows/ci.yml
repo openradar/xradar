@@ -133,8 +133,6 @@ jobs:
     defaults:
       run:
         shell: bash -l {0}
-    env:
-      CONDA_ENV_FILE: ci/unittests.yml
     strategy:
       fail-fast: false
       matrix:
@@ -174,13 +172,13 @@ jobs:
             xmltodict
             numpy=${{matrix.numpy-version}}
             conda
-      - name: Install xradar
-        run: |
-          python -m pip install --no-deps .
       - name: Install xarray
         run: |
           python -m pip install --no-deps --ignore-installed --no-cache-dir -vvv \
           git+https://github.com/pydata/xarray.git@main
+      - name: Install xradar
+        run: |
+          python -m pip install --no-deps .
       - name: Version Info
         run: |
           python -c "import xradar; print(xradar.version.version)"
