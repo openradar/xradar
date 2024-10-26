@@ -1,6 +1,6 @@
 # History
 
-## 0.7.0 (2024-10-25)
+## 0.7.0 (2024-10-26)
 
 This is the last version which uses datatree from xarray-contrib/datatree. Thus, xarray is pinned to version 2024.9.0.
 
