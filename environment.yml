@@ -18,7 +18,7 @@ dependencies:
   - netCDF4
   - open-radar-data>=0.1.0
   - pyproj
-  - xarray
+  - xarray<=2024.9.0
   - xarray-datatree>=0.0.10
   - xmltodict
   - cartopy
