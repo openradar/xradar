@@ -23,5 +23,5 @@ dependencies:
   - pytest-xdist
   - scipy
   - setuptools
-  - xarray
+  - xarray>=2024.10.0
   - xmltodict
