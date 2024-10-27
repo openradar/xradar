@@ -371,7 +371,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         ).values()
     )
     for i, sw in enumerate(sweep_child):
-        dtree[f"sweep_{i:02d}"] = sw
+        dtree[f"sweep_{i}"] = sw
     return DataTree.from_dict(dtree)
 
 
