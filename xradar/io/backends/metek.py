@@ -35,7 +35,6 @@ from ...model import (
     get_longitude_attrs,
     get_time_attrs,
 )
-from .common import _assign_root, _attach_sweep_groups
 
 __all__ = [
     "MRRBackendEntrypoint",
@@ -665,14 +664,14 @@ def open_metek_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = ["sweep_0"]
 
-    ds = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kwargs)
-        for swp in sweeps
-    ]
+    dtree = {"/": xr.Dataset()}
+    dtree.update(
+        {
+            swp: xr.open_dataset(
+                filename_or_obj, group=swp, engine="metek", **kwargs
+            ).copy()
+            for swp in sweeps
+        }
+    )
 
-    ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
-
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    return xr.DataTree.from_dict(dtree)
