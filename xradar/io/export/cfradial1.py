@@ -64,12 +64,12 @@ def _calib_mapper(calib_params):
 
 def _main_info_mapper(dtree):
     """
-    Map main radar information from a radar datatree dataset.
+    Map main radar information from a radar xarray dataset.
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree.
 
     Returns
     -------
@@ -92,8 +92,8 @@ def _variable_mapper(dtree, dim0=None):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree.
     dim0: str
         Either `azimuth` or `elevation`
 
@@ -165,12 +165,12 @@ def _variable_mapper(dtree, dim0=None):
 
 def _sweep_info_mapper(dtree):
     """
-    Extract specified sweep information variables from a radar datatree
+    Extract specified sweep information variables from a radar xarray.DataTree
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree.
 
     Returns
     -------
@@ -231,8 +231,8 @@ def calculate_sweep_indices(dtree, dataset=None):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree containing elevation values for different sweep groups.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree containing elevation values for different sweep groups.
     dataset: xarray.Dataset, optional
         An optional dataset to which the calculated indices will be added.
         If None, a new dataset will be created.
@@ -279,14 +279,14 @@ def calculate_sweep_indices(dtree, dataset=None):
 
 def to_cfradial1(dtree=None, filename=None, calibs=True):
     """
-    Convert a radar datatree.DataTree to the CFRadial1 format
+    Convert a radar xarray.DataTree to the CFRadial1 format
     and save it to a file. Ensure that the resulting dataset
     is well-formed and does not include specified extraneous variables.
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree object.
+    dtree: xarray.DataTree
+        Radar xarary.DataTree object.
     filename: str, optional
         The name of the output netCDF file.
     calibs: Bool, optional
