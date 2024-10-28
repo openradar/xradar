@@ -24,9 +24,11 @@ __all__ = ["create_xradar_dataarray_accessor"]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+
 import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
+from .util import map_over_sweeps
 
 
 def accessor_constructor(self, xarray_obj):
@@ -203,3 +205,37 @@ class XradarDataTreeAccessor(XradarAccessor):
         """
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
+
+    def map_over_sweeps(self, func, *args, **kwargs):
+        """
+        Apply a function across all sweep nodes in the DataTree using the xradar accessor.
+
+        This method wraps a given function with the `map_over_sweeps` decorator and applies it
+        to all sweep nodes using xarray's pipe mechanism.
+
+        Parameters
+        ----------
+        func : callable
+            A function that operates on an xarray Dataset. This function will be applied to each
+            sweep node in the DataTree.
+        *args : tuple
+            Additional positional arguments passed to the function.
+        **kwargs : dict
+            Additional keyword arguments passed to the function.
+
+        Returns
+        -------
+        DataTree
+            The modified DataTree with the function applied to sweep nodes.
+
+        Examples
+        --------
+        >>> dtree2 = dtree.xradar.map_over_sweeps(calculate_rain_rate, ref_field='DBZH')
+        >>> display(dtree2["sweep_0"])
+        """
+
+        @map_over_sweeps
+        def _func(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        return self.xarray_obj.pipe(_func, *args, **kwargs)

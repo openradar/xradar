@@ -9,6 +9,7 @@ import pytest
 import xarray as xr
 from open_radar_data import DATASETS
 
+import xradar as xd
 from xradar import io, model, util
 
 
@@ -383,3 +384,43 @@ def test_apply_to_volume():
             raise ValueError("This is an intentional error")
 
         util.apply_to_volume(dtree, error_function)
+
+
+def test_map_over_sweeps_decorator_dummy_function():
+    """
+    Test applying a dummy function to all sweep nodes using the map_over_sweeps decorator.
+    """
+    # Fetch the sample radar file
+    filename = DATASETS.fetch("sample_sgp_data.nc")
+
+    # Open the radar file into a DataTree object
+    dtree = xd.io.open_cfradial1_datatree(filename)
+
+    # Use the decorator on the dummy function
+    @xd.map_over_sweeps
+    def dummy_function(ds, refl="none"):
+        ds = ds.assign(
+            dummy_field=ds["reflectivity_horizontal"] * 0
+        )  # Field with zeros
+        ds["dummy_field"].attrs = {
+            "unit": "dBZ",
+            "long_name": "Dummy Field",
+            "test": refl,
+        }
+        return ds
+
+    # Apply using pipe and decorator
+    dtree_modified = dtree.pipe(dummy_function, refl="test")
+
+    # Check that the new field exists in sweep_0 and has the correct attributes
+    sweep_0 = dtree_modified["sweep_0"]
+    assert "dummy_field" in sweep_0.data_vars
+    assert sweep_0.dummy_field.attrs["unit"] == "dBZ"
+    assert sweep_0.dummy_field.attrs["long_name"] == "Dummy Field"
+    assert sweep_0.dummy_field.attrs["test"] == "test"
+
+    # Ensure all non-NaN values are 0 (accounting for -0.0 and NaN values)
+    non_nan_values = np.nan_to_num(
+        sweep_0.dummy_field.values
+    )  # Convert NaNs to zero for comparison
+    assert np.all(np.isclose(non_nan_values, 0))
