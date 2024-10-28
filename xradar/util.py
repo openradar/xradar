@@ -24,11 +24,14 @@ __all__ = [
     "rolling_dim",
     "get_sweep_keys",
     "apply_to_sweeps",
+    "apply_to_volume",
+    "map_over_sweeps",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import contextlib
+import functools
 import gzip
 import importlib.util
 import io
@@ -587,3 +590,61 @@ def apply_to_volume(dtree, func, *args, **kwargs):
         A new DataTree object with the function applied to all sweeps.
     """
     return apply_to_sweeps(dtree, func, *args, **kwargs)
+
+
+def map_over_sweeps(func):
+    """
+    Decorator to apply a function only to sweep nodes in a DataTree.
+
+    This decorator first checks whether the dataset provided to the function has the 'range' dimension,
+    indicating it's a sweep node. If true, the function is applied. Non-sweep nodes are left unchanged.
+
+    Parameters
+    ----------
+    func : callable
+        A function that operates on an xarray Dataset. The function must accept a Dataset as its
+        first argument and return a modified Dataset.
+
+    Returns
+    -------
+    callable
+        A function that can be applied to all sweep nodes in a DataTree.
+
+    Examples
+    --------
+    >>> @map_over_sweeps
+    >>> def calculate_rain_rate(ds, ref_field='DBZH'):
+    >>>     # Function logic to calculate rain rate
+    >>>     return ds
+    """
+
+    @functools.wraps(func)
+    def _func(*args, **kwargs):
+        """
+        Internal function to apply `func` only to sweep nodes.
+
+        Checks for the presence of the 'range' dimension to identify sweep nodes. Non-sweep nodes
+        are left unchanged.
+
+        Parameters
+        ----------
+        *args : tuple
+            Positional arguments passed to the function.
+        **kwargs : dict
+            Keyword arguments passed to the function.
+
+        Returns
+        -------
+        Dataset or unchanged object
+            The modified Dataset if applied to a sweep node, otherwise the unchanged object.
+        """
+        if "range" in args[0].dims:
+            return func(*args, **kwargs)
+        else:
+            return args[0]
+
+    # map _func over datasets in a DataTree
+    def _map_over_sweeps(*args, **kwargs):
+        return xr.map_over_datasets(functools.partial(_func, **kwargs), *args)
+
+    return _map_over_sweeps

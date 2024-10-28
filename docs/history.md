@@ -5,6 +5,8 @@
 This is the first version which uses datatree directly from xarray. Thus, xarray is pinned to version >= 2024.10.0.
 
 * Use DataTree from xarray and add xarray nightly run ({pull}`213`, {pull}`214`, {pull}`215`, {pull}`218`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ADD: Added new accessor `map_over_sweeps` for volume operations on DataTrees and a matching decorator ({pull}`203`) by [@syedhamidali](https://github.com/syedhamidali).
+
 
 ## 0.7.0 (2024-10-26)
 
@@ -25,7 +27,7 @@ This is the last version which uses datatree from xarray-contrib/datatree. Thus,
 
 ## 0.6.3 (2024-08-13)
 
-FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: use rstart in meter for ODIM_H5/V2_4 ({issue}`196`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`197`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.6.2 (2024-08-12)
 
