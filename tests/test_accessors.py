@@ -51,6 +51,66 @@ def test_georeference_datatree():
     )
 
 
+def test_crs_dataarray():
+    """Test the add_crs and get_crs methods on a DataArray."""
+    # Create a sample DataArray with radar data
+    radar = xd.model.create_sweep_dataset()
+    radar["sample_field"] = radar.azimuth + radar.range
+    dataarray = radar.sample_field
+
+    # Apply add_crs to add coordinate system
+    da_with_crs = dataarray.xradar.add_crs()
+
+    # Check if either 'spatial_ref' or 'crs_wkt' was added as coordinate
+    assert (
+        "spatial_ref" in da_with_crs.coords or "crs_wkt" in da_with_crs.coords
+    ), "CRS coordinate is missing in DataArray"
+
+    # Retrieve CRS using get_crs
+    crs = da_with_crs.xradar.get_crs()
+
+    # Verify that the CRS is valid and projected
+    assert crs is not None, "CRS could not be retrieved from DataArray"
+    assert crs.is_projected, "Expected a projected CRS in DataArray"
+
+
+def test_crs_dataset():
+    """Test the add_crs and get_crs methods on a Dataset."""
+    # Create a sample Dataset with radar data
+    radar = xd.model.create_sweep_dataset()
+
+    # Apply add_crs to add coordinate system
+    ds_with_crs = radar.xradar.add_crs()
+
+    # Check if either 'spatial_ref' or 'crs_wkt' was added as coordinate
+    assert (
+        "spatial_ref" in ds_with_crs.coords or "crs_wkt" in ds_with_crs.coords
+    ), "CRS coordinate is missing in Dataset"
+
+    # Retrieve CRS using get_crs
+    crs = ds_with_crs.xradar.get_crs()
+
+    # Verify that the CRS is valid and projected
+    assert crs is not None, "CRS could not be retrieved from Dataset"
+    assert crs.is_projected, "Expected a projected CRS in Dataset"
+
+
+def test_crs_datatree():
+    """Test the add_crs method on a DataTree."""
+    # Create a sample DataTree with radar data
+    radar = xd.model.create_sweep_dataset()
+    tree = xr.DataTree.from_dict({"sweep_0": radar})
+
+    # Apply add_crs to add coordinate system
+    tree_with_crs = tree.xradar.add_crs()
+
+    # Check if either 'spatial_ref' or 'crs_wkt' was added as coordinate in each sweep
+    assert (
+        "spatial_ref" in tree_with_crs["sweep_0"].coords
+        or "crs_wkt" in tree_with_crs["sweep_0"].coords
+    ), "CRS coordinate is missing in DataTree"
+
+
 def test_map_over_sweeps_apply_dummy_function():
     """
     Test applying a dummy function to all sweep nodes using map_over_sweeps.
