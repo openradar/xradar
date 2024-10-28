@@ -128,3 +128,34 @@ def test_map_over_sweeps_invalid_input():
     # Expect a KeyError when applying the function with an invalid field
     with assert_raises(KeyError):
         tree.xradar.map_over_sweeps(invalid_rain_rate, ref_field="INVALID_FIELD")
+
+
+def test_accessor_to_cfradial1():
+    """Test the accessor function to convert DataTree to CfRadial1 Dataset."""
+    file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    dtree = xd.io.open_cfradial1_datatree(file)
+
+    # Use accessor method to convert to CfRadial1
+    ds_cf1 = dtree.xradar.to_cfradial1_dataset()
+
+    # Verify key properties of the resulting dataset
+    assert isinstance(ds_cf1, xr.Dataset), "Conversion to CfRadial1 failed"
+    assert "sweep_mode" in ds_cf1.variables, "Missing sweep_mode in CfRadial1 dataset"
+
+
+def test_accessor_to_cfradial2():
+    """Test the accessor function to convert CfRadial1 Dataset back to DataTree."""
+    file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    dtree = xd.io.open_cfradial1_datatree(file)
+
+    # Convert to CfRadial1 dataset
+    ds_cf1 = dtree.xradar.to_cfradial1_dataset()
+
+    # Use accessor method to convert back to CfRadial2 DataTree
+    dtree_cf2 = ds_cf1.xradar.to_cfradial2_datatree()
+
+    # Verify the properties of the resulting DataTree
+    assert isinstance(dtree_cf2, xr.DataTree), "Conversion to CfRadial2 failed"
+    assert (
+        "radar_parameters" in dtree_cf2
+    ), "Missing radar_parameters in CfRadial2 DataTree"

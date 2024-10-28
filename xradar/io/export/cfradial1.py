@@ -3,7 +3,7 @@
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
-CfRadial1 output
+CfRadial1 Output
 ================
 
 This sub-module contains the writer for export of CfRadial1-based radar
@@ -68,7 +68,7 @@ def _main_info_mapper(dtree):
 
     Parameters
     ----------
-    dtree: xarray.DataTree
+    dtree: datatree.DataTree
         Radar datatree.
 
     Returns
@@ -76,11 +76,13 @@ def _main_info_mapper(dtree):
     xarray.Dataset
         Dataset containing the mapped radar information.
     """
-    dataset = (
-        dtree.root.to_dataset()
-        .drop_vars("sweep_group_name", errors="ignore")
-        .rename({"sweep_fixed_angle": "fixed_angle"})
-    )
+    dataset = dtree.root.to_dataset()
+    dataset = dataset.drop_vars("sweep_group_name", errors="ignore")
+
+    # Rename "sweep_fixed_angle" to "fixed_angle" if it exists
+    if "sweep_fixed_angle" in dataset:
+        dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
+
     return dataset
 
 
@@ -90,7 +92,7 @@ def _variable_mapper(dtree, dim0=None):
 
     Parameters
     ----------
-    dtree: xarray.DataTree
+    dtree: datatree.DataTree
         Radar datatree.
     dim0: str
         Either `azimuth` or `elevation`
@@ -102,7 +104,9 @@ def _variable_mapper(dtree, dim0=None):
     """
 
     sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle")
+    vol_info = _main_info_mapper(dtree)
+    if "fixed_angle" in vol_info:
+        vol_info = vol_info.drop_vars("fixed_angle")
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
@@ -165,7 +169,7 @@ def _sweep_info_mapper(dtree):
 
     Parameters
     ----------
-    dtree: xarray.DataTree
+    dtree: datatree.DataTree
         Radar datatree.
 
     Returns
@@ -227,7 +231,7 @@ def calculate_sweep_indices(dtree, dataset=None):
 
     Parameters
     ----------
-    dtree: xarray.DataTree
+    dtree: datatree.DataTree
         Radar datatree containing elevation values for different sweep groups.
     dataset: xarray.Dataset, optional
         An optional dataset to which the calculated indices will be added.
@@ -281,7 +285,7 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
 
     Parameters
     ----------
-    dtree: xarray.DataTree
+    dtree: datatree.DataTree
         Radar datatree object.
     filename: str, optional
         The name of the output netCDF file.

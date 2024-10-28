@@ -29,6 +29,7 @@ import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
 from .util import map_over_sweeps
+from .transform import to_cfradial1, to_cfradial2
 
 
 def accessor_constructor(self, xarray_obj):
@@ -165,6 +166,18 @@ class XradarDataSetAccessor(XradarAccessor):
         """
         radar = self.xarray_obj
         return radar.pipe(get_crs)
+    
+    def to_cfradial2_datatree(self):
+        """Convert a CfRadial1 Dataset to CfRadial2 DataTree."""
+        return to_cfradial2(self.xarray_obj)
+
+    def to_cfradial2(self):
+        """Convert a CfRadial1 Dataset to CfRadial2 DataTree."""
+        return self.to_cfradial2_datatree()
+
+    def to_cf2(self):
+        """Alias for CfRadial1 to CfRadial2."""
+        return self.to_cfradial2_datatree()
 
 
 @xr.register_datatree_accessor("xradar")
@@ -239,3 +252,15 @@ class XradarDataTreeAccessor(XradarAccessor):
             return func(*args, **kwargs)
 
         return self.xarray_obj.pipe(_func, *args, **kwargs)
+    
+    def to_cfradial1_dataset(self, calibs=True):
+        """Convert a CfRadial2 DataTree to CfRadial1 dataset."""
+        return to_cfradial1(self.xarray_obj, calibs=calibs)
+
+    def to_cfradial1(self, calibs=True):
+        """Convert a CfRadial2 DataTree to CfRadial1 dataset."""
+        return to_cfradial1(self.xarray_obj, calibs=calibs)
+
+    def to_cf1(self):
+        """Alias for converting to CfRadial1 dataset."""
+        return self.to_cfradial1()
