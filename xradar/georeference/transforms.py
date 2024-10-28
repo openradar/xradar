@@ -185,7 +185,7 @@ def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None):
 
     Parameters
     ----------
-    radar: datatree.DataTree
+    radar: xarray.DataTree
         Xradar datatree object with radar information.
     earth_radius: float
         Radius of the earth. Defaults to a latitude-dependent radius derived from
@@ -195,7 +195,7 @@ def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None):
 
     Returns
     -------
-    radar: datatree.DataTree
+    radar: xarray.DataTree
         Datatree with sweep datasets including georeferenced coordinates
     """
     for key in list(radar.children):
