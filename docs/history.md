@@ -1,6 +1,14 @@
 # History
 
-## Development Version
+## 0.8.0 (2024-10-28)
+
+This is the first version which uses datatree directly from xarray. Thus, xarray is pinned to version >= 2024.10.0.
+
+* Use DataTree from xarray and add xarray nightly run ({pull}`213`, {pull}`214`, {pull}`215`, {pull}`218`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
+## 0.7.0 (2024-10-26)
+
+This is the last version which uses datatree from xarray-contrib/datatree. Thus, xarray is pinned to version 2024.9.0.
 
 * ADD: Added a new accessor `apply` for volume operations ({pull}`203`) by [@syedhamidali](https://github.com/syedhamidali).
 * ADD: Added `apply_to_sweeps` function for applying custom operations to all sweeps in a `DataTree` radar volume Implemented by [@syedhamidali](https://github.com/syedhamidali), ({pull}`202`).

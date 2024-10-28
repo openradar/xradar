@@ -7,6 +7,5 @@ netCDF4
 numpy
 pyproj
 scipy
-xarray
-xarray-datatree >= 0.0.10
+xarray >= 2024.10.0
 xmltodict

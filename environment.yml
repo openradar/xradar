@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python >=3.9,<3.12
+  - python >=3.10,<3.13
   - pydata-sphinx-theme
   - pip
   - myst-parser
@@ -18,8 +18,7 @@ dependencies:
   - netCDF4
   - open-radar-data>=0.1.0
   - pyproj
-  - xarray
-  - xarray-datatree>=0.0.10
+  - xarray>=2024.10.0
   - xmltodict
   - cartopy
   - cmweather

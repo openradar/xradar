@@ -68,7 +68,7 @@ def _main_info_mapper(dtree):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         Radar datatree.
 
     Returns
@@ -90,7 +90,7 @@ def _variable_mapper(dtree, dim0=None):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         Radar datatree.
     dim0: str
         Either `azimuth` or `elevation`
@@ -106,7 +106,7 @@ def _variable_mapper(dtree, dim0=None):
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
-            data = dtree[grp]
+            data = dtree[grp].to_dataset()
 
             # handling first dimension
             if dim0 is None:
@@ -129,7 +129,7 @@ def _variable_mapper(dtree, dim0=None):
             data = data.drop_vars(["x", "y", "z"], errors="ignore")
 
             # Convert to a dataset and append to the list
-            sweep_datasets.append(data.to_dataset())
+            sweep_datasets.append(data)
 
     result_dataset = xr.concat(
         sweep_datasets,
@@ -165,7 +165,7 @@ def _sweep_info_mapper(dtree):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         Radar datatree.
 
     Returns
@@ -227,7 +227,7 @@ def calculate_sweep_indices(dtree, dataset=None):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         Radar datatree containing elevation values for different sweep groups.
     dataset: xarray.Dataset, optional
         An optional dataset to which the calculated indices will be added.
@@ -281,7 +281,7 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         Radar datatree object.
     filename: str, optional
         The name of the output netCDF file.
