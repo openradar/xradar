@@ -644,7 +644,7 @@ def map_over_sweeps(func):
             return args[0]
 
     # map _func over datasets in a DataTree
-    def _map_over_sweeps(*args):
-        return xr.map_over_datasets(_func, *args)
+    def _map_over_sweeps(*args, **kwargs):
+        return xr.map_over_datasets(functools.partial(_func, **kwargs), *args)
 
     return _map_over_sweeps

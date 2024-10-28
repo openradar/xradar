@@ -398,21 +398,26 @@ def test_map_over_sweeps_decorator_dummy_function():
 
     # Use the decorator on the dummy function
     @xd.map_over_sweeps
-    def dummy_function(ds):
+    def dummy_function(ds, refl="none"):
         ds = ds.assign(
             dummy_field=ds["reflectivity_horizontal"] * 0
         )  # Field with zeros
-        ds["dummy_field"].attrs = {"unit": "dBZ", "long_name": "Dummy Field"}
+        ds["dummy_field"].attrs = {
+            "unit": "dBZ",
+            "long_name": "Dummy Field",
+            "test": refl,
+        }
         return ds
 
     # Apply using pipe and decorator
-    dtree_modified = dtree.pipe(dummy_function)
+    dtree_modified = dtree.pipe(dummy_function, refl="test")
 
     # Check that the new field exists in sweep_0 and has the correct attributes
     sweep_0 = dtree_modified["sweep_0"]
     assert "dummy_field" in sweep_0.data_vars
     assert sweep_0.dummy_field.attrs["unit"] == "dBZ"
     assert sweep_0.dummy_field.attrs["long_name"] == "Dummy Field"
+    assert sweep_0.dummy_field.attrs["test"] == "test"
 
     # Ensure all non-NaN values are 0 (accounting for -0.0 and NaN values)
     non_nan_values = np.nan_to_num(
