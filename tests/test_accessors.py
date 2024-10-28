@@ -138,9 +138,18 @@ def test_accessor_to_cfradial1():
     # Use accessor method to convert to CfRadial1
     ds_cf1 = dtree.xradar.to_cfradial1_dataset()
 
+    # Test alias for conversion to CfRadial1
+    ds_cf1_alias = dtree.xradar.to_cf1()
+
     # Verify key properties of the resulting dataset
     assert isinstance(ds_cf1, xr.Dataset), "Conversion to CfRadial1 failed"
     assert "sweep_mode" in ds_cf1.variables, "Missing sweep_mode in CfRadial1 dataset"
+
+    # Verify alias
+    assert isinstance(ds_cf1_alias, xr.Dataset), "Alias conversion to CfRadial1 failed"
+    assert (
+        "sweep_mode" in ds_cf1_alias.variables
+    ), "Missing sweep_mode in CfRadial1 dataset"
 
 
 def test_accessor_to_cfradial2():
@@ -154,8 +163,28 @@ def test_accessor_to_cfradial2():
     # Use accessor method to convert back to CfRadial2 DataTree
     dtree_cf2 = ds_cf1.xradar.to_cfradial2_datatree()
 
+    # Test aliases for CfRadial2 conversion
+    dtree_cf2_alias1 = ds_cf1.xradar.to_cfradial2()
+    dtree_cf2_alias2 = ds_cf1.xradar.to_cf2()
+
     # Verify the properties of the resulting DataTree
     assert isinstance(dtree_cf2, xr.DataTree), "Conversion to CfRadial2 failed"
     assert (
         "radar_parameters" in dtree_cf2
+    ), "Missing radar_parameters in CfRadial2 DataTree"
+
+    # Verify alias1
+    assert isinstance(
+        dtree_cf2_alias1, xr.DataTree
+    ), "Alias conversion to CfRadial2 failed"
+    assert (
+        "radar_parameters" in dtree_cf2_alias1
+    ), "Missing radar_parameters in CfRadial2 DataTree"
+
+    # Verify alias2
+    assert isinstance(
+        dtree_cf2_alias2, xr.DataTree
+    ), "Alias conversion to CfRadial2 failed"
+    assert (
+        "radar_parameters" in dtree_cf2_alias2
     ), "Missing radar_parameters in CfRadial2 DataTree"
