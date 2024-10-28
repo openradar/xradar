@@ -643,9 +643,8 @@ def map_over_sweeps(func):
         else:
             return args[0]
 
-    # xarray decorator to apply function over datasets in a DataTree
-    @xr.map_over_datasets
-    def _map_over_sweeps(*args, **kwargs):
-        return _func(*args, **kwargs)
+    # map _func over datasets in a DataTree
+    def _map_over_sweeps(*args):
+        return xr.map_over_datasets(_func, *args)
 
     return _map_over_sweeps

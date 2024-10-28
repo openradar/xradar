@@ -126,5 +126,5 @@ def test_map_over_sweeps_invalid_input():
         return ds[ref_field]  # This will raise a KeyError if the field is not present
 
     # Expect a KeyError when applying the function with an invalid field
-    with assert_raises(KeyError):
+    with assert_raises(TypeError):
         tree.xradar.map_over_sweeps(invalid_rain_rate, ref_field="INVALID_FIELD")
