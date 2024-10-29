@@ -24,5 +24,6 @@ from . import io  # noqa
 from . import model  # noqa
 from . import util  # noqa
 from .util import map_over_sweeps  # noqa
+from . import transform  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]
