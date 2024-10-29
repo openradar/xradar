@@ -49,7 +49,7 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from .common import _maybe_decode, _attach_sweep_groups
+from .common import _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds, optional=True):
