@@ -28,7 +28,7 @@ def test_content(response):
 
 
 def test_version_import_fallback():
-    # Mock import of `version` to raise ImportError within xradar's __init__.py
-    with mock.patch("importlib.import_module", side_effect=ImportError):
+    # Temporarily remove `version` to simulate ImportError for this specific import.
+    with mock.patch.dict("sys.modules", {"xradar.version": None}):
         importlib.reload(xradar)
         assert xradar.__version__ == "999"
