@@ -49,7 +49,7 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from .common import _maybe_decode
+from .common import _maybe_decode, _attach_sweep_groups
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -361,17 +361,18 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     if calib:
         dtree["/radar_calibration"] = calib
 
-    sweep_child = list(
-        _get_sweep_groups(
-            ds,
-            sweep=sweep,
-            first_dim=first_dim,
-            optional=optional,
-            site_coords=site_coords,
-        ).values()
+    dtree = _attach_sweep_groups(
+        dtree,
+        list(
+            _get_sweep_groups(
+                ds,
+                sweep=sweep,
+                first_dim=first_dim,
+                optional=optional,
+                site_coords=site_coords,
+            ).values()
+        ),
     )
-    for i, sw in enumerate(sweep_child):
-        dtree[f"sweep_{i}"] = sw
     return DataTree.from_dict(dtree)
 
 
