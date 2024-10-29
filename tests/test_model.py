@@ -121,7 +121,7 @@ def test_get_sweep_dataarray():
     assert da.dims == ("time", "range")
     assert np.unique(da) == [42.0]
     attrs = da.attrs
-    attrs["standard_name"] == "radar_equivalent_reflectivity_factor_h"
-    attrs["long_name"] == "Equivalent reflectivity factor H"
-    attrs["short_name"] == "DBZH"
-    attrs["units"] == "dBZ"
+    assert attrs["standard_name"] == "radar_equivalent_reflectivity_factor_h"
+    assert attrs["long_name"] == "Equivalent reflectivity factor H"
+    assert attrs["short_name"] == "DBZH"
+    assert attrs["units"] == "dBZ"

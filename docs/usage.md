@@ -18,6 +18,7 @@ datamodel
 importers
 exporters
 notebooks/Accessors
+notebooks/Mapping_Sweeps
 ```
 
 ```{toctree}
@@ -28,11 +29,14 @@ notebooks/Auto_Read
 notebooks/CfRadial1_Model_Transformation
 notebooks/CfRadial1
 notebooks/CfRadial1_Export
+notebooks/Transform
 notebooks/ODIM_H5
 notebooks/GAMIC
 notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
+notebooks/HaloPhotonics
+notebooks/MRR
 notebooks/NexradLevel2
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi

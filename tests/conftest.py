@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # Copyright (c) 2022-2023, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
+import os.path
+
 import pytest
 from open_radar_data import DATASETS
 
@@ -76,9 +78,11 @@ def nexradlevel2_file():
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_gzfile():
+def nexradlevel2_gzfile(tmp_path_factory):
     fnamei = DATASETS.fetch("KLBB20160601_150025_V06.gz")
-    fnameo = f"{fnamei[:-3]}_gz"
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}_gz"
+    )
     import gzip
     import shutil
 
@@ -93,6 +97,51 @@ def nexradlevel2_bzfile():
     return DATASETS.fetch("KLBB20160601_150025_V06")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def nexradlevel2_files(request):
     return request.getfixturevalue(request.param)
+
+
+@pytest.fixture(scope="session")
+def metek_ave_gz_file(tmp_path_factory):
+    fnamei = DATASETS.fetch("0308.ave.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def metek_pro_gz_file(tmp_path_factory):
+    fnamei = DATASETS.fetch("0308.pro.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def metek_raw_gz_file(tmp_path_factory):
+    fnamei = DATASETS.fetch("0308.raw.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
