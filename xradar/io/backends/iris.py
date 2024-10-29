@@ -43,6 +43,7 @@ from collections import OrderedDict
 
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -62,6 +63,7 @@ from ...model import (
     optional_root_attrs,
     optional_root_vars,
     radar_parameters_subgroup,
+    georeferencing_correction_subgroup,
     required_global_attrs,
     required_root_vars,
     sweep_vars_mapping,
@@ -3948,6 +3950,10 @@ class IrisStore(AbstractDataStore):
             attributes.update(
                 {"elevation_lower_limit": ll, "elevation_upper_limit": ul}
             )
+        attributes['source'] = "Sigmet"
+        attributes['scan_name'] = self.root.product_hdr["product_configuration"]["task_name"]
+        attributes['instrument_name'] = self.root.ingest_header["ingest_configuration"]["site_name"].strip()
+        attributes['comment'] = self.root.ingest_header["task_configuration"]["task_end_info"]['task_description']
         return FrozenDict(attributes)
 
 
@@ -4138,7 +4144,7 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = kwargs.pop("optional", True)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -4159,13 +4165,19 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
         for swp in sweeps
     ]
-    # get the datatree root
-    root = _get_required_root_dataset(ls_ds)
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=root, name="root")
-    # get radar_parameters group
-    subgroup = _get_subgroup(ls_ds, radar_parameters_subgroup)
-    # attach radar_parameter group
-    dtree["radar_parameters"] = xr.DataTree(subgroup)
-    # return Datatree attaching the sweep child nodes
-    return _attach_sweep_groups(dtree, ls_ds)
+
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+    }
+
+    # radar_calibration (connected with calib-dimension)
+    # calib = _get_radar_calibration(ds)
+    # if calib:
+    #     dtree["/radar_calibration"] = calib
+
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)
