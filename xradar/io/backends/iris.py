@@ -53,6 +53,7 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -63,7 +64,6 @@ from ...model import (
     optional_root_attrs,
     optional_root_vars,
     radar_parameters_subgroup,
-    georeferencing_correction_subgroup,
     required_global_attrs,
     required_root_vars,
     sweep_vars_mapping,
@@ -3950,10 +3950,16 @@ class IrisStore(AbstractDataStore):
             attributes.update(
                 {"elevation_lower_limit": ll, "elevation_upper_limit": ul}
             )
-        attributes['source'] = "Sigmet"
-        attributes['scan_name'] = self.root.product_hdr["product_configuration"]["task_name"]
-        attributes['instrument_name'] = self.root.ingest_header["ingest_configuration"]["site_name"].strip()
-        attributes['comment'] = self.root.ingest_header["task_configuration"]["task_end_info"]['task_description']
+        attributes["source"] = "Sigmet"
+        attributes["scan_name"] = self.root.product_hdr["product_configuration"][
+            "task_name"
+        ]
+        attributes["instrument_name"] = self.root.ingest_header["ingest_configuration"][
+            "site_name"
+        ].strip()
+        attributes["comment"] = self.root.ingest_header["task_configuration"][
+            "task_end_info"
+        ]["task_description"]
         return FrozenDict(attributes)
 
 
