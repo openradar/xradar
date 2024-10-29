@@ -3991,11 +3991,16 @@ def _get_required_root_dataset(ls_ds, optional=True):
     root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
     vars = xr.concat(ds_vars, dim="sweep").reset_coords()
-    # renaming variables in the root group
+
+    # Creating the root group using _assing_root funciont
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
     root = _assign_root(ls)
+
+    # merging both the created and the variables within each dataset
     root = xr.merge([root, vars])
+
+    # Renaming variable
     root = root.rename_vars({"sweep_number": "sweep_group_name"})
     root["sweep_group_name"].values = np.array(
         [f"sweep_{i}" for i in root["sweep_group_name"].values]
@@ -4166,7 +4171,6 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
         for swp in sweeps
     ]
-
     dtree: dict = {
         "/": _get_required_root_dataset(ls_ds, optional=optional),
         "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
@@ -4175,6 +4179,5 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         ),
         "/radar_calibration": _get_radar_calibration(ls_ds),
     }
-    # attach all sweeps
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)
