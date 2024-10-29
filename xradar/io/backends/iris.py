@@ -61,14 +61,12 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
-    optional_root_attrs,
     optional_root_vars,
     radar_parameters_subgroup,
-    required_global_attrs,
     required_root_vars,
     sweep_vars_mapping,
 )
-from .common import _attach_sweep_groups
+from .common import _assign_root, _attach_sweep_groups
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
@@ -3992,16 +3990,12 @@ def _get_required_root_dataset(ls_ds, optional=True):
 
     root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
-
-    root = xr.concat(ds_vars, dim="sweep").reset_coords()
-    # keep only defined mandatory and defined optional attributes per default
-    attrs = root.attrs.keys()
-    remove_attrs = set(attrs) ^ set(required_global_attrs)
-    if optional:
-        remove_attrs ^= set(optional_root_attrs)
-    for k in remove_attrs:
-        root.attrs.pop(k, None)
+    vars = xr.concat(ds_vars, dim="sweep").reset_coords()
     # renaming variables in the root group
+    ls = ls_ds.copy()
+    ls.insert(0, xr.Dataset())
+    root = _assign_root(ls)
+    root = xr.merge([root, vars])
     root = root.rename_vars({"sweep_number": "sweep_group_name"})
     root["sweep_group_name"].values = np.array(
         [f"sweep_{i}" for i in root["sweep_group_name"].values]
