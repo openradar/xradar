@@ -66,9 +66,11 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
+    optional_root_attrs,
     optional_root_vars,
     radar_calibration_subgroup,
     radar_parameters_subgroup,
+    required_global_attrs,
     required_root_vars,
     sweep_vars_mapping,
 )
@@ -813,6 +815,12 @@ def _get_required_root_dataset(ls_ds, optional=True):
     # merging both the created and the variables within each dataset
     root = xr.merge([root, vars])
 
+    attrs = root.attrs.keys()
+    remove_attrs = set(attrs) ^ set(required_global_attrs)
+    if optional:
+        remove_attrs ^= set(optional_root_attrs)
+    for k in remove_attrs:
+        root.attrs.pop(k, None)
     # Renaming variable
     root = root.rename_vars({"sweep_number": "sweep_group_name"})
     root["sweep_group_name"].values = np.array(
