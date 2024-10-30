@@ -4005,6 +4005,8 @@ def _get_required_root_dataset(ls_ds, optional=True):
     root["sweep_group_name"].values = np.array(
         [f"sweep_{i}" for i in root["sweep_group_name"].values]
     )
+    # override/fix dtype in encoding
+    root["sweep_group_name"].encoding["dtype"] = root["sweep_group_name"].dtype
     return root
 
 
