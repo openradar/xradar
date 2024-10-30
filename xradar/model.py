@@ -258,6 +258,8 @@ radar_calibration_subgroup = dict(
         ("noise_vc", None),
         ("noise_hx", None),
         ("noise_vx", None),
+        ("noise_power_short_pulse_h", None),
+        ("noise_power_short_pulse_v", None),
         ("receiver_gain_hc", None),
         ("receiver_gain_vc", None),
         ("receiver_gain_hx", None),
@@ -276,6 +278,8 @@ radar_calibration_subgroup = dict(
         ("sun_power_vx", None),
         ("noise_source_power_h", None),
         ("noise_source_power_v", None),
+        ("noise_level_pulse_modulation_h", None),  # Furuno
+        ("noise_level_frequency_modulation_h", None),  # Furuno
         ("power_measure_loss_h", None),
         ("power_measure_loss_v", None),
         ("coupler_forward_loss_h", None),
@@ -286,6 +290,12 @@ radar_calibration_subgroup = dict(
         ("system_phidp", None),
         ("test_power_h", None),
         ("test_power_v", None),
+        ("tx_pulse_blind_length", None),  # Furuno
+        ("tx_pulse_specification", None),  # Furuno
+        ("tx_power_h", None),
+        ("tx_power_v", None),
+        ("threshold_power_short_pulse", None),
+        ("threshold_power_long_pulse", None),
         ("receiver_slope_hc", None),
         ("receiver_slope_vc", None),
         ("receiver_slope_hx", None),
@@ -300,6 +310,8 @@ radar_calibration_subgroup = dict(
         ("dynamic_range_db_hx", None),
         ("dynamic_range_db_vx", None),
         ("dbz_correction", None),
+        ("half_power_beam_wigth_h", None),
+        ("half_power_beam_wigth_v", None),
     ]
 )
 
