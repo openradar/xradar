@@ -50,12 +50,10 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    optional_root_vars,
     radar_parameters_subgroup,
-    required_root_vars,
     sweep_vars_mapping,
 )
-from .common import _assign_root, _attach_sweep_groups
+from .common import _attach_sweep_groups, _get_required_root_dataset, _get_subgroup
 
 #: mapping from DataMet names to CfRadial2/ODIM
 datamet_mapping = {
@@ -449,61 +447,6 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
             )
 
         return ds
-
-
-def _get_required_root_dataset(ls_ds, optional=True):
-    """Extract Root Dataset."""
-    # keep only defined mandatory and defined optional variables per default
-    # by checking in all nodes
-    data_var = {x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs}
-    remove_root = set(data_var) ^ set(required_root_vars)
-    if optional:
-        remove_root ^= set(optional_root_vars)
-    remove_root ^= {"sweep_number", "fixed_angle"}
-    remove_root &= data_var
-    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
-    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
-    # rename variables
-    # todo: find a more easy method not iterating over all variables
-    for k in root_vars:
-        rename = optional_root_vars.get(k, None)
-        if rename:
-            root = [sweep.rename_vars({k: rename}) for sweep in root]
-
-    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
-    ds_vars = [sweep[root_vars] for sweep in ls_ds]
-    vars = xr.concat(ds_vars, dim="sweep").reset_coords()
-
-    # Creating the root group using _assign_root function
-    ls = ls_ds.copy()
-    ls.insert(0, xr.Dataset())
-    root = _assign_root(ls)
-
-    # merging both the created and the variables within each dataset
-    root = xr.merge([root, vars])
-
-    # Renaming variable
-    root = root.rename_vars({"sweep_number": "sweep_group_name"})
-    root["sweep_group_name"].values = np.array(
-        [f"sweep_{i}" for i in root["sweep_group_name"].values]
-    )
-    return root
-
-
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
-    """Get iris-sigmet root metadata group.
-    Variables are fetched from the provided Dataset according to the subdict dictionary.
-    """
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
-    for k in subgroup.data_vars:
-        rename = meta_vars[k]
-        if rename:
-            subgroup = subgroup.rename_vars({k: rename})
-    subgroup.attrs = {}
-    return subgroup
 
 
 def _get_radar_calibration(ls_ds: list[xr.Dataset]) -> xr.Dataset:
