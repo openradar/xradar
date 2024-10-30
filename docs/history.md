@@ -3,7 +3,7 @@
 ## 0.8.0 (2024-10-28)
 
 This is the first version which uses datatree directly from xarray. Thus, xarray is pinned to version >= 2024.10.0.
-
+* ENH: Added pytests to the missing functions in the `test_xradar` and `test_iris` in order to increase codecov in ({pull}`228`) by [@syedhamidali](https://github.com/syedhamidali).
 * ADD: Added new module `transform` for transforming CF1 data to CF2 and vice versa ({pull}`224`) by [@syedhamidali](https://github.com/syedhamidali).
 * Use DataTree from xarray and add xarray nightly run ({pull}`213`, {pull}`214`, {pull}`215`, {pull}`218`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ADD: Added new accessor `map_over_sweeps` for volume operations on DataTrees and a matching decorator ({pull}`203`) by [@syedhamidali](https://github.com/syedhamidali).
