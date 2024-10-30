@@ -39,6 +39,7 @@ import dateutil
 import h5netcdf
 import numpy as np
 import xarray as xr
+from xarray import Dataset, DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendEntrypoint,
@@ -53,10 +54,17 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_time_attrs,
     moment_attrs,
+    optional_root_attrs,
+    optional_root_vars,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
+    required_global_attrs,
+    required_root_vars,
     sweep_vars_mapping,
 )
 from .common import _assign_root, _attach_sweep_groups, _fix_angle, _get_h5group_names
@@ -334,7 +342,29 @@ class GamicStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        return FrozenDict()
+        _attributes = {
+            attrs: self.root.grp.attrs[attrs]
+            for attrs in (dict(self.root.grp.attrs))
+            if attrs in required_global_attrs | optional_root_attrs
+        }
+        _attributes.update(
+            {
+                attrs: self.root.what.attrs[attrs]
+                for attrs in (dict(self.root.what))
+                if attrs in required_global_attrs | optional_root_attrs
+            }
+        )
+        _attributes["source"] = "gamic"
+        return FrozenDict(_attributes)
+
+    def get_calibration_parameters(self):
+        calib_vars = [
+            var
+            for var in dict(self.root.how).keys()
+            if var in radar_calibration_subgroup
+        ]
+        calibration = {var: self.root.how[var] for var in calib_vars}
+        return FrozenDict(calibration)
 
 
 class GamicBackendEntrypoint(BackendEntrypoint):
@@ -445,8 +475,82 @@ class GamicBackendEntrypoint(BackendEntrypoint):
                     "altitude": ds.altitude,
                 }
             )
-
+        ds.attrs.update(store.get_calibration_parameters())
         return ds
+
+
+def _get_required_root_dataset(ls_ds, optional=True):
+    """Extract Root Dataset."""
+    # keep only defined mandatory and defined optional variables per default
+    # by checking in all nodes
+    data_var = {x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs}
+    remove_root = set(data_var) ^ set(required_root_vars)
+    if optional:
+        remove_root ^= set(optional_root_vars)
+    remove_root ^= {"sweep_number", "fixed_angle"}
+    remove_root &= data_var
+    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
+    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
+    # rename variables
+    # todo: find a more easy method not iterating over all variables
+    for k in root_vars:
+        rename = optional_root_vars.get(k, None)
+        if rename:
+            root = [sweep.rename_vars({k: rename}) for sweep in root]
+
+    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
+    ds_vars = [sweep[root_vars] for sweep in ls_ds]
+    vars = xr.concat(ds_vars, dim="sweep").reset_coords()
+
+    # Creating the root group using _assign_root function
+    ls = ls_ds.copy()
+    ls.insert(0, xr.Dataset())
+    root = _assign_root(ls)
+
+    # merging both the created and the variables within each dataset
+    root = xr.merge([root, vars])
+    attrs = root.attrs.keys()
+    remove_attrs = set(attrs) ^ set(required_global_attrs)
+    if optional:
+        remove_attrs ^= set(optional_root_attrs)
+    for k in remove_attrs:
+        root.attrs.pop(k, None)
+    # Renaming variable
+    root = root.rename_vars({"sweep_number": "sweep_group_name"})
+    root["sweep_group_name"].values = np.array(
+        [f"sweep_{i}" for i in root["sweep_group_name"].values]
+    )
+    # override/fix dtype in encoding
+    root["sweep_group_name"].encoding["dtype"] = root["sweep_group_name"].dtype
+    return root
+
+
+def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+    """Get iris-sigmet root metadata group.
+    Variables are fetched from the provided Dataset according to the subdict dictionary.
+    """
+    meta_vars = subdict
+    data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
+    extract_vars = set(data_vars) & set(meta_vars)
+    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
+    for k in subgroup.data_vars:
+        rename = meta_vars[k]
+        if rename:
+            subgroup = subgroup.rename_vars({k: rename})
+    subgroup.attrs = {}
+    return subgroup
+
+
+def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
+    """Get radar calibration root metadata group."""
+    meta_vars = subdict
+    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
+    extract_vars = set(data_vars) & set(meta_vars)
+    if extract_vars:
+        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
+        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
+    else:
+        return Dataset()
 
 
 def open_gamic_datatree(filename_or_obj, **kwargs):
@@ -484,7 +588,7 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("Optional", True)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -501,14 +605,18 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_h5group_names(filename_or_obj, "gamic")
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="gamic", **kwargs)
         for swp in sweeps
     ]
 
-    ds.insert(0, xr.open_dataset(filename_or_obj, group="/"))
-
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)
