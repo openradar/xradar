@@ -20,6 +20,13 @@ import h5netcdf
 import numpy as np
 import xarray as xr
 
+from ...model import (
+    optional_root_attrs,
+    optional_root_vars,
+    required_global_attrs,
+    required_root_vars,
+)
+
 
 def _maybe_decode(attr):
     try:
@@ -217,6 +224,67 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False):
             pass
 
     return data
+
+
+def _get_required_root_dataset(ls_ds, optional=True):
+    """Extract Root Dataset."""
+    # keep only defined mandatory and defined optional variables per default
+    # by checking in all nodes
+    data_var = {x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs}
+    remove_root = set(data_var) ^ set(required_root_vars)
+    if optional:
+        remove_root ^= set(optional_root_vars)
+    remove_root ^= {"sweep_number", "fixed_angle"}
+    remove_root &= data_var
+    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
+    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
+    # rename variables
+    # todo: find a more easy method not iterating over all variables
+    for k in root_vars:
+        rename = optional_root_vars.get(k, None)
+        if rename:
+            root = [sweep.rename_vars({k: rename}) for sweep in root]
+
+    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
+    ds_vars = [sweep[root_vars] for sweep in ls_ds]
+    vars = xr.concat(ds_vars, dim="sweep").reset_coords()
+
+    # Creating the root group using _assign_root function
+    ls = ls_ds.copy()
+    ls.insert(0, xr.Dataset())
+    root = _assign_root(ls)
+
+    # merging both the created and the variables within each dataset
+    root = xr.merge([root, vars])
+
+    attrs = root.attrs.keys()
+    remove_attrs = set(attrs) ^ set(required_global_attrs)
+    if optional:
+        remove_attrs ^= set(optional_root_attrs)
+    for k in remove_attrs:
+        root.attrs.pop(k, None)
+    # Renaming variable
+    root = root.rename_vars({"sweep_number": "sweep_group_name"})
+    root["sweep_group_name"].values = np.array(
+        [f"sweep_{i}" for i in root["sweep_group_name"].values]
+    )
+    return root
+
+
+def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+    """Get iris-sigmet root metadata group.
+    Variables are fetched from the provided Dataset according to the subdict dictionary.
+    """
+    meta_vars = subdict
+    data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
+    extract_vars = set(data_vars) & set(meta_vars)
+    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
+    for k in subgroup.data_vars:
+        rename = meta_vars[k]
+        if rename:
+            subgroup = subgroup.rename_vars({k: rename})
+    subgroup.attrs = {}
+    return subgroup
 
 
 # IRIS Data Types and corresponding python struct format characters
