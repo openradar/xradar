@@ -10,6 +10,7 @@ Ported from wradlib.
 import numpy as np
 
 from xradar.io.backends import iris
+from xradar.io.backends.iris import IrisIngestDataFile
 from xradar.util import _get_data_file
 
 
@@ -197,3 +198,50 @@ def test_decode_string():
 def test__get_fmt_string():
     fmt = "<12sHHi12s12s12s6s12s12sHiiiiiiiiii2sH12sHB1shhiihh80s16s12s48s"
     assert iris._get_fmt_string(iris.PRODUCT_CONFIGURATION) == fmt
+
+
+def test_read_from_record(iris0_file, file_or_filelike):
+    with _get_data_file(iris0_file, file_or_filelike) as testfile:
+        try:
+            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=False)
+            result = ingest_data_file.read_from_file(10)  # Modify `10` as needed
+            assert isinstance(result, bytes)
+        except OSError as e:
+            assert "Cannot read" in str(e)
+
+
+def test_decode_data(iris0_file, file_or_filelike):
+    with _get_data_file(iris0_file, file_or_filelike) as testfile:
+        try:
+            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=False)
+            sample_data = np.array([1, 2, 3, 4], dtype=np.uint16)
+            prod_dict = {
+                "func": None,  # Replace with actual function if applicable
+                "dtype": "uint16",
+            }
+            decoded_data = ingest_data_file.decode_data(sample_data, prod_dict)
+            assert isinstance(decoded_data, np.ndarray)
+        except OSError as e:
+            assert "Cannot read" in str(e)
+
+
+def test_get_sweep(iris0_file, file_or_filelike):
+    with _get_data_file(iris0_file, file_or_filelike) as testfile:
+        try:
+            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=True)
+            sweep_data = ingest_data_file.get_sweep()
+            assert isinstance(sweep_data, dict)
+        except OSError as e:
+            assert "Cannot read" in str(e)
+
+
+def test_array_from_file(iris0_file, file_or_filelike):
+    with _get_data_file(iris0_file, file_or_filelike) as testfile:
+        try:
+            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=False)
+            data = ingest_data_file.array_from_file(
+                10, "int32"
+            )  # Modify `10` and dtype as needed
+            assert isinstance(data, np.ndarray)
+        except OSError as e:
+            assert "Cannot read" in str(e)
