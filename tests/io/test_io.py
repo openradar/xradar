@@ -258,7 +258,7 @@ def test_open_gamic_datatree_sweep(gamic_file, sweep):
         lswp = len([sweep])
     else:
         lswp = len(sweep)
-    assert len(dtree.groups[1:]) == lswp
+    assert len(dtree.match("sweep_*")) == lswp
 
 
 def test_open_gamic_datatree(gamic_file):
@@ -319,7 +319,7 @@ def test_open_gamic_datatree(gamic_file):
         1000,
         1000,
     ]
-    for i, grp in enumerate(dtree.groups[1:]):
+    for i, grp in enumerate(dtree.match("sweep_*")):
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
