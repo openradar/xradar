@@ -829,7 +829,7 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("Optional", True)
+    optional = backend_kwargs.pop("optional", True)
     kwargs["backend_kwargs"] = backend_kwargs
 
     ls_ds = [xr.open_dataset(filename_or_obj, engine="furuno", **kwargs)]
