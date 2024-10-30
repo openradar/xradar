@@ -8,10 +8,12 @@ Ported from wradlib.
 """
 
 import numpy as np
+from open_radar_data import DATASETS
 
 from xradar.io.backends import iris
-from xradar.io.backends.iris import IrisIngestDataFile
 from xradar.util import _get_data_file
+
+filename_volume = DATASETS.fetch("cor-main131125105503.RAW2049")
 
 
 def test_open_iris(iris0_file, file_or_filelike):
@@ -201,47 +203,75 @@ def test__get_fmt_string():
 
 
 def test_read_from_record(iris0_file, file_or_filelike):
-    with _get_data_file(iris0_file, file_or_filelike) as testfile:
-        try:
-            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=False)
-            result = ingest_data_file.read_from_file(10)  # Modify `10` as needed
-            assert isinstance(result, bytes)
-        except OSError as e:
-            assert "Cannot read" in str(e)
+    """Test reading a specified number of words from a record."""
+    with _get_data_file(iris0_file, file_or_filelike) as sigmetfile:
+        data = iris.IrisRecordFile(sigmetfile, loaddata=True)
+        data.init_record(0)  # Start from the first record
+        record_data = data.read_from_record(10, dtype="int16")
+        assert len(record_data) == 10
+        assert isinstance(record_data, np.ndarray)
 
 
-def test_decode_data(iris0_file, file_or_filelike):
-    with _get_data_file(iris0_file, file_or_filelike) as testfile:
-        try:
-            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=False)
-            sample_data = np.array([1, 2, 3, 4], dtype=np.uint16)
-            prod_dict = {
-                "func": None,  # Replace with actual function if applicable
-                "dtype": "uint16",
-            }
-            decoded_data = ingest_data_file.decode_data(sample_data, prod_dict)
-            assert isinstance(decoded_data, np.ndarray)
-        except OSError as e:
-            assert "Cannot read" in str(e)
+def test_decode_data():
+    """Test decoding of data with provided product function."""
+
+    # Sample data to decode
+    data = np.array([0, 2, 3, 128, 255], dtype="int16")
+    # Sample product dict with decoding function and parameters
+    prod = {
+        "func": iris.decode_vel,
+        "dtype": "int16",
+        "fkw": {"scale": 0.5, "offset": -1},
+    }
+    with open(filename_volume, "rb") as sigmetfile:
+        iris_file = iris.IrisRawFile(sigmetfile.read(), loaddata=False)
+        decoded_data = iris_file.decode_data(data, prod)
+    assert isinstance(decoded_data, np.ndarray), "Decoded data should be a numpy array"
+    assert decoded_data.dtype in [
+        np.float32,
+        np.float64,
+    ], "Decoded data should have float32 or float64 type"
+    expected_data = [-13.325, 13.325, 26.65, 1692.275, 3384.55]
+    np.testing.assert_array_almost_equal(decoded_data, expected_data, decimal=2)
 
 
-def test_get_sweep(iris0_file, file_or_filelike):
-    with _get_data_file(iris0_file, file_or_filelike) as testfile:
-        try:
-            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=True)
-            sweep_data = ingest_data_file.get_sweep()
-            assert isinstance(sweep_data, dict)
-        except OSError as e:
-            assert "Cannot read" in str(e)
+def test_get_sweep():
+    """Test retrieval of sweep data for specified moments."""
+    sweep_number = 1
+    moments = ["DB_DBZ", "DB_VEL"]
+    with open(filename_volume, "rb") as sigmetfile:
+        iris_file = iris.IrisRawFile(sigmetfile.read(), loaddata=True)
+        # Use get_sweep to retrieve data for selected sweep and moments
+        iris_file.get_sweep(sweep_number, moments)
+        sweep_data = iris_file.data[sweep_number]["sweep_data"]
+    # Verify that sweep_data structure is populated with the selected moments
+    for moment in moments:
+        assert moment in sweep_data, f"{moment} should be in sweep_data"
+        moment_data = sweep_data[moment]
+        assert moment_data.shape == (360, 664), f"{moment} data shape mismatch"
+        if moment == "DB_VEL":
+            assert isinstance(
+                moment_data, np.ma.MaskedArray
+            ), "DB_VEL should be a masked array"
+        else:
+            assert isinstance(
+                moment_data, np.ndarray
+            ), f"{moment} should be a numpy array"
+        # Optional, check for expected placeholder/masked values
+        if moment == "DB_DBZ":
+            assert (
+                moment_data == -32
+            ).sum() > 0, "DB_DBZ should contain placeholder values (-32)"
+        if moment == "DB_VEL":
+            assert moment_data.mask.sum() > 0, "DB_VEL should have masked values"
 
 
 def test_array_from_file(iris0_file, file_or_filelike):
-    with _get_data_file(iris0_file, file_or_filelike) as testfile:
-        try:
-            ingest_data_file = IrisIngestDataFile(filename=testfile, loaddata=False)
-            data = ingest_data_file.array_from_file(
-                10, "int32"
-            )  # Modify `10` and dtype as needed
-            assert isinstance(data, np.ndarray)
-        except OSError as e:
-            assert "Cannot read" in str(e)
+    """Test retrieving an array from a file."""
+    with _get_data_file(iris0_file, file_or_filelike) as sigmetfile:
+        data = iris.IrisRawFile(sigmetfile, loaddata=True)
+        array_data = data.read_from_file(5)  # Adjusted to read_from_file
+
+        # Assertions for the read array
+        assert len(array_data) == 5
+        assert isinstance(array_data, np.ndarray)
