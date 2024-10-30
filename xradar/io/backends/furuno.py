@@ -780,7 +780,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
                     "altitude": ds.altitude,
                 }
             )
-        ds.attrs = store.get_calibration_parameters()
+        ds.attrs.update(store.get_calibration_parameters())
         return ds
 
 
