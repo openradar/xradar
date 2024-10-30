@@ -878,36 +878,35 @@ def test_open_datamet_datatree(datamet_file):
     azimuths = [360] * 11
     ranges = [493, 493, 493, 664, 832, 832, 1000, 1000, 1332, 1332, 1332]
     i = 0
-    for grp in dtree.groups:
-        if grp.startswith("/sweep_"):
-            ds = dtree[grp].ds
-            assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
-            assert set(ds.data_vars) & (
-                sweep_dataset_vars | non_standard_sweep_dataset_vars
-            ) == set(moments)
-            assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
-                required_sweep_metadata_vars ^ {"azimuth", "elevation"}
-            )
-            assert set(ds.coords) == {
-                "azimuth",
-                "elevation",
-                "time",
-                "latitude",
-                "longitude",
-                "altitude",
-                "range",
-            }
-            assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-            assert ds.sweep_number == i
-            i += 1
+    for grp in dtree.match("sweep_*"):
+        ds = dtree[grp].ds
+        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments)
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number == i
+        i += 1
 
     # Try to reed single sweep
     dtree = open_datamet_datatree(datamet_file, sweep=1)
-    assert len(dtree.groups) == 2
+    assert len(dtree.groups) == 5
 
     # Try to read list of sweeps
     dtree = open_datamet_datatree(datamet_file, sweep=[1, 2])
-    assert len(dtree.groups) == 3
+    assert len(dtree.groups) == 6
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
