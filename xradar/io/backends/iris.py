@@ -3992,7 +3992,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
     vars = xr.concat(ds_vars, dim="sweep").reset_coords()
 
-    # Creating the root group using _assing_root funciont
+    # Creating the root group using _assign_root function
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
     root = _assign_root(ls)
