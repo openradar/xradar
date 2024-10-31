@@ -991,6 +991,7 @@ def test_cfradial_n_points_file(cfradial1n_file):
         assert ds.sweep_mode == "azimuth_surveillance"
 
 
+@pytest.mark.run(order=1)
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
@@ -1001,7 +1002,7 @@ def test_open_nexradlevel2_datatree_sweep(nexradlevel2_files, sweep):
         lswp = len([sweep])
     else:
         lswp = len(sweep)
-    assert len(dtree.groups[1:]) == lswp
+    assert len(dtree.match("sweep*")) == lswp
 
 
 @pytest.mark.parametrize(
@@ -1078,8 +1079,8 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
         308,
         232,
     ]
-    assert len(dtree.groups[1:]) == 11
-    for i, grp in enumerate(dtree.groups[1:]):
+    assert len(dtree.groups[1:]) == 14
+    for i, grp in enumerate(dtree.match("sweep_*")):
         print(i)
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
@@ -1099,4 +1100,4 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-        assert ds.sweep_number.values == int(grp[7:])
+        assert ds.sweep_number.values == int(grp[6:])
