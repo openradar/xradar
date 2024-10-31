@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+# Copyright (c) 2023-2024, openradar developers.
+# Distributed under the MIT License. See LICENSE for more info.
+
+
 import tempfile
 
 import xarray as xr
