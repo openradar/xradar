@@ -545,7 +545,7 @@ def test_open_rainbow_datatree(rainbow_file):
     ]
     azimuths = [361] * 14
     ranges = [400] * 14
-    for i, grp in enumerate(dtree.groups[1:]):
+    for i, grp in enumerate(dtree.match("sweep_*")):
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
