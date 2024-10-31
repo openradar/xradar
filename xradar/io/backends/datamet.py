@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import xarray as xr
-from xarray import Dataset, DataTree
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -50,10 +50,16 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
+    radar_calibration_subgroup,
     radar_parameters_subgroup,
     sweep_vars_mapping,
 )
-from .common import _attach_sweep_groups, _get_required_root_dataset, _get_subgroup
+from .common import (
+    _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 
 #: mapping from DataMet names to CfRadial2/ODIM
 datamet_mapping = {
@@ -449,12 +455,6 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
         return ds
 
 
-def _get_radar_calibration(ls_ds: list[xr.Dataset]) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-    # radar_calibration is connected with calib-dimension
-    return Dataset()
-
-
 def open_datamet_datatree(filename_or_obj, **kwargs):
     """Open DataMet dataset as :py:class:`xarray.DataTree`.
 
@@ -526,7 +526,7 @@ def open_datamet_datatree(filename_or_obj, **kwargs):
         "/georeferencing_correction": _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         ),
-        "/radar_calibration": _get_radar_calibration(ls_ds),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
     }
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)
