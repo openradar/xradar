@@ -47,7 +47,7 @@ from collections import OrderedDict
 import lat_lon_parser
 import numpy as np
 import xarray as xr
-from xarray import Dataset, DataTree
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -79,6 +79,7 @@ from .common import (
     _attach_sweep_groups,
     _calculate_angle_res,
     _get_fmt_string,
+    _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
     _unpack_dictionary,
@@ -781,19 +782,6 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         return ds
 
 
-def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    if extract_vars:
-        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
-        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
-    else:
-        return Dataset()
-
-
 def open_furuno_datatree(filename_or_obj, **kwargs):
     """Open FURUNO dataset as :py:class:`xarray.DataTree`.
 
@@ -829,7 +817,7 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("Optional", True)
+    optional = backend_kwargs.pop("optional", True)
     kwargs["backend_kwargs"] = backend_kwargs
 
     ls_ds = [xr.open_dataset(filename_or_obj, engine="furuno", **kwargs)]
