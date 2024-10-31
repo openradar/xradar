@@ -3,13 +3,13 @@
 With the forthcoming standard [FM301], which is a subset of [CfRadial2.0], as
 a basis for the xradar data model we can take full advantage of [Xarray] and the whole software stack.
 
-We facilitate {py:class}`datatree:datatree.DataTree` to bundle the different sweeps of a radar volume into one structure. These sweep datasets are essentially {py:class}`xarray:xarray.Dataset` which contain metadata attributes and variables ({py:class}`xarray:xarray.DataArray`).
+We facilitate {py:class}`xarray:xarray.DataTree` to bundle the different sweeps of a radar volume into one structure. These sweep datasets are essentially {py:class}`xarray:xarray.Dataset` which contain metadata attributes and variables ({py:class}`xarray:xarray.DataArray`).
 
 ## DataTree
 
 The DataTree consists of one global root group and several sweep groups. Optionally, groups containing parameter and calibration can be part of the datatree.
 
-Internal representation: {py:class}`datatree:datatree.DataTree`
+Internal representation: {py:class}`xarray:xarray.DataTree`
 
 ## Global Scope / Root Group
 

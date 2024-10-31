@@ -12,19 +12,19 @@ Currently xradar can export:
 
 ### to_odim
 
-With {class}`~xradar.io.export.to_odim` an xradar {py:class}`datatree:datatree.DataTree`
+With {class}`~xradar.io.export.to_odim` an xradar {py:class}`xarray:xarray.DataTree`
 can be saved to an ODIM_H5 file (v2.2 at the moment).
 
 ## CfRadial2
 
 ### to_cfradial2
 
-With {class}`~xradar.io.export.to_cfradial2` an xradar {py:class}`datatree:datatree.DataTree`
+With {class}`~xradar.io.export.to_cfradial2` an xradar {py:class}`xarray:xarray.DataTree`
 can be saved to a CfRadial2-like file.
 
 ## CfRadial1
 
 ### to_cfradial1
 
-With {class}`~xradar.io.export.to_cfradial1` an xradar {py:class}`datatree:datatree.DataTree`
+With {class}`~xradar.io.export.to_cfradial1` an xradar {py:class}`xarray:xarray.DataTree`
 can be saved to a CfRadial1-like file.

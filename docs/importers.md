@@ -27,7 +27,7 @@ group with all data and metadata can be returned.
 
 With {func}`~xradar.io.backends.cfradial1.open_cfradial1_datatree` all groups (eg.
 ``sweeps_0`` and ``root`` are extracted from the source file and added as ParentNodes
-and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 ## ODIM_H5
 
@@ -45,7 +45,7 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 With {func}`~xradar.io.backends.odim.open_odim_datatree` all groups (eg. ``datasetN``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
-ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 
 ## GAMIC HDF5
@@ -62,7 +62,7 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 With {func}`~xradar.io.backends.odim.open_gamic_datatree` all groups (eg. ``scanN``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
-ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 
 ## Furuno SCN and SCNX
@@ -80,7 +80,7 @@ a {py:class}`xarray:xarray.Dataset` with the sweep group.
 
 With {func}`~xradar.io.backends.furuno.open_furuno_datatree` the single group
 is extracted. From that the ``root`` group is processed. Everything is finally
-added as ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 ## Rainbow
 
@@ -97,7 +97,7 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 With {func}`~xradar.io.backends.rainbow.open_rainbow_datatree` all groups (eg. ``0``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
-ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 
 ## Iris/Sigmet
@@ -115,7 +115,7 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 With {func}`~xradar.io.backends.iris.open_iris_datatree` all groups (eg. ``1``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
-ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 
 ## NexradLevel2
@@ -133,4 +133,4 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 With {func}`~xradar.io.backends.nexrad_level2.open_nexradlevel2_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
-Everything is finally added as ParentNodes and ChildNodes to a {py:class}`datatree:datatree.DataTree`.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
