@@ -39,7 +39,7 @@ import dateutil
 import h5netcdf
 import numpy as np
 import xarray as xr
-from xarray import Dataset, DataTree
+from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendEntrypoint,
@@ -69,6 +69,7 @@ from .common import (
     _attach_sweep_groups,
     _fix_angle,
     _get_h5group_names,
+    _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
 )
@@ -481,18 +482,6 @@ class GamicBackendEntrypoint(BackendEntrypoint):
             )
         ds.attrs.update(store.get_calibration_parameters())
         return ds
-
-
-def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    if extract_vars:
-        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
-        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
-    else:
-        return Dataset()
 
 
 def open_gamic_datatree(filename_or_obj, **kwargs):
