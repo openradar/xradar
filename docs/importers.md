@@ -1,16 +1,6 @@
 # Importers
 
-To import different radar data different approaches are used.
-
-Currently xradar can import:
-
-- [](#cfradial1)
-- [](#odim-h5)
-- [](#gamic-hdf5)
-- [](#furuno-scn-and-scnx)
-- [](#rainbow)
-- [](#iris-sigmet)
-- [](#nexradlevel2)
+The backends use different approaches to ingest the data.
 
 ## CfRadial1
 
@@ -132,5 +122,56 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 ### open_nexradlevel2_datatree
 
 With {func}`~xradar.io.backends.nexrad_level2.open_nexradlevel2_datatree`
+all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
+
+## Datamet
+
+### DataMetBackendEntrypoint
+
+The xarray backend {class}`~xradar.io.backends.datamet.DataMetBackendEntrypoint`
+opens the file with {class}`~xradar.io.backends.datamet.DataMetStore`. Several
+private helper functions are used to conveniently access data and
+metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
+with wanted group (eg. ``0``). Depending on the used backend kwargs several
+more functions are applied on that {py:class}`xarray:xarray.Dataset`.
+
+### open_datamet_datatree
+
+With {func}`~xradar.io.backends.datamet.open_nexradlevel2_datatree`
+all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
+
+## Halo Photonics Lidar
+
+### HPLBackendEntrypoint
+
+The xarray backend {class}`~xradar.io.backends.hpl.HPLBackendEntrypoint`
+opens the file with {class}`~xradar.io.backends.hpl.HplStore`. Several
+private helper functions are used to conveniently access data and
+metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
+with wanted group (eg. ``0``). Depending on the used backend kwargs several
+more functions are applied on that {py:class}`xarray:xarray.Dataset`.
+
+### open_hpl_datatree
+
+With {func}`~xradar.io.backends.hpl.open_hpl_datatree`
+all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
+
+## Metek MRR2
+
+### MRRBackendEntrypoint
+
+The xarray backend {class}`~xradar.io.backends.metek.MRRBackendEntrypoint`
+opens the file with {class}`~xradar.io.backends.metek.MRR2DataStore`. Several
+private helper functions are used to conveniently access data and
+metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
+with wanted group (eg. ``0``). Depending on the used backend kwargs several
+more functions are applied on that {py:class}`xarray:xarray.Dataset`.
+
+### open_metek_datatree
+
+With {func}`~xradar.io.backends.metek.open_metek_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
