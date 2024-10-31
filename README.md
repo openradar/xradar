@@ -29,12 +29,30 @@ Xradar is considered stable for the implemented readers and writers which have b
 
 ## Features
 
-* Import/Export CfRadial1 data
-* Import/Export CfRadial2 data
-* Import/Export ODIM_H5 data
-* Import GAMIC HDF5
-* Import Rainbow5
-* Import Iris/Sigmet
-* Import Furuno SCN/SCNX
-* Georeferencing (AEQD)
+### Import/Export Capabilities
+* CfRadial1 and CfRadial2
+* ODIM_H5 format
+
+### Import-Only Capabilities
+* DataMet
+* Furuno
+* Gamic
+* HPL
+* Iris
+* MRR
+* NexradLevel2
+* Rainbow
+
+### Data Transformation and Alignment
+* Georeferencing (AEQD projection)
 * Angle Reindexing
+* Format Transformation support to CfRadial1 and CfRadial2
+
+> ***Note**: All formats load into CfRadial2, so converting to CfRadial1 is seamless.*
+
+## Contributors
+
+Thanks to our many contributors!
+
+[![Contributors](https://contrib.rocks/image?repo=openradar/xradar)](https://github.com/openradar/xradar/graphs/contributors)
+
