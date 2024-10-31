@@ -245,9 +245,8 @@ def _get_required_root_dataset(ls_ds, optional=True):
         if rename:
             root = [sweep.rename_vars({k: rename}) for sweep in root]
 
-    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     ds_vars = [sweep[root_vars] for sweep in ls_ds]
-    vars = xr.concat(ds_vars, dim="sweep").reset_coords()
+    _vars = xr.concat(ds_vars, dim="sweep").reset_coords()
 
     # Creating the root group using _assign_root function
     ls = ls_ds.copy()
@@ -255,7 +254,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     root = _assign_root(ls)
 
     # merging both the created and the variables within each dataset
-    root = xr.merge([root, vars])
+    root = xr.merge([root, _vars])
 
     attrs = root.attrs.keys()
     remove_attrs = set(attrs) ^ set(required_global_attrs)
@@ -264,9 +263,11 @@ def _get_required_root_dataset(ls_ds, optional=True):
     for k in remove_attrs:
         root.attrs.pop(k, None)
     # Renaming variable
-    root = root.rename_vars({"sweep_number": "sweep_group_name"})
+    if "sweep_group_name" not in data_var:
+        root = root.rename_vars({"sweep_number": "sweep_group_name"})
+
     root["sweep_group_name"].values = np.array(
-        [f"sweep_{i}" for i in root["sweep_group_name"].values]
+        [f"sweep_{i}" for i in range(len(root["sweep_group_name"].values))]
     )
     return root
 
@@ -285,6 +286,18 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
             subgroup = subgroup.rename_vars({k: rename})
     subgroup.attrs = {}
     return subgroup
+
+
+def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
+    """Get radar calibration root metadata group."""
+    meta_vars = subdict
+    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
+    extract_vars = set(data_vars) & set(meta_vars)
+    if extract_vars:
+        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
+        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
+    else:
+        return xr.Dataset()
 
 
 # IRIS Data Types and corresponding python struct format characters
