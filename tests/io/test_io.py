@@ -109,7 +109,7 @@ def test_open_odim_datatree_sweep(odim_file, sweep):
         lswp = len([sweep])
     else:
         lswp = len(sweep)
-    assert len(dtree.groups[1:]) == lswp
+    assert len(dtree.match("sweep_*")) == lswp
 
 
 def test_open_odim_datatree(odim_file):
@@ -164,7 +164,7 @@ def test_open_odim_datatree(odim_file):
         200,
         200,
     ]
-    for i, grp in enumerate(dtree.groups[1:]):
+    for i, grp in enumerate(dtree.match("sweep_*")):
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
@@ -183,7 +183,7 @@ def test_open_odim_datatree(odim_file):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-        assert ds.sweep_number.values == int(grp[7:])
+        assert ds.sweep_number.values == int(grp[6:])
 
 
 @pytest.mark.parametrize("first_dim", ["auto", "time"])
