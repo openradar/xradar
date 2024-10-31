@@ -232,6 +232,8 @@ class MRR2File:
         temp_number = np.zeros((self.n_gates, 64))
         spec_var = ""
         for file_line in self._fp:
+            if isinstance(file_line, bytes):
+                file_line = file_line.decode("utf-8")
             if file_line[:3] == "MRR":
                 if num_times > 0:
                     self._data[spec_var].append(temp_spectra)
