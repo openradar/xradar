@@ -185,7 +185,7 @@ def to_odim(
     h5_how = h5.create_group("how")
     _write_odim(how, h5_how)
 
-    grps = list(dtree.match("sweep_*"))  # groups[1:]
+    grps = list(dtree.match("sweep_*"))
 
     # what group, object, version, date, time, source, mandatory
     # p. 10 f
