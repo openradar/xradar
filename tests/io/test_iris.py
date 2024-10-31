@@ -197,3 +197,95 @@ def test_decode_string():
 def test__get_fmt_string():
     fmt = "<12sHHi12s12s12s6s12s12sHiiiiiiiiii2sH12sHB1shhiihh80s16s12s48s"
     assert iris._get_fmt_string(iris.PRODUCT_CONFIGURATION) == fmt
+
+
+def test_read_from_record(iris0_file, file_or_filelike):
+    """Test reading a specified number of words from a record."""
+    with _get_data_file(iris0_file, file_or_filelike) as sigmetfile:
+        data = iris.IrisRecordFile(sigmetfile, loaddata=True)
+        data.init_record(0)  # Start from the first record
+        record_data = data.read_from_record(10, dtype="int16")
+        assert len(record_data) == 10
+        assert isinstance(record_data, np.ndarray)
+
+
+def test_decode_data(iris0_file, file_or_filelike):
+    """Test decoding of data with provided product function."""
+
+    # Sample data to decode
+    data = np.array([0, 2, 3, 128, 255], dtype="int16")
+    # Sample product dict with decoding function and parameters
+    prod = {
+        "func": iris.decode_vel,
+        "dtype": "int16",
+        "fkw": {"scale": 0.5, "offset": -1},
+    }
+
+    # Open the file as per the testing framework
+    with _get_data_file(iris0_file, file_or_filelike) as sigmetfile:
+        iris_file = iris.IrisRawFile(sigmetfile, loaddata=False)
+
+        # Decode data using the provided product function
+        decoded_data = iris_file.decode_data(data, prod)
+
+    # Check that the decoded data is as expected
+    assert isinstance(decoded_data, np.ndarray), "Decoded data should be a numpy array"
+    assert decoded_data.dtype in [
+        np.float32,
+        np.float64,
+    ], "Decoded data should have float32 or float64 type"
+
+    # Expected decoded values
+    expected_data = [-13.325, 13.325, 26.65, 1692.275, 3384.55]
+    np.testing.assert_array_almost_equal(decoded_data, expected_data, decimal=2)
+
+
+def test_get_sweep(iris0_file, file_or_filelike):
+    """Test retrieval of sweep data for specified moments."""
+
+    # Select the sweep number and moments to retrieve
+    sweep_number = 1
+    moments = ["DB_DBZ", "DB_VEL"]
+
+    # Open the file and load data
+    with _get_data_file(iris0_file, file_or_filelike) as sigmetfile:
+        iris_file = iris.IrisRawFile(sigmetfile, loaddata=True)
+
+        # Use get_sweep to retrieve data for the selected sweep and moments
+        iris_file.get_sweep(sweep_number, moments)
+        sweep_data = iris_file.data[sweep_number]["sweep_data"]
+
+    # Verify that sweep_data structure is populated with the selected moments
+    for moment in moments:
+        assert moment in sweep_data, f"{moment} should be in sweep_data"
+        moment_data = sweep_data[moment]
+        assert moment_data.shape == (360, 664), f"{moment} data shape mismatch"
+
+        # Check data types for moments, including masked arrays for velocity
+        if moment == "DB_VEL":
+            assert isinstance(
+                moment_data, np.ma.MaskedArray
+            ), "DB_VEL should be a masked array"
+        else:
+            assert isinstance(
+                moment_data, np.ndarray
+            ), f"{moment} should be a numpy array"
+
+        # Optional: check for expected placeholder/masked values
+        if moment == "DB_DBZ":
+            assert (
+                moment_data == -32
+            ).sum() > 0, "DB_DBZ should contain placeholder values (-32)"
+        if moment == "DB_VEL":
+            assert moment_data.mask.sum() > 0, "DB_VEL should have masked values"
+
+
+def test_array_from_file(iris0_file, file_or_filelike):
+    """Test retrieving an array from a file."""
+    with _get_data_file(iris0_file, file_or_filelike) as sigmetfile:
+        data = iris.IrisRawFile(sigmetfile, loaddata=True)
+        array_data = data.read_from_file(5)  # Adjusted to read_from_file
+
+        # Assertions for the read array
+        assert len(array_data) == 5
+        assert isinstance(array_data, np.ndarray)
