@@ -254,7 +254,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     root = _assign_root(ls)
 
     # merging both the created and the variables within each dataset
-    root = xr.merge([root, _vars])
+    root = xr.merge([root, _vars], compat="override")
 
     attrs = root.attrs.keys()
     remove_attrs = set(attrs) ^ set(required_global_attrs)
@@ -263,12 +263,12 @@ def _get_required_root_dataset(ls_ds, optional=True):
     for k in remove_attrs:
         root.attrs.pop(k, None)
     # Renaming variable
-    if "sweep_group_name" not in data_var:
+    if "sweep_number" in data_var and "sweep_group_name" not in data_var:
         root = root.rename_vars({"sweep_number": "sweep_group_name"})
-
-    root["sweep_group_name"].values = np.array(
-        [f"sweep_{i}" for i in range(len(root["sweep_group_name"].values))]
-    )
+    elif "sweep_group_name" in data_var:
+        root["sweep_group_name"].values = np.array(
+            [f"sweep_{i}" for i in range(len(root["sweep_group_name"].values))]
+        )
     return root
 
 
@@ -279,7 +279,7 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
     extract_vars = set(data_vars) & set(meta_vars)
-    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
+    subgroup = xr.merge([ds[extract_vars] for ds in ls_ds])
     for k in subgroup.data_vars:
         rename = meta_vars[k]
         if rename:
