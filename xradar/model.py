@@ -260,10 +260,6 @@ radar_calibration_subgroup = dict(
         ("noise_vc", None),
         ("noise_hx", None),
         ("noise_vx", None),
-        ("noise_power_short_pulse_h", None),
-        ("noise_power_short_pulse_v", None),
-        ("noise_power_h", None),  # Gamic
-        ("noise_power_v", None),
         ("rx_loss_h", None),
         ("rx_loss_v", None),
         ("receiver_gain_hc", None),
@@ -284,6 +280,10 @@ radar_calibration_subgroup = dict(
         ("sun_power_vx", None),
         ("noise_source_power_h", None),
         ("noise_source_power_v", None),
+        ("noise_power_short_pulse_h", "noise_source_power_h"),
+        ("noise_power_short_pulse_v", "noise_source_power_v"),
+        ("noise_power_h", "noise_source_power_h"),  # Gamic
+        ("noise_power_v", "noise_source_power_v"),
         ("noise_level_pulse_modulation_h", None),  # Furuno
         ("noise_level_frequency_modulation_h", None),  # Furuno
         ("power_measure_loss_h", None),
