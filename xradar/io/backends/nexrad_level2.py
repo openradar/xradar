@@ -1253,10 +1253,13 @@ class NexradLevel2ArrayWrapper(BackendArray):
             self.datastore.root.get_data(self.group, self.name)
             data = self.datastore.ds["sweep_data"][self.name]["data"]
         # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
-        if self.name == "PHI":
-            x = np.uint16(0x3FF)  # 10 bit mask
-        elif self.name == "ZDR":
-            x = np.uint16(0x7FF)  # 11 bit mask
+        word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
+        if self.name == "PHI" and word_size == 16:
+            # 10 bit mask, but only for 2 byte data
+            x = np.uint16(0x3FF)
+        elif self.name == "ZDR" and word_size == 16:
+            # 11 bit mask, but only for 2 byte data
+            x = np.uint16(0x7FF)
         else:
             x = np.uint8(0xFF)
         if len(data[0]) < self.shape[1]:
