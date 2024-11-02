@@ -3,6 +3,7 @@
 ## 0.8.0 (2024-10-28)
 
 This is the first version which uses datatree directly from xarray. Thus, xarray is pinned to version >= 2024.10.0.
+* ENH: Refactoring all xradar backends to use `from_dict` datatree constructor. Test for `_get_required_root`, `_get_subgroup`, and `_get_radar_calibration` were also added ({pull}`221`) by [@aladinor](https://github.com/aladinor)
 * ENH: Added pytests to the missing functions in the `test_xradar` and `test_iris` in order to increase codecov in ({pull}`228`) by [@syedhamidali](https://github.com/syedhamidali).
 * ENH: Updated Readme ({pull}`226`) by [@syedhamidali](https://github.com/syedhamidali).
 * ADD: Added new module `transform` for transforming CF1 data to CF2 and vice versa ({pull}`224`) by [@syedhamidali](https://github.com/syedhamidali).
