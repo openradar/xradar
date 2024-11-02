@@ -38,9 +38,13 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 <<<<<<< HEAD
+<<<<<<< HEAD
 from xarray import DataTree
 =======
 >>>>>>> 617bd34 (Import DataTree from xarray (#218))
+=======
+from xarray import DataTree
+>>>>>>> 794c606 (Dtree constructor (#221))
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -656,6 +660,9 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     ]
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 794c606 (Dtree constructor (#221))
     dtree: dict = {
         "/": _get_required_root_dataset(ls_ds, optional=optional).rename(
             {"sweep_fixed_angle": "fixed_angle"}
@@ -668,6 +675,7 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     }
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)
+<<<<<<< HEAD
 =======
     ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
 
@@ -679,3 +687,5 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     # return datatree with attached sweep child nodes
     return _attach_sweep_groups(dtree, ds[1:])
 >>>>>>> 617bd34 (Import DataTree from xarray (#218))
+=======
+>>>>>>> 794c606 (Dtree constructor (#221))
