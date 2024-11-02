@@ -245,12 +245,8 @@ radar_calibration_subgroup = dict(
         ("ant_gain_v", "antenna_gain_v"),  # gamic
         ("xmit_power_h", None),
         ("xmit_power_v", None),
-        ("tx_pulse_blind_length", None),  # Furuno
-        ("tx_pulse_specification", None),  # Furuno
         ("tx_power_h", "xmit_power_h"),
         ("tx_power_v", "xmit_power_v",
-        ("threshold_power_short_pulse", None),
-        ("threshold_power_long_pulse", None),
         ("two_way_waveguide_loss_h", None),
         ("two_way_waveguide_loss_v", None),
         ("two_way_radome_loss_h", None),
