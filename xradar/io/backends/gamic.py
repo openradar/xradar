@@ -39,6 +39,7 @@ import dateutil
 import h5netcdf
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendEntrypoint,
@@ -53,13 +54,25 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_time_attrs,
     moment_attrs,
+    optional_root_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
+    required_global_attrs,
     sweep_vars_mapping,
 )
-from .common import _assign_root, _attach_sweep_groups, _fix_angle, _get_h5group_names
+from .common import (
+    _attach_sweep_groups,
+    _fix_angle,
+    _get_h5group_names,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
 
 HDF5_LOCK = SerializableLock()
@@ -334,7 +347,29 @@ class GamicStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        return FrozenDict()
+        _attributes = {
+            attrs: self.root.grp.attrs[attrs]
+            for attrs in (dict(self.root.grp.attrs))
+            if attrs in required_global_attrs | optional_root_attrs
+        }
+        _attributes.update(
+            {
+                attrs: self.root.what.attrs[attrs]
+                for attrs in (dict(self.root.what))
+                if attrs in required_global_attrs | optional_root_attrs
+            }
+        )
+        _attributes["source"] = "gamic"
+        return FrozenDict(_attributes)
+
+    def get_calibration_parameters(self):
+        calib_vars = [
+            var
+            for var in dict(self.root.how).keys()
+            if var in radar_calibration_subgroup
+        ]
+        calibration = {var: self.root.how[var] for var in calib_vars}
+        return FrozenDict(calibration)
 
 
 class GamicBackendEntrypoint(BackendEntrypoint):
@@ -445,7 +480,7 @@ class GamicBackendEntrypoint(BackendEntrypoint):
                     "altitude": ds.altitude,
                 }
             )
-
+        ds.attrs.update(store.get_calibration_parameters())
         return ds
 
 
@@ -484,7 +519,7 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("Optional", True)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -501,14 +536,18 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_h5group_names(filename_or_obj, "gamic")
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="gamic", **kwargs)
         for swp in sweeps
     ]
 
-    ds.insert(0, xr.open_dataset(filename_or_obj, group="/"))
-
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)

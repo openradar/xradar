@@ -47,6 +47,7 @@ from collections import OrderedDict
 import lat_lon_parser
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -56,6 +57,7 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -64,6 +66,8 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
@@ -72,10 +76,12 @@ from .common import (
     UINT1,
     UINT2,
     UINT4,
-    _assign_root,
     _attach_sweep_groups,
     _calculate_angle_res,
     _get_fmt_string,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
     _unpack_dictionary,
 )
 
@@ -686,8 +692,13 @@ class FurunoStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        # attributes = {"fixed_angle": float(self.ds.fixed_angle)}
-        return FrozenDict()
+        attributes = {"source": "Furuno", "version": self.root.header["format_version"]}
+        return FrozenDict(attributes)
+
+    def get_calibration_parameters(self):
+        vars = [var for var in self.root.header if var in radar_calibration_subgroup]
+        calibration = {var: self.root.header[var] for var in vars}
+        return FrozenDict(calibration)
 
 
 class FurunoBackendEntrypoint(BackendEntrypoint):
@@ -767,7 +778,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
                     "altitude": ds.altitude,
                 }
             )
-
+        ds.attrs.update(store.get_calibration_parameters())
         return ds
 
 
@@ -806,14 +817,18 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("optional", True)
     kwargs["backend_kwargs"] = backend_kwargs
 
-    ds = [xr.open_dataset(filename_or_obj, engine="furuno", **kwargs)]
+    ls_ds = [xr.open_dataset(filename_or_obj, engine="furuno", **kwargs)]
 
-    ds.insert(0, xr.Dataset())
-
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)

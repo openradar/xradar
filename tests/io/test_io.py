@@ -109,7 +109,7 @@ def test_open_odim_datatree_sweep(odim_file, sweep):
         lswp = len([sweep])
     else:
         lswp = len(sweep)
-    assert len(dtree.groups[1:]) == lswp
+    assert len(dtree.match("sweep_*")) == lswp
 
 
 def test_open_odim_datatree(odim_file):
@@ -164,7 +164,7 @@ def test_open_odim_datatree(odim_file):
         200,
         200,
     ]
-    for i, grp in enumerate(dtree.groups[1:]):
+    for i, grp in enumerate(dtree.match("sweep_*")):
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
@@ -183,7 +183,7 @@ def test_open_odim_datatree(odim_file):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-        assert ds.sweep_number.values == int(grp[7:])
+        assert ds.sweep_number.values == int(grp[6:])
 
 
 @pytest.mark.parametrize("first_dim", ["auto", "time"])
@@ -258,7 +258,7 @@ def test_open_gamic_datatree_sweep(gamic_file, sweep):
         lswp = len([sweep])
     else:
         lswp = len(sweep)
-    assert len(dtree.groups[1:]) == lswp
+    assert len(dtree.match("sweep_*")) == lswp
 
 
 def test_open_gamic_datatree(gamic_file):
@@ -319,7 +319,7 @@ def test_open_gamic_datatree(gamic_file):
         1000,
         1000,
     ]
-    for i, grp in enumerate(dtree.groups[1:]):
+    for i, grp in enumerate(dtree.match("sweep_*")):
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
@@ -545,7 +545,7 @@ def test_open_rainbow_datatree(rainbow_file):
     ]
     azimuths = [361] * 14
     ranges = [400] * 14
-    for i, grp in enumerate(dtree.groups[1:]):
+    for i, grp in enumerate(dtree.match("sweep_*")):
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
@@ -641,28 +641,27 @@ def test_open_iris_datatree(iris0_file):
     azimuths = [360] * 10
     ranges = [664] * 10
     i = 0
-    for grp in dtree.groups:
-        if grp.startswith("/sweep_"):
-            ds = dtree[grp].ds
-            assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
-            assert set(ds.data_vars) & (
-                sweep_dataset_vars | non_standard_sweep_dataset_vars
-            ) == set(moments)
-            assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
-                required_sweep_metadata_vars ^ {"azimuth", "elevation"}
-            )
-            assert set(ds.coords) == {
-                "azimuth",
-                "elevation",
-                "time",
-                "latitude",
-                "longitude",
-                "altitude",
-                "range",
-            }
-            assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-            assert ds.sweep_number == i
-            i += 1
+    for grp in dtree.match("sweep_*"):
+        ds = dtree[grp].ds
+        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments)
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number == i
+        i += 1
 
 
 def test_open_iris0_dataset(iris0_file):
@@ -879,36 +878,35 @@ def test_open_datamet_datatree(datamet_file):
     azimuths = [360] * 11
     ranges = [493, 493, 493, 664, 832, 832, 1000, 1000, 1332, 1332, 1332]
     i = 0
-    for grp in dtree.groups:
-        if grp.startswith("/sweep_"):
-            ds = dtree[grp].ds
-            assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
-            assert set(ds.data_vars) & (
-                sweep_dataset_vars | non_standard_sweep_dataset_vars
-            ) == set(moments)
-            assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
-                required_sweep_metadata_vars ^ {"azimuth", "elevation"}
-            )
-            assert set(ds.coords) == {
-                "azimuth",
-                "elevation",
-                "time",
-                "latitude",
-                "longitude",
-                "altitude",
-                "range",
-            }
-            assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-            assert ds.sweep_number == i
-            i += 1
+    for grp in dtree.match("sweep_*"):
+        ds = dtree[grp].ds
+        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments)
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number == i
+        i += 1
 
     # Try to reed single sweep
     dtree = open_datamet_datatree(datamet_file, sweep=1)
-    assert len(dtree.groups) == 2
+    assert len(dtree.groups) == 5
 
     # Try to read list of sweeps
     dtree = open_datamet_datatree(datamet_file, sweep=[1, 2])
-    assert len(dtree.groups) == 3
+    assert len(dtree.groups) == 6
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
@@ -993,6 +991,7 @@ def test_cfradial_n_points_file(cfradial1n_file):
         assert ds.sweep_mode == "azimuth_surveillance"
 
 
+@pytest.mark.run(order=1)
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
@@ -1003,7 +1002,7 @@ def test_open_nexradlevel2_datatree_sweep(nexradlevel2_files, sweep):
         lswp = len([sweep])
     else:
         lswp = len(sweep)
-    assert len(dtree.groups[1:]) == lswp
+    assert len(dtree.match("sweep*")) == lswp
 
 
 @pytest.mark.parametrize(
@@ -1080,8 +1079,8 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
         308,
         232,
     ]
-    assert len(dtree.groups[1:]) == 11
-    for i, grp in enumerate(dtree.groups[1:]):
+    assert len(dtree.groups[1:]) == 14
+    for i, grp in enumerate(dtree.match("sweep_*")):
         print(i)
         ds = dtree[grp].ds
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
@@ -1101,4 +1100,4 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
-        assert ds.sweep_number.values == int(grp[7:])
+        assert ds.sweep_number.values == int(grp[6:])
