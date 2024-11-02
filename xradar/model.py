@@ -245,6 +245,12 @@ radar_calibration_subgroup = dict(
         ("ant_gain_v", "antenna_gain_v"),  # gamic
         ("xmit_power_h", None),
         ("xmit_power_v", None),
+        ("tx_pulse_blind_length", None),  # Furuno
+        ("tx_pulse_specification", None),  # Furuno
+        ("tx_power_h", "xmit_power_h"),
+        ("tx_power_v", "xmit_power_v",
+        ("threshold_power_short_pulse", None),
+        ("threshold_power_long_pulse", None),
         ("two_way_waveguide_loss_h", None),
         ("two_way_waveguide_loss_v", None),
         ("two_way_radome_loss_h", None),
@@ -252,6 +258,8 @@ radar_calibration_subgroup = dict(
         ("receiver_mismatch_loss", None),
         ("receiver_mismatch_loss_h", None),
         ("receiver_mismatch_loss_v", None),
+        ("rx_loss_h", "receiver_mismatch_loss_h"),
+        ("rx_loss_v", "receiver_mismatch_loss_h"),
         ("radar_constant_h", None),
         ("radar_constant_v", None),
         ("probert_jones_correction", None),
@@ -260,8 +268,6 @@ radar_calibration_subgroup = dict(
         ("noise_vc", None),
         ("noise_hx", None),
         ("noise_vx", None),
-        ("rx_loss_h", None),
-        ("rx_loss_v", None),
         ("receiver_gain_hc", None),
         ("receiver_gain_vc", None),
         ("receiver_gain_hx", None),
@@ -284,8 +290,6 @@ radar_calibration_subgroup = dict(
         ("noise_power_short_pulse_v", "noise_source_power_v"),
         ("noise_power_h", "noise_source_power_h"),  # Gamic
         ("noise_power_v", "noise_source_power_v"),
-        ("noise_level_pulse_modulation_h", None),  # Furuno
-        ("noise_level_frequency_modulation_h", None),  # Furuno
         ("power_measure_loss_h", None),
         ("power_measure_loss_v", None),
         ("coupler_forward_loss_h", None),
@@ -296,12 +300,6 @@ radar_calibration_subgroup = dict(
         ("system_phidp", None),
         ("test_power_h", None),
         ("test_power_v", None),
-        ("tx_pulse_blind_length", None),  # Furuno
-        ("tx_pulse_specification", None),  # Furuno
-        ("tx_power_h", None),
-        ("tx_power_v", None),
-        ("threshold_power_short_pulse", None),
-        ("threshold_power_long_pulse", None),
         ("receiver_slope_hc", None),
         ("receiver_slope_vc", None),
         ("receiver_slope_hx", None),
