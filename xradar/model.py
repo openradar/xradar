@@ -242,7 +242,7 @@ radar_calibration_subgroup = dict(
         ("antenna_gain_h", None),
         ("antenna_gain_v", None),
         ("ant_gain_h", "antenna_gain_h"),  # gamic
-        ("ant_gain_v", None),  # gamic
+        ("ant_gain_v", "antenna_gain_v"),  # gamic
         ("xmit_power_h", None),
         ("xmit_power_v", None),
         ("two_way_waveguide_loss_h", None),
@@ -316,8 +316,8 @@ radar_calibration_subgroup = dict(
         ("dynamic_range_db_hx", None),
         ("dynamic_range_db_vx", None),
         ("dbz_correction", None),
-        ("half_power_beam_wigth_h", None),
-        ("half_power_beam_wigth_v", None),
+        ("half_power_beam_width_h", None),
+        ("half_power_beam_width_v", None),
     ]
 )
 
