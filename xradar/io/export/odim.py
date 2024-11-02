@@ -185,7 +185,7 @@ def to_odim(
     h5_how = h5.create_group("how")
     _write_odim(how, h5_how)
 
-    grps = dtree.groups[1:]
+    grps = list(dtree.match("sweep_*"))
 
     # what group, object, version, date, time, source, mandatory
     # p. 10 f
@@ -216,7 +216,7 @@ def to_odim(
     # datasets
     ds_list = [f"dataset{i + 1}" for i in range(len(grps))]
     for idx in range(len(ds_list)):
-        ds = dtree[grps[idx]].ds
+        ds = dtree[grps[idx]].to_dataset()
         dim0 = "elevation" if ds.sweep_mode == "rhi" else "azimuth"
 
         # datasetN group
