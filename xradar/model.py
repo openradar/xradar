@@ -248,7 +248,7 @@ radar_calibration_subgroup = dict(
         ("xmit_power_h", None),
         ("xmit_power_v", None),
         ("tx_power_h", "xmit_power_h"),
-        ("tx_power_v", "xmit_power_v",
+        ("tx_power_v", "xmit_power_v"),
         ("two_way_waveguide_loss_h", None),
         ("two_way_waveguide_loss_v", None),
         ("two_way_radome_loss_h", None),
