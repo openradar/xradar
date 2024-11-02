@@ -241,7 +241,7 @@ radar_calibration_subgroup = dict(
         ("pulse_width", None),
         ("antenna_gain_h", None),
         ("antenna_gain_v", None),
-        ("ant_gain_h", None),  # gamic
+        ("ant_gain_h", "antenna_gain_h"),  # gamic
         ("ant_gain_v", None),  # gamic
         ("xmit_power_h", None),
         ("xmit_power_v", None),
