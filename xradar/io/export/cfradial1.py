@@ -139,7 +139,7 @@ def _variable_mapper(dtree, dim0=None):
         sweep_datasets,
         dim="time",
         compat="no_conflicts",
-        join="right",
+        join="outer",
         combine_attrs="drop_conflicts",
     )
 
