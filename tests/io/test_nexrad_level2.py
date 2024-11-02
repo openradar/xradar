@@ -21,6 +21,7 @@ from xradar.io.backends.nexrad_level2 import (
 def test_open_nexrad_level2_backend(nexradlevel2_files):
     with NEXRADLevel2File(nexradlevel2_files, loaddata=False) as nex:
         nsweeps = nex.msg_5["number_elevation_cuts"]
+
     sweeps = [f"sweep_{i}" for i in range(nsweeps)]
     assert nsweeps == 11
     for i, group in enumerate(sweeps):

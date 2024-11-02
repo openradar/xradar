@@ -43,7 +43,6 @@ from collections import OrderedDict
 
 import numpy as np
 import xarray as xr
-from datatree import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -3997,7 +3996,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     # and get the variabes/attributes for the root dataset
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
-    dtree = DataTree(data=_assign_root(ls), name="root")
+    dtree = xr.DataTree(dataset=_assign_root(ls), name="root")
     root = root.assign(dtree.variables)
     root.attrs = dtree.attrs
     return root
@@ -4105,7 +4104,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
 
 def open_iris_datatree(filename_or_obj, **kwargs):
-    """Open Iris/Sigmet dataset as :py:class:`datatree.DataTree`.
+    """Open Iris/Sigmet dataset as :py:class:`xarray.DataTree`.
 
     Parameters
     ----------
@@ -4134,7 +4133,7 @@ def open_iris_datatree(filename_or_obj, **kwargs):
 
     Returns
     -------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim
@@ -4163,10 +4162,10 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     # get the datatree root
     root = _get_required_root_dataset(ls_ds)
     # create datatree root node with required data
-    dtree = DataTree(data=root, name="root")
+    dtree = xr.DataTree(dataset=root, name="root")
     # get radar_parameters group
     subgroup = _get_subgroup(ls_ds, radar_parameters_subgroup)
     # attach radar_parameter group
-    DataTree(subgroup, name="radar_parameters", parent=dtree)
+    dtree["radar_parameters"] = xr.DataTree(subgroup)
     # return Datatree attaching the sweep child nodes
     return _attach_sweep_groups(dtree, ls_ds)

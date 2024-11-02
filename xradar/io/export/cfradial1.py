@@ -3,7 +3,7 @@
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
-CfRadial1 output
+CfRadial1 Output
 ================
 
 This sub-module contains the writer for export of CfRadial1-based radar
@@ -64,23 +64,25 @@ def _calib_mapper(calib_params):
 
 def _main_info_mapper(dtree):
     """
-    Map main radar information from a radar datatree dataset.
+    Map main radar information from a radar xarray dataset.
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree.
 
     Returns
     -------
     xarray.Dataset
         Dataset containing the mapped radar information.
     """
-    dataset = (
-        dtree.root.to_dataset()
-        .drop_vars("sweep_group_name", errors="ignore")
-        .rename({"sweep_fixed_angle": "fixed_angle"})
-    )
+    dataset = dtree.root.to_dataset()
+    dataset = dataset.drop_vars("sweep_group_name", errors="ignore")
+
+    # Rename "sweep_fixed_angle" to "fixed_angle" if it exists
+    if "sweep_fixed_angle" in dataset:
+        dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
+
     return dataset
 
 
@@ -90,8 +92,8 @@ def _variable_mapper(dtree, dim0=None):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree.
     dim0: str
         Either `azimuth` or `elevation`
 
@@ -102,11 +104,13 @@ def _variable_mapper(dtree, dim0=None):
     """
 
     sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree).drop_vars("fixed_angle")
+    vol_info = _main_info_mapper(dtree)
+    if "fixed_angle" in vol_info:
+        vol_info = vol_info.drop_vars("fixed_angle")
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
-            data = dtree[grp]
+            data = dtree[grp].to_dataset()
 
             # handling first dimension
             if dim0 is None:
@@ -129,7 +133,7 @@ def _variable_mapper(dtree, dim0=None):
             data = data.drop_vars(["x", "y", "z"], errors="ignore")
 
             # Convert to a dataset and append to the list
-            sweep_datasets.append(data.to_dataset())
+            sweep_datasets.append(data)
 
     result_dataset = xr.concat(
         sweep_datasets,
@@ -161,12 +165,12 @@ def _variable_mapper(dtree, dim0=None):
 
 def _sweep_info_mapper(dtree):
     """
-    Extract specified sweep information variables from a radar datatree
+    Extract specified sweep information variables from a radar xarray.DataTree
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree.
 
     Returns
     -------
@@ -227,8 +231,8 @@ def calculate_sweep_indices(dtree, dataset=None):
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree containing elevation values for different sweep groups.
+    dtree: xarray.DataTree
+        Radar xarray.DataTree containing elevation values for different sweep groups.
     dataset: xarray.Dataset, optional
         An optional dataset to which the calculated indices will be added.
         If None, a new dataset will be created.
@@ -275,14 +279,14 @@ def calculate_sweep_indices(dtree, dataset=None):
 
 def to_cfradial1(dtree=None, filename=None, calibs=True):
     """
-    Convert a radar datatree.DataTree to the CFRadial1 format
+    Convert a radar xarray.DataTree to the CFRadial1 format
     and save it to a file. Ensure that the resulting dataset
     is well-formed and does not include specified extraneous variables.
 
     Parameters
     ----------
-    dtree: datatree.DataTree
-        Radar datatree object.
+    dtree: xarray.DataTree
+        Radar xarary.DataTree object.
     filename: str, optional
         The name of the output netCDF file.
     calibs: Bool, optional

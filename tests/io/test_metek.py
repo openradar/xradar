@@ -188,7 +188,7 @@ def test_open_average_datatree(metek_ave_gz_file):
     assert "velocity" in ds["sweep_0"].variables.keys()
     rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 60.0
     np.testing.assert_allclose(rainfall.values[-1], 0.938)
-    ds.ds.close()
+    ds.close()
 
 
 def test_open_processed_dataset(metek_pro_gz_file):
@@ -207,7 +207,7 @@ def test_open_processed_datatree(metek_pro_gz_file):
     rainfall = ds["sweep_0"]["rainfall_rate"].isel(range=0).cumsum() / 360.0
     np.testing.assert_allclose(rainfall.values[-1], 0.93)
     np.testing.assert_allclose(ds["sweep_0"]["reflectivity"].values[0], test_arr)
-    ds.ds.close()
+    ds.close()
 
 
 def test_open_raw_dataset(metek_raw_gz_file):
@@ -220,4 +220,4 @@ def test_open_raw_datatree(metek_raw_gz_file):
     ds = metek.open_metek_datatree(metek_raw_gz_file)
     assert "raw_spectra_counts" in ds["sweep_0"].variables.keys()
     np.testing.assert_allclose(ds["sweep_0"]["raw_spectra_counts"].values[0], test_raw)
-    ds.ds.close()
+    ds.close()

@@ -18,6 +18,7 @@ datamodel
 importers
 exporters
 notebooks/Accessors
+notebooks/Mapping_Sweeps
 ```
 
 ```{toctree}
@@ -27,6 +28,7 @@ notebooks/Accessors
 notebooks/CfRadial1_Model_Transformation
 notebooks/CfRadial1
 notebooks/CfRadial1_Export
+notebooks/Transform
 notebooks/ODIM_H5
 notebooks/GAMIC
 notebooks/Furuno
