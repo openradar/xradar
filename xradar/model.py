@@ -228,6 +228,8 @@ radar_parameters_subgroup = dict(
         ("radar_antenna_gain_v", None),
         ("radar_beam_width_h", None),
         ("radar_beam_width_v", None),
+        ("half_power_beam_width_h", "radar_beam_width_h"),
+        ("half_power_beam_width_v", "radar_beam_width_v"),
         ("radar_receiver_bandwidth", None),  # cfradial2.1
         ("radar_rx_bandwidth", "radar_receiver_bandwidth"),  # cfradial1.X
     ]
@@ -310,8 +312,6 @@ radar_calibration_subgroup = dict(
         ("dynamic_range_db_hx", None),
         ("dynamic_range_db_vx", None),
         ("dbz_correction", None),
-        ("half_power_beam_width_h", None),
-        ("half_power_beam_width_v", None),
     ]
 )
 
