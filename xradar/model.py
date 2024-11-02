@@ -255,7 +255,7 @@ radar_calibration_subgroup = dict(
         ("receiver_mismatch_loss_h", None),
         ("receiver_mismatch_loss_v", None),
         ("rx_loss_h", "receiver_mismatch_loss_h"),
-        ("rx_loss_v", "receiver_mismatch_loss_h"),
+        ("rx_loss_v", "receiver_mismatch_loss_v"),
         ("radar_constant_h", None),
         ("radar_constant_v", None),
         ("probert_jones_correction", None),
