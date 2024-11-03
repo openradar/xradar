@@ -134,11 +134,14 @@ def _variable_mapper(dtree, dim0=None):
             # Convert to a dataset and append to the list
             sweep_datasets.append(data)
 
-    result_dataset = xr.concat(
+    # need to use combine_by_coords to correctly test for
+    # incompatible attrs on DataArray's
+    result_dataset = xr.combine_by_coords(
         sweep_datasets,
-        dim="time",
+        data_vars="all",
         compat="no_conflicts",
         join="outer",
+        coords="minimal",
         combine_attrs="no_conflicts",
     )
 
