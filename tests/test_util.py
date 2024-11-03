@@ -11,6 +11,11 @@ from open_radar_data import DATASETS
 
 import xradar as xd
 from xradar import io, model, util
+from xradar.io.backends.common import (
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 
 
 @pytest.fixture(
@@ -424,3 +429,57 @@ def test_map_over_sweeps_decorator_dummy_function():
         sweep_0.dummy_field.values
     )  # Convert NaNs to zero for comparison
     assert np.all(np.isclose(non_nan_values, 0))
+
+
+def test_get_required_root_dataset():
+
+    filename = DATASETS.fetch("cor-main131125105503.RAW2049")
+    sweeps = [f"sweep_{i}" for i in range(10)]
+    ls_ds = [xr.open_dataset(filename, engine="iris", group=sweep) for sweep in sweeps]
+    root = _get_required_root_dataset(ls_ds, optional=True)
+    elevations = [
+        0.5,
+        1.0,
+        2.0,
+        3.0,
+        5.0,
+        7.0,
+        10.0,
+        15.0,
+        20.0,
+        30.0,
+    ]
+    assert len(root.variables) == 10
+    assert root.variables["time_coverage_start"] == "2013-11-25T10:55:04Z"
+    assert root.variables["time_coverage_end"] == "2013-11-25T10:59:24Z"
+    np.testing.assert_equal(
+        root.variables["sweep_fixed_angle"].values, np.array(elevations)
+    )
+    assert len(list(root.attrs.keys())) == 10
+    assert root.attrs["instrument_name"] == "Corozal, Radar"
+    assert root.attrs["scan_name"] == "SURV_HV_300 "
+    assert root.attrs["comment"] == "AEROCIVIL OPERATIONAL DUAL POLE SCAN"
+
+
+def test_get_radar_calibration():
+    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+    sweeps = [f"sweep_{i}" for i in range(10)]
+    ls_ds = [xr.open_dataset(filename, engine="gamic", group=sweep) for sweep in sweeps]
+    subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
+    assert len(subgroup.variables) == 6
+    assert subgroup["noise_power_h"] == "-3.8298"
+    assert subgroup["rx_loss_h"] == "3"
+    assert subgroup["ant_gain_v"] == "43"
+    assert subgroup["ant_gain_h"] == "43"
+
+
+def test_get_subgroup():
+    filename = DATASETS.fetch("71_20181220_060628.pvol.h5")
+    sweeps = [f"sweep_{i}" for i in range(10)]
+    ls_ds = [xr.open_dataset(filename, engine="odim", group=sweep) for sweep in sweeps]
+    subgroup = _get_subgroup(ls_ds, model.radar_parameters_subgroup)
+    assert len(subgroup.variables) == 3
+    assert list(subgroup.variables) == ["longitude", "latitude", "altitude"]
+    np.testing.assert_almost_equal(subgroup.longitude.values.item(), 151.20899963378906)
+    np.testing.assert_almost_equal(subgroup.latitude.values.item(), -33.700801849365234)
+    assert isinstance(subgroup.altitude.values.item(), float)

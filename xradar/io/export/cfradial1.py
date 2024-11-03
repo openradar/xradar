@@ -57,9 +57,8 @@ def _calib_mapper(calib_params):
             attrs=data_array.attrs,
         )
     radar_calib_renamed = xr.Dataset(new_data_vars)
-    dummy_ds = radar_calib_renamed.rename_vars({"r_calib": "fake_coord"})
-    del dummy_ds["fake_coord"]
-    return dummy_ds
+    radar_calib_renamed = radar_calib_renamed.drop_vars("r_calib", errors="ignore")
+    return radar_calib_renamed
 
 
 def _main_info_mapper(dtree):
@@ -135,12 +134,15 @@ def _variable_mapper(dtree, dim0=None):
             # Convert to a dataset and append to the list
             sweep_datasets.append(data)
 
-    result_dataset = xr.concat(
+    # need to use combine_by_coords to correctly test for
+    # incompatible attrs on DataArray's
+    result_dataset = xr.combine_by_coords(
         sweep_datasets,
-        dim="time",
+        data_vars="all",
         compat="no_conflicts",
-        join="right",
-        combine_attrs="drop_conflicts",
+        join="outer",
+        coords="minimal",
+        combine_attrs="no_conflicts",
     )
 
     drop_variables = [
@@ -304,11 +306,11 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
 
     # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset()
+        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
         dataset.update(radar_params)
 
     if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset()
+        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
         dataset.update(radar_georef)
 
     # Ensure that the data type of sweep_mode and similar variables matches

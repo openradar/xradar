@@ -25,6 +25,7 @@ from datetime import datetime
 
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -32,12 +33,21 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
     get_time_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
+)
+from .common import (
+    _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
 )
 
 __all__ = [
@@ -236,6 +246,8 @@ class MRR2File:
         temp_number = np.zeros((self.n_gates, 64))
         spec_var = ""
         for file_line in self._fp:
+            if isinstance(file_line, bytes):
+                file_line = file_line.decode("utf-8")
             if file_line[:3] == "MRR":
                 if num_times > 0:
                     self._data[spec_var].append(temp_spectra)
@@ -651,7 +663,7 @@ def open_metek_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("optional", True)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -668,14 +680,17 @@ def open_metek_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = ["sweep_0"]
 
-    dtree = {"/": xr.Dataset()}
-    dtree.update(
-        {
-            swp: xr.open_dataset(
-                filename_or_obj, group=swp, engine="metek", **kwargs
-            ).copy()
-            for swp in sweeps
-        }
-    )
-
-    return xr.DataTree.from_dict(dtree)
+    ls_ds: list[xr.Dataset] = [
+        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kwargs)
+        for swp in sweeps
+    ].copy()
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)

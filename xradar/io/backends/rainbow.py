@@ -39,6 +39,7 @@ import zlib
 import numpy as np
 import xarray as xr
 import xmltodict
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -48,6 +49,7 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -56,10 +58,16 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
-from .common import _attach_sweep_groups
-from .odim import _assign_root
+from .common import (
+    _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 
 #: mapping of rainbow moment names to CfRadial2/ODIM names
 rainbow_mapping = {
@@ -904,7 +912,7 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("optional", True)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -921,14 +929,18 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_rainbow_group_names(filename_or_obj)
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="rainbow", **kwargs)
         for swp in sweeps
     ]
 
-    ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
-
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)
