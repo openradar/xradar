@@ -106,11 +106,11 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
 
     # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset()
+        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
         dataset.update(radar_params)
 
     if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset()
+        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
         dataset.update(radar_georef)
 
     # Ensure that the data type of sweep_mode and similar variables matches
