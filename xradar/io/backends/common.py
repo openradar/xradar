@@ -63,7 +63,8 @@ def _fix_angle(da):
 def _attach_sweep_groups(dtree, sweeps):
     """Attach sweep groups to DataTree."""
     for i, sw in enumerate(sweeps):
-        dtree[f"sweep_{i}"] = xr.DataTree(sw.drop_attrs())
+        # remove attributes only from Dataset's not DataArrays
+        dtree[f"sweep_{i}"] = xr.DataTree(sw.drop_attrs(deep=False))
     return dtree
 
 
