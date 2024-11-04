@@ -3,7 +3,7 @@
 cff-version: 1.0.3
 message: If you use this software, please cite it using these metadata.
 # FIXME title as repository name might not be the best name, please make human readable
-title: 'openradar/xradar: xradar v0.7.0'
+title: 'openradar/xradar: xradar v0.8.0'
 doi: 10.5281/zenodo.7091737
 # FIXME splitting of full names is error prone, please check if given/family name are correct
 authors:
@@ -36,7 +36,7 @@ authors:
   affiliation: Federal Office of Meteorology and Climatology MeteoSwiss
   orcid: https://orcid.org/0009-0006-1419-0556
 
-version: 0.7.0
-date-released: 2024-10-26
+version: 0.8.0
+date-released: 2024-11-04
 repository-code: https://github.com/openradar/xradar
 license: MIT
