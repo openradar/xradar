@@ -79,7 +79,7 @@ from ..model import (
 
 
 # to_cfradial1 function implementation
-def to_cfradial1(dtree=None, filename=None, calibs=True):
+def to_cfradial1(dtree=None, calibs=True):
     """
     Convert a radar xarray.DataTree to the CFRadial1 format
     and save it to a file. Ensure that the resulting dataset
