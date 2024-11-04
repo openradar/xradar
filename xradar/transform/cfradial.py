@@ -89,8 +89,6 @@ def to_cfradial1(dtree=None, calibs=True):
     ----------
     dtree: xarray.DataTree
         Radar xarray.DataTree object.
-    filename: str, optional
-        The name of the output netCDF file.
     calibs: Bool, optional
         Whether to include calibration parameters.
     """
