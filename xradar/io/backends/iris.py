@@ -43,6 +43,7 @@ from collections import OrderedDict
 
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -52,6 +53,7 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -59,14 +61,16 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
-    optional_root_attrs,
-    optional_root_vars,
+    radar_calibration_subgroup,
     radar_parameters_subgroup,
-    required_global_attrs,
-    required_root_vars,
     sweep_vars_mapping,
 )
-from .common import _assign_root, _attach_sweep_groups
+from .common import (
+    _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
@@ -3948,6 +3952,16 @@ class IrisStore(AbstractDataStore):
             attributes.update(
                 {"elevation_lower_limit": ll, "elevation_upper_limit": ul}
             )
+        attributes["source"] = "Sigmet"
+        attributes["scan_name"] = self.root.product_hdr["product_configuration"][
+            "task_name"
+        ]
+        attributes["instrument_name"] = self.root.ingest_header["ingest_configuration"][
+            "site_name"
+        ].strip()
+        attributes["comment"] = self.root.ingest_header["task_configuration"][
+            "task_end_info"
+        ]["task_description"]
         return FrozenDict(attributes)
 
 
@@ -3957,65 +3971,6 @@ def _get_iris_group_names(filename):
         # make this CfRadial2 conform
         keys = [f"sweep_{i - 1}" for i in list(ds.data.keys())]
     return keys
-
-
-def _get_required_root_dataset(ls_ds, optional=True):
-    """Extract Root Dataset."""
-    # keep only defined mandatory and defined optional variables per default
-    data_var = {x for xs in [sweep.variables.keys() for sweep in ls_ds] for x in xs}
-    remove_root = set(data_var) ^ set(required_root_vars)
-    if optional:
-        remove_root ^= set(optional_root_vars)
-    remove_root ^= {
-        "fixed_angle",
-        "sweep_group_name",
-        "sweep_fixed_angle",
-    }
-    remove_root &= data_var
-    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
-    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
-    # rename variables
-    # todo: find a more easy method not iterating over all variables
-    for k in root_vars:
-        rename = optional_root_vars.get(k, None)
-        if rename:
-            root = [sweep.rename_vars({k: rename}) for sweep in root]
-
-    root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
-    ds_vars = [sweep[root_vars] for sweep in ls_ds]
-
-    root = xr.concat(ds_vars, dim="sweep").reset_coords()
-    # keep only defined mandatory and defined optional attributes per default
-    attrs = root.attrs.keys()
-    remove_attrs = set(attrs) ^ set(required_global_attrs)
-    if optional:
-        remove_attrs ^= set(optional_root_attrs)
-    for k in remove_attrs:
-        root.attrs.pop(k, None)
-    # creating a copy of the dataset list for using the _assing_root function.
-    # and get the variabes/attributes for the root dataset
-    ls = ls_ds.copy()
-    ls.insert(0, xr.Dataset())
-    dtree = xr.DataTree(dataset=_assign_root(ls), name="root")
-    root = root.assign(dtree.variables)
-    root.attrs = dtree.attrs
-    return root
-
-
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
-    """Get iris-sigmet root metadata group.
-    Variables are fetched from the provided Dataset according to the subdict dictionary.
-    """
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    subgroup = xr.concat([ds[extract_vars] for ds in ls_ds], "sweep")
-    for k in subgroup.data_vars:
-        rename = meta_vars[k]
-        if rename:
-            subgroup = subgroup.rename_vars({k: rename})
-    subgroup.attrs = {}
-    return subgroup
 
 
 class IrisBackendEntrypoint(BackendEntrypoint):
@@ -4138,7 +4093,7 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = kwargs.pop("optional", True)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -4159,13 +4114,13 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
         for swp in sweeps
     ]
-    # get the datatree root
-    root = _get_required_root_dataset(ls_ds)
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=root, name="root")
-    # get radar_parameters group
-    subgroup = _get_subgroup(ls_ds, radar_parameters_subgroup)
-    # attach radar_parameter group
-    dtree["radar_parameters"] = xr.DataTree(subgroup)
-    # return Datatree attaching the sweep child nodes
-    return _attach_sweep_groups(dtree, ls_ds)
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)

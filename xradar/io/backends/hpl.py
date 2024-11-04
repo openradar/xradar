@@ -37,6 +37,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -44,14 +45,22 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
     get_time_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
 )
-from .common import _assign_root, _attach_sweep_groups
+from .common import (
+    _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 
 variable_attr_dict = {}
 variable_attr_dict["intensity"] = {
@@ -571,6 +580,11 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         return ds
 
 
+def _get_h5group_names(filename_or_obj):
+    store = HplStore.open(filename_or_obj)
+    return [f"sweep_{i}" for i in store.root.data["sweep_number"]]
+
+
 def open_hpl_datatree(filename_or_obj, **kwargs):
     """Open Halo Photonics processed Doppler lidar dataset as :py:class:`xarray.DataTree`.
 
@@ -606,7 +620,7 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("optional", None)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -621,19 +635,22 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
         else:
             sweeps.extend(sweep)
     else:
-        sweeps = ["sweep_0"]
+        sweeps = _get_h5group_names(filename_or_obj)
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="hpl", **kwargs)
         for swp in sweeps
     ]
 
-    ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
-
-    # create datatree root node with required data
-    root = _assign_root(ds)
-    root["fixed_angle"] = ("sweep", [x["sweep_fixed_angle"].values for x in ds[1:]])
-    root["sweep_group_name"] = ("sweep", [x["sweep_group_name"].values for x in ds[1:]])
-    dtree = xr.DataTree(dataset=root, name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional).rename(
+            {"sweep_fixed_angle": "fixed_angle"}
+        ),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)

@@ -41,6 +41,7 @@ from collections import OrderedDict
 
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -52,8 +53,11 @@ from xradar import util
 from xradar.io.backends.common import (
     _assign_root,
     _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_subgroup,
 )
 from xradar.model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -62,6 +66,8 @@ from xradar.model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 
@@ -594,16 +600,15 @@ class NEXRADLevel2File(NEXRADRecordFile):
             ngates = moments[name]["ngates"]
             word_size = moments[name]["word_size"]
             data_offset = moments[name]["data_offset"]
-            ws = {8: 1, 16: 2}
-            width = ws[word_size]
+            width = {8: 1, 16: 2}[word_size]
             data = []
             self.rh.pos += data_offset
-            data.append(self._rh.read(ngates, width=width).view(f"uint{word_size}"))
+            data.append(self._rh.read(ngates, width=width).view(f">u{width}"))
             while self.init_next_record() and self.record_number <= stop:
                 if self.record_number in intermediate_records:
                     continue
                 self.rh.pos += data_offset
-                data.append(self._rh.read(ngates, width=width).view(f"uint{word_size}"))
+                data.append(self._rh.read(ngates, width=width).view(f">u{width}"))
             moments[name].update(data=data)
 
     def get_data_header(self):
@@ -1241,9 +1246,9 @@ class NexradLevel2ArrayWrapper(BackendArray):
             - len(datastore.ds["intermediate_records"])
         )
         nbins = max([v["ngates"] for k, v in datastore.ds["sweep_data"].items()])
-        self.dtype = np.dtype("uint8")
-        if name == "PHI":
-            self.dtype = np.dtype("uint16")
+        word_size = datastore.ds["sweep_data"][name]["word_size"]
+        width = {8: 1, 16: 2}[word_size]
+        self.dtype = np.dtype(f">u{width}")
         self.shape = (nrays, nbins)
 
     def _getitem(self, key):
@@ -1253,8 +1258,14 @@ class NexradLevel2ArrayWrapper(BackendArray):
         except KeyError:
             self.datastore.root.get_data(self.group, self.name)
             data = self.datastore.ds["sweep_data"][self.name]["data"]
-        if self.name == "PHI":
+        # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
+        word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
+        if self.name == "PHI" and word_size == 16:
+            # 10 bit mask, but only for 2 byte data
             x = np.uint16(0x3FF)
+        elif self.name == "ZDR" and word_size == 16:
+            # 11 bit mask, but only for 2 byte data
+            x = np.uint16(0x7FF)
         else:
             x = np.uint8(0xFF)
         if len(data[0]) < self.shape[1]:
@@ -1537,18 +1548,22 @@ def open_nexradlevel2_datatree(filename_or_obj, **kwargs):
     engine = NexradLevel2BackendEntrypoint
 
     # todo: only open once! Needs new xarray built in datatree!
-    ds = []
+    ls_ds: list[xr.Dataset] = []
     for swp in sweeps:
         try:
             dsx = xr.open_dataset(filename_or_obj, group=swp, engine=engine, **kwargs)
         except IndexError:
             break
         else:
-            ds.append(dsx)
-
-    ds.insert(0, xr.Dataset())
-
-    # create datatree root node with required data
-    dtree = xr.DataTree(dataset=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+            ls_ds.append(dsx)
+    ls_ds.insert(0, xr.Dataset())
+    dtree: dict = {
+        "/": _assign_root(ls_ds),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds[1:])
+    return DataTree.from_dict(dtree)

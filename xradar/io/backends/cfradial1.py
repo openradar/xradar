@@ -33,7 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import numpy as np
-from xarray import DataTree, merge, open_dataset
+from xarray import Dataset, DataTree, merge, open_dataset
 from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
@@ -49,7 +49,7 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from .common import _maybe_decode
+from .common import _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -89,7 +89,6 @@ def _get_required_root_dataset(ds, optional=True):
     root.sweep_group_name.encoding["dtype"] = root.sweep_group_name.dtype
     # remove cf standard name
     root.sweep_group_name.attrs = []
-
     return root
 
 
@@ -297,6 +296,8 @@ def _get_radar_calibration(ds):
         subgroup = subgroup.rename_vars(calib_vars)
         subgroup.attrs = {}
         return subgroup
+    else:
+        return Dataset()
 
 
 def open_cfradial1_datatree(filename_or_obj, **kwargs):
@@ -354,24 +355,22 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         "/georeferencing_correction": _get_subgroup(
             ds, georeferencing_correction_subgroup
         ),
+        "/radar_calibration": _get_radar_calibration(ds),
     }
 
     # radar_calibration (connected with calib-dimension)
-    calib = _get_radar_calibration(ds)
-    if calib:
-        dtree["/radar_calibration"] = calib
-
-    sweep_child = list(
-        _get_sweep_groups(
-            ds,
-            sweep=sweep,
-            first_dim=first_dim,
-            optional=optional,
-            site_coords=site_coords,
-        ).values()
+    dtree = _attach_sweep_groups(
+        dtree,
+        list(
+            _get_sweep_groups(
+                ds,
+                sweep=sweep,
+                first_dim=first_dim,
+                optional=optional,
+                site_coords=site_coords,
+            ).values()
+        ),
     )
-    for i, sw in enumerate(sweep_child):
-        dtree[f"sweep_{i}"] = sw
     return DataTree.from_dict(dtree)
 
 
