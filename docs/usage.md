@@ -19,16 +19,14 @@ importers
 exporters
 notebooks/Accessors
 notebooks/Mapping_Sweeps
+notebooks/CfRadial1_Model_Transformation
 ```
 
 ```{toctree}
 :maxdepth: 2
-:caption: Examples
+:caption: Backends
 
-notebooks/CfRadial1_Model_Transformation
 notebooks/CfRadial1
-notebooks/CfRadial1_Export
-notebooks/Transform
 notebooks/ODIM_H5
 notebooks/GAMIC
 notebooks/Furuno
@@ -37,9 +35,17 @@ notebooks/Iris
 notebooks/HaloPhotonics
 notebooks/MRR
 notebooks/NexradLevel2
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Examples
+
+notebooks/CfRadial1_Export
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
 notebooks/angle_reindexing
 notebooks/Multi-Volume-Concatenation.ipynb
 notebooks/multiple-sweeps-into-volume-scan.ipynb
+notebooks/Transform
 ```
