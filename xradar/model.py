@@ -228,6 +228,8 @@ radar_parameters_subgroup = dict(
         ("radar_antenna_gain_v", None),
         ("radar_beam_width_h", None),
         ("radar_beam_width_v", None),
+        ("half_power_beam_width_h", "radar_beam_width_h"),
+        ("half_power_beam_width_v", "radar_beam_width_v"),
         ("radar_receiver_bandwidth", None),  # cfradial2.1
         ("radar_rx_bandwidth", "radar_receiver_bandwidth"),  # cfradial1.X
     ]
@@ -241,10 +243,12 @@ radar_calibration_subgroup = dict(
         ("pulse_width", None),
         ("antenna_gain_h", None),
         ("antenna_gain_v", None),
-        ("ant_gain_h", None),  # gamic
-        ("ant_gain_v", None),  # gamic
+        ("ant_gain_h", "antenna_gain_h"),  # gamic
+        ("ant_gain_v", "antenna_gain_v"),  # gamic
         ("xmit_power_h", None),
         ("xmit_power_v", None),
+        ("tx_power_h", "xmit_power_h"),
+        ("tx_power_v", "xmit_power_v"),
         ("two_way_waveguide_loss_h", None),
         ("two_way_waveguide_loss_v", None),
         ("two_way_radome_loss_h", None),
@@ -252,6 +256,8 @@ radar_calibration_subgroup = dict(
         ("receiver_mismatch_loss", None),
         ("receiver_mismatch_loss_h", None),
         ("receiver_mismatch_loss_v", None),
+        ("rx_loss_h", "receiver_mismatch_loss_h"),
+        ("rx_loss_v", "receiver_mismatch_loss_v"),
         ("radar_constant_h", None),
         ("radar_constant_v", None),
         ("probert_jones_correction", None),
@@ -284,8 +290,10 @@ radar_calibration_subgroup = dict(
         ("sun_power_vx", None),
         ("noise_source_power_h", None),
         ("noise_source_power_v", None),
-        ("noise_level_pulse_modulation_h", None),  # Furuno
-        ("noise_level_frequency_modulation_h", None),  # Furuno
+        ("noise_power_short_pulse_h", "noise_source_power_h"),
+        ("noise_power_short_pulse_v", "noise_source_power_v"),
+        ("noise_power_h", "noise_source_power_h"),  # Gamic
+        ("noise_power_v", "noise_source_power_v"),
         ("power_measure_loss_h", None),
         ("power_measure_loss_v", None),
         ("coupler_forward_loss_h", None),

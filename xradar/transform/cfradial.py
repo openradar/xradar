@@ -79,7 +79,7 @@ from ..model import (
 
 
 # to_cfradial1 function implementation
-def to_cfradial1(dtree=None, filename=None, calibs=True):
+def to_cfradial1(dtree=None, calibs=True):
     """
     Convert a radar xarray.DataTree to the CFRadial1 format
     and save it to a file. Ensure that the resulting dataset
@@ -89,8 +89,6 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
     ----------
     dtree: xarray.DataTree
         Radar xarray.DataTree object.
-    filename: str, optional
-        The name of the output netCDF file.
     calibs: Bool, optional
         Whether to include calibration parameters.
     """
@@ -106,11 +104,11 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
 
     # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset()
+        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
         dataset.update(radar_params)
 
     if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset()
+        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
         dataset.update(radar_georef)
 
     # Ensure that the data type of sweep_mode and similar variables matches

@@ -600,16 +600,15 @@ class NEXRADLevel2File(NEXRADRecordFile):
             ngates = moments[name]["ngates"]
             word_size = moments[name]["word_size"]
             data_offset = moments[name]["data_offset"]
-            ws = {8: 1, 16: 2}
-            width = ws[word_size]
+            width = {8: 1, 16: 2}[word_size]
             data = []
             self.rh.pos += data_offset
-            data.append(self._rh.read(ngates, width=width).view(f"uint{word_size}"))
+            data.append(self._rh.read(ngates, width=width).view(f">u{width}"))
             while self.init_next_record() and self.record_number <= stop:
                 if self.record_number in intermediate_records:
                     continue
                 self.rh.pos += data_offset
-                data.append(self._rh.read(ngates, width=width).view(f"uint{word_size}"))
+                data.append(self._rh.read(ngates, width=width).view(f">u{width}"))
             moments[name].update(data=data)
 
     def get_data_header(self):
@@ -1247,9 +1246,9 @@ class NexradLevel2ArrayWrapper(BackendArray):
             - len(datastore.ds["intermediate_records"])
         )
         nbins = max([v["ngates"] for k, v in datastore.ds["sweep_data"].items()])
-        self.dtype = np.dtype("uint8")
-        if name == "PHI":
-            self.dtype = np.dtype("uint16")
+        word_size = datastore.ds["sweep_data"][name]["word_size"]
+        width = {8: 1, 16: 2}[word_size]
+        self.dtype = np.dtype(f">u{width}")
         self.shape = (nrays, nbins)
 
     def _getitem(self, key):
@@ -1259,8 +1258,14 @@ class NexradLevel2ArrayWrapper(BackendArray):
         except KeyError:
             self.datastore.root.get_data(self.group, self.name)
             data = self.datastore.ds["sweep_data"][self.name]["data"]
-        if self.name == "PHI":
+        # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
+        word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
+        if self.name == "PHI" and word_size == 16:
+            # 10 bit mask, but only for 2 byte data
             x = np.uint16(0x3FF)
+        elif self.name == "ZDR" and word_size == 16:
+            # 11 bit mask, but only for 2 byte data
+            x = np.uint16(0x7FF)
         else:
             x = np.uint8(0xFF)
         if len(data[0]) < self.shape[1]:
