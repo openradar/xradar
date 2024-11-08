@@ -1,6 +1,6 @@
 # History
 
-## 0.8.1 (Unrealeased)
+## 0.8.1 (Unreleased)
 
 * ENH: Adding test to `open_datatree` function for Iris, Furuno, and NEXRAD backends. Adding "scan_name" to nexradlevel2 datatree attributes ({pull}`238`) by [@aladinor](https://github.com/aladinor)
 
