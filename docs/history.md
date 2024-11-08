@@ -1,5 +1,8 @@
 # History
 
+## 0.8.1 (Unrealeased)
+* ENH: Adding test to `open_datatree` function for Iris, Furuno, and NEXRAD backends. Adding "scan_name" to nexradlevel2 datatree attributes ({pull}`238`) by [@aladinor](https://github.com/aladinor)
+
 ## 0.8.0 (2024-11-04)
 
 This is the first version which uses datatree directly from xarray. Thus, xarray is pinned to version >= 2024.10.0.
