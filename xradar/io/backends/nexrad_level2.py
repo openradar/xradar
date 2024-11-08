@@ -1400,9 +1400,12 @@ class NexradLevel2Store(AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = [("instrument_name", self.root.volume_header["icao"].decode())]
+        _attributes = [
+            ("instrument_name", self.root.volume_header["icao"].decode()),
+            ("scan_name", f"VCP-{self.root.msg_5['pattern_number']}"),
+        ]
 
-        return FrozenDict(attributes)
+        return FrozenDict(_attributes)
 
 
 class NexradLevel2BackendEntrypoint(BackendEntrypoint):
