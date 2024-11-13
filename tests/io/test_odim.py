@@ -10,8 +10,9 @@ from contextlib import nullcontext
 
 import numpy as np
 import pytest
+from xarray import DataTree
 
-from xradar.io.backends import odim
+from xradar.io.backends import odim, open_odim_datatree
 
 
 def create_startazA(nrays=360):
@@ -154,3 +155,63 @@ def test_OdimH5NetCDFMetadata(odim_file):
     store = odim.OdimStore.open(odim_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
         assert store.substore[0].root.first_dim == "azimuth"
+
+
+def test_open_odim_datatree(odim_file):
+    # Define kwargs to pass into the function
+    kwargs = {
+        "sweep": [0, 1, 2],  # Specify sweeps to extract
+        "first_dim": "auto",
+        "reindex_angle": False,
+        "fix_second_angle": False,
+        "site_coords": True,
+    }
+
+    # Call the function with an ODIM file
+    dtree = open_odim_datatree(odim_file, **kwargs)
+
+    # Assertions to check DataTree structure
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Check if the correct sweep groups are attached
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 3, "Expected three sweep groups in the DataTree"
+    sample_sweep = sweep_groups[0]
+
+    # Check data variables in the sweep group
+    assert (
+        "DBZH" in dtree[sample_sweep].variables.keys()
+    ), "Expected 'DBZH' variable in the sweep group"
+    assert (
+        "ZDR" in dtree[sample_sweep].variables.keys()
+    ), "Expected 'ZDR' variable in the sweep group"
+    assert dtree[sample_sweep]["DBZH"].shape == (
+        360,
+        1200,
+    ), "Shape mismatch for 'DBZH' variable"
+    # Validate coordinates in the root dataset
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    # Validate attributes
+    assert len(dtree.attrs) == 9
+    assert (
+        dtree.attrs["Conventions"] == "ODIM_H5/V2_2"
+    ), "Instrument name should match expected value"

@@ -14,8 +14,9 @@ from io import BytesIO
 import numpy as np
 import pytest
 import xmltodict
+from xarray import DataTree
 
-from xradar.io.backends import rainbow
+from xradar.io.backends import open_rainbow_datatree, rainbow
 
 
 def test_find_key():
@@ -186,3 +187,57 @@ def test_rainbow_file_data(rainbow_file):
         np.testing.assert_equal(sdata["rayinfo"]["data"][0], np.array(47.0159912109375))
         np.testing.assert_equal(sdata["rawdata"]["data"][0, 0], np.array(113))
         assert sdata["rawdata"]["data"].shape == (361, 400)
+
+
+def test_open_rainbow_datatree(rainbow_file):
+    # Define kwargs to pass into the function
+    kwargs = {
+        "sweep": [0, 1],  # Specify sweeps to extract
+        "first_dim": "auto",
+        "reindex_angle": False,
+        "site_coords": True,
+    }
+
+    # Call the function with the Rainbow file
+    dtree = open_rainbow_datatree(rainbow_file, **kwargs)
+
+    # Assertions to check DataTree structure
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Check if the specified sweep groups are attached
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 2, "Expected two sweep groups in the DataTree"
+    sample_sweep = sweep_groups[0]
+
+    # Verify the presence of specific data variables
+    assert (
+        "DBZH" in dtree[sample_sweep].variables.keys()
+    ), "Expected 'DBZH' variable in the sweep group"
+    assert dtree[sample_sweep]["DBZH"].shape == (
+        361,
+        400,
+    ), "Shape mismatch for 'DBZH' variable"
+
+    # Validate coordinates are attached correctly in the root dataset
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    # Validate attributes
+    assert len(dtree.attrs) == 9

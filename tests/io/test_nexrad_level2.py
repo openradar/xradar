@@ -8,10 +8,12 @@ from collections import OrderedDict
 
 import pytest
 import xarray
+from xarray import DataTree
 
 from xradar.io.backends.nexrad_level2 import (
     NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
+    open_nexradlevel2_datatree,
 )
 
 
@@ -420,3 +422,64 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
         msg_31_header_length = [720, 720, 720, 720, 360, 360, 360, 360, 360, 360, 360]
         for i, head in enumerate(fh.msg_31_header):
             assert len(head) == msg_31_header_length[i]
+
+
+def test_open_nexradlevel2_datatree(nexradlevel2_file):
+    # Define kwargs to pass into the function
+    kwargs = {
+        "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
+        "first_dim": "auto",
+        "reindex_angle": {
+            "start_angle": 0.0,
+            "stop_angle": 360.0,
+            "angle_res": 1.0,
+            "direction": 1,  # Set a valid direction within reindex_angle
+        },
+        "fix_second_angle": True,
+        "site_coords": True,
+    }
+
+    # Call the function with an actual NEXRAD Level 2 file
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, **kwargs)
+
+    # Assertions
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Check if at least one sweep group is attached (e.g., "/sweep_0")
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 5, "Expected at least one sweep group in the DataTree"
+
+    # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
+    sample_sweep = sweep_groups[0]
+    assert len(dtree[sample_sweep].data_vars) == 9
+    assert (
+        "DBZH" in dtree[sample_sweep].data_vars
+    ), f"DBZH should be a data variable in {sample_sweep}"
+    assert (
+        "ZDR" in dtree[sample_sweep].data_vars
+    ), f"VRADH should be a data variable in {sample_sweep}"
+    assert dtree[sample_sweep]["DBZH"].shape == (360, 1832)
+    # Validate coordinates are attached correctly
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    assert len(dtree.attrs) == 10
+    assert dtree.attrs["instrument_name"] == "KATX"
+    assert dtree.attrs["scan_name"] == "VCP-11"
