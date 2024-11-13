@@ -8,8 +8,9 @@ Tests for the MRR2 backend for xradar
 
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 
-from xradar.io.backends import metek
+from xradar.io.backends import metek, open_metek_datatree
 
 test_arr_ave = np.array(
     [
@@ -225,3 +226,93 @@ def test_open_raw_datatree(metek_raw_gz_file):
     assert "raw_spectra_counts" in ds["sweep_0"].variables.keys()
     np.testing.assert_allclose(ds["sweep_0"]["raw_spectra_counts"].values[0], test_raw)
     ds.close()
+
+
+test_arr = np.array(
+    [
+        24.46,
+        25.31,
+        26.33,
+        26.31,
+        26.85,
+        27.93,
+        29.12,
+        30.17,
+        30.99,
+        32.58,
+        33.13,
+        28.84,
+        22.16,
+        19.81,
+        21.26,
+        21.33,
+        20.33,
+        18.93,
+        17.92,
+        18.04,
+        16.86,
+        14.46,
+        13.17,
+        13.13,
+        11.75,
+        10.53,
+        9.3,
+        5.92,
+        -4.77,
+        np.nan,
+        6.74,
+    ]
+)
+
+
+def test_open_metek_datatree(metek_pro_gz_file):
+    # Define the kwargs to pass into the function
+    kwargs = {
+        "sweep": [0],  # Test with specific sweep
+        "first_dim": "auto",
+        "site_coords": True,
+    }
+
+    # Call the function with an actual Metek file
+    dtree = open_metek_datatree(metek_pro_gz_file, **kwargs)
+
+    # Assertions
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Verify that sweep group is attached correctly (e.g., "/sweep_0")
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 1, "Expected one sweep group in the DataTree"
+    sample_sweep = sweep_groups[0]
+
+    # Check data variables in the sweep group
+    assert (
+        "corrected_reflectivity" in dtree[sample_sweep].variables.keys()
+    ), "Expected 'corrected_reflectivity' variable in the sweep group"
+    assert (
+        "velocity" in dtree[sample_sweep].variables.keys()
+    ), "Expected 'velocity' variable in the sweep group"
+    np.testing.assert_allclose(dtree[sample_sweep]["reflectivity"].values[0], test_arr)
+
+    # Validate coordinates in the root dataset
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    # Validate attributes
+    assert len(dtree.attrs) == 9

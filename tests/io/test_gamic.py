@@ -9,8 +9,10 @@ ported from wradlib
 
 import numpy as np
 import pytest
+from xarray import DataTree
 
 from xradar.io.backends import gamic
+from xradar.io.backends.gamic import open_gamic_datatree
 
 
 def create_ray_header(nrays=360):
@@ -100,3 +102,67 @@ def test_GamicH5NetCDFMetadata(gamic_file):
     store = gamic.GamicStore.open(gamic_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
         assert store.root.first_dim == "azimuth"
+
+
+def test_open_gamic_datatree(gamic_file):
+    # Define kwargs to pass into the function
+    kwargs = {
+        "sweep": [0, 1],  # Test with specific sweeps
+        "first_dim": "auto",
+        "reindex_angle": {
+            "start_angle": 0.0,
+            "stop_angle": 360.0,
+            "angle_res": 1.0,
+            "direction": 1,  # Set a valid direction within reindex_angle
+        },
+        "fix_second_angle": True,
+        "site_coords": True,
+    }
+
+    # Call the function with an actual GAMIC HDF5 file
+    dtree = open_gamic_datatree(gamic_file, **kwargs)
+
+    # Assertions
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Check if at least one sweep group is attached (e.g., "/sweep_0")
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 2, "Expected two sweep groups in the DataTree"
+
+    # Verify a sample variable in one of the sweep groups
+    sample_sweep = sweep_groups[0]
+    assert (
+        len(dtree[sample_sweep].data_vars) == 17
+    ), f"Expected data variables in {sample_sweep}"
+    assert dtree[sample_sweep]["DBZH"].shape == (360, 360)
+    assert (
+        "DBZH" in dtree[sample_sweep].data_vars
+    ), f"DBZH should be a data variable in {sample_sweep}"
+    assert (
+        "VRADV" in dtree[sample_sweep].data_vars
+    ), f"VRADV should be a data variable in {sample_sweep}"
+
+    # Validate coordinates are attached correctly in the root dataset
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    # Validate attributes
+    assert len(dtree.attrs) == 9
+    assert dtree.attrs["source"] == "gamic", "Source should match expected value"

@@ -8,6 +8,7 @@ Ported from wradlib.
 """
 
 import numpy as np
+from xarray import DataTree
 
 from xradar.io.backends import iris
 from xradar.util import _get_data_file
@@ -289,3 +290,73 @@ def test_array_from_file(iris0_file, file_or_filelike):
         # Assertions for the read array
         assert len(array_data) == 5
         assert isinstance(array_data, np.ndarray)
+
+
+from xradar.io.backends.iris import open_iris_datatree
+
+
+def test_open_iris_datatree(iris0_file):
+    # Define kwargs to pass into the function
+    kwargs = {
+        "sweep": [0, 1, 2, 4],  # Test with specific sweeps
+        "first_dim": "auto",
+        "reindex_angle": {
+            "start_angle": 0.0,
+            "stop_angle": 360.0,
+            "angle_res": 1.0,
+            "direction": 1,
+        },
+        "fix_second_angle": True,
+        "site_coords": True,
+    }
+
+    # Call the function with an actual Iris/Sigmet file
+    dtree = open_iris_datatree(iris0_file, **kwargs)
+
+    # Assertions
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Check if at least one sweep group is attached (e.g., "/sweep_0")
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 4, "Expected four sweep groups in the DataTree"
+
+    # Verify a sample variable in one of the sweep groups (adjust based on expected variables)
+    sample_sweep = sweep_groups[0]
+    assert (
+        len(dtree[sample_sweep].data_vars) == 12
+    ), f"Expected data variables in {sample_sweep}"
+    assert dtree[sample_sweep]["DBZH"].shape == (360, 664)
+    assert (
+        "DBZH" in dtree[sample_sweep].data_vars
+    ), f"DBZH should be a data variable in {sample_sweep}"
+    assert (
+        "VRADH" in dtree[sample_sweep].data_vars
+    ), f"VRADH should be a data variable in {sample_sweep}"
+
+    # Validate coordinates are attached correctly in the root dataset
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    # Validate attributes
+    assert len(dtree.attrs) == 10
+    assert (
+        dtree.attrs["instrument_name"] == "Corozal, Radar"
+    ), "Instrument name should match expected value"
+    assert dtree.attrs["source"] == "Sigmet", "Source should match expected value"
