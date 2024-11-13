@@ -1589,17 +1589,24 @@ def open_nexradlevel2_datatree(
     dtree : xarray.DataTree
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
+    from xarray.core.treenode import NodePath
+
     sweeps = []
 
     if isinstance(sweep, str):
+        sweep = NodePath(sweep).name
         sweeps = [sweep]
     elif isinstance(sweep, int):
         sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
         if isinstance(sweep[0], int):
             sweeps = [f"sweep_{i}" for i in sweep]
+        elif isinstance(sweep[0], str):
+            sweeps = [NodePath(i).name for i in sweep]
         else:
-            sweeps.extend(sweep)
+            raise ValueError(
+                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
+            )
     else:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
             nsweeps = nex.msg_5["number_elevation_cuts"]
