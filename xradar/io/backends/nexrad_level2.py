@@ -46,13 +46,12 @@ from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntry
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
-from xarray.core.utils import FrozenDict
+from xarray.core.utils import FrozenDict, close_on_error
 from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
     _assign_root,
-    _attach_sweep_groups,
     _get_radar_calibration,
     _get_subgroup,
 )
@@ -1300,6 +1299,13 @@ class NexradLevel2Store(AbstractDataStore):
         )
         return cls(manager, group=group)
 
+    @classmethod
+    def open_groups(cls, filename, groups, mode="r", **kwargs):
+        manager = CachingFileManager(
+            NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
+        )
+        return {group: cls(manager, group=group) for group in groups}
+
     @property
     def filename(self):
         with self._manager.acquire_context(False) as root:
@@ -1494,71 +1500,136 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         return ds
 
 
-def open_nexradlevel2_datatree(filename_or_obj, **kwargs):
-    """Open NEXRAD Level2 dataset as :py:class:`xarray.DataTree`.
+def open_nexradlevel2_datatree(
+    filename_or_obj,
+    mask_and_scale=True,
+    decode_times=True,
+    concat_characters=True,
+    decode_coords=True,
+    drop_variables=None,
+    use_cftime=None,
+    decode_timedelta=None,
+    sweep=None,
+    first_dim="auto",
+    reindex_angle=False,
+    fix_second_angle=False,
+    site_coords=True,
+    optional=True,
+    **kwargs,
+):
+    """Open a NEXRAD Level2 dataset as an `xarray.DataTree`.
+
+    This function loads NEXRAD Level2 radar data into a DataTree structure, which
+    organizes radar sweeps as separate nodes. Provides options for decoding time
+    and applying various transformations to the data.
 
     Parameters
     ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
+    filename_or_obj : str, Path, file-like, or DataStore
+        The path or file-like object representing the radar file.
+        Path-like objects are interpreted as local or remote paths.
 
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
+    mask_and_scale : bool, optional
+        If True, replaces values in the dataset that match `_FillValue` with NaN
+        and applies scale and offset adjustments. Default is True.
+
+    decode_times : bool, optional
+        If True, decodes time variables according to CF conventions. Default is True.
+
+    concat_characters : bool, optional
+        If True, concatenates character arrays along the last dimension, forming
+        string arrays. Default is True.
+
+    decode_coords : bool, optional
+        If True, decodes the "coordinates" attribute to identify coordinates in the
+        resulting dataset. Default is True.
+
+    drop_variables : str or list of str, optional
+        Specifies variables to exclude from the dataset. Useful for removing problematic
+        or inconsistent variables. Default is None.
+
+    use_cftime : bool, optional
+        If True, uses cftime objects to represent time variables; if False, uses
+        `np.datetime64` objects. If None, chooses the best format automatically.
+        Default is None.
+
+    decode_timedelta : bool, optional
+        If True, decodes variables with units of time (e.g., seconds, minutes) into
+        timedelta objects. If False, leaves them as numeric values. Default is None.
+
+    sweep : int or list of int, optional
+        Sweep numbers to extract from the dataset. If None, extracts all sweeps into
+        a list. Default is the first sweep.
+
+    first_dim : {"time", "auto"}, optional
+        Defines the first dimension for each sweep. If "time," uses time as the
+        first dimension. If "auto," determines the first dimension based on the sweep
+        type (azimuth or elevation). Default is "auto."
+
+    reindex_angle : bool or dict, optional
+        Controls angle reindexing. If True or a dictionary, applies reindexing with
+        specified settings (if given). Only used if `decode_coords=True`. Default is False.
+
+    fix_second_angle : bool, optional
+        If True, corrects errors in the second angle data, such as misaligned
+        elevation or azimuth values. Default is False.
+
+    site_coords : bool, optional
+        Attaches radar site coordinates to the dataset if True. Default is True.
+
+    optional : bool, optional
+        If True, suppresses errors for optional dataset attributes, making them
+        optional instead of required. Default is True.
+
     kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
+        Additional keyword arguments passed to `xarray.open_dataset`.
 
     Returns
     -------
-    dtree: xarray.DataTree
-        DataTree
+    dtree : xarray.DataTree
+        An `xarray.DataTree` representing the radar data organized by sweeps.
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
-    sweep = kwargs.pop("sweep", None)
+    from xarray.core.treenode import NodePath
+
     sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
 
     if isinstance(sweep, str):
+        sweep = NodePath(sweep).name
         sweeps = [sweep]
     elif isinstance(sweep, int):
         sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
         if isinstance(sweep[0], int):
             sweeps = [f"sweep_{i}" for i in sweep]
+        elif isinstance(sweep[0], str):
+            sweeps = [NodePath(i).name for i in sweep]
         else:
-            sweeps.extend(sweep)
+            raise ValueError(
+                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
+            )
     else:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
             nsweeps = nex.msg_5["number_elevation_cuts"]
         sweeps = [f"sweep_{i}" for i in range(nsweeps)]
 
-    engine = NexradLevel2BackendEntrypoint
-
-    # todo: only open once! Needs new xarray built in datatree!
-    ls_ds: list[xr.Dataset] = []
-    for swp in sweeps:
-        try:
-            dsx = xr.open_dataset(filename_or_obj, group=swp, engine=engine, **kwargs)
-        except IndexError:
-            break
-        else:
-            ls_ds.append(dsx)
+    sweep_dict = open_sweeps_as_dict(
+        filename_or_obj=filename_or_obj,
+        mask_and_scale=mask_and_scale,
+        decode_times=decode_times,
+        concat_characters=concat_characters,
+        decode_coords=decode_coords,
+        drop_variables=drop_variables,
+        use_cftime=use_cftime,
+        decode_timedelta=decode_timedelta,
+        sweeps=sweeps,
+        first_dim=first_dim,
+        reindex_angle=reindex_angle,
+        fix_second_angle=fix_second_angle,
+        site_coords=site_coords,
+        optional=optional,
+        **kwargs,
+    )
+    ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
     ls_ds.insert(0, xr.Dataset())
     dtree: dict = {
         "/": _assign_root(ls_ds),
@@ -1568,5 +1639,83 @@ def open_nexradlevel2_datatree(filename_or_obj, **kwargs):
         ),
         "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
     }
-    dtree = _attach_sweep_groups(dtree, ls_ds[1:])
+    # todo: refactor _assign_root and _get_subgroup to recieve dict instead of list of datasets.
+    # avoiding remove the attributes in the following line
+    sweep_dict = {
+        sweep_path: sweep_dict[sweep_path].drop_attrs()
+        for sweep_path in sweep_dict.keys()
+    }
+    dtree = dtree | sweep_dict
     return DataTree.from_dict(dtree)
+
+
+def open_sweeps_as_dict(
+    filename_or_obj,
+    mask_and_scale=True,
+    decode_times=True,
+    concat_characters=True,
+    decode_coords=True,
+    drop_variables=None,
+    use_cftime=None,
+    decode_timedelta=None,
+    sweeps=None,
+    first_dim="auto",
+    reindex_angle=False,
+    fix_second_angle=False,
+    site_coords=True,
+    optional=True,
+    **kwargs,
+):
+    stores = NexradLevel2Store.open_groups(
+        filename=filename_or_obj,
+        groups=sweeps,
+    )
+    groups_dict = {}
+    for path_group, store in stores.items():
+        store_entrypoint = StoreBackendEntrypoint()
+        with close_on_error(store):
+            group_ds = store_entrypoint.open_dataset(
+                store,
+                mask_and_scale=mask_and_scale,
+                decode_times=decode_times,
+                concat_characters=concat_characters,
+                decode_coords=decode_coords,
+                drop_variables=drop_variables,
+                use_cftime=use_cftime,
+                decode_timedelta=decode_timedelta,
+            )
+            # reassign azimuth/elevation/time coordinates
+            group_ds = group_ds.assign_coords({"azimuth": group_ds.azimuth})
+            group_ds = group_ds.assign_coords({"elevation": group_ds.elevation})
+            group_ds = group_ds.assign_coords({"time": group_ds.time})
+
+            group_ds.encoding["engine"] = "nexradlevel2"
+
+            # handle duplicates and reindex
+            if decode_coords and reindex_angle is not False:
+                group_ds = group_ds.pipe(util.remove_duplicate_rays)
+                group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
+                group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
+
+            # handling first dimension
+            dim0 = "elevation" if group_ds.sweep_mode.load() == "rhi" else "azimuth"
+
+            # todo: could be optimized
+            if first_dim == "time":
+                group_ds = group_ds.swap_dims({dim0: "time"})
+                group_ds = group_ds.sortby("time")
+            else:
+                group_ds = group_ds.sortby(dim0)
+
+            # assign geo-coords
+            if site_coords:
+                group_ds = group_ds.assign_coords(
+                    {
+                        "latitude": group_ds.latitude,
+                        "longitude": group_ds.longitude,
+                        "altitude": group_ds.altitude,
+                    }
+                )
+
+            groups_dict[path_group] = group_ds
+    return groups_dict

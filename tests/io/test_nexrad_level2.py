@@ -483,3 +483,47 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "KATX"
     assert dtree.attrs["scan_name"] == "VCP-11"
+
+
+@pytest.mark.parametrize(
+    "sweeps_input, expected_sweeps, should_raise",
+    [
+        ("/sweep_0", ["sweep_0"], False),
+        (0, ["sweep_0"], False),
+        ([0, 1, 2], ["sweep_0", "sweep_1", "sweep_2"], False),
+        (["/sweep_0", "/sweep_1"], ["sweep_0", "sweep_1"], False),
+        (None, [f"sweep_{i}" for i in range(16)], False),
+        (
+            [0.1, 1.2],
+            None,
+            True,
+        ),  # This should raise a ValueError due to float types in the list
+    ],
+)
+def test_open_nexradlevel2_datatree_sweeps_initialization(
+    nexradlevel2_file, sweeps_input, expected_sweeps, should_raise
+):
+    """Test that `open_nexradlevel2_datatree` correctly initializes sweeps or raises errors."""
+
+    kwargs = {
+        "first_dim": "auto",
+        "reindex_angle": False,
+        "fix_second_angle": False,
+        "site_coords": True,
+        "optional": True,
+    }
+
+    if should_raise:
+        with pytest.raises(
+            ValueError,
+            match="Invalid type in 'sweep' list. Expected integers .* or strings .*",
+        ):
+            open_nexradlevel2_datatree(nexradlevel2_file, sweep=sweeps_input, **kwargs)
+    else:
+        dtree = open_nexradlevel2_datatree(
+            nexradlevel2_file, sweep=sweeps_input, **kwargs
+        )
+        actual_sweeps = list(dtree.match("sweep_*").keys())
+        assert (
+            actual_sweeps == expected_sweeps
+        ), f"Unexpected sweeps for input: {sweeps_input}"
