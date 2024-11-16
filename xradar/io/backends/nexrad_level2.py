@@ -1642,7 +1642,7 @@ def open_nexradlevel2_datatree(
     # todo: refactor _assign_root and _get_subgroup to recieve dict instead of list of datasets.
     # avoiding remove the attributes in the following line
     sweep_dict = {
-        sweep_path: sweep_dict[sweep_path].drop_attrs()
+        sweep_path: sweep_dict[sweep_path].drop_attrs(deep=False)
         for sweep_path in sweep_dict.keys()
     }
     dtree = dtree | sweep_dict
