@@ -27,7 +27,14 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import xarray as xr
 
-from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
+from .georeference import (
+    add_crs,
+    add_crs_tree,
+    get_crs,
+    get_lat_lon_alt,
+    get_x_y_z,
+    get_x_y_z_tree,
+)
 from .transform import to_cfradial1, to_cfradial2
 from .util import map_over_sweeps
 
@@ -73,7 +80,7 @@ class XradarDataArrayAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, geo=False
     ) -> xr.DataArray:
         """
         Parameters
@@ -90,8 +97,13 @@ class XradarDataArrayAccessor(XradarAccessor):
         """
         radar = self.xarray_obj
 
+        if geo:
+            func = get_lat_lon_alt
+        else:
+            func = get_x_y_z
+
         return radar.pipe(
-            get_x_y_z,
+            func,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
         )
@@ -123,7 +135,7 @@ class XradarDataSetAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, geo=False
     ) -> xr.Dataset:
         """
         Add georeference information to an xarray dataset
@@ -140,8 +152,13 @@ class XradarDataSetAccessor(XradarAccessor):
             Dataset including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
+        if geo:
+            func = get_lat_lon_alt
+        else:
+            func = get_x_y_z
+
         return radar.pipe(
-            get_x_y_z,
+            func,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
         )
@@ -185,7 +202,7 @@ class XradarDataTreeAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataTree objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, geo=False
     ) -> xr.DataTree:
         """
         Add georeference information to an xradar datatree object
@@ -202,10 +219,12 @@ class XradarDataTreeAccessor(XradarAccessor):
             Datatree including x, y, and z as coordinates.
         """
         radar = self.xarray_obj
+
         return radar.pipe(
             get_x_y_z_tree,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            geo=geo,
         )
 
     def add_crs(self) -> xr.DataTree:

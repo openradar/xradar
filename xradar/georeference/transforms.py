@@ -13,10 +13,18 @@ Transformations
    {}
 """
 
-__all__ = ["antenna_to_cartesian", "get_x_y_z", "get_x_y_z_tree"]
+__all__ = [
+    "antenna_to_cartesian",
+    "cartesian_to_geographic_aeqd",
+    "get_x_y_z",
+    "get_lat_lon_alt",
+    "get_x_y_z_tree",
+]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+
+import warnings
 
 import numpy as np
 import xarray as xr
@@ -101,6 +109,65 @@ def antenna_to_cartesian(
     return x, y, z
 
 
+def cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, earth_radius):
+    """
+    Transform Cartesian coordinates (x, y) to geographic coordinates (latitude, longitude)
+    using the Azimuthal Equidistant (AEQD) map projection.
+
+    Parameters
+    ----------
+    x, y : array-like
+        Cartesian coordinates in the same units as the Earth's radius, typically meters.
+    lon_0, lat_0 : float
+        Longitude and latitude, in degrees, of the center of the projection.
+    earth_radius : float
+        Radius of the Earth in meters.
+
+    Returns
+    -------
+    lon, lat : array
+        Longitude and latitude of Cartesian coordinates in degrees.
+
+    Notes
+    -----
+    The calculations follow the AEQD projection equations, where the Earth's radius is used
+    to define the distance metric.
+    """
+    # Ensure x and y are at least 1D arrays
+    x = np.atleast_1d(np.asarray(x))
+    y = np.atleast_1d(np.asarray(y))
+
+    # Convert reference latitude and longitude to radians
+    lat_0_rad = np.deg2rad(lat_0)
+    lon_0_rad = np.deg2rad(lon_0)
+
+    # Calculate distance (rho) and angular distance (c)
+    rho = np.sqrt(x**2 + y**2)
+    c = rho / earth_radius
+
+    # Suppress warnings for potential division by zero
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        lat_rad = np.arcsin(
+            np.cos(c) * np.sin(lat_0_rad) + (y * np.sin(c) * np.cos(lat_0_rad) / rho)
+        )
+
+    # Convert latitude to degrees and handle edge cases where rho == 0
+    lat_deg = np.rad2deg(lat_rad)
+    lat_deg[rho == 0] = lat_0
+
+    # Calculate longitude in radians
+    x1 = x * np.sin(c)
+    x2 = rho * np.cos(lat_0_rad) * np.cos(c) - y * np.sin(lat_0_rad) * np.sin(c)
+    lon_rad = lon_0_rad + np.arctan2(x1, x2)
+
+    # Convert longitude to degrees and normalize to [-180, 180]
+    lon_deg = np.rad2deg(lon_rad)
+    lon_deg = (lon_deg + 180) % 360 - 180  # Normalize longitude
+
+    return lon_deg, lat_deg
+
+
 def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
     """
     Return Cartesian coordinates from antenna coordinates.
@@ -179,30 +246,127 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
     return ds
 
 
-def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None):
+# def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None):
+#     """
+#     Applies the georeferencing to a xradar datatree
+
+#     Parameters
+#     ----------
+#     radar: xarray.DataTree
+#         Xradar datatree object with radar information.
+#     earth_radius: float
+#         Radius of the earth. Defaults to a latitude-dependent radius derived from
+#         WGS84 ellipsoid.
+#     effective_radius_fraction: float
+#         Fraction of earth to use for the effective radius (default is 4/3).
+
+#     Returns
+#     -------
+#     radar: xarray.DataTree
+#         Datatree with sweep datasets including georeferenced coordinates
+#     """
+#     for key in list(radar.children):
+#         if "sweep" in key:
+#             radar[key].ds = get_x_y_z(
+#                 radar[key].to_dataset(),
+#                 earth_radius=earth_radius,
+#                 effective_radius_fraction=effective_radius_fraction,
+#             )
+#     return radar
+
+
+def get_lat_lon_alt(ds, earth_radius=None, effective_radius_fraction=None):
     """
-    Applies the georeferencing to a xradar datatree
+    Add geographic coordinates (lat, lon, alt) to the dataset.
 
     Parameters
     ----------
-    radar: xarray.DataTree
-        Xradar datatree object with radar information.
-    earth_radius: float
+    ds : xarray.Dataset
+        Xarray dataset containing range, azimuth, and elevation.
+    earth_radius : float
         Radius of the earth. Defaults to a latitude-dependent radius derived from
         WGS84 ellipsoid.
-    effective_radius_fraction: float
+    effective_radius_fraction : float
         Fraction of earth to use for the effective radius (default is 4/3).
 
     Returns
     -------
-    radar: xarray.DataTree
-        Datatree with sweep datasets including georeferenced coordinates
+    ds : xarray.Dataset
+        Dataset including lat, lon, and alt as coordinates.
+    """
+    if earth_radius is None:
+        crs = get_crs(ds)
+        earth_radius = get_earth_radius(crs, ds.latitude.values)
+        ds = ds.pipe(add_crs, crs)
+
+    # Calculate Cartesian coordinates first
+    x, y, z = antenna_to_cartesian(
+        ds.range,
+        ds.azimuth,
+        ds.elevation,
+        earth_radius=earth_radius,
+        effective_radius_fraction=effective_radius_fraction,
+        site_altitude=ds.altitude.values,
+    )
+
+    # Convert Cartesian coordinates to geographic coordinates
+    lon, lat = cartesian_to_geographic_aeqd(
+        x, y, ds.longitude.values, ds.latitude.values, earth_radius=earth_radius
+    )
+    # alt = z - ds.altitude.values
+    alt = z
+
+    # Add coordinates to the dataset
+    ds["lat"] = xr.DataArray(lat, dims=["azimuth", "range"])
+    ds["lat"].attrs = {"standard_name": "latitude", "units": "degrees_north"}
+
+    ds["lon"] = xr.DataArray(lon, dims=["azimuth", "range"])
+    ds["lon"].attrs = {"standard_name": "longitude", "units": "degrees_east"}
+
+    ds["alt"] = xr.DataArray(alt, dims=["azimuth", "range"])
+    ds["alt"].attrs = {"standard_name": "altitude", "units": "meters"}
+
+    # Make sure the coordinates are set properly
+    if isinstance(ds, xr.Dataset):
+        ds = ds.set_coords(["lat", "lon", "alt"])
+
+    return ds
+
+
+def get_x_y_z_tree(radar, earth_radius=None, effective_radius_fraction=None, geo=False):
+    """
+    Applies the georeferencing to a xradar datatree.
+
+    Parameters
+    ----------
+    radar : xarray.DataTree
+        Xradar datatree object with radar information.
+    earth_radius : float
+        Radius of the earth. Defaults to a latitude-dependent radius derived from
+        WGS84 ellipsoid.
+    effective_radius_fraction : float
+        Fraction of earth to use for the effective radius (default is 4/3).
+    geo : bool, optional
+        If True, adds geographic coordinates (lat, lon, alt) instead of Cartesian
+        coordinates (x, y, z). Default is False.
+
+    Returns
+    -------
+    radar : xarray.DataTree
+        Datatree with sweep datasets including georeferenced coordinates.
     """
     for key in list(radar.children):
         if "sweep" in key:
-            radar[key].ds = get_x_y_z(
-                radar[key].to_dataset(),
-                earth_radius=earth_radius,
-                effective_radius_fraction=effective_radius_fraction,
-            )
+            if geo:
+                radar[key].ds = get_lat_lon_alt(
+                    radar[key].to_dataset(),
+                    earth_radius=earth_radius,
+                    effective_radius_fraction=effective_radius_fraction,
+                )
+            else:
+                radar[key].ds = get_x_y_z(
+                    radar[key].to_dataset(),
+                    earth_radius=earth_radius,
+                    effective_radius_fraction=effective_radius_fraction,
+                )
     return radar

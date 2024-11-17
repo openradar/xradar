@@ -7,7 +7,12 @@ import pytest
 from numpy.testing import assert_almost_equal
 
 import xradar
-from xradar.georeference import antenna_to_cartesian, get_x_y_z
+from xradar.georeference import (
+    antenna_to_cartesian,
+    cartesian_to_geographic_aeqd,
+    get_lat_lon_alt,
+    get_x_y_z,
+)
 
 
 def test_antenna_to_cartesian():
@@ -28,6 +33,26 @@ def test_antenna_to_cartesian():
 
     # Make sure that at 270 degrees, y is (close to) 0
     assert_almost_equal(y[np.where(azimuths == 270.0)], 0)
+
+
+def test_cartesian_to_geographic_aeqd():
+    # Define test values
+    x = np.array([0, 1000, -1000])
+    y = np.array([0, 500, -500])
+    lon_0 = -97.59
+    lat_0 = 36.49
+    earth_radius = 6371000  # Earth's radius in meters
+
+    # Convert Cartesian to geographic
+    lon, lat = cartesian_to_geographic_aeqd(x, y, lon_0, lat_0, earth_radius)
+
+    # Check that the origin remains unchanged
+    assert_almost_equal(lon[0], lon_0)
+    assert_almost_equal(lat[0], lat_0)
+
+    # Check that the coordinates are within a reasonable range
+    assert np.all(np.abs(lon) <= 180)
+    assert np.all(np.abs(lat) <= 90)
 
 
 def test_get_x_y_z():
@@ -82,3 +107,25 @@ def test_get_x_y_z():
             assert ds.crs_wkt.attrs[key] == pytest.approx(value)
         else:
             assert ds.crs_wkt.attrs[key] == value
+
+
+def test_get_lat_lon_alt():
+    # Create default xradar dataset
+    ds = xradar.model.create_sweep_dataset()
+
+    # Apply lat, lon, and alt georeferencing
+    ds = get_lat_lon_alt(ds.swap_dims({"time": "azimuth"}))
+
+    # Check that latitude, longitude, and altitude have been added
+    assert "lon" in ds.coords
+    assert "lat" in ds.coords
+    assert "alt" in ds.coords
+
+    # # Check that the first range bin latitude and longitude are close to the radar location
+    origin = ds.isel(range=0).reset_coords().mean("azimuth")
+    assert_almost_equal(ds.latitude, origin.lat)
+    assert_almost_equal(
+        ds.longitude,
+        origin.lon,
+    )
+    assert_almost_equal(ds.altitude, origin.alt - 0.8727675)
