@@ -48,4 +48,5 @@ notebooks/angle_reindexing
 notebooks/Multi-Volume-Concatenation.ipynb
 notebooks/multiple-sweeps-into-volume-scan.ipynb
 notebooks/Transform
+notebooks/georeferencing
 ```
