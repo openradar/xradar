@@ -1592,6 +1592,7 @@ def open_nexradlevel2_datatree(
     from xarray.core.treenode import NodePath
 
     title = None
+
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
         sweeps = [sweep]
