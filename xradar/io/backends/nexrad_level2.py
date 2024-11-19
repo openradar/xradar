@@ -1590,6 +1590,7 @@ def open_nexradlevel2_datatree(
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
     from xarray.core.treenode import NodePath
+    title = None
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -1610,7 +1611,6 @@ def open_nexradlevel2_datatree(
             nsweeps = nex.msg_5["number_elevation_cuts"]
             # Check if duplicated sweeps ("split cut mode")
             n_sweeps = len(nex.msg_31_data_header)
-            title = None
             if nsweeps > n_sweeps:
                 nsweeps = n_sweeps
                 title = "Split Cut Mode scanning strategy"
