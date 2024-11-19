@@ -1590,8 +1590,8 @@ def open_nexradlevel2_datatree(
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
     from xarray.core.treenode import NodePath
-    title = None
 
+    title = None
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
         sweeps = [sweep]
