@@ -1637,7 +1637,7 @@ def open_nexradlevel2_datatree(
     )
     ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
     ls_ds.insert(0, xr.Dataset())
-    if title:
+    if title is not None:
         ls_ds[1].attrs["title"] = title
     dtree: dict = {
         "/": _assign_root(ls_ds),
