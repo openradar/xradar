@@ -5,6 +5,7 @@
 * ENH: Adding test to `open_datatree` function for all backends. Adding "scan_name" to nexradlevel2 datatree attributes ({pull}`238`) by [@aladinor](https://github.com/aladinor)
 * FIX: Improving performance of `open_nexradlevel2_datatree` function and adding tests for `sweep` parameter. ({issue}`239`) ({pull}`240`) by [@aladinor](https://github.com/aladinor)
 * FIX: Keeping attributes at each variable when using `open_nexradlevel2_datatree`. ({issue}`241`) ({pull}`242`) by [@aladinor](https://github.com/aladinor)
+* FIX: Halo Photonics reader now correctly handles potential transition angles for RHI scans. ({issue}`247`) ({pull}`2481)
 
 ## 0.8.0 (2024-11-04)
 

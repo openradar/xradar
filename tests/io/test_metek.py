@@ -228,43 +228,6 @@ def test_open_raw_datatree(metek_raw_gz_file):
     ds.close()
 
 
-test_arr = np.array(
-    [
-        24.46,
-        25.31,
-        26.33,
-        26.31,
-        26.85,
-        27.93,
-        29.12,
-        30.17,
-        30.99,
-        32.58,
-        33.13,
-        28.84,
-        22.16,
-        19.81,
-        21.26,
-        21.33,
-        20.33,
-        18.93,
-        17.92,
-        18.04,
-        16.86,
-        14.46,
-        13.17,
-        13.13,
-        11.75,
-        10.53,
-        9.3,
-        5.92,
-        -4.77,
-        np.nan,
-        6.74,
-    ]
-)
-
-
 def test_open_metek_datatree(metek_pro_gz_file):
     # Define the kwargs to pass into the function
     kwargs = {
