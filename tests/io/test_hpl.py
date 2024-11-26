@@ -34,7 +34,7 @@ def test_open_dataset_hpl():
 
 
 def test_open_dataset_hpl_iobase():
-    with open(DATASETS.fetch("User1_184_20240601_013257.hpl"), "r") as fi:    # noqa
+    with open(DATASETS.fetch("User1_184_20240601_013257.hpl"), "r") as fi:  # noqa
         ds = xr.open_dataset(
             fi, engine="hpl", backend_kwargs=dict(latitude=40, longitude=-70)
         )
