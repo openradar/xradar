@@ -354,7 +354,6 @@ class HplFile:
         end_indicies = []
         for i, t in enumerate(data_unsorted["fixed_angle"]):
             if data_unsorted["sweep_mode"] == b"rhi":
-                print(t, data_unsorted["azimuth"])
                 where_in_sweep = np.argwhere(data_unsorted["azimuth"] == t)
             else:
                 where_in_sweep = np.argwhere(data_unsorted["elevation"] == t)
