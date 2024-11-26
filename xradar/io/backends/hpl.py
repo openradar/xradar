@@ -37,7 +37,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import xarray as xr
-from datatree import DataTree
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
@@ -45,14 +45,22 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 
 from ...model import (
+    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
     get_time_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
 )
-from .common import _assign_root, _attach_sweep_groups
+from .common import (
+    _attach_sweep_groups,
+    _get_radar_calibration,
+    _get_required_root_dataset,
+    _get_subgroup,
+)
 
 variable_attr_dict = {}
 variable_attr_dict["intensity"] = {
@@ -122,22 +130,11 @@ variable_attr_dict["range"] = {
     "dims": ("range",),
 }
 
-variable_attr_dict["sweep_start_ray_index"] = {
-    "standard_name": "index_of_first_ray_in_sweep",
-    "long_name": "Index of first ray in sweep",
-    "units": "",
-    "dims": ("sweep",),
-}
-variable_attr_dict["sweep_end_ray_index"] = {
-    "standard_name": "index_of_last_ray_in_sweep",
-    "long_name": "Index of last ray in sweep",
-    "units": "",
-    "dims": ("sweep",),
-}
 
 variable_attr_dict["sweep_mode"] = {"dims": ()}
-variable_attr_dict["fixed_angle"] = {"dims": ("sweep")}
-variable_attr_dict["sweep_number"] = {"dims": ("sweep")}
+variable_attr_dict["sweep_fixed_angle"] = {"dims": ()}
+variable_attr_dict["sweep_group_name"] = {"dims": ()}
+variable_attr_dict["sweep_number"] = {"dims": ()}
 variable_attr_dict["time"] = get_time_attrs()
 variable_attr_dict["time"]["dims"] = ("time",)
 variable_attr_dict["azimuth"] = get_azimuth_attrs()
@@ -325,11 +322,13 @@ class HplFile:
             data_unsorted["azimuth"] - 360.0,
         )
         if data_unsorted["sweep_mode"] == "rhi":
-            data_unsorted["fixed_angle"] = np.unique(
-                data_unsorted["azimuth"].data[
-                    np.argwhere(np.abs(diff_azimuth) <= transition_threshold_azi) + 1
-                ]
+            non_transitions = (
+                np.argwhere(np.abs(diff_azimuth) <= transition_threshold_azi) + 1
             )
+            unique_elevations = np.unique(
+                data_unsorted["azimuth"][np.squeeze(non_transitions)]
+            )
+            data_unsorted["fixed_angle"] = unique_elevations
         elif (
             data_unsorted["sweep_mode"] == "azimuth_surveillance"
             or data_unsorted["sweep_mode"] == "vertical_pointing"
@@ -346,8 +345,12 @@ class HplFile:
         )
         start_indicies = []
         end_indicies = []
-        for i, t in enumerate(unique_elevations):
-            where_in_sweep = np.argwhere(data_unsorted["elevation"] == t)
+        for i, t in enumerate(data_unsorted["fixed_angle"]):
+            if data_unsorted["sweep_mode"] == b"rhi":
+                print(t, data_unsorted["azimuth"])
+                where_in_sweep = np.argwhere(data_unsorted["azimuth"] == t)
+            else:
+                where_in_sweep = np.argwhere(data_unsorted["elevation"] == t)
             start_indicies.append(int(where_in_sweep.min()))
             end_indicies.append(int(where_in_sweep.max()))
         end_indicies = np.array(end_indicies)
@@ -356,20 +359,29 @@ class HplFile:
         data_unsorted["sweep_end_ray_index"] = np.array(end_indicies)
         data_unsorted["antenna_transition"] = transitions
         self._data = OrderedDict()
-        for i in range(len(unique_elevations)):
+        for i in range(len(data_unsorted["fixed_angle"])):
             sweep_dict = OrderedDict()
             time_inds = slice(
                 data_unsorted["sweep_start_ray_index"][i],
                 data_unsorted["sweep_end_ray_index"][i],
             )
             for k in data_unsorted.keys():
-                if len(variable_attr_dict[k]["dims"]) == 0:
+                if k == "sweep_start_ray_index" or k == "sweep_end_ray_index":
+                    continue
+                if k == "fixed_angle":
+                    sweep_dict["sweep_fixed_angle"] = data_unsorted["fixed_angle"][i]
+                elif k == "sweep_number":
+                    sweep_dict["sweep_group_name"] = np.array(f"sweep_{i - 1}")
+                    sweep_dict["sweep_number"] = np.array(i - 1)
+                elif len(variable_attr_dict[k]["dims"]) == 0:
                     sweep_dict[k] = data_unsorted[k]
                 elif variable_attr_dict[k]["dims"][0] == "time":
                     sweep_dict[k] = data_unsorted[k][time_inds]
                 else:
                     sweep_dict[k] = data_unsorted[k]
             self._data["sweep_%d" % i] = sweep_dict
+        self._data["sweep_number"] = data_unsorted["sweep_number"]
+        self._data["fixed_angle"] = data_unsorted["fixed_angle"]
 
     def get_sweep(self, sweep_number, moments=None):
         if moments is None:
@@ -462,7 +474,7 @@ class HplStore(AbstractDataStore):
         return xr.Variable(dims, data, attrs, encoding)
 
     def open_store_coordinates(self):
-        coord_keys = ["time", "range"]
+        coord_keys = ["time", "azimuth", "range"]
         coords = {}
         for k in coord_keys:
             attrs = variable_attr_dict[k].copy()
@@ -525,6 +537,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         latitude=0,
         longitude=0,
         altitude=0,
+        transition_threshold_azi=0.05,
+        transition_threshold_el=0.001,
     ):
         store_entrypoint = StoreBackendEntrypoint()
 
@@ -538,6 +552,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             latitude=latitude,
             longitude=longitude,
             altitude=altitude,
+            transition_threshold_azi=transition_threshold_azi,
+            transition_threshold_el=transition_threshold_el,
         )
 
         ds = store_entrypoint.open_dataset(
@@ -550,16 +566,37 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
         )
-
-        ds = ds.assign_coords({"range": ds.range})
+        # reassign azimuth/elevation/time coordinates
+        ds = ds.assign_coords({"azimuth": ds.azimuth})
+        ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
+        if site_coords is True:
+            ds = ds.assign_coords({"longitude": ds.longitude})
+            ds = ds.assign_coords({"latitude": ds.latitude})
+            ds = ds.assign_coords({"altitude": ds.altitude})
+
         ds.encoding["engine"] = "hpl"
+        # handling first dimension
+        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+        if first_dim == "auto":
+            if "time" in ds.dims:
+                ds = ds.swap_dims({"time": dim0})
+            ds = ds.sortby(dim0)
+        else:
+            if "time" not in ds.dims:
+                ds = ds.swap_dims({dim0: "time"})
+            ds = ds.sortby("time")
 
         return ds
 
 
+def _get_h5group_names(filename_or_obj):
+    store = HplStore.open(filename_or_obj)
+    return [f"sweep_{i}" for i in store.root.data["sweep_number"]]
+
+
 def open_hpl_datatree(filename_or_obj, **kwargs):
-    """Open Halo Photonics processed Doppler lidar dataset as :py:class:`datatree.DataTree`.
+    """Open Halo Photonics processed Doppler lidar dataset as :py:class:`xarray.DataTree`.
 
     Parameters
     ----------
@@ -588,12 +625,12 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
 
     Returns
     -------
-    dtree: datatree.DataTree
+    dtree: xarray.DataTree
         DataTree
     """
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # first_dim = backend_kwargs.pop("first_dim", None)
+    optional = backend_kwargs.pop("optional", None)
     sweep = kwargs.pop("sweep", None)
     sweeps = []
     kwargs["backend_kwargs"] = backend_kwargs
@@ -608,16 +645,22 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
         else:
             sweeps.extend(sweep)
     else:
-        sweeps = ["sweep_0"]
+        sweeps = _get_h5group_names(filename_or_obj)
 
-    ds = [
+    ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="hpl", **kwargs)
         for swp in sweeps
     ]
 
-    ds.insert(0, xr.Dataset())  # open_dataset(filename_or_obj, group="/"))
-
-    # create datatree root node with required data
-    dtree = DataTree(data=_assign_root(ds), name="root")
-    # return datatree with attached sweep child nodes
-    return _attach_sweep_groups(dtree, ds[1:])
+    dtree: dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional).rename(
+            {"sweep_fixed_angle": "fixed_angle"}
+        ),
+        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
+        "/georeferencing_correction": _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        ),
+        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+    }
+    dtree = _attach_sweep_groups(dtree, ls_ds)
+    return DataTree.from_dict(dtree)
