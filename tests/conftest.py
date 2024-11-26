@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # Copyright (c) 2022-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
+import gzip
 import os.path
+import shutil
 
 import pytest
 from open_radar_data import DATASETS
@@ -83,8 +85,6 @@ def nexradlevel2_gzfile(tmp_path_factory):
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}_gz"
     )
-    import gzip
-    import shutil
 
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
@@ -108,8 +108,6 @@ def metek_ave_gz_file(tmp_path_factory):
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
-    import gzip
-    import shutil
 
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
@@ -123,8 +121,6 @@ def metek_pro_gz_file(tmp_path_factory):
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
-    import gzip
-    import shutil
 
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
@@ -138,8 +134,6 @@ def metek_raw_gz_file(tmp_path_factory):
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
-    import gzip
-    import shutil
 
     with gzip.open(fnamei) as fin:
         with open(fnameo, "wb") as fout:
