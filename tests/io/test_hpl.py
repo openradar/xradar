@@ -35,9 +35,9 @@ def test_open_dataset_hpl():
 
 def test_open_dataset_hpl_iobase():
     with open(DATASETS.fetch("User1_184_20240601_013257.hpl"), "r") as fi:
-        ds = xr.open_dataset(fi,
-            engine="hpl",
-            backend_kwargs=dict(latitude=40, longitude=-70))
+        ds = xr.open_dataset(
+            fi, engine="hpl", backend_kwargs=dict(latitude=40, longitude=-70)
+        )
 
         assert ds["mean_doppler_velocity"].dims == ("azimuth", "range")
         assert ds["mean_doppler_velocity"].max() == 19.5306
