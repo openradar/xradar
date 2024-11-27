@@ -322,11 +322,13 @@ class HplFile:
             data_unsorted["azimuth"] - 360.0,
         )
         if data_unsorted["sweep_mode"] == "rhi":
-            data_unsorted["fixed_angle"] = np.unique(
-                data_unsorted["azimuth"].data[
-                    np.argwhere(np.abs(diff_azimuth) <= transition_threshold_azi) + 1
-                ]
+            non_transitions = (
+                np.argwhere(np.abs(diff_azimuth) <= transition_threshold_azi) + 1
             )
+            unique_elevations = np.unique(
+                data_unsorted["azimuth"][np.squeeze(non_transitions)]
+            )
+            data_unsorted["fixed_angle"] = unique_elevations
         elif (
             data_unsorted["sweep_mode"] == "azimuth_surveillance"
             or data_unsorted["sweep_mode"] == "vertical_pointing"
@@ -343,8 +345,11 @@ class HplFile:
         )
         start_indicies = []
         end_indicies = []
-        for i, t in enumerate(unique_elevations):
-            where_in_sweep = np.argwhere(data_unsorted["elevation"] == t)
+        for i, t in enumerate(data_unsorted["fixed_angle"]):
+            if data_unsorted["sweep_mode"] == b"rhi":
+                where_in_sweep = np.argwhere(data_unsorted["azimuth"] == t)
+            else:
+                where_in_sweep = np.argwhere(data_unsorted["elevation"] == t)
             start_indicies.append(int(where_in_sweep.min()))
             end_indicies.append(int(where_in_sweep.max()))
         end_indicies = np.array(end_indicies)
@@ -353,7 +358,7 @@ class HplFile:
         data_unsorted["sweep_end_ray_index"] = np.array(end_indicies)
         data_unsorted["antenna_transition"] = transitions
         self._data = OrderedDict()
-        for i in range(len(unique_elevations)):
+        for i in range(len(data_unsorted["fixed_angle"])):
             sweep_dict = OrderedDict()
             time_inds = slice(
                 data_unsorted["sweep_start_ray_index"][i],
@@ -373,7 +378,7 @@ class HplFile:
                     sweep_dict[k] = data_unsorted[k][time_inds]
                 else:
                     sweep_dict[k] = data_unsorted[k]
-            self._data["sweep_%d" % i] = sweep_dict
+            self._data[f"sweep_{i:d}"] = sweep_dict
         self._data["sweep_number"] = data_unsorted["sweep_number"]
         self._data["fixed_angle"] = data_unsorted["fixed_angle"]
 
@@ -531,6 +536,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         latitude=0,
         longitude=0,
         altitude=0,
+        transition_threshold_azi=0.05,
+        transition_threshold_el=0.001,
     ):
         store_entrypoint = StoreBackendEntrypoint()
 
@@ -544,6 +551,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             latitude=latitude,
             longitude=longitude,
             altitude=altitude,
+            transition_threshold_azi=transition_threshold_azi,
+            transition_threshold_el=transition_threshold_el,
         )
 
         ds = store_entrypoint.open_dataset(
