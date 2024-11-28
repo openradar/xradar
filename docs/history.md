@@ -7,6 +7,7 @@
 * FIX: Keeping attributes at each variable when using `open_nexradlevel2_datatree`. ({issue}`241`) ({pull}`242`) by [@aladinor](https://github.com/aladinor)
 * FIX: Correctly read transition rays in RHI scans ({issue}`247`) ({pull}`250`) by [@rcjackson](https://github.com/rcjackson)
 * FIX: Correctly open NEXRAD files when split cut mode is enable ({issue} `245`) ({pull}`246`) by [@aladinor](https://github.com/aladinor)
+* ADD: Example Notebook for assigning geocoords. ({issue}`243`) and ({pull}`251`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.8.0 (2024-11-04)
 
