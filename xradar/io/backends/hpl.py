@@ -378,7 +378,7 @@ class HplFile:
                     sweep_dict[k] = data_unsorted[k][time_inds]
                 else:
                     sweep_dict[k] = data_unsorted[k]
-            self._data[f"sweep_{i:d}"] = sweep_dict
+            self._data[f"sweep_{i}"] = sweep_dict
         self._data["sweep_number"] = data_unsorted["sweep_number"]
         self._data["fixed_angle"] = data_unsorted["fixed_angle"]
 

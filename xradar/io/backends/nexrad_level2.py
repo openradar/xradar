@@ -1591,7 +1591,7 @@ def open_nexradlevel2_datatree(
     """
     from xarray.core.treenode import NodePath
 
-    sweeps = []
+    comment = None
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -1610,6 +1610,12 @@ def open_nexradlevel2_datatree(
     else:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
             nsweeps = nex.msg_5["number_elevation_cuts"]
+            # Check if duplicated sweeps ("split cut mode")
+            n_sweeps = len(nex.msg_31_data_header)
+            if nsweeps > n_sweeps:
+                nsweeps = n_sweeps
+                comment = "Split Cut Mode scanning strategy"
+
         sweeps = [f"sweep_{i}" for i in range(nsweeps)]
 
     sweep_dict = open_sweeps_as_dict(
@@ -1631,6 +1637,8 @@ def open_nexradlevel2_datatree(
     )
     ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
     ls_ds.insert(0, xr.Dataset())
+    if comment is not None:
+        ls_ds[0].attrs["comment"] = comment
     dtree: dict = {
         "/": _assign_root(ls_ds),
         "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
