@@ -30,7 +30,7 @@ class NotebookFile(pytest.File):
             yield NotebookItem.from_parent(self, name=os.path.basename(f))
 
     def setup(self):
-        kernel = "python%d" % sys.version_info[0]  # noqa
+        kernel = f"python{sys.version_info[0]}"
         self.exproc = ExecutePreprocessor(kernel_name=kernel, timeout=600)
 
 
