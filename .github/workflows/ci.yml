@@ -157,7 +157,7 @@ jobs:
             h5py
             lat_lon_parser
             netCDF4
-            open-radar-data>=0.3.0
+            open-radar-data>=0.4.2
             packaging
             pandas
             pip
