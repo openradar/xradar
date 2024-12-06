@@ -240,7 +240,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
         remove_root ^= set(optional_root_vars)
     remove_root ^= {"sweep_number", "fixed_angle"}
     remove_root &= data_var
-    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
+    root = [sweep.drop_vars(remove_root, errors="ignore") for sweep in ls_ds]
     root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     # rename variables
     # todo: find a more easy method not iterating over all variables
