@@ -41,6 +41,8 @@ import numpy as np
 import xarray as xr
 from scipy import interpolate
 
+from .model import required_sweep_metadata_vars
+
 
 def has_import(pkg_name):
     return importlib.util.find_spec(pkg_name)
@@ -474,6 +476,38 @@ def ipol_time(ds, *, a1gate_idx=None, direction=None, **kwargs):
 
     ds_out = ds.assign({"time": ([dim0], time.values)})
     return ds_out.sortby(dim0)
+
+
+def keep_vars(ds, variables, ancillary=True):
+    """Keep only given variables in dataset.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset following WMO conventions
+
+    variables : list of strings
+        list of variables to keep in the dataset
+
+    Keyword Arguments
+    -----------------
+    ancillary : boolean
+        True to keep associated ancillary variables
+
+    Returns
+    -------
+    ds_out : str
+        Dataset with only selected variables
+    """
+
+    keep_vars = []
+    for v in variables:
+        keep_vars.append(v)
+        if ancillary and "ancillary_variables" in ds[v].attrs:
+            keep_vars.extend(ds[v].attrs["ancillary_variables"])
+    keep_vars = set(keep_vars + list(required_sweep_metadata_vars))
+    ds_out = ds[keep_vars]
+    return ds_out
 
 
 @contextlib.contextmanager
