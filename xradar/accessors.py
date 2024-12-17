@@ -29,7 +29,7 @@ import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
 from .transform import to_cfradial1, to_cfradial2
-from .util import map_over_sweeps
+from .util import keep_vars, map_over_sweeps
 
 
 def accessor_constructor(self, xarray_obj):
@@ -120,7 +120,7 @@ class XradarDataArrayAccessor(XradarAccessor):
 
 @xr.register_dataset_accessor("xradar")
 class XradarDataSetAccessor(XradarAccessor):
-    """Adds a number of xradar specific methods to xarray.DataArray objects."""
+    """Adds a number of xradar specific methods to xarray.DataSet objects."""
 
     def georeference(
         self, earth_radius=None, effective_radius_fraction=None
@@ -178,6 +178,29 @@ class XradarDataSetAccessor(XradarAccessor):
     def to_cf2(self):
         """Alias for CfRadial1 to CfRadial2."""
         return self.to_cfradial2_datatree()
+
+    def keep_vars(self, variables, ancillary=True):
+        """Keep only given variables in dataset.
+
+        Parameters
+        ----------
+        ds : xarray.Dataset
+            Dataset following WMO conventions
+
+        variables : list of strings
+            list of variables to keep in the dataset
+
+        Keyword Arguments
+        -----------------
+        ancillary : boolean
+            True to keep associated ancillary variables
+
+        Returns
+        -------
+        ds_out : str
+            Dataset with only selected variables
+        """
+        return keep_vars(self.xarray_obj, variables, ancillary)
 
 
 @xr.register_datatree_accessor("xradar")
@@ -264,3 +287,26 @@ class XradarDataTreeAccessor(XradarAccessor):
     def to_cf1(self):
         """Alias for converting to CfRadial1 dataset."""
         return self.to_cfradial1()
+
+    def keep_vars(self, variables, ancillary=True):
+        """Keep only given variables in datatree.
+
+        Parameters
+        ----------
+        ds : xarray.Dataset
+            Dataset following WMO conventions
+
+        variables : list of strings
+            list of variables to keep in the dataset
+
+        Keyword Arguments
+        -----------------
+        ancillary : boolean
+            True to keep associated ancillary variables
+
+        Returns
+        -------
+        ds_out : str
+            Datatree with only selected variables
+        """
+        return self.map_over_sweeps(keep_vars, variables, ancillary)

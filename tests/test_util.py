@@ -483,3 +483,25 @@ def test_get_subgroup():
     np.testing.assert_almost_equal(subgroup.longitude.values.item(), 151.20899963378906)
     np.testing.assert_almost_equal(subgroup.latitude.values.item(), -33.700801849365234)
     assert isinstance(subgroup.altitude.values.item(), float)
+
+
+def test_keep_vars():
+
+    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+    ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    ds = ds.assign(quality1=ds["DBZH"] < 60)
+    ds["DBZH"].attrs["ancillary_variables"] = ["quality1"]
+    ds = ds.assign(quality2=ds["RHOHV"] < 0.5)
+    ds["RHOHV"].attrs["ancillary_variables"] = ["quality2"]
+    keep_vars = ["DBZH", "PHIDP"]
+    ds2 = ds.xradar.keep_vars(variables=keep_vars)
+    metadata = list(model.required_sweep_metadata_vars)
+    metadata.remove("elevation")
+    metadata.remove("azimuth")
+    assert set(ds2.data_vars) == set(keep_vars + ["quality1"] + metadata)
+
+    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+    dtree = xd.io.open_gamic_datatree(filename)
+    dtree2 = dtree.xradar.keep_vars(variables=keep_vars)
+    for sweep in util.get_sweep_keys(dtree2):
+        assert set(dtree2[sweep].data_vars) == set(keep_vars + metadata)
