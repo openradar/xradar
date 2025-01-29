@@ -483,3 +483,56 @@ def test_get_subgroup():
     np.testing.assert_almost_equal(subgroup.longitude.values.item(), 151.20899963378906)
     np.testing.assert_almost_equal(subgroup.latitude.values.item(), -33.700801849365234)
     assert isinstance(subgroup.altitude.values.item(), float)
+
+
+def test_sweep_dataset_vars():
+
+    filename = DATASETS.fetch("cor-main131125105503.RAW2049")
+    sweep = xr.open_dataset(filename, group="sweep_7", engine="iris")
+
+    dataset_vars = util.get_sweep_dataset_vars(sweep)
+    expected = ["DBZH", "VRADH", "ZDR", "KDP", "PHIDP", "RHOHV"]
+    assert sorted(dataset_vars) == sorted(expected)
+
+    dataset_vars = util.get_sweep_dataset_vars(sweep, non_standard=True)
+    expected = expected + ["DB_HCLASS"]
+    assert sorted(dataset_vars) == sorted(expected)
+
+
+def test_select_sweep_dataset_vars():
+
+    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+    sweep = xr.open_dataset(filename, group="sweep_7", engine="gamic")
+    sweep = sweep.assign(quality1=sweep["DBZH"] < 60)
+    sweep["DBZH"].attrs["ancillary_variables"] = ["quality1"]
+    sweep = sweep.assign(quality2=sweep["RHOHV"] < 0.5)
+    sweep["RHOHV"].attrs["ancillary_variables"] = ["quality2"]
+    sweep = sweep.assign(polarization_mode="hv_alt")
+
+    required_metadata = list(model.required_sweep_metadata_vars)
+    required_metadata.remove("elevation")
+    required_metadata.remove("azimuth")
+
+    select = ["DBZH", "PHIDP"]
+    sweep2 = util.select_sweep_dataset_vars(
+        sweep,
+        select,
+    )
+
+    assert sorted(sweep2.data_vars) == sorted(select + required_metadata)
+
+    sweep2 = util.select_sweep_dataset_vars(
+        sweep,
+        select,
+        ancillary=True,
+    )
+
+    expected = select + ["quality1"] + required_metadata
+    assert sorted(sweep2.data_vars) == sorted(expected)
+
+    sweep2 = util.select_sweep_dataset_vars(
+        sweep, select, ancillary=True, optional_metadata=True
+    )
+
+    metadata = required_metadata + ["polarization_mode"]
+    assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
