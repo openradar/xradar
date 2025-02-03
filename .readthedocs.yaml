@@ -5,3 +5,5 @@ build:
   os: 'ubuntu-20.04'
   tools:
     python: 'mambaforge-latest'
+sphinx:
+  configuration: docs/conf.py
