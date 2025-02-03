@@ -8,6 +8,8 @@
 * FIX: Correctly read transition rays in RHI scans ({issue}`247`) ({pull}`250`) by [@rcjackson](https://github.com/rcjackson)
 * FIX: Correctly open NEXRAD files when split cut mode is enable ({issue} `245`) ({pull}`246`) by [@aladinor](https://github.com/aladinor)
 * ADD: Example Notebook for assigning geocoords. ({issue}`243`) and ({pull}`251`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: DataTree reader now works with sweeps containing different variables ({pull}`252`) by [@egouden](https://github.com/egouden).
+* FIX: Correct retrieval of intermediate records in nexrad level2 reader ({issue}`259`) ({pull}`261`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.8.0 (2024-11-04)
 
