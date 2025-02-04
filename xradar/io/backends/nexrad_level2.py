@@ -1238,11 +1238,17 @@ class NexradLevel2ArrayWrapper(BackendArray):
         self.group = datastore._group
         self.name = name
         # get rays and bins
+        # retrieve number of intermediate records between record_number and record_end
+        intermediate = [
+            0
+            for irec in datastore.ds["intermediate_records"]
+            if irec["record_number"] <= datastore.ds["record_end"]
+        ]
         nrays = (
             datastore.ds["record_end"]
             - datastore.ds["record_number"]
             + 1
-            - len(datastore.ds["intermediate_records"])
+            - len(intermediate)
         )
         nbins = max([v["ngates"] for k, v in datastore.ds["sweep_data"].items()])
         word_size = datastore.ds["sweep_data"][name]["word_size"]
