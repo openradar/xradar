@@ -1,6 +1,7 @@
 name: xradar-notebookstests
 channels:
   - conda-forge
+  - nodefaults
 dependencies:
   - python>=3.9
   - cartopy
@@ -31,4 +32,4 @@ dependencies:
   - boto3
   - arm_pyart
   - ffmpeg
-  - zarr
+  - zarr<3
