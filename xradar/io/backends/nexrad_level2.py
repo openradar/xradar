@@ -198,9 +198,10 @@ class NEXRADFile:
         """Get file offsets of bz2 records."""
         if self._bz2_indices is None:
             # magic number inside BZ2
-            seq = np.array([49, 65, 89, 38, 83, 89], dtype=np.uint8)
-            rd = util.rolling_dim(self._fh, 6)
-            self._bz2_indices = np.nonzero((rd == seq).all(1))[0] - 8
+            # BZhX1AY&SY (where X is any number between 0..9)
+            seq = np.array([66, 90, 104, 0, 49, 65, 89, 38, 83, 89], dtype=np.uint8)
+            rd = util.rolling_dim(self._fh, len(seq))
+            self._bz2_indices = np.nonzero((rd == seq).sum(1) >= 9)[0] - 4
         return self._bz2_indices
 
     @property
