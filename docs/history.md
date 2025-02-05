@@ -10,6 +10,7 @@
 * ADD: Example Notebook for assigning geocoords. ({issue}`243`) and ({pull}`251`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: DataTree reader now works with sweeps containing different variables ({pull}`252`) by [@egouden](https://github.com/egouden).
 * FIX: Correct retrieval of intermediate records in nexrad level2 reader ({issue}`259`) ({pull}`261`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: Test for magic number BZhX1AY&SY (where X is any number between 0..9) when retrieving BZ2 record indices in nexrad level2 reader ({issue}`264`) ({pull}`266`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.8.0 (2024-11-04)
 
