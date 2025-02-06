@@ -120,7 +120,7 @@ class XradarDataArrayAccessor(XradarAccessor):
 
 @xr.register_dataset_accessor("xradar")
 class XradarDataSetAccessor(XradarAccessor):
-    """Adds a number of xradar specific methods to xarray.DataArray objects."""
+    """Adds a number of xradar specific methods to xarray.Dataset objects."""
 
     def georeference(
         self, earth_radius=None, effective_radius_fraction=None
