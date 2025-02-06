@@ -78,6 +78,21 @@ def nexradlevel2_file():
 
 
 @pytest.fixture(scope="session")
+def nexradlevel2_msg1_file(tmp_path_factory):
+    fnamei = DATASETS.fetch("KLIX20050828_180149.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}_gz"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
 def nexradlevel2_gzfile(tmp_path_factory):
     fnamei = DATASETS.fetch("KLBB20160601_150025_V06.gz")
     fnameo = os.path.join(
