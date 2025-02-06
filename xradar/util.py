@@ -26,6 +26,9 @@ __all__ = [
     "apply_to_sweeps",
     "apply_to_volume",
     "map_over_sweeps",
+    "get_sweep_dataset_vars",
+    "get_sweep_metadata_vars",
+    "select_sweep_dataset_vars",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -40,6 +43,8 @@ import warnings
 import numpy as np
 import xarray as xr
 from scipy import interpolate
+
+from .model import required_sweep_metadata_vars, sweep_dataset_vars
 
 
 def has_import(pkg_name):
@@ -648,3 +653,90 @@ def map_over_sweeps(func):
         return xr.map_over_datasets(functools.partial(_func, **kwargs), *args)
 
     return _map_over_sweeps
+
+
+def get_sweep_dataset_vars(sweep, non_standard=False):
+    """
+    Get the sweep dataset variables,
+    i.e. variables with (time, range) dimensions.
+
+    Parameters
+    ----------
+    sweep : xarray.Dataset
+        radar sweep dataset following WMO conventions
+    non_standard : boolean
+        true to return also non-standard dataset variables
+
+    Returns
+    -------
+    dataset_vars : list of strings
+        dataset variables
+    """
+
+    dataset_vars = [x for x in sweep.data_vars if sweep[x].ndim == 2]
+
+    if non_standard is False:
+        dataset_vars = [x for x in dataset_vars if x in sweep_dataset_vars]
+
+    return dataset_vars
+
+
+def get_sweep_metadata_vars(sweep, optional=False):
+    """Get the sweep metadata variables,
+    i.e. variables without (time, range) dimensions.
+
+    Parameters
+    ----------
+    sweep : xarray.Dataset
+        radar sweep dataset following WMO conventions
+    optional : boolean
+        true to return also optional metadata
+
+    Returns
+    -------
+    metadata_vars : dict
+        Dictionary of DataArray objects corresponding to metadata variables
+    """
+
+    metadata_vars = [x for x in sweep.data_vars if sweep[x].ndim == 0]
+
+    if optional is False:
+        metadata_vars = [x for x in metadata_vars if x in required_sweep_metadata_vars]
+
+    return metadata_vars
+
+
+def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=False):
+    """Select sweep dataset variables while keeping metadata variables.
+
+    Parameters
+    ----------
+    sweep : xarray.Dataset
+        radar sweep dataset following WMO conventions
+    select : list of strings
+        dataset variables to be selected
+    ancillary : boolean
+        true to keep ancillary variables associated with dataset variables
+    optional_metadata : boolean
+        true to return optional metadata
+
+    Returns
+    -------
+    sweep_out : str
+        sweep with selected dataset variables
+    """
+
+    select = select.copy()
+    if ancillary:
+        add = []
+        for v in select:
+            if "ancillary_variables" in sweep[v].attrs:
+                add.extend(sweep[v].attrs["ancillary_variables"])
+        select.extend(add)
+
+    metadata = get_sweep_metadata_vars(sweep, optional=optional_metadata)
+    select = select + metadata
+
+    sweep_out = sweep[select]
+
+    return sweep_out
