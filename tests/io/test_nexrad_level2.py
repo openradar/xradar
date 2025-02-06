@@ -424,6 +424,120 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
             assert len(head) == msg_31_header_length[i]
 
 
+def test_open_nexradlevel2_msg1_file(nexradlevel2_msg1_file):
+    with NEXRADLevel2File(nexradlevel2_msg1_file) as fh:
+
+        # volume header
+        assert fh.volume_header["tape"] == b"AR2V0001."
+        assert fh.volume_header["extension"] == b"201"
+        assert fh.volume_header["date"] == 3761373184
+        assert fh.volume_header["time"] == 3362708995
+        assert fh.volume_header["icao"] == b"KLIX"
+
+        # meta_header 15
+        assert len(fh.meta_header["msg_15"]) == 62
+        assert fh.meta_header["msg_15"][0]["size"] == 1208
+        assert fh.meta_header["msg_15"][0]["channels"] == 0
+        assert fh.meta_header["msg_15"][0]["type"] == 15
+        assert fh.meta_header["msg_15"][0]["seq_id"] == 819
+        assert fh.meta_header["msg_15"][0]["date"] == 13024
+        assert fh.meta_header["msg_15"][0]["ms"] == 51522855
+        assert fh.meta_header["msg_15"][0]["segments"] == 14
+        assert fh.meta_header["msg_15"][0]["seg_num"] == 1
+        assert fh.meta_header["msg_15"][0]["record_number"] == 0
+        # meta_header 13
+        assert len(fh.meta_header["msg_13"]) == 48
+        assert fh.meta_header["msg_13"][0]["size"] == 1208
+        assert fh.meta_header["msg_13"][0]["channels"] == 0
+        assert fh.meta_header["msg_13"][0]["type"] == 13
+        assert fh.meta_header["msg_13"][0]["seq_id"] == 0
+        assert fh.meta_header["msg_13"][0]["date"] == 13023
+        assert fh.meta_header["msg_13"][0]["ms"] == 43397314
+        assert fh.meta_header["msg_13"][0]["segments"] == 14
+        assert fh.meta_header["msg_13"][0]["seg_num"] == 1
+        assert fh.meta_header["msg_13"][0]["record_number"] == 62
+        # meta header 18
+        assert len(fh.meta_header["msg_18"]) == 4
+        assert fh.meta_header["msg_18"][0]["size"] == 1208
+        assert fh.meta_header["msg_18"][0]["channels"] == 0
+        assert fh.meta_header["msg_18"][0]["type"] == 18
+        assert fh.meta_header["msg_18"][0]["seq_id"] == 0
+        assert fh.meta_header["msg_18"][0]["date"] == 0
+        assert fh.meta_header["msg_18"][0]["ms"] == 0
+        assert fh.meta_header["msg_18"][0]["segments"] == 4
+        assert fh.meta_header["msg_18"][0]["seg_num"] == 1
+        assert fh.meta_header["msg_18"][0]["record_number"] == 110
+        # meta header 3
+        assert len(fh.meta_header["msg_3"]) == 1
+        assert fh.meta_header["msg_3"][0]["size"] == 528
+        assert fh.meta_header["msg_3"][0]["channels"] == 0
+        assert fh.meta_header["msg_3"][0]["type"] == 3
+        assert fh.meta_header["msg_3"][0]["seq_id"] == 5459
+        assert fh.meta_header["msg_3"][0]["date"] == 13024
+        assert fh.meta_header["msg_3"][0]["ms"] == 61897431
+        assert fh.meta_header["msg_3"][0]["segments"] == 1
+        assert fh.meta_header["msg_3"][0]["seg_num"] == 1
+        assert fh.meta_header["msg_3"][0]["record_number"] == 114
+        # meta header 5
+        assert len(fh.meta_header["msg_5"]) == 1
+        assert fh.meta_header["msg_5"][0]["size"] == 1208
+        assert fh.meta_header["msg_5"][0]["channels"] == 0
+        assert fh.meta_header["msg_5"][0]["type"] == 5
+        assert fh.meta_header["msg_5"][0]["seq_id"] == 0
+        assert fh.meta_header["msg_5"][0]["date"] == 0
+        assert fh.meta_header["msg_5"][0]["ms"] == 0
+        assert fh.meta_header["msg_5"][0]["segments"] == 1
+        assert fh.meta_header["msg_5"][0]["seg_num"] == 1
+        assert fh.meta_header["msg_5"][0]["record_number"] == 115
+        assert fh.msg_5 == OrderedDict(
+            [
+                ("message_size", 0),
+                ("pattern_type", 0),
+                ("pattern_number", 0),
+                ("number_elevation_cuts", 0),
+                ("clutter_map_group_number", 0),
+                ("doppler_velocity_resolution", 0),
+                ("pulse_width", 0),
+                ("elevation_data", []),
+            ]
+        )
+
+        # meta header 2
+        assert len(fh.meta_header["msg_2"]) == 1
+        assert fh.meta_header["msg_2"][0]["size"] == 48
+        assert fh.meta_header["msg_2"][0]["channels"] == 0
+        assert fh.meta_header["msg_2"][0]["type"] == 2
+        assert fh.meta_header["msg_2"][0]["seq_id"] == 29176
+        assert fh.meta_header["msg_2"][0]["date"] == 13024
+        assert fh.meta_header["msg_2"][0]["ms"] == 64889226
+        assert fh.meta_header["msg_2"][0]["segments"] == 1
+        assert fh.meta_header["msg_2"][0]["seg_num"] == 1
+        assert fh.meta_header["msg_2"][0]["record_number"] == 116
+
+        # data header
+        assert len(fh.data_header) == 5856
+        msg_31_header_length = [
+            367,
+            367,
+            367,
+            367,
+            367,
+            367,
+            367,
+            367,
+            366,
+            367,
+            366,
+            366,
+            365,
+            364,
+            363,
+            362,
+        ]
+        for i, head in enumerate(fh.msg_31_header):
+            assert len(head) == msg_31_header_length[i]
+
+
 def test_open_nexradlevel2_datatree(nexradlevel2_file):
     # Define kwargs to pass into the function
     kwargs = {
@@ -483,6 +597,64 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "KATX"
     assert dtree.attrs["scan_name"] == "VCP-11"
+
+
+def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
+    # Define kwargs to pass into the function
+    kwargs = {
+        "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
+        "first_dim": "auto",
+        "reindex_angle": {
+            "start_angle": 0.0,
+            "stop_angle": 360.0,
+            "angle_res": 1.0,
+            "direction": 1,  # Set a valid direction within reindex_angle
+        },
+        "fix_second_angle": True,
+        "site_coords": True,
+    }
+
+    # Call the function with an actual NEXRAD Level 2 file
+    dtree = open_nexradlevel2_datatree(nexradlevel2_msg1_file, **kwargs)
+
+    # Assertions
+    assert isinstance(dtree, DataTree), "Expected a DataTree instance"
+    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
+    assert (
+        "/radar_parameters" in dtree.subtree
+    ), "Radar parameters group should be in the DataTree"
+    assert (
+        "/georeferencing_correction" in dtree.subtree
+    ), "Georeferencing correction group should be in the DataTree"
+    assert (
+        "/radar_calibration" in dtree.subtree
+    ), "Radar calibration group should be in the DataTree"
+
+    # Check if at least one sweep group is attached (e.g., "/sweep_0")
+    sweep_groups = [key for key in dtree.match("sweep_*")]
+    assert len(sweep_groups) == 5, "Expected at least one sweep group in the DataTree"
+
+    # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
+    sample_sweep = sweep_groups[0]
+    assert len(dtree[sample_sweep].data_vars) == 6
+    assert (
+        "DBZH" in dtree[sample_sweep].data_vars
+    ), f"DBZH should be a data variable in {sample_sweep}"
+    assert dtree[sample_sweep]["DBZH"].shape == (360, 460)
+    # Validate coordinates are attached correctly
+    assert (
+        "latitude" in dtree[sample_sweep]
+    ), "Latitude should be attached to the root dataset"
+    assert (
+        "longitude" in dtree[sample_sweep]
+    ), "Longitude should be attached to the root dataset"
+    assert (
+        "altitude" in dtree[sample_sweep]
+    ), "Altitude should be attached to the root dataset"
+
+    assert len(dtree.attrs) == 10
+    assert dtree.attrs["instrument_name"] == "KLIX"
+    assert dtree.attrs["scan_name"] == "VCP-0"
 
 
 @pytest.mark.parametrize(
