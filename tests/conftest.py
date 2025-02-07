@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2024, openradar developers.
+# Copyright (c) 2022-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import os.path
 

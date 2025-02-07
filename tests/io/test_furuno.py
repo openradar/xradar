@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2023, openradar developers.
+# Copyright (c) 2023-2024, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """Tests for `io.backends.furuno` module.
