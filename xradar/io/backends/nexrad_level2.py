@@ -44,6 +44,7 @@ import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
+from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
 from xarray.core.utils import FrozenDict, close_on_error
@@ -77,6 +78,9 @@ from .iris import (
     _unpack_dictionary,
     string_dict,
 )
+
+NEXRADL2_LOCK = SerializableLock()
+
 
 #: mapping from NEXRAD names to CfRadial2/ODIM
 nexrad_mapping = {
@@ -1324,36 +1328,32 @@ class NexradLevel2ArrayWrapper(BackendArray):
         self.shape = (nrays, nbins)
 
     def _getitem(self, key):
-        # read the data if not available
-        try:
-            data = self.datastore.ds["sweep_data"][self.name]["data"]
-            print("ZZZZZAA:", self.name, data, key)
-        except KeyError:
-            print("XXXXX:", self.group, self.name)
-            self.datastore.root.get_data(self.group, self.name)
-            data = self.datastore.ds["sweep_data"][self.name]["data"]
-            print("ZZZZZBB:", self.name, data, key)
-            print("YY0:", self.name, len(data), len(data[0]))
-        # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
-        word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
-        if self.name == "PHI" and word_size == 16:
-            # 10 bit mask, but only for 2 byte data
-            x = np.uint16(0x3FF)
-        elif self.name == "ZDR" and word_size == 16:
-            # 11 bit mask, but only for 2 byte data
-            x = np.uint16(0x7FF)
-        else:
-            x = np.uint8(0xFF)
-        print("YY1:", self.name, len(data[0]), self.shape)
-        if len(data[0]) < self.shape[1]:
-            return np.pad(
-                np.vstack(data) & x,
-                ((0, 0), (0, self.shape[1] - len(data[0]))),
-                mode="constant",
-                constant_values=0,
-            )[key]
-        else:
-            return (np.vstack(data) & x)[key]
+        with self.datastore.lock:
+            # read the data if not available
+            try:
+                data = self.datastore.ds["sweep_data"][self.name]["data"]
+            except KeyError:
+                self.datastore.root.get_data(self.group, self.name)
+                data = self.datastore.ds["sweep_data"][self.name]["data"]
+            # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
+            word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
+            if self.name == "PHI" and word_size == 16:
+                # 10 bit mask, but only for 2 byte data
+                x = np.uint16(0x3FF)
+            elif self.name == "ZDR" and word_size == 16:
+                # 11 bit mask, but only for 2 byte data
+                x = np.uint16(0x7FF)
+            else:
+                x = np.uint8(0xFF)
+            if len(data[0]) < self.shape[1]:
+                return np.pad(
+                    np.vstack(data) & x,
+                    ((0, 0), (0, self.shape[1] - len(data[0]))),
+                    mode="constant",
+                    constant_values=0,
+                )[key]
+            else:
+                return (np.vstack(data) & x)[key]
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
@@ -1365,24 +1365,29 @@ class NexradLevel2ArrayWrapper(BackendArray):
 
 
 class NexradLevel2Store(AbstractDataStore):
-    def __init__(self, manager, group=None):
+    def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
         self._manager = manager
         self._group = int(group[6:])
         self._filename = self.filename
+        self.lock = ensure_lock(lock)
 
     @classmethod
-    def open(cls, filename, mode="r", group=None, **kwargs):
+    def open(cls, filename, mode="r", group=None, lock=None, **kwargs):
+        if lock is None:
+            lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return cls(manager, group=group)
+        return cls(manager, group=group, lock=lock)
 
     @classmethod
-    def open_groups(cls, filename, groups, mode="r", **kwargs):
+    def open_groups(cls, filename, groups, mode="r", lock=None, **kwargs):
+        if lock is None:
+            lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return {group: cls(manager, group=group) for group in groups}
+        return {group: cls(manager, group=group, lock=lock) for group in groups}
 
     @property
     def filename(self):
@@ -1534,6 +1539,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
+        lock=None,
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
@@ -1543,6 +1549,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         store = NexradLevel2Store.open(
             filename_or_obj,
             group=group,
+            lock=lock,
             loaddata=False,
         )
 
@@ -1610,6 +1617,7 @@ def open_nexradlevel2_datatree(
     fix_second_angle=False,
     site_coords=True,
     optional=True,
+    lock=None,
     **kwargs,
 ):
     """Open a NEXRAD Level2 dataset as an `xarray.DataTree`.
@@ -1732,6 +1740,7 @@ def open_nexradlevel2_datatree(
         fix_second_angle=fix_second_angle,
         site_coords=site_coords,
         optional=optional,
+        lock=lock,
         **kwargs,
     )
     ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
@@ -1771,10 +1780,12 @@ def open_sweeps_as_dict(
     fix_second_angle=False,
     site_coords=True,
     optional=True,
+    lock=None,
     **kwargs,
 ):
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
+        lock=lock,
         groups=sweeps,
     )
     groups_dict = {}
