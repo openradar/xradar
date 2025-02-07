@@ -1108,7 +1108,14 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
 @pytest.mark.parametrize(
     "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
 )
-def test_dask_load(nexradlevel2_files):
+def test_nexradlevel2_dask_load(nexradlevel2_files):
     ds = xr.open_dataset(nexradlevel2_files, group="sweep_0", engine="nexradlevel2")
+    dsc = ds.chunk()
+    dsc.load()
+
+
+@skip_import("dask")
+def test_iris_dask_load(iris0_file):
+    ds = xr.open_dataset(iris0_file, group="sweep_0", engine="iris")
     dsc = ds.chunk()
     dsc.load()

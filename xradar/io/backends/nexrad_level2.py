@@ -1373,7 +1373,6 @@ class NexradLevel2Store(AbstractDataStore):
 
     @classmethod
     def open(cls, filename, mode="r", group=None, lock=None, **kwargs):
-
         if lock is None:
             lock = NEXRADL2_LOCK
         manager = CachingFileManager(

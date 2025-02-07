@@ -46,6 +46,7 @@ import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
+from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
 from xarray.core.utils import FrozenDict
@@ -71,6 +72,9 @@ from .common import (
     _get_required_root_dataset,
     _get_subgroup,
 )
+
+IRIS_LOCK = SerializableLock()
+
 
 #: mapping from IRIS names to CfRadial2/ODIM
 iris_mapping = {
@@ -3786,9 +3790,10 @@ class IrisArrayWrapper(BackendArray):
             self.shape = (nrays, nbins)
 
     def _getitem(self, key):
-        # read the data and put it into dict
-        self.datastore.root.get_moment(self.group, self.name)
-        return self.datastore.ds["sweep_data"][self.name][key]
+        with self.datastore.lock:
+            # read the data and put it into dict
+            self.datastore.root.get_moment(self.group, self.name)
+            return self.datastore.ds["sweep_data"][self.name][key]
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
@@ -3805,16 +3810,19 @@ class IrisStore(AbstractDataStore):
     Ported from wradlib.
     """
 
-    def __init__(self, manager, group=None):
+    def __init__(self, manager, group=None, lock=IRIS_LOCK):
         self._manager = manager
         self._group = int(group[6:]) + 1
         self._filename = self.filename
         self._need_time_recalc = False
+        self.lock = ensure_lock(lock)
 
     @classmethod
-    def open(cls, filename, mode="r", group=None, **kwargs):
+    def open(cls, filename, mode="r", group=None, lock=None, **kwargs):
+        if lock is None:
+            lock = IRIS_LOCK
         manager = CachingFileManager(IrisRawFile, filename, mode=mode, kwargs=kwargs)
-        return cls(manager, group=group)
+        return cls(manager, group=group, lock=lock)
 
     @property
     def filename(self):
@@ -3991,6 +3999,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
+        lock=None,
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
@@ -4000,6 +4009,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         store = IrisStore.open(
             filename_or_obj,
             group=group,
+            lock=lock,
             loaddata=False,
         )
 
