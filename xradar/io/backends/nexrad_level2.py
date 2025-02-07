@@ -740,7 +740,9 @@ class NEXRADLevel2File(NEXRADRecordFile):
                                 gate_spacing=msg_31_header["doppler_range_step"],
                                 first_gate=msg_31_header["doppler_range_first"],
                                 word_size=8,
-                                scale=2.0,
+                                scale={2: 2.0, 4: 1.0, 0: 0.0}[
+                                    msg_31_header["doppler_resolution"]
+                                ],
                                 offset=129.0,
                                 data_offset=(
                                     msg_31_header["vel_pointer"] + LEN_MSG_HEADER + 12
@@ -1325,9 +1327,13 @@ class NexradLevel2ArrayWrapper(BackendArray):
         # read the data if not available
         try:
             data = self.datastore.ds["sweep_data"][self.name]["data"]
+            print("ZZZZZAA:", self.name, data, key)
         except KeyError:
+            print("XXXXX:", self.group, self.name)
             self.datastore.root.get_data(self.group, self.name)
             data = self.datastore.ds["sweep_data"][self.name]["data"]
+            print("ZZZZZBB:", self.name, data, key)
+            print("YY0:", self.name, len(data), len(data[0]))
         # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
         word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
         if self.name == "PHI" and word_size == 16:
@@ -1338,6 +1344,7 @@ class NexradLevel2ArrayWrapper(BackendArray):
             x = np.uint16(0x7FF)
         else:
             x = np.uint8(0xFF)
+        print("YY1:", self.name, len(data[0]), self.shape)
         if len(data[0]) < self.shape[1]:
             return np.pad(
                 np.vstack(data) & x,
