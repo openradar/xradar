@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2024, openradar developers.
+# Copyright (c) 2024-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """Tests for `xradar.io.nexrad_archive` module."""

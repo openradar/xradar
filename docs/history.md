@@ -1,6 +1,6 @@
 # History
 
-## 0.8.1 (Unreleased)
+## 0.9.0 (2025-02-07)
 
 * ENH: Adding test to `open_datatree` function for all backends. Adding "scan_name" to nexradlevel2 datatree attributes ({pull}`238`) by [@aladinor](https://github.com/aladinor)
 * FIX: Improving performance of `open_nexradlevel2_datatree` function and adding tests for `sweep` parameter. ({issue}`239`) ({pull}`240`) by [@aladinor](https://github.com/aladinor)
