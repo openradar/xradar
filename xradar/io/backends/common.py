@@ -126,7 +126,6 @@ def _assign_root(sweeps):
     attrs = {}
     attrs["Conventions"] = sweeps[0].attrs.get("Conventions", "None")
     attrs["instrument_name"] = sweeps[0].attrs.get("instrument_name", "None")
-    comment = sweeps[0].attrs.get("comment", None)
     attrs.update(
         {
             "version": "None",
@@ -138,8 +137,6 @@ def _assign_root(sweeps):
             "comment": "im/exported using xradar",
         }
     )
-    if comment is not None:
-        attrs["comment"] = attrs["comment"] + ",\n" + comment
     root = root.assign_attrs(attrs)
     # todo: pull in only CF attributes
     root = root.assign_attrs(sweeps[1].attrs)
