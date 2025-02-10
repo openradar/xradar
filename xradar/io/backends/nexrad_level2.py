@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2024, openradar developers.
+# Copyright (c) 2024-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -37,13 +37,14 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import bz2
 import struct
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
+from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
 from xarray.core.utils import FrozenDict, close_on_error
@@ -77,6 +78,9 @@ from .iris import (
     _unpack_dictionary,
     string_dict,
 )
+
+NEXRADL2_LOCK = SerializableLock()
+
 
 #: mapping from NEXRAD names to CfRadial2/ODIM
 nexrad_mapping = {
@@ -198,9 +202,10 @@ class NEXRADFile:
         """Get file offsets of bz2 records."""
         if self._bz2_indices is None:
             # magic number inside BZ2
-            seq = np.array([49, 65, 89, 38, 83, 89], dtype=np.uint8)
-            rd = util.rolling_dim(self._fh, 6)
-            self._bz2_indices = np.nonzero((rd == seq).all(1))[0] - 8
+            # BZhX1AY&SY (where X is any number between 0..9)
+            seq = np.array([66, 90, 104, 0, 49, 65, 89, 38, 83, 89], dtype=np.uint8)
+            rd = util.rolling_dim(self._fh, len(seq))
+            self._bz2_indices = np.nonzero((rd == seq).sum(1) >= 9)[0] - 4
         return self._bz2_indices
 
     @property
@@ -518,35 +523,35 @@ class NEXRADLevel2File(NEXRADRecordFile):
     def get_metadata_header(self):
         """Get metadaata header"""
         # data offsets
-        # ICD 2620010E
+        # ICD 2620010J
         # 7.3.5 Metadata Record
-        meta_offsets = dict(
-            msg_15=(0, 77),
-            msg_13=(77, 126),
-            msg_18=(126, 131),
-            msg_3=(131, 132),
-            msg_5=(132, 133),
-            msg_2=(133, 134),
-        )
-        meta_headers = {}
-        for msg, (ms, me) in meta_offsets.items():
-            mheader = []
-            for rec in np.arange(ms, me):
-                self.init_record(rec)
-                filepos = self.filepos
-                message_header = self.get_message_header()
-                # do not read zero blocks of data
-                if message_header["size"] == 0:
-                    break
-                message_header["record_number"] = self.record_number
-                message_header["filepos"] = filepos
-                mheader.append(message_header)
-            meta_headers[msg] = mheader
+        # the above document will evolve over time
+        # please revisit and adopt accordingly
+        meta_headers = defaultdict(list)
+        rec = 0
+        # iterate over alle messages until type outside [2, 3, 5, 13, 15, 18, 32]
+        while True:
+            self.init_record(rec)
+            rec += 1
+            filepos = self.filepos
+            message_header = self.get_message_header()
+            # do not read zero blocks of data
+            if (mtype := message_header["type"]) == 0:
+                continue
+            # stop if first non meta header is found
+            if mtype not in [2, 3, 5, 13, 15, 18, 32]:
+                break
+            message_header["record_number"] = self.record_number
+            message_header["filepos"] = filepos
+            meta_headers[f"msg_{mtype}"].append(message_header)
         return meta_headers
 
     def get_msg_5_data(self):
         """Get MSG5 data."""
-        self.init_record(132)
+        # get the record number from the meta header
+        recnum = self.meta_header["msg_5"][0]["record_number"]
+        self.init_record(recnum)
+        # skip header
         self.rh.pos += LEN_MSG_HEADER + 12
         # unpack msg header
         msg_5 = _unpack_dictionary(
@@ -612,7 +617,11 @@ class NEXRADLevel2File(NEXRADRecordFile):
 
     def get_data_header(self):
         """Load all data header from file."""
-        self.init_record(133)
+        # get the record number from the meta header
+        # message 2 is the last meta header, after which the
+        # data records are located
+        recnum = self.meta_header["msg_2"][0]["record_number"]
+        self.init_record(recnum)
         current_sweep = -1
         current_header = -1
         sweep_msg_31_header = []
@@ -633,12 +642,15 @@ class NEXRADLevel2File(NEXRADRecordFile):
 
             # keep all data headers
             data_header.append(msg_header)
-            # only check type 31 for now
-            if msg_header["type"] == 31:
+            # check which message type we have (1 or 31)
+            if (msg_type := msg_header["type"]) in [1, 31]:
+                msg_len, msg = {1: (LEN_MSG_1, MSG_1), 31: (LEN_MSG_31, MSG_31)}[
+                    msg_type
+                ]
                 # get msg_31_header
                 msg_31_header = _unpack_dictionary(
-                    self._rh.read(LEN_MSG_31, width=1),
-                    MSG_31,
+                    self._rh.read(msg_len, width=1),
+                    msg,
                     self._rawdata,
                     byte_order=">",
                 )
@@ -670,42 +682,101 @@ class NEXRADLevel2File(NEXRADRecordFile):
                     sweep["record_number"] = self.rh.recnum
                     sweep["filepos"] = self.filepos
                     sweep["msg_31_header"] = msg_31_header
-                    block_pointers = [
-                        v
-                        for k, v in msg_31_header.items()
-                        if k.startswith("block_pointer") and v > 0
-                    ]
-                    block_header = {}
-                    for i, block_pointer in enumerate(
-                        block_pointers[: msg_31_header["block_count"]]
-                    ):
-                        self.rh.pos = block_pointer + 12 + LEN_MSG_HEADER
-                        buf = self._rh.read(4, width=1)
-                        dheader = _unpack_dictionary(
-                            buf,
-                            DATA_BLOCK_HEADER,
-                            self._rawdata,
-                            byte_order=">",
-                        )
-                        block = DATA_BLOCK_TYPE_IDENTIFIER[dheader["block_type"]][
-                            dheader["data_name"]
+                    # add msg_type for later reconstruction
+                    sweep["msg_type"] = msg_type
+                    # new message 31 data
+                    if msg_type == 31:
+                        block_pointers = [
+                            v
+                            for k, v in msg_31_header.items()
+                            if k.startswith("block_pointer") and v > 0
                         ]
-                        LEN_BLOCK = struct.calcsize(
-                            _get_fmt_string(block, byte_order=">")
-                        )
-                        block_header[dheader["data_name"]] = _unpack_dictionary(
-                            self._rh.read(LEN_BLOCK, width=1),
-                            block,
-                            self._rawdata,
-                            byte_order=">",
-                        )
-                        if dheader["block_type"] == "D":
-                            block_header[dheader["data_name"]][
-                                "data_offset"
-                            ] = self.rh.pos
+                        block_header = {}
+                        for i, block_pointer in enumerate(
+                            block_pointers[: msg_31_header["block_count"]]
+                        ):
+                            self.rh.pos = block_pointer + 12 + LEN_MSG_HEADER
+                            buf = self._rh.read(4, width=1)
+                            dheader = _unpack_dictionary(
+                                buf,
+                                DATA_BLOCK_HEADER,
+                                self._rawdata,
+                                byte_order=">",
+                            )
+                            block = DATA_BLOCK_TYPE_IDENTIFIER[dheader["block_type"]][
+                                dheader["data_name"]
+                            ]
+                            LEN_BLOCK = struct.calcsize(
+                                _get_fmt_string(block, byte_order=">")
+                            )
+                            block_header[dheader["data_name"]] = _unpack_dictionary(
+                                self._rh.read(LEN_BLOCK, width=1),
+                                block,
+                                self._rawdata,
+                                byte_order=">",
+                            )
+                            if dheader["block_type"] == "D":
+                                block_header[dheader["data_name"]][
+                                    "data_offset"
+                                ] = self.rh.pos
 
-                    sweep["msg_31_data_header"] = block_header
-                    _msg_31_data_header.append(sweep)
+                        sweep["msg_31_data_header"] = block_header
+                        _msg_31_data_header.append(sweep)
+                    # former message 1 data
+                    elif msg_type == 1:
+                        # creating block_pointers
+                        # data_offset is from start of message so need to
+                        # add LEN_MSG_HEADER + 12
+                        block_pointers = {
+                            "REF": dict(
+                                ngates=msg_31_header["sur_nbins"],
+                                gate_spacing=msg_31_header["sur_range_step"],
+                                first_gate=msg_31_header["sur_range_first"],
+                                word_size=8,
+                                scale=2.0,
+                                offset=66.0,
+                                data_offset=(
+                                    msg_31_header["sur_pointer"] + LEN_MSG_HEADER + 12
+                                ),
+                            ),
+                            "VEL": dict(
+                                ngates=msg_31_header["doppler_nbins"],
+                                gate_spacing=msg_31_header["doppler_range_step"],
+                                first_gate=msg_31_header["doppler_range_first"],
+                                word_size=8,
+                                scale={2: 2.0, 4: 1.0, 0: 0.0}[
+                                    msg_31_header["doppler_resolution"]
+                                ],
+                                offset=129.0,
+                                data_offset=(
+                                    msg_31_header["vel_pointer"] + LEN_MSG_HEADER + 12
+                                ),
+                            ),
+                            "SW": dict(
+                                ngates=msg_31_header["doppler_nbins"],
+                                gate_spacing=msg_31_header["doppler_range_step"],
+                                first_gate=msg_31_header["doppler_range_first"],
+                                word_size=8,
+                                scale=2.0,
+                                offset=192.0,
+                                data_offset=(
+                                    msg_31_header["width_pointer"] + LEN_MSG_HEADER + 12
+                                ),
+                            ),
+                        }
+                        block_header = {}
+                        block_header["VOL"] = dict(
+                            lat=0,
+                            lon=0,
+                            height=0,
+                            feedhorn_height=0,
+                            vcp=msg_31_header.pop("vcp"),
+                        )
+                        for k, v in block_pointers.items():
+                            if v["ngates"]:
+                                block_header[k] = v
+                        sweep["msg_31_data_header"] = block_header
+                        _msg_31_data_header.append(sweep)
                 sweep_msg_31_header.append(msg_31_header)
             else:
                 sweep_intermediate_records.append(msg_header)
@@ -1238,11 +1309,17 @@ class NexradLevel2ArrayWrapper(BackendArray):
         self.group = datastore._group
         self.name = name
         # get rays and bins
+        # retrieve number of intermediate records between record_number and record_end
+        intermediate = [
+            0
+            for irec in datastore.ds["intermediate_records"]
+            if irec["record_number"] <= datastore.ds["record_end"]
+        ]
         nrays = (
             datastore.ds["record_end"]
             - datastore.ds["record_number"]
             + 1
-            - len(datastore.ds["intermediate_records"])
+            - len(intermediate)
         )
         nbins = max([v["ngates"] for k, v in datastore.ds["sweep_data"].items()])
         word_size = datastore.ds["sweep_data"][name]["word_size"]
@@ -1251,31 +1328,32 @@ class NexradLevel2ArrayWrapper(BackendArray):
         self.shape = (nrays, nbins)
 
     def _getitem(self, key):
-        # read the data if not available
-        try:
-            data = self.datastore.ds["sweep_data"][self.name]["data"]
-        except KeyError:
-            self.datastore.root.get_data(self.group, self.name)
-            data = self.datastore.ds["sweep_data"][self.name]["data"]
-        # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
-        word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
-        if self.name == "PHI" and word_size == 16:
-            # 10 bit mask, but only for 2 byte data
-            x = np.uint16(0x3FF)
-        elif self.name == "ZDR" and word_size == 16:
-            # 11 bit mask, but only for 2 byte data
-            x = np.uint16(0x7FF)
-        else:
-            x = np.uint8(0xFF)
-        if len(data[0]) < self.shape[1]:
-            return np.pad(
-                np.vstack(data) & x,
-                ((0, 0), (0, self.shape[1] - len(data[0]))),
-                mode="constant",
-                constant_values=0,
-            )[key]
-        else:
-            return (np.vstack(data) & x)[key]
+        with self.datastore.lock:
+            # read the data if not available
+            try:
+                data = self.datastore.ds["sweep_data"][self.name]["data"]
+            except KeyError:
+                self.datastore.root.get_data(self.group, self.name)
+                data = self.datastore.ds["sweep_data"][self.name]["data"]
+            # see 3.2.4.17.6 Table XVII-I Data Moment Characteristics and Conversion for Data Names
+            word_size = self.datastore.ds["sweep_data"][self.name]["word_size"]
+            if self.name == "PHI" and word_size == 16:
+                # 10 bit mask, but only for 2 byte data
+                x = np.uint16(0x3FF)
+            elif self.name == "ZDR" and word_size == 16:
+                # 11 bit mask, but only for 2 byte data
+                x = np.uint16(0x7FF)
+            else:
+                x = np.uint8(0xFF)
+            if len(data[0]) < self.shape[1]:
+                return np.pad(
+                    np.vstack(data) & x,
+                    ((0, 0), (0, self.shape[1] - len(data[0]))),
+                    mode="constant",
+                    constant_values=0,
+                )[key]
+            else:
+                return (np.vstack(data) & x)[key]
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
@@ -1287,24 +1365,29 @@ class NexradLevel2ArrayWrapper(BackendArray):
 
 
 class NexradLevel2Store(AbstractDataStore):
-    def __init__(self, manager, group=None):
+    def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
         self._manager = manager
         self._group = int(group[6:])
         self._filename = self.filename
+        self.lock = ensure_lock(lock)
 
     @classmethod
-    def open(cls, filename, mode="r", group=None, **kwargs):
+    def open(cls, filename, mode="r", group=None, lock=None, **kwargs):
+        if lock is None:
+            lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return cls(manager, group=group)
+        return cls(manager, group=group, lock=lock)
 
     @classmethod
-    def open_groups(cls, filename, groups, mode="r", **kwargs):
+    def open_groups(cls, filename, groups, mode="r", lock=None, **kwargs):
+        if lock is None:
+            lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return {group: cls(manager, group=group) for group in groups}
+        return {group: cls(manager, group=group, lock=lock) for group in groups}
 
     @property
     def filename(self):
@@ -1346,10 +1429,18 @@ class NexradLevel2Store(AbstractDataStore):
 
     def open_store_coordinates(self):
         msg_31_header = self.root.msg_31_header[self._group]
-
+        msg_31_data_header = self.root.msg_31_data_header[self._group]
+        # check message type
+        msg_type = msg_31_data_header["msg_type"]
+        if msg_type == 1:
+            angle_scale = 180 / (4096 * 8.0)
+        else:
+            angle_scale = 1.0
         # azimuth/elevation
-        azimuth = np.array([ms["azimuth_angle"] for ms in msg_31_header])
-        elevation = np.array([ms["elevation_angle"] for ms in msg_31_header])
+        azimuth = np.array([ms["azimuth_angle"] for ms in msg_31_header]) * angle_scale
+        elevation = (
+            np.array([ms["elevation_angle"] for ms in msg_31_header]) * angle_scale
+        )
 
         # time
         # date is 1-based (1 -> 1970-01-01T00:00:00), so we need to subtract 1
@@ -1379,7 +1470,16 @@ class NexradLevel2Store(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        fixed_angle = self.root.msg_5["elevation_data"][self._group]["elevation_angle"]
+        elev_data = self.root.msg_5["elevation_data"]
+        # in some cases msg_5 doesn't contain meaningful data
+        # we extract the needed values from the data header instead
+        if elev_data:
+            fixed_angle = self.root.msg_5["elevation_data"][self._group][
+                "elevation_angle"
+            ]
+        else:
+            fixed_angle = self.root.msg_31_header[self._group][0]["elevation_angle"]
+        fixed_angle *= angle_scale
 
         coords = {
             "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(), encoding),
@@ -1439,6 +1539,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
+        lock=None,
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
@@ -1448,6 +1549,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         store = NexradLevel2Store.open(
             filename_or_obj,
             group=group,
+            lock=lock,
             loaddata=False,
         )
 
@@ -1515,6 +1617,7 @@ def open_nexradlevel2_datatree(
     fix_second_angle=False,
     site_coords=True,
     optional=True,
+    lock=None,
     **kwargs,
 ):
     """Open a NEXRAD Level2 dataset as an `xarray.DataTree`.
@@ -1590,7 +1693,7 @@ def open_nexradlevel2_datatree(
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
     from xarray.core.treenode import NodePath
-
+    
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
         sweeps = [sweep]
@@ -1634,10 +1737,13 @@ def open_nexradlevel2_datatree(
         fix_second_angle=fix_second_angle,
         site_coords=site_coords,
         optional=optional,
+        lock=lock,
         **kwargs,
     )
     ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
     ls_ds.insert(0, xr.Dataset())
+    if comment is not None:
+        ls_ds[0].attrs["comment"] = comment
     dtree: dict = {
         "/": _assign_root(ls_ds),
         "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
@@ -1671,10 +1777,12 @@ def open_sweeps_as_dict(
     fix_second_angle=False,
     site_coords=True,
     optional=True,
+    lock=None,
     **kwargs,
 ):
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
+        lock=lock,
         groups=sweeps,
     )
     groups_dict = {}

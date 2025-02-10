@@ -1,12 +1,19 @@
 # History
 
-## 0.8.1 (Unreleased)
+## 0.9.0 (2025-02-07)
 
 * ENH: Adding test to `open_datatree` function for all backends. Adding "scan_name" to nexradlevel2 datatree attributes ({pull}`238`) by [@aladinor](https://github.com/aladinor)
 * FIX: Improving performance of `open_nexradlevel2_datatree` function and adding tests for `sweep` parameter. ({issue}`239`) ({pull}`240`) by [@aladinor](https://github.com/aladinor)
 * FIX: Keeping attributes at each variable when using `open_nexradlevel2_datatree`. ({issue}`241`) ({pull}`242`) by [@aladinor](https://github.com/aladinor)
 * FIX: Correctly read transition rays in RHI scans ({issue}`247`) ({pull}`250`) by [@rcjackson](https://github.com/rcjackson)
 * FIX: Correctly open NEXRAD files when split cut mode is enable ({issue} `245`) ({pull}`246`) by [@aladinor](https://github.com/aladinor)
+* ADD: Example Notebook for assigning geocoords. ({issue}`243`) and ({pull}`251`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: DataTree reader now works with sweeps containing different variables ({pull}`252`) by [@egouden](https://github.com/egouden).
+* FIX: Correct retrieval of intermediate records in nexrad level2 reader ({issue}`259`) ({pull}`261`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* FIX: Test for magic number BZhX1AY&SY (where X is any number between 0..9) when retrieving BZ2 record indices in nexrad level2 reader ({issue}`264`) ({pull}`266`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ENH: Add message type 1 decoding to nexrad level 2 reader ({issue}`256`) ({pull}`267`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ENH: Introduce file locks for nexrad level2 and iris backend ({issue}`207`) ({pull}`268`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
 
 ## 0.8.0 (2024-11-04)
 

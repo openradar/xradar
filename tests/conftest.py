@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2024, openradar developers.
+# Copyright (c) 2022-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import os.path
 
@@ -75,6 +75,21 @@ def iris1_file():
 @pytest.fixture(scope="session")
 def nexradlevel2_file():
     return DATASETS.fetch("KATX20130717_195021_V06")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_msg1_file(tmp_path_factory):
+    fnamei = DATASETS.fetch("KLIX20050828_180149.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}_gz"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
 
 
 @pytest.fixture(scope="session")

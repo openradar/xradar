@@ -41,6 +41,7 @@ notebooks/NexradLevel2
 :maxdepth: 2
 :caption: Examples
 
+notebooks/Assign_GeoCoords
 notebooks/CfRadial1_Export
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2024, openradar developers.
+# Copyright (c) 2022-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """Tests for `io` module."""
@@ -14,6 +14,7 @@ import pytest
 import xarray as xr
 
 import xradar.io
+from tests import skip_import
 from xradar.io import (
     open_cfradial1_datatree,
     open_datamet_datatree,
@@ -1101,3 +1102,20 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
         assert ds.sweep_number.values == int(grp[6:])
+
+
+@skip_import("dask")
+@pytest.mark.parametrize(
+    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+)
+def test_nexradlevel2_dask_load(nexradlevel2_files):
+    ds = xr.open_dataset(nexradlevel2_files, group="sweep_0", engine="nexradlevel2")
+    dsc = ds.chunk()
+    dsc.load()
+
+
+@skip_import("dask")
+def test_iris_dask_load(iris0_file):
+    ds = xr.open_dataset(iris0_file, group="sweep_0", engine="iris")
+    dsc = ds.chunk()
+    dsc.load()

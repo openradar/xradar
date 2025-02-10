@@ -126,6 +126,7 @@ def _assign_root(sweeps):
     attrs = {}
     attrs["Conventions"] = sweeps[0].attrs.get("Conventions", "None")
     attrs["instrument_name"] = sweeps[0].attrs.get("instrument_name", "None")
+    comment = sweeps[0].attrs.get("comment", None)
     attrs.update(
         {
             "version": "None",
@@ -137,6 +138,8 @@ def _assign_root(sweeps):
             "comment": "im/exported using xradar",
         }
     )
+    if comment is not None:
+        attrs["comment"] = attrs["comment"] + ",\n" + comment
     root = root.assign_attrs(attrs)
     # todo: pull in only CF attributes
     root = root.assign_attrs(sweeps[1].attrs)
@@ -237,7 +240,8 @@ def _get_required_root_dataset(ls_ds, optional=True):
         remove_root ^= set(optional_root_vars)
     remove_root ^= {"sweep_number", "fixed_angle"}
     remove_root &= data_var
-    root = [sweep.drop_vars(remove_root) for sweep in ls_ds]
+    # ignore errors for variables which exist in one sweep but not the other
+    root = [sweep.drop_vars(remove_root, errors="ignore") for sweep in ls_ds]
     root_vars = {x for xs in [sweep.variables.keys() for sweep in root] for x in xs}
     # rename variables
     # todo: find a more easy method not iterating over all variables
