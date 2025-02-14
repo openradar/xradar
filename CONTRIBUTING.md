@@ -63,6 +63,8 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     $ python -m pip install -e .[dev]
     ```
 
+3.1 Install `ffmpeg` using your OS package manager.
+
 4. Create a branch for local development:
 
     ```bash
