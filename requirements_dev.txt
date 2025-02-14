@@ -10,3 +10,9 @@ pytest
 black
 isort
 fsspec
+nbconvert
+notebook
+open_radar_data
+boto3
+cartopy
+s3fs
