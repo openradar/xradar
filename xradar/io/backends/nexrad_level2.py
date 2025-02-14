@@ -1711,16 +1711,18 @@ def open_nexradlevel2_datatree(
     else:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
             # Expected number of elevation cuts from the VCP definition
-            nsweeps = nex.msg_5["number_elevation_cuts"]
+            exp_sweeps = nex.msg_5["number_elevation_cuts"]
             # Actual number of sweeps recorded in the file
-            n_sweeps = len(nex.msg_31_data_header)
-            # Check for AVSET mode: If AVSET was active, the actual number of sweeps (n_sweeps)
-            # will be fewer than the expected number (nsweeps), as higher elevations were skipped.
-            if nsweeps > n_sweeps:
+            act_sweeps = len(nex.msg_31_data_header)
+            # Check for AVSET mode: If AVSET was active, the actual number of sweeps (act_sweeps)
+            # will be fewer than the expected number (exp_sweeps), as higher elevations were skipped.
+            # More info https://www.test.roc.noaa.gov/radar-techniques/avset.php
+            # https://www.test.roc.noaa.gov/public-documents/engineering-branch/new-technology/misc/avset/AVSET_AMS_RADAR_CONF_Final.pdf
+            if exp_sweeps > act_sweeps:
                 # Adjust nsweeps to the actual number of recorded sweeps
-                nsweeps = n_sweeps
+                exp_sweeps = act_sweeps
 
-        sweeps = [f"sweep_{i}" for i in range(nsweeps)]
+        sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
 
     sweep_dict = open_sweeps_as_dict(
         filename_or_obj=filename_or_obj,
