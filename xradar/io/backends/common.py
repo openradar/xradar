@@ -260,7 +260,6 @@ def _get_required_root_dataset(ls_ds, optional=True):
 
     # merging both the created and the variables within each dataset
     root = xr.merge([root, _vars], compat="override")
-
     attrs = root.attrs.keys()
     remove_attrs = set(attrs) ^ set(required_global_attrs)
     if optional:

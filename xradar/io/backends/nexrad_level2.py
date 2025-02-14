@@ -1694,8 +1694,6 @@ def open_nexradlevel2_datatree(
     """
     from xarray.core.treenode import NodePath
 
-    comment = None
-
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
         sweeps = [sweep]
@@ -1712,18 +1710,19 @@ def open_nexradlevel2_datatree(
             )
     else:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            nsweeps = nex.msg_5["number_elevation_cuts"]
-            n_sweeps = len(nex.msg_31_data_header)
-            # check for zero (old files)
-            if nsweeps == 0:
-                nsweeps = n_sweeps
-                comment = "No message 5 information available"
-            # Check if duplicated sweeps ("split cut mode")
-            elif nsweeps > n_sweeps:
-                nsweeps = n_sweeps
-                comment = "Split Cut Mode scanning strategy"
+            # Expected number of elevation cuts from the VCP definition
+            exp_sweeps = nex.msg_5["number_elevation_cuts"]
+            # Actual number of sweeps recorded in the file
+            act_sweeps = len(nex.msg_31_data_header)
+            # Check for AVSET mode: If AVSET was active, the actual number of sweeps (act_sweeps)
+            # will be fewer than the expected number (exp_sweeps), as higher elevations were skipped.
+            # More info https://www.test.roc.noaa.gov/radar-techniques/avset.php
+            # https://www.test.roc.noaa.gov/public-documents/engineering-branch/new-technology/misc/avset/AVSET_AMS_RADAR_CONF_Final.pdf
+            if exp_sweeps > act_sweeps:
+                # Adjust nsweeps to the actual number of recorded sweeps
+                exp_sweeps = act_sweeps
 
-        sweeps = [f"sweep_{i}" for i in range(nsweeps)]
+        sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
 
     sweep_dict = open_sweeps_as_dict(
         filename_or_obj=filename_or_obj,
@@ -1745,8 +1744,6 @@ def open_nexradlevel2_datatree(
     )
     ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
     ls_ds.insert(0, xr.Dataset())
-    if comment is not None:
-        ls_ds[0].attrs["comment"] = comment
     dtree: dict = {
         "/": _assign_root(ls_ds),
         "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
