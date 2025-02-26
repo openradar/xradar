@@ -1,7 +1,10 @@
 # History
 
 ## Development Version
-
+* ADD: function to select dataset variables in sweep ({issue}`104`) ({pull}`254`) by [@egouden](https://github.com/egouden)
+* ADD: function to get dataset variables in sweep
+* ADD: function to get metadata variables in sweep
+* FIX: typo in accessors module: Dataarray -> Dataset
 * FIX: Update missing deps for virtualenv environments via "requirements_dev.txt". ({issue}`253`) ({pull}`274`) by [@Steve-Roderick](https://github.com/Steve-Roderick).
 
 ## 0.9.0 (2025-02-07)
