@@ -1,5 +1,12 @@
 # History
 
+## Development Version
+* ADD: function to select dataset variables in sweep ({issue}`104`) ({pull}`254`) by [@egouden](https://github.com/egouden)
+* ADD: function to get dataset variables in sweep
+* ADD: function to get metadata variables in sweep
+* FIX: typo in accessors module: Dataarray -> Dataset
+* FIX: Update missing deps for virtualenv environments via "requirements_dev.txt". ({issue}`253`) ({pull}`274`) by [@Steve-Roderick](https://github.com/Steve-Roderick).
+
 ## 0.9.0 (2025-02-07)
 
 * ENH: Adding test to `open_datatree` function for all backends. Adding "scan_name" to nexradlevel2 datatree attributes ({pull}`238`) by [@aladinor](https://github.com/aladinor)
@@ -13,6 +20,7 @@
 * FIX: Test for magic number BZhX1AY&SY (where X is any number between 0..9) when retrieving BZ2 record indices in nexrad level2 reader ({issue}`264`) ({pull}`266`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ENH: Add message type 1 decoding to nexrad level 2 reader ({issue}`256`) ({pull}`267`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ENH: Introduce file locks for nexrad level2 and iris backend ({issue}`207`) ({pull}`268`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+
 
 ## 0.8.0 (2024-11-04)
 
