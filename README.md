@@ -42,6 +42,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 * MRR
 * NexradLevel2
 * Rainbow
+* UF
 
 ### Data Transformation and Alignment
 * Georeferencing (AEQD projection)
@@ -55,4 +56,3 @@ Xradar is considered stable for the implemented readers and writers which have b
 Thanks to our many contributors!
 
 [![Contributors](https://contrib.rocks/image?repo=openradar/xradar)](https://github.com/openradar/xradar/graphs/contributors)
-
