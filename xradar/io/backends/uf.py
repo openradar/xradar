@@ -62,17 +62,29 @@ UF_LOCK = SerializableLock()
 
 #: mapping from UF names to CfRadial2/ODIM
 uf_mapping = {
-    "VR": "VRADH",
-    "SW": "WRADH",
-    "DR": "ZDR",
-    "CZ": "DBZH",
-    "DZ": "DBTH",
-    "ZT": "DBM",
-    "PH": "PHIDP",
-    "RH": "RHOHV",
-    "KD": "KDP",
-    "LH": "LDRH",
-    "LV": "LDRV",
+    "VR": "VRADH",  # doppler velocity (m/s)
+    "SW": "WRADH",  # spectrum_width (m/s)
+    "DB": "DB",  #
+    "DM": "DBM",  # uncalibrated_reflectivity (dBZ) or raw_power (dBm)
+    "DR": "ZDR",  # differential_reflectivity (dB)
+    "CZ": "DBZH",  # Quality controlled, calibrated reflectivity, corrected_reflectivity (dBZ)
+    "DZ": "DBTH",  # reflectivity (calibrated) (dBZ)
+    "ZT": "DBM",  # Original (no QC or calibration) reflectivity (dBZ)
+    "ZD": "ZD",  #
+    "NC": "NCP",  # normalized coherent power ?
+    "SQ": "SQIH",  # signal quality index ()
+    "SD": "SDPHIDP",  # std dev of PHIDP
+    "DP": "PHIDP",  # differential_phase (deg)
+    "PH": "UPHIDP",  # uncorrected_differential_phase (deg)
+    "RH": "RHOHV",  # cross_correlation_ratio (unitless 0-1)
+    "KD": "KDP",  # specific_differential_phase (deg/km
+    "LH": "LDRH",  # linear_horizontal_power (W) or ADC counts
+    "LV": "LDRV",  # linear_vertical_power (W) or ADC counts
+    "LD": "LD",  # log_detector_output (dBm)
+    "LC": "LC",  # linear_co_pol_power (W) or ADC counts
+    "LX": "LX",  # linear_cross_pol_power (W)
+    "RX": "RX",  # received_output
+    "FH": "FH",  # hydrometeor classes ?
 }
 
 # UF file structures and sizes
@@ -114,6 +126,7 @@ def _sweep_mode(value):
         5: "Target",
         6: "Manual",
         7: "Idle",
+        8: "PPI",  # RadX used this to indicate surveillance PPI scans
     }[value]
 
 
@@ -148,7 +161,6 @@ class UFFile:
         self._data = defaultdict(dict)
         self.get_ray_headers()
         self._moments = self._get_moments()
-        # self.volume_header = self.get_header(VOLUME_HEADER)
 
     @property
     def endianness(self):
@@ -609,7 +621,9 @@ class UFStore(AbstractDataStore):
         first_key = next(iter(self.ds["sweep_data"].values()))
         start_range = first_key["StartRangeMeters"]
         range_step = first_key["BinSpacing"]
-        stop_range = range_step * first_key["BinCount"]
+        # in some cases, we have negative start_range
+        # so we need to count from start_range
+        stop_range = start_range + range_step * first_key["BinCount"]
         rng = np.arange(
             start_range + range_step / 2,
             stop_range + range_step / 2,
@@ -631,6 +645,9 @@ class UFStore(AbstractDataStore):
         start = f"{year}-{month}-{day} {hour}:{minute}:{second} {tz}"
         tzinfos = {
             "UT": dateutil.tz.tzutc(),  # “Universal Time” ≡ UTC (offset 0)
+            "MD": dateutil.tz.tzoffset(
+                "MD", -6 * 3600
+            ),  # UTC-6 for Mountain Daylight Time
         }
         start = dateutil.parser.parse(start, tzinfos=tzinfos)
         # convert to utc
