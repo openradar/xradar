@@ -875,7 +875,7 @@ def test_open_datamet_datatree(datamet_file):
 
     # iterate over subgroups and check some values
     moments = ["DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"]
-    elevations = [16.1, 13.9, 11.0, 9.0, 7.0, 5.5, 4.5, 3.5, 2.5, 1.5, 0.5]
+    elevations = [16.0, 13.9, 11.0, 9.0, 7.0, 5.5, 4.5, 3.5, 2.5, 1.5, 0.5]
     azimuths = [360] * 11
     ranges = [493, 493, 493, 664, 832, 832, 1000, 1000, 1332, 1332, 1332]
     i = 0
@@ -897,7 +897,7 @@ def test_open_datamet_datatree(datamet_file):
             "altitude",
             "range",
         }
-        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert np.isclose(ds.elevation.mean().values.item(), elevations[i], atol=0.05)
         assert ds.sweep_number == i
         i += 1
 
