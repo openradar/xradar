@@ -342,6 +342,8 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
+    # needed for new xarray literal timedelta decoding
+    kwargs.update(decode_timedelta=kwargs.pop("decode_timedelta", False))
 
     # open root group, cfradial1 only has one group
     # open_cfradial1_datatree only opens the file once using netcdf4
