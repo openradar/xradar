@@ -409,7 +409,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         decode_coords=True,
         drop_variables=None,
         use_cftime=None,
-        decode_timedelta=None,
+        decode_timedelta=False,
         format=None,
         group="/",
         first_dim="auto",
