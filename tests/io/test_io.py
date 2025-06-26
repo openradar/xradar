@@ -5,6 +5,7 @@
 """Tests for `io` module."""
 
 import io
+import os
 import tempfile
 
 import fsspec
@@ -741,7 +742,7 @@ def test_open_iris1_dataset(iris1_file):
 )
 def test_odim_roundtrip(odim_file2, compression, compression_opts):
     dtree = open_odim_datatree(odim_file2)
-    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+    with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as outfile:
         xradar.io.to_odim(
             dtree,
             outfile.name,
@@ -753,10 +754,12 @@ def test_odim_roundtrip(odim_file2, compression, compression_opts):
         for d0, d1 in zip(dtree.groups, dtree2.groups):
             xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
 
+    os.unlink(outfile.name)
+
 
 def test_odim_optional_how(odim_file2):
     dtree = open_odim_datatree(odim_file2)
-    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+    with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as outfile:
         xradar.io.to_odim(
             dtree,
             outfile.name,
@@ -776,7 +779,11 @@ def test_odim_optional_how(odim_file2):
             assert "startelA" in ds_how
             assert "stopelA" in ds_how
 
-    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+        ds.close()
+
+    os.unlink(outfile.name)
+
+    with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as outfile:
         xradar.io.to_odim(
             dtree,
             outfile.name,
@@ -796,10 +803,14 @@ def test_odim_optional_how(odim_file2):
             assert "startelA" not in ds_how
             assert "stopelA" not in ds_how
 
+        ds.close()
+
+    os.unlink(outfile.name)
+
 
 def test_write_odim_source(rainbow_file2):
     dtree = open_rainbow_datatree(rainbow_file2)
-    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+    with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as outfile:
         with pytest.raises(ValueError):
             xradar.io.to_odim(
                 dtree,
@@ -814,6 +825,10 @@ def test_write_odim_source(rainbow_file2):
         )
         ds = h5py.File(outfile.name)
         assert ds["what"].attrs["source"].decode("utf-8") == "NOD:bewid,WMO:06477"
+
+        ds.close()
+
+    os.unlink(outfile.name)
 
 
 def test_open_datamet_dataset(datamet_file):
@@ -911,15 +926,15 @@ def test_open_datamet_datatree(datamet_file):
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
-def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
+def test_cfradial2_roundtrip(cfradial1_file, first_dim):
     dtree0 = open_cfradial1_datatree(cfradial1_file, first_dim=first_dim)
     # first write to cfradial2
-    with tempfile.NamedTemporaryFile(mode="w+b") as outfile:
+    with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as outfile:
         xradar.io.to_cfradial2(dtree0.copy(), outfile.name)
         # then open cfradial2 file
         dtree1 = xr.open_datatree(outfile.name)
         # and write again
-        with tempfile.NamedTemporaryFile(mode="w+b") as outfile1:
+        with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as outfile1:
             xradar.io.to_cfradial2(dtree1.copy(), outfile1.name)
             # and open second cfradial2
             dtree2 = xr.open_datatree(outfile1.name)
@@ -932,6 +947,12 @@ def test_cfradfial2_roundtrip(cfradial1_file, first_dim):
                     assert "time" in dtree1[d1].dims
                     assert "time" in dtree2[d2].dims
                 xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
+
+        dtree1.close()
+        dtree2.close()
+
+    os.unlink(outfile.name)
+    os.unlink(outfile1.name)
 
 
 def test_cfradial_n_points_file(cfradial1n_file):
