@@ -732,3 +732,22 @@ def test_open_nexradlevel2_with_bytes(nexradlevel2_file):
 
     with NEXRADLevel2File(file_bytes) as fh:
         assert fh.volume_header["tape"].startswith(b"AR2V")
+
+
+def test_nexradlevel2_unsupported_input_type():
+    unsupported_input = 12345  # int is not supported
+    with pytest.raises(TypeError, match="Unsupported input type: <class 'int'>"):
+        NEXRADLevel2File(unsupported_input)
+
+
+def test_bz2_compressed_buffer_path_real(nexradlevel2_bzfile):
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+
+    with NEXRADLevel2File(file_bytes) as fh:
+        assert fh.is_compressed
+        fh.init_record(134)
+
+        assert 1 in fh._ldm
+        assert isinstance(fh._ldm[1], np.ndarray)
+        assert fh._ldm[1].dtype == np.uint8
