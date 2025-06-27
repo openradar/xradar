@@ -586,6 +586,12 @@ sweep_vars_mapping = {
         "short_name": "RATE",
         "units": "mm h-1",
     },
+    "DBM": {
+        "standard_name": "radar_received_signal_power",
+        "long_name": "Radar Received Signal Power (raw total power)",
+        "short_name": "DBM",
+        "units": "dBm",
+    },
 }
 
 
