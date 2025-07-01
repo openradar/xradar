@@ -2,8 +2,7 @@
 
 [![PyPI Version](https://img.shields.io/pypi/v/xradar.svg)](https://pypi.python.org/pypi/xradar)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/xradar.svg)](https://anaconda.org/conda-forge/xradar)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7767521.svg)](https://doi.org/10.5281/zenodo.7767521)
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo7091736.svg)](https://doi.org/10.5281/zenodo.7091736)
 [![CI](https://github.com/openradar/xradar/actions/workflows/ci.yml/badge.svg)](https://github.com/openradar/xradar/actions/workflows/ci.yml)
 [![Build distribution](https://github.com/openradar/xradar/actions/workflows/upload_pypi.yml/badge.svg)](https://github.com/openradar/xradar/actions/workflows/upload_pypi.yml)
 [![RTD Version](https://readthedocs.org/projects/xradar/badge/?version=latest)](https://xradar.readthedocs.io/en/latest/?version=latest)
