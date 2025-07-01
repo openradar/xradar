@@ -36,6 +36,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import bz2
+import os
 import struct
 from collections import OrderedDict, defaultdict
 
@@ -146,16 +147,21 @@ class NEXRADFile:
         """initalize the object."""
         self._fp = None
         self._filename = filename
-        # read in the volume header and compression_record
-        if hasattr(filename, "read"):
-            self._fh = filename
-        else:
-            self._fp = open(filename, "rb")
-            self._fh = np.memmap(self._fp, mode=mode)
         self._filepos = 0
         self._rawdata = False
         self._loaddata = loaddata
         self._bz2_indices = None
+
+        if isinstance(filename, (bytes, bytearray)):
+            self._fh = np.frombuffer(filename, dtype=np.uint8)
+        elif hasattr(filename, "read"):  # file-like object
+            file_bytes = filename.read()
+            self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
+        elif isinstance(filename, (str, os.PathLike)):
+            self._fp = open(filename, "rb")
+            self._fh = np.memmap(self._fp.name, mode=mode)
+        else:
+            raise TypeError(f"Unsupported input type: {type(filename)}")
         self.volume_header = self.get_header(VOLUME_HEADER)
         return
 
@@ -302,10 +308,14 @@ class NEXRADRecordFile(NEXRADFile):
                     return False
                 start = self.bz2_record_indices[ldm]
                 size = self._fh[start : start + 4].view(dtype=">u4")[0]
-                self._fp.seek(start + 4)
+                if self._fp is not None:
+                    self._fp.seek(start + 4)
+                    compressed = self._fp.read(size)
+                else:
+                    compressed = self._fh[start + 4 : start + 4 + size].tobytes()
                 dec = bz2.BZ2Decompressor()
                 self._ldm[ldm] = np.frombuffer(
-                    dec.decompress(self._fp.read(size)), dtype=np.uint8
+                    dec.decompress(compressed), dtype=np.uint8
                 )
 
         # rectrieve wanted record and put into self.rh
