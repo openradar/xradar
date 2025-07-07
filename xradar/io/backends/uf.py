@@ -695,9 +695,7 @@ class UFStore(AbstractDataStore):
         else:
             angle = elevation
         rtime = np.full(angle.shape, start2)
-        ctime = np.cumulative_sum(np.diff(angle) * 1e6 / mhead["SweepRate"]).astype(
-            "=m8[us]"
-        )
+        ctime = np.cumsum(np.diff(angle) * 1e6 / mhead["SweepRate"]).astype("=m8[us]")
         rtime[1:] += ctime
         time_prefix = "micro"
         rtime_attrs = {
