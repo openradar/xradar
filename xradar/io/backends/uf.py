@@ -156,13 +156,6 @@ class UFFile:
         """initalize the object."""
         self._fp = None
         self._filename = filename
-        # read in the volume header and compression_record
-        # if hasattr(filename, "read"):
-        #     self._fh = filename
-        # else:
-        #     self._fp = open(filename, "rb")
-        #     self._fh = np.memmap(self._fp, mode=mode)
-
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
@@ -173,7 +166,6 @@ class UFFile:
             self._fh = np.memmap(self._fp.name, mode=mode)
         else:
             raise TypeError(f"Unsupported input type: {type(filename)}")
-
         self._filepos = 0
         self._rawdata = False
         self._loaddata = loaddata
