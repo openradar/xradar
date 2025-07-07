@@ -4,8 +4,11 @@
 
 """Tests for `xradar.io.nexrad_archive` module."""
 
+import io
+import os
 from collections import OrderedDict
 
+import numpy as np
 import pytest
 import xarray
 from xarray import DataTree
@@ -699,3 +702,52 @@ def test_open_nexradlevel2_datatree_sweeps_initialization(
         assert (
             actual_sweeps == expected_sweeps
         ), f"Unexpected sweeps for input: {sweeps_input}"
+
+
+def test_input_types_for_nexradlevel2(monkeypatch, nexradlevel2_file):
+    # Load as bytes
+    with open(nexradlevel2_file, "rb") as f:
+        file_bytes = f.read()
+
+    # Test with bytes input
+    with NEXRADLevel2File(file_bytes) as fh:
+        assert isinstance(fh._fh, np.ndarray)
+        assert fh._fh.dtype == np.uint8
+
+    # Test with file-like object (BytesIO)
+    file_obj = io.BytesIO(file_bytes)
+    with NEXRADLevel2File(file_obj) as fh:
+        assert isinstance(fh._fh, np.ndarray)
+        assert fh._fh.dtype == np.uint8
+
+    # Test with string path
+    with NEXRADLevel2File(nexradlevel2_file) as fh:
+        assert hasattr(fh, "_fp")
+        assert os.path.basename(fh._fp.name) == os.path.basename(nexradlevel2_file)
+
+
+def test_open_nexradlevel2_with_bytes(nexradlevel2_file):
+    with open(nexradlevel2_file, "rb") as f:
+        file_bytes = f.read()
+
+    with NEXRADLevel2File(file_bytes) as fh:
+        assert fh.volume_header["tape"].startswith(b"AR2V")
+
+
+def test_nexradlevel2_unsupported_input_type():
+    unsupported_input = 12345  # int is not supported
+    with pytest.raises(TypeError, match="Unsupported input type: <class 'int'>"):
+        NEXRADLevel2File(unsupported_input)
+
+
+def test_bz2_compressed_buffer_path_real(nexradlevel2_bzfile):
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+
+    with NEXRADLevel2File(file_bytes) as fh:
+        assert fh.is_compressed
+        fh.init_record(134)
+
+        assert 1 in fh._ldm
+        assert isinstance(fh._ldm[1], np.ndarray)
+        assert fh._ldm[1].dtype == np.uint8

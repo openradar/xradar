@@ -2,6 +2,7 @@
 # Copyright (c) 2022-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import os.path
+import uuid
 
 import pytest
 from open_radar_data import DATASETS
@@ -160,3 +161,18 @@ def metek_raw_gz_file(tmp_path_factory):
         with open(fnameo, "wb") as fout:
             shutil.copyfileobj(fin, fout)
     return fnameo
+
+
+@pytest.fixture
+def temp_file(tmp_path):
+    rnd = uuid.uuid4().hex[:8]
+    return tmp_path / f"testfile_{rnd}"
+
+
+@pytest.fixture
+def make_temp_file(tmp_path):
+    def _make_file():
+        rnd = uuid.uuid4().hex[:8]
+        return tmp_path / f"testfile_{rnd}"
+
+    return _make_file
