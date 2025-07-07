@@ -841,7 +841,7 @@ def open_uf_datatree(
     lock=None,
     **kwargs,
 ):
-    """Open a Universal Format (UF) dataset as an `xarray.DataTree`.
+    """Open a Universal Format (UF) dataset as :py:class:`xarray.DataTree`.
 
     This function loads UF radar data into a DataTree structure, which
     organizes radar sweeps as separate nodes. Provides options for decoding time
