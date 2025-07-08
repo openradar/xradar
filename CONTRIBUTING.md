@@ -51,47 +51,62 @@ Ready to contribute? Here's how to set up `xradar` for local development.
 1. Fork the `xradar` repo on GitHub.
 2. Clone your fork locally:
 
-    ```bash
+   ```bash
    $ git clone git@github.com:your_name_here/xradar.git
    ```
 
 3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development:
 
-    ```bash
-    $ mkvirtualenv xradar
-    $ cd xradar/
-    $ python -m pip install -e .[dev]
-    ```
+   ```bash
+   $ mkvirtualenv xradar
+   $ cd xradar/
+   $ python -m pip install -e .[dev]
+   ```
 
-3.1 Install `ffmpeg` using your OS package manager.
+   * Install `ffmpeg` using your OS package manager.
 
 4. Create a branch for local development:
 
-    ```bash
-    $ git checkout -b name-of-your-bugfix-or-feature
-    ```
+   ```bash
+   $ git checkout -b name-of-your-bugfix-or-feature
+   ```
    Now you can make your changes locally.
 
-5. When you're done making changes, check that your changes pass flake8 and the
-   tests, including testing other Python versions with tox:
+5. When you're done making changes, check that your changes pass `black`, `ruff` and the
+   tests:
 
-    ```bash
-    $ flake8 xradar tests
-    $ python -m pytest
-    $ tox
+   ```bash
+   $ black --check .
+   $ ruff check .
+   $ python -m pytest
+   ```
+   To get `black` and `ruff`, just pip install them into your virtualenv.
+
+6. Install pre-commit hooks
+
+   We highly recommend that you setup [pre-commit](https://pre-commit.com/) hooks to automatically
+   run all the above tools (and more) every time you make a git commit. To install the hooks:
+
+   ```bash
+   $ python -m pip install pre-commit
+   $ pre-commit install
+   ```
+   To run unconditionally against all files:
+
+   ```bash
+   $ pre-commit run --all-files
+   ```
+   You can skip the pre-commit checks with ``git commit --no-verify``.
+
+7. Commit your changes and push your branch to GitHub:
+
+   ```bash
+   $ git add .
+   $ git commit -m "Your detailed description of your changes."
+   $ git push origin name-of-your-bugfix-or-feature
    ```
 
-   To get flake8 and tox, just pip install them into your virtualenv.
-
-6. Commit your changes and push your branch to GitHub:
-
-    ```bash
-    $ git add .
-    $ git commit -m "Your detailed description of your changes."
-    $ git push origin name-of-your-bugfix-or-feature
-    ```
-
-7. Submit a pull request through the GitHub website.
+8. Submit a pull request through the GitHub website.
 
 ## Pull Request Guidelines
 
@@ -104,6 +119,16 @@ Before you submit a pull request, check that it meets these guidelines:
 3. The pull request should work for [supported Python versions](https://endoflife.date/python) and for PyPy. Check
    [GHA](https://github.com/openradar/xradar/actions)
    and make sure that the tests pass for all supported Python versions.
+
+## Building the documentation
+
+To build the documentation run:
+
+   ```bash
+   $ cd docs
+   $ make html
+   ```
+Then you can access the documentation via browser locally by opening `docs/_build/html/index.html`.
 
 ## Tips
 

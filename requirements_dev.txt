@@ -1,15 +1,13 @@
 pip
 wheel
-watchdog
-flake8
-tox
 coverage
-Sphinx
+sphinx
 twine
 pytest
 black
 isort
 fsspec
+ruff
 nbconvert
 notebook
 open_radar_data

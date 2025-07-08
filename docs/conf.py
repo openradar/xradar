@@ -148,7 +148,7 @@ version = version("xradar")
 release = version
 
 myst_substitutions = {
-    "today": dt.datetime.utcnow().strftime("%Y-%m-%d"),
+    "today": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d"),
     "release": release,
 }
 myst_heading_anchors = 3
