@@ -51,7 +51,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 * Format Transformation support to CfRadial1 and CfRadial2
 
 > [!NOTE]
-> All formats load into CfRadial2, so converting to CfRadial1 is seamless.*
+> All formats load into CfRadial2, so converting to CfRadial1 is seamless.
 
 ## Contributors
 
