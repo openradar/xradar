@@ -203,7 +203,7 @@ copybutton_prompt_is_regexp = True
 
 # -- nbsphinx specifics --
 # always execute notebooks while building docs
-nbsphinx_execute = "never"
+nbsphinx_execute = "always"
 subprocess.check_call(["cp", "-rp", "../examples/notebooks", "."])
 
 # -- Options for HTML output -------------------------------------------
