@@ -12,6 +12,19 @@ Xradar includes all the tools to get your weather radar into the xarray data mod
 * Free software: MIT license
 * Documentation: [https://docs.openradarscience.org/projects/xradar](https://xradar.readthedocs.io)
 
+## How to cite Xradar
+
+This project provides a Zenodo badge with a DOI for easy citation — click the badge above to get the official citation and permanent archive.
+
+GitHub also offers a “Cite this repository” button near the top right of [this page](https://github.com/openradar/xradar), where you can quickly copy the citation in various formats like APA and BibTeX.
+
+In the [rendered documentation](https://docs.openradarscience.org/projects/xradar/en/stable/#how-to-cite-xradar), you will find the full citation below.
+
+> [!TIP]
+> **Cite Xradar as:**
+>
+> *{{ apa_citation }}*
+
 ## About
 
 At a developer meeting held in the course of the ERAD2022 conference in Locarno, Switzerland, future plans and cross-package collaboration of the [openradarscience](https://openradar.discourse.group/) community were intensively discussed.
@@ -27,7 +40,7 @@ Any software package that uses xarray in any way will then be able to directly u
 Xradar is considered stable for the implemented readers and writers which have been ported from wradlib. It will remain in beta status until the standard is finalized and the API as well as data model will move into stable/production status.
 
 > [!IMPORTANT]
-> Currently only polar (radial) and no cartesian or any other gridded radar data can be imported!
+> Currently only polar (radial) and not cartesian or any other gridded radar data can be imported!
 
 ## Features
 
