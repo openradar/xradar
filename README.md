@@ -26,6 +26,9 @@ Any software package that uses xarray in any way will then be able to directly u
 
 Xradar is considered stable for the implemented readers and writers which have been ported from wradlib. It will remain in beta status until the standard is finalized and the API as well as data model will move into stable/production status.
 
+> [!Important]
+> Currently only polar (radial) and no cartesian or any other gridded radar data can be imported!
+
 ## Features
 
 ### Import/Export Capabilities
@@ -47,11 +50,11 @@ Xradar is considered stable for the implemented readers and writers which have b
 * Angle Reindexing
 * Format Transformation support to CfRadial1 and CfRadial2
 
-> ***Note**: All formats load into CfRadial2, so converting to CfRadial1 is seamless.*
+> [!NOTE]
+> All formats load into CfRadial2, so converting to CfRadial1 is seamless.*
 
 ## Contributors
 
 Thanks to our many contributors!
 
 [![Contributors](https://contrib.rocks/image?repo=openradar/xradar)](https://github.com/openradar/xradar/graphs/contributors)
-
