@@ -26,7 +26,7 @@ Any software package that uses xarray in any way will then be able to directly u
 
 Xradar is considered stable for the implemented readers and writers which have been ported from wradlib. It will remain in beta status until the standard is finalized and the API as well as data model will move into stable/production status.
 
-> [!Important]
+> [!IMPORTANT]
 > Currently only polar (radial) and no cartesian or any other gridded radar data can be imported!
 
 ## Features
