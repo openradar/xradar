@@ -46,6 +46,7 @@ notebooks/CfRadial1_Export
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
 notebooks/angle_reindexing
+notebooks/NDPointIndex.ipynb
 notebooks/Multi-Volume-Concatenation.ipynb
 notebooks/multiple-sweeps-into-volume-scan.ipynb
 notebooks/Transform
