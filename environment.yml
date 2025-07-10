@@ -29,4 +29,3 @@ dependencies:
   - arm_pyart
   - ffmpeg
   - zarr<3
-  - wradlib
