@@ -1,8 +1,10 @@
 [project]
 name = "xradar"
 description = """Xradar includes all the tools to get your weather radar into the xarray data model."""
-requires-python = ">=3.9"
-license = {file = "LICENSE"}
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+
 keywords = ["xradar"]
 authors = [
     {name = "Maxwell Grover", email = "mgrover@anl.gov"},
@@ -14,7 +16,6 @@ classifiers=[
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -44,12 +45,13 @@ hpl = "xradar.io.backends:HPLBackendEntrypoint"
 nexradlevel2 = "xradar.io.backends:NexradLevel2BackendEntrypoint"
 datamet = "xradar.io.backends:DataMetBackendEntrypoint"
 metek = "xradar.io.backends:MRRBackendEntrypoint"
+uf = "xradar.io.backends:UFBackendEntrypoint"
 
 [build-system]
 requires = [
-    "setuptools>=45",
+    "setuptools>=77",
     "wheel",
-    "setuptools_scm[toml]>=7.0",
+    "setuptools_scm[toml]>=8.0",
 ]
 build-backend = "setuptools.build_meta"
 
