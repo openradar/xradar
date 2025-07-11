@@ -11,6 +11,7 @@
 * FIX: Prevent literal timedelta decoding for new xarray versions, fix tests, update pinnings ({pull}`278`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * MNT: Package and Documentation cleanup ({issue}`273`), {pull}`284`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 * ADD: Support Universal Format (UF) ({issue}`275`) ({pull}`276`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ADD: NDPointIndex Notebook example ({pull}`276`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.9.0 (2025-02-07)
 
