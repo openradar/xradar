@@ -19,10 +19,13 @@
 import datetime as dt
 import glob
 import os
+import re
 import subprocess
 import sys
 import warnings
 from importlib.metadata import version
+
+from docutils import nodes
 
 sys.path.insert(0, os.path.abspath(".."))
 
@@ -93,7 +96,7 @@ templates_path = ["_templates"]
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
-source_suffix = [".rst", ".md"]
+source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 
 # The master toctree document.
 master_doc = "index"
@@ -147,9 +150,27 @@ autoclass_content = "both"
 version = version("xradar")
 release = version
 
+
+def generate_apa_citation():
+    cff_path = "../CITATION.cff"
+    try:
+        result = subprocess.run(
+            ["cffconvert", "--format", "apalike", "-i", cff_path],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return f"{result.stdout.strip()}"
+    except Exception as e:
+        return f"Error generating citation: {e}"
+
+
+apa_citation = generate_apa_citation()
+
 myst_substitutions = {
-    "today": dt.datetime.utcnow().strftime("%Y-%m-%d"),
+    "today": dt.datetime.now(dt.UTC).strftime("%Y-%m-%d"),
     "release": release,
+    "apa_citation": apa_citation,
 }
 myst_heading_anchors = 3
 
@@ -363,3 +384,79 @@ rst_epilog = ""
 # Read link all targets from file
 with open("links.rst") as f:
     rst_epilog += f.read()
+
+# -----------------------------------------------------------------------------
+# Regex‑based helper for *source*‑level conversion (files directly read by Sphinx)
+# -----------------------------------------------------------------------------
+
+_ALERT_RE = re.compile(
+    r"^[ ]{0,3}>[ ]*\[!(?P<label>NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ ]*\n"  # header
+    r"(?P<body>(?:^[ ]{0,3}>[ ].*\n?)*)",  # body lines
+    re.MULTILINE,
+)
+
+_LABEL_MAP = {
+    "NOTE": "note",
+    "TIP": "tip",
+    "IMPORTANT": "important",
+    "WARNING": "warning",
+    "CAUTION": "caution",
+}
+
+
+def _strip_gt(line):
+    return re.sub(r"^[ ]{0,3}>[ ]?", "", line)
+
+
+def _convert_alert_markdown(text):
+    def replacer(m):
+        label = _LABEL_MAP.get(m.group("label"), "note")
+        body = "\n".join(_strip_gt(lx) for lx in m.group("body").rstrip().splitlines())
+        return f":::{{{label}}}\n{body}\n:::"
+
+    return _ALERT_RE.sub(replacer, text)
+
+
+# -----------------------------------------------------------------------------
+# Sphinx event handlers
+# -----------------------------------------------------------------------------
+
+
+def on_source_read(app, docname, source):
+    source[0] = _convert_alert_markdown(source[0])
+
+
+def on_doctree_resolved(app, doctree, docname):
+    alert_header = re.compile(r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ ]*")
+    for block in list(doctree.traverse(nodes.block_quote)):
+        if not block.children:
+            continue
+        first = block.children[0]
+        if not (isinstance(first, nodes.paragraph) and first.children):
+            continue
+        text_node = first.children[0]
+        if not isinstance(text_node, nodes.Text):
+            continue
+        match = alert_header.match(text_node.astext())
+        if not match:
+            continue
+        token = match.group(1).upper()
+        label = _LABEL_MAP.get(token, "note")
+        new_text = alert_header.sub("", text_node.astext(), count=1)
+        text_node.parent.replace(text_node, nodes.Text(new_text, new_text))
+        admon = nodes.admonition(classes=[label])
+        title_text = "Tip" if token == "TIP" else token.capitalize()
+        admon += nodes.title(text=title_text)
+        admon.extend(block.children)
+        block.replace_self(admon)
+
+
+def setup(app):
+    app.connect("source-read", on_source_read)
+    app.connect("doctree-resolved", on_doctree_resolved)
+
+    return {
+        "version": "1.3",
+        "parallel_read_safe": True,
+        "parallel_write_safe": True,
+    }
