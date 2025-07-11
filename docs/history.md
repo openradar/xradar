@@ -9,6 +9,7 @@
 * FIX: typo in accessors module: Dataarray -> Dataset
 * FIX: Update missing deps for virtualenv environments via "requirements_dev.txt". ({issue}`253`) ({pull}`274`) by [@Steve-Roderick](https://github.com/Steve-Roderick).
 * FIX: Prevent literal timedelta decoding for new xarray versions, fix tests, update pinnings ({pull}`254`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
+* ADD: Support Universal Format (UF) ({issue}`275`) ({pull}`276`) by [@kmuehlbauer](https://github.com/kmuehlbauer).
 
 ## 0.9.0 (2025-02-07)
 

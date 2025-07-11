@@ -42,15 +42,15 @@ ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 ### GamicBackendEntrypoint
 
-The xarray backend {class}`~xradar.io.backends.odim.GamicBackendEntrypoint`
-opens the file with {class}`~xradar.io.backends.odim.GamicStore`. Several private helper functions are used to conveniently access data and
+The xarray backend {class}`~xradar.io.backends.gamic.GamicBackendEntrypoint`
+opens the file with {class}`~xradar.io.backends.gamic.GamicStore`. Several private helper functions are used to conveniently access data and
 metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
 with wanted group (eg. ``scan0``). Depending on the used backend kwargs several
 more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 ### open_gamic_datatree
 
-With {func}`~xradar.io.backends.odim.open_gamic_datatree` all groups (eg. ``scanN``)
+With {func}`~xradar.io.backends.gamic.open_gamic_datatree` all groups (eg. ``scanN``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
 ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
@@ -112,7 +112,7 @@ ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
 ### NexradLevel2BackendEntryPoint
 
-The xarray backend {class}`~xradar.io.backends.nexrad_level2.NexradLevel2BackendEntryPoint`
+The xarray backend {class}`~xradar.io.backends.nexrad_level2.NexradLevel2BackendEntrypoint`
 opens the file with {class}`~xradar.io.backends.nexrad_level2.NexradLevel2Store`. Several
 private helper functions are used to conveniently access data and
 metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
@@ -138,7 +138,7 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
 ### open_datamet_datatree
 
-With {func}`~xradar.io.backends.datamet.open_nexradlevel2_datatree`
+With {func}`~xradar.io.backends.datamet.open_datamet_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
@@ -173,5 +173,22 @@ more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 ### open_metek_datatree
 
 With {func}`~xradar.io.backends.metek.open_metek_datatree`
+all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
+
+## Universal Format (UF))
+
+### UFBackendEntryPoint
+
+The xarray backend {class}`~xradar.io.backends.uf.UFBackendEntrypoint`
+opens the file with {class}`~xradar.io.backends.uf.UFStore`. Several
+private helper functions are used to conveniently access data and
+metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Dataset`
+with wanted group (eg. ``0``). Depending on the used backend kwargs several
+more functions are applied on that {py:class}`xarray:xarray.Dataset`.
+
+### open_uf_datatree
+
+With {func}`~xradar.io.backends.uf.open_uf_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.

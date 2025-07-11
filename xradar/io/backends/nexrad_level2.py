@@ -1630,7 +1630,7 @@ def open_nexradlevel2_datatree(
     lock=None,
     **kwargs,
 ):
-    """Open a NEXRAD Level2 dataset as an `xarray.DataTree`.
+    """Open a NEXRAD Level2 dataset as :py:class:`xarray.DataTree`.
 
     This function loads NEXRAD Level2 radar data into a DataTree structure, which
     organizes radar sweeps as separate nodes. Provides options for decoding time
