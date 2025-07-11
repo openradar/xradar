@@ -2,11 +2,6 @@
 Added as suggested by @benbovy to fix issues with dark mode
  */
 
-.navbar-brand .logo__image {
-  /* avoid too big logo */
-  height: 150px;
-}
-
 code.literal {
   background-color: unset;
   border: unset;
