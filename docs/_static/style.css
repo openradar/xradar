@@ -1,0 +1,58 @@
+/*
+Added as suggested by @benbovy to fix issues with dark mode
+ */
+
+code.literal {
+  background-color: unset;
+  border: unset;
+}
+
+.xr-wrap {
+  /* workaround when (ipy)widgets are present in output cells
+   * https://github.com/xarray-contrib/xarray-indexes/issues/14
+   * only rely on pydata-sphinx-theme variables here!
+  */
+  --xr-font-color0: var(--pst-color-text-base);
+  --xr-font-color2: var(--pst-color-text-base);
+  --xr-font-color3: var(--pst-color-text-base);
+  --xr-border-color: hsl(from var(--pst-color-text-base) h s calc(l + 40));
+  --xr-disabled-color: hsl(from var(--pst-color-text-base) h s calc(l + 40));
+  --xr-background-color: var(--pst-color-on-background);
+  --xr-background-color-row-even: hsl(
+    from var(--pst-color-on-background) h s calc(l - 5)
+  );
+  --xr-background-color-row-odd: hsl(
+    from var(--pst-color-on-background) h s calc(l - 15)
+  );
+
+  font-size: 0.9em;
+  margin-left: 1.25em;
+}
+
+html[data-theme="dark"] .xr-wrap {
+  --xr-border-color: hsl(from var(--pst-color-text-base) h s calc(l - 40));
+  --xr-disabled-color: hsl(from var(--pst-color-text-base) h s calc(l - 40));
+  --xr-background-color-row-even: hsl(
+    from var(--pst-color-on-background) h s calc(l + 5)
+  );
+  --xr-background-color-row-odd: hsl(
+    from var(--pst-color-on-background) h s calc(l + 15)
+  );
+}
+
+.xr-array-wrap,
+.xr-var-data,
+.xr-var-preview {
+  /* font-size: 0.9em; */
+}
+.gp {
+  color: darkorange;
+}
+
+/* workaround Pydata Sphinx theme using light colors for widget cell outputs in dark-mode */
+/* works for many widgets but not for Xarray html reprs */
+/* https://github.com/pydata/pydata-sphinx-theme/issues/2189 */
+html[data-theme="dark"] div.cell_output .text_html:has(div.xr-wrap) {
+  background-color: var(--pst-color-on-background) !important;
+  color: var(--pst-color-text-base) !important;
+}
