@@ -22,6 +22,7 @@ from xradar.io import (
     open_nexradlevel2_datatree,
     open_odim_datatree,
     open_rainbow_datatree,
+    open_uf_datatree,
 )
 from xradar.model import (
     non_standard_sweep_dataset_vars,
@@ -1116,3 +1117,133 @@ def test_iris_dask_load(iris0_file):
     ds = xr.open_dataset(iris0_file, group="sweep_0", engine="iris")
     dsc = ds.chunk()
     dsc.load()
+
+
+@pytest.mark.run(order=1)
+@pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
+@pytest.mark.parametrize(
+    "uf_files", ["uf_file_1", "uf_file_2", "uf_file_3"], indirect=True
+)
+def test_open_uf_datatree_sweep(uf_files, sweep):
+    dtree = open_uf_datatree(uf_files, sweep=sweep)
+    if isinstance(sweep, (str, int)):
+        lswp = len([sweep])
+    else:
+        lswp = len(sweep)
+    assert len(dtree.match("sweep*")) == lswp
+
+
+def test_open_uf_datatree(uf_file_1):
+    dtree = open_uf_datatree(uf_file_1)
+    # root_attrs
+    attrs = dtree.attrs
+    assert attrs["Conventions"] == "None"
+    assert attrs["instrument_name"] == "rvp8-rel"
+
+    # root vars
+    rvars = dtree.data_vars
+    assert rvars["volume_number"] == 0
+    assert rvars["platform_type"] == "fixed"
+    assert rvars["instrument_type"] == "radar"
+    assert rvars["time_coverage_start"] == "2011-04-27T16:42:32Z"
+    assert rvars["time_coverage_end"] == "2011-04-27T16:46:50Z"
+    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(34.9318099))
+    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-86.4658203))
+    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(226))
+
+    # iterate over subgroups and check some values
+    moments = [
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+        ["DBZH", "DBTH", "VRADH", "RHOHV", "ZDR", "KDP", "WRADH"],
+    ]
+    elevations = [
+        0.5,
+        1.1,
+        1.8,
+        2.6,
+        3.6,
+        4.9,
+        6.3,
+        7.8,
+        9.8,
+        11.8,
+        13.8,
+        15.8,
+        19.5,
+        21.9,
+    ]
+    azimuths = [
+        318,
+        319,
+        319,
+        318,
+        318,
+        318,
+        318,
+        318,
+        329,
+        351,
+        360,
+        360,
+        360,
+        360,
+    ]
+    ranges = [
+        997,
+        997,
+        997,
+        997,
+        997,
+        997,
+        997,
+        997,
+        919,
+        766,
+        658,
+        577,
+        476,
+        422,
+    ]
+    assert len(dtree.groups[1:]) == 17
+    for i, grp in enumerate(dtree.match("sweep_*")):
+        print(i)
+        ds = dtree[grp].ds
+        assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
+        assert set(ds.data_vars) & (
+            sweep_dataset_vars | non_standard_sweep_dataset_vars
+        ) == set(moments[i])
+        assert set(ds.data_vars) & (required_sweep_metadata_vars) == set(
+            required_sweep_metadata_vars ^ {"azimuth", "elevation"}
+        )
+        assert set(ds.coords) == {
+            "azimuth",
+            "elevation",
+            "time",
+            "latitude",
+            "longitude",
+            "altitude",
+            "range",
+        }
+        assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
+        assert ds.sweep_number.values == int(grp[6:])
+
+
+@skip_import("dask")
+@pytest.mark.parametrize(
+    "uf_files", ["uf_file_1", "uf_file_2", "uf_file_3"], indirect=True
+)
+def test_uf_dask_load(uf_files):
+    ds = xr.open_dataset(uf_files, group="sweep_0", engine="uf", chunks={})
+    ds.load()

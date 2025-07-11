@@ -57,6 +57,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 * MRR
 * NexradLevel2
 * Rainbow
+* UF
 
 ### Data Transformation and Alignment
 * Georeferencing (AEQD projection)

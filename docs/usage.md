@@ -35,6 +35,7 @@ notebooks/Iris
 notebooks/HaloPhotonics
 notebooks/MRR
 notebooks/NexradLevel2
+notebooks/UF
 ```
 
 ```{toctree}

@@ -119,6 +119,11 @@ def nexradlevel2_files(request):
 
 
 @pytest.fixture(scope="session")
+def uf_files(request):
+    return request.getfixturevalue(request.param)
+
+
+@pytest.fixture(scope="session")
 def metek_ave_gz_file(tmp_path_factory):
     fnamei = DATASETS.fetch("0308.ave.gz")
     fnameo = os.path.join(
@@ -151,6 +156,51 @@ def metek_pro_gz_file(tmp_path_factory):
 @pytest.fixture(scope="session")
 def metek_raw_gz_file(tmp_path_factory):
     fnamei = DATASETS.fetch("0308.raw.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def uf_file_1(tmp_path_factory):
+    fnamei = DATASETS.fetch("20110427_164233_rvp8-rel_v001_SUR.uf.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def uf_file_2(tmp_path_factory):
+    fnamei = DATASETS.fetch("CHL19950617_182848.uf.gz")
+    fnameo = os.path.join(
+        tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
+    )
+    import gzip
+    import shutil
+
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+    return fnameo
+
+
+@pytest.fixture(scope="session")
+def uf_file_3(tmp_path_factory):
+    fnamei = DATASETS.fetch("MC3E_NPOL_2011_0524_2356_hid.uf.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
