@@ -36,7 +36,7 @@ authors:
   affiliation: Federal Office of Meteorology and Climatology MeteoSwiss
   orcid: https://orcid.org/0009-0006-1419-0556
 
-version: 0.9.0
+version: 0.10.0
 date-released: 2025-07-11
 repository-code: https://github.com/openradar/xradar
 license: MIT
