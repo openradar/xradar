@@ -9,3 +9,4 @@ pyproj
 scipy
 xarray >= 2024.10.0
 xmltodict
+zarr
