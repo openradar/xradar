@@ -20,11 +20,11 @@ def test_open_cfradial2():
 
     # Write it to a temporary Zarr store (to simulate CfRadial2)
     with tempfile.TemporaryDirectory() as tmpdir:
-        zarr_path = Path(tmpdir) / "cfradial2.zarr"
-        dtree.to_zarr(zarr_path)
+        file_path = Path(tmpdir) / "cfradial2.nc"
+        dtree.to_netcdf(file_path)
 
         # Read back using CfRadial2-style reader
-        dtree2 = xd.io.open_cfradial2_datatree(zarr_path)
+        dtree2 = xd.io.open_cfradial2_datatree(file_path)
 
         # # Compare sweeps
         # for sweep_num in range(3):
