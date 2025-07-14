@@ -1,5 +1,8 @@
 # History
 
+## Unreleased
+ADD: Cfradial2 module to read cfradial2 compliant data. ({issue}`287`) by [@aladinor](https://github.com/aladinor), ({pull}`288`) by [@syedhamidali](https://github.com/syedhamidali)
+
 ## 0.10.0 (2025-07-11)
 
 * FIX: Use fixture for making temp file to avoid permission issue on Windows
