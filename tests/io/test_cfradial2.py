@@ -34,8 +34,4 @@ def test_open_cfradial2(temp_file, cfradial1_file):
     assert hasattr(dtree2, "children"), "Returned object is not a valid DataTree"
     assert "sweep_0" in dtree2.children, "Missing expected sweep node"
     assert "DBZ" in dtree2["sweep_0"].data_vars, "Missing reflectivity field"
-
-    # Optional data structure comparison
-    ds1 = dtree["sweep_0"].ds.copy(deep=False)
-    ds2 = dtree2["sweep_0"].ds.copy(deep=False)
     xr.testing.assert_isomorphic(dtree, dtree2)
