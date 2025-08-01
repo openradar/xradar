@@ -257,6 +257,7 @@ class _H5NetCDFMetadata:
             "longitude": self.longitude,
             "latitude": self.latitude,
             "altitude": self.altitude,
+            "nyquist_velocity": self.nyquist_velocity,
         }
         return coordinates
 
@@ -386,6 +387,10 @@ class _H5NetCDFMetadata:
         """Return follow_mode Variable."""
         return Variable((), "not_set")
 
+    @property
+    def nyquist_velocity(self):
+        return Variable((), self._nyquist_velocity)
+
 
 class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
     """Wrapper around OdimH5 data fileobj for easy access of metadata.
@@ -476,6 +481,15 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
     @property
     def _odim_version(self):
         return self._get_odim_version()
+
+    @property
+    def _nyquist_velocity(self):
+        nyquist_vel = self.how.get("NI", None)
+        if nyquist_vel is not None:
+            return float(nyquist_vel)
+        else:
+            # Return default/missing value if not found
+            return float("nan")
 
 
 class H5NetCDFArrayWrapper(BackendArray):

@@ -142,7 +142,7 @@ def test_open_gamic_datatree(gamic_file):
     # Verify a sample variable in one of the sweep groups
     sample_sweep = sweep_groups[0]
     assert (
-        len(dtree[sample_sweep].data_vars) == 17
+        len(dtree[sample_sweep].data_vars) == 18
     ), f"Expected data variables in {sample_sweep}"
     assert dtree[sample_sweep]["DBZH"].shape == (360, 360)
     assert (
