@@ -61,6 +61,7 @@ from ...model import (
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
+    get_nyquist_velocity_attrs,
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
@@ -257,8 +258,11 @@ class _H5NetCDFMetadata:
             "longitude": self.longitude,
             "latitude": self.latitude,
             "altitude": self.altitude,
-            "nyquist_velocity": self.nyquist_velocity,
         }
+
+        if self.nyquist_velocity is not None:
+            coordinates["nyquist_velocity"] = self.nyquist_velocity
+
         return coordinates
 
     @property
@@ -389,7 +393,7 @@ class _H5NetCDFMetadata:
 
     @property
     def nyquist_velocity(self):
-        return Variable((), self._nyquist_velocity)
+        return Variable((), self._nyquist_velocity, get_nyquist_velocity_attrs())
 
 
 class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
@@ -490,8 +494,8 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
                 return float(nyquist_vel)
         except (AttributeError, KeyError, TypeError):
             pass
-        # Return default/missing value if not found
-        return float("nan")
+
+        return None
 
 
 class H5NetCDFArrayWrapper(BackendArray):

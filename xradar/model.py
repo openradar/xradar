@@ -34,6 +34,7 @@ __all__ = [
     "get_altitude_attrs",
     "get_elevation_attrs",
     "get_moment_attrs",
+    "get_nyquist_velocity_attrs",
     "get_range_attrs",
     "get_time_attrs",
     "moment_attrs",
@@ -725,6 +726,14 @@ def get_time_attrs(date_str="1970-01-01T00:00:00Z", date_unit="seconds"):
         "units": f"{date_unit} since {date_str}",
     }
     return time_attrs
+
+
+def get_nyquist_velocity_attrs(units="meters per second"):
+    nyquist_attrs = {
+        "standard_name": "nyquist_velocity",
+        "units": units,
+    }
+    return nyquist_attrs
 
 
 def get_moment_attrs(moment):

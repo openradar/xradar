@@ -250,8 +250,8 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
         if nyquist_vel is not None:
             return float(nyquist_vel)
         else:
-            # Return default/missing value if not found
-            return float("nan")
+            pass
+        return None
 
 
 class GamicStore(AbstractDataStore):
