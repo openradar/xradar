@@ -318,7 +318,7 @@ class NEXRADRecordFile(NEXRADFile):
                     dec.decompress(compressed), dtype=np.uint8
                 )
 
-        # rectrieve wanted record and put into self.rh
+        # retrieve wanted record and put into self.rh
         if recnum < 134:
             start = recnum * RECORD_BYTES
             if not self.is_compressed:
@@ -540,8 +540,8 @@ class NEXRADLevel2File(NEXRADRecordFile):
         meta_headers = defaultdict(list)
         rec = 0
         # iterate over alle messages until type outside [2, 3, 5, 13, 15, 18, 32]
-        while True:
-            self.init_record(rec)
+
+        while self.init_record(rec):
             rec += 1
             filepos = self.filepos
             message_header = self.get_message_header()
@@ -559,7 +559,11 @@ class NEXRADLevel2File(NEXRADRecordFile):
     def get_msg_5_data(self):
         """Get MSG5 data."""
         # get the record number from the meta header
-        recnum = self.meta_header["msg_5"][0]["record_number"]
+        # return False, if no msg_5 data is available
+        if self.meta_header["msg_5"]:
+            recnum = self.meta_header["msg_5"][0]["record_number"]
+        else:
+            return False
         self.init_record(recnum)
         # skip header
         self.rh.pos += LEN_MSG_HEADER + 12
@@ -630,7 +634,11 @@ class NEXRADLevel2File(NEXRADRecordFile):
         # get the record number from the meta header
         # message 2 is the last meta header, after which the
         # data records are located
-        recnum = self.meta_header["msg_2"][0]["record_number"]
+        if self.is_compressed:
+            recnum = self.meta_header["msg_2"][0]["record_number"]
+        else:
+            # iterate over all records to retrieve data
+            recnum = 0
         self.init_record(recnum)
         current_sweep = -1
         current_header = -1
@@ -1480,7 +1488,10 @@ class NexradLevel2Store(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        elev_data = self.root.msg_5["elevation_data"]
+        if self.root.msg_5:
+            elev_data = self.root.msg_5["elevation_data"]
+        else:
+            elev_data = False
         # in some cases msg_5 doesn't contain meaningful data
         # we extract the needed values from the data header instead
         if elev_data:
@@ -1523,8 +1534,11 @@ class NexradLevel2Store(AbstractDataStore):
     def get_attrs(self):
         _attributes = [
             ("instrument_name", self.root.volume_header["icao"].decode()),
-            ("scan_name", f"VCP-{self.root.msg_5['pattern_number']}"),
         ]
+        if self.root.msg_5:
+            _attributes.append(
+                ("scan_name", f"VCP-{self.root.msg_5['pattern_number']}")
+            )
 
         return FrozenDict(_attributes)
 
@@ -1721,7 +1735,10 @@ def open_nexradlevel2_datatree(
     else:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
             # Expected number of elevation cuts from the VCP definition
-            exp_sweeps = nex.msg_5["number_elevation_cuts"]
+            if nex.msg_5:
+                exp_sweeps = nex.msg_5["number_elevation_cuts"]
+            else:
+                exp_sweeps = 0
             # Actual number of sweeps recorded in the file
             act_sweeps = len(nex.msg_31_data_header)
             # Check for AVSET mode: If AVSET was active, the actual number of sweeps (act_sweeps)
