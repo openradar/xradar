@@ -489,13 +489,9 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
     @property
     def _nyquist_velocity(self):
         try:
-            nyquist_vel = self.how.get("NI", None)
-            if nyquist_vel is not None:
-                return float(nyquist_vel)
+            return float(self.how["NI"])
         except (AttributeError, KeyError, TypeError):
-            pass
-
-        return None
+            return None
 
 
 class H5NetCDFArrayWrapper(BackendArray):
