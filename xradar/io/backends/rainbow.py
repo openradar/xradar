@@ -644,7 +644,7 @@ class RainbowStore(AbstractDataStore):
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         attrs["add_offset"] = vmin - scale_factor
         attrs["scale_factor"] = scale_factor
-        attrs["_FillValue"] = 0
+        attrs["_FillValue"] = None
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
