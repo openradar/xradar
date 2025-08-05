@@ -246,12 +246,10 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
     @property
     def _nyquist_velocity(self):
         """Return nyquist velocity."""
-        nyquist_vel = self.how.get("nyquist_velocity", None)
-        if nyquist_vel is not None:
-            return float(nyquist_vel)
-        else:
-            pass
-        return None
+        try:
+            return float(self.how["nyquist_velocity"])
+        except (AttributeError, KeyError, TypeError):
+            return None
 
 
 class GamicStore(AbstractDataStore):
