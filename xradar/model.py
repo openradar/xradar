@@ -728,7 +728,7 @@ def get_time_attrs(date_str="1970-01-01T00:00:00Z", date_unit="seconds"):
     return time_attrs
 
 
-def get_nyquist_velocity_attrs(units="meters per second"):
+def get_nyquist_velocity_attrs(units="m s-1"):
     nyquist_attrs = {
         "standard_name": "nyquist_velocity",
         "units": units,
