@@ -1,5 +1,9 @@
 # History
 
+## Development Version (unreleased)
+
+* ENH: Disable fill value in rainbow reader ({issue}`103`) ({pull}`290`) by [@egouden](https://github.com/egouden)
+
 ## 0.10.0 (2025-07-11)
 
 * FIX: Use fixture for making temp file to avoid permission issue on Windows
