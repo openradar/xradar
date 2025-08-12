@@ -1,4 +1,8 @@
 repos:
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.11.0
+    hooks:
+      - id: zizmor
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -15,11 +19,6 @@ repos:
       - id: pyupgrade
         args:
           - '--py39-plus'
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.8.1
-    hooks:
-      - id: nbstripout
-        args: ['--extra-keys', 'metadata.kernelspec cell.metadata.pycharm cell.metadata.tags']
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: 'v0.12.8'
     hooks:
@@ -30,7 +29,8 @@ repos:
     hooks:
       - id: black
       - id: black-jupyter
-  - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.11.0
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
     hooks:
-      - id: zizmor
+      - id: nbstripout
+        args: ['--extra-keys', 'metadata.kernelspec cell.metadata.pycharm cell.metadata.tags']
