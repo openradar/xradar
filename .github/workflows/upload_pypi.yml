@@ -1,4 +1,7 @@
 name: Build distribution
+permissions:
+  contents: read
+
 on:
   release:
     types:
