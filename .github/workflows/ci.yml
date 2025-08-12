@@ -1,4 +1,6 @@
 name: CI
+permissions:
+  contents: read
 
 on:
   push:
@@ -13,9 +15,11 @@ jobs:
     name: lint and style checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.13"
       - name: Install dependencies
@@ -48,11 +52,12 @@ jobs:
             numpy-version: "1"
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
       with:
         fetch-depth: 0
+        persist-credentials: false
     - name: Install micromamba environment
-      uses: mamba-org/setup-micromamba@v1
+      uses: mamba-org/setup-micromamba@b09ef9b599704322748535812ca03efb2625677b  # v2.0.5
       with:
           environment-name: xradar-unit-tests
           environment-file: ${{env.CONDA_ENV_FILE}}
@@ -72,9 +77,9 @@ jobs:
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24  # v5.4.3
       with:
-        file: ./coverage_unit.xml
+        files: ./coverage_unit.xml
         flags: unittests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
@@ -96,11 +101,12 @@ jobs:
         python-version: ["3.13"]
         numpy-version: ["2"]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
       with:
         fetch-depth: 0
+        persist-credentials: false
     - name: Install micromamba environment
-      uses: mamba-org/setup-micromamba@v1
+      uses: mamba-org/setup-micromamba@b09ef9b599704322748535812ca03efb2625677b  # v2.0.5
       with:
           environment-name: xradar-notebook-tests
           environment-file: ${{env.CONDA_ENV_FILE}}
@@ -120,7 +126,7 @@ jobs:
       run: |
         pytest -n auto --dist loadscope --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs examples/notebooks
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24  # v5.4.3
       with:
         file: ./coverage_notebook.xml
         flags: notebooktests
@@ -143,11 +149,12 @@ jobs:
         python-version: [ "3.13" ]
         numpy-version: [ "2" ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Install micromamba environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@b09ef9b599704322748535812ca03efb2625677b  # v2.0.5
         with:
           environment-name: xradar-unit-tests
           cache-environment: true
@@ -198,11 +205,12 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.13"
       - name: Install dependencies
@@ -216,7 +224,7 @@ jobs:
           python -m build
           cp dist/xradar*.gz dist/xradar1.gz
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: xradar-1-${{github.event.number}}
           path: dist/xradar1.gz
@@ -237,11 +245,12 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.13"
       - name: Install dependencies
@@ -253,7 +262,7 @@ jobs:
           python -m build
           cp dist/xradar*.gz dist/xradar0.gz
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: xradar-0-${{github.event.number}}
           path: dist/xradar0.gz
