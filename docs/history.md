@@ -6,6 +6,7 @@
 * ADD: read nyquist_velocity in ODIM and GAMIC HDF5 files ({pull}`291`) by
   [@katelbach](https://github.com/katelbach)
 * MNT: update and harden CI, add zizmor to precommit, add dependabot ({pull}`294`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* MNT: Fix Windows errors by [@egouden](https://github.com/egouden)
 
 ## 0.10.0 (2025-07-11)
 
