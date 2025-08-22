@@ -21,6 +21,11 @@ def test_open_datatree_hpl():
     assert dtree["sweep_0"]["mean_doppler_velocity"].dims == ("azimuth", "range")
     assert dtree["sweep_0"]["mean_doppler_velocity"].max() == 19.5306
 
+    # regression test for https://github.com/openradar/xradar/issues/296
+    assert dtree["sweep_0"]["sweep_mode"].dtype.kind == "S"
+    assert dtree["sweep_0"]["sweep_number"].dtype.kind == "i"
+    assert "units" not in dtree["sweep_0"]["time"].attrs
+
 
 def test_open_dataset_hpl():
     with xr.open_dataset(
