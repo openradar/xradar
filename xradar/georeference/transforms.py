@@ -20,8 +20,9 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import numpy as np
 import xarray as xr
+from pyproj import Transformer
 
-from .projection import add_crs, get_crs, get_earth_radius
+from .projection import add_crs, get_earth_radius, radar_crs
 
 
 def antenna_to_cartesian(
@@ -101,9 +102,9 @@ def antenna_to_cartesian(
     return x, y, z
 
 
-def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
+def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None, target_crs=None):
     """
-    Return Cartesian coordinates from antenna coordinates.
+    Add Cartesian coordinates from antenna coordinates.
 
     Parameters
     ----------
@@ -114,6 +115,9 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
         WGS84 ellipsoid.
     effective_radius_fraction: float
         Fraction of earth to use for the effective radius (default is 4/3).
+
+    target_crs: pyproj.CRS
+        Coordinate reference system. If not provided, radar_crs() is used.
 
     Returns
     -------
@@ -149,13 +153,16 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
     .. [1] Doviak and Zrnić, Doppler Radar and Weather Observations, Second
         Edition, 1993, p. 21.
     """
+
+    ds = ds.copy()
+
+    crs = radar_crs(ds)
+
     if earth_radius is None:
-        crs = get_crs(ds)
         earth_radius = get_earth_radius(crs, ds.latitude.values)
-        ds = ds.pipe(add_crs, crs)
 
     # Calculate x, y, and z from the dataset
-    ds["x"], ds["y"], ds["z"] = antenna_to_cartesian(
+    x, y, z = antenna_to_cartesian(
         ds.range,
         ds.azimuth,
         ds.elevation,
@@ -163,6 +170,9 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
         effective_radius_fraction=effective_radius_fraction,
         site_altitude=ds.altitude.values,
     )
+    ds["x"] = x
+    ds["y"] = y
+    ds["z"] = z
 
     # Set the attributes for the dataset
     # todo: possible utilize crs.cs_to_cf() for x/y
@@ -171,6 +181,22 @@ def get_x_y_z(ds, earth_radius=None, effective_radius_fraction=None):
     ds.y.attrs = {"standard_name": "north_south_distance_from_radar", "units": "meters"}
 
     ds.z.attrs = {"standard_name": "height_above_ground", "units": "meters"}
+
+    # Transform coordinates to target_crs if provided
+    if target_crs is not None:
+        transformer = Transformer.from_crs(crs, target_crs, always_xy=True)
+        x_new, y_new = transformer.transform(ds.x.values, ds.y.values)
+
+        ds["x"] = (("azimuth", "range"), x_new.reshape(ds.x.shape))
+        ds["y"] = (("azimuth", "range"), y_new.reshape(ds.y.shape))
+
+        ds.x.attrs["standard_name"] = "x_projected"
+        ds.y.attrs["standard_name"] = "y_projected"
+
+        crs = target_crs
+
+    # Add the crs information
+    ds = ds.pipe(add_crs, crs)
 
     # Make sure the coordinates are set properly if it is a dataset
     if isinstance(ds, xr.Dataset):
