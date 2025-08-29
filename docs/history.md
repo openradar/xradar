@@ -2,6 +2,7 @@
 
 ## Development Version (unreleased)
 
+* ENH: add option to reproject radar coordinates
 * ENH: Disable fill value in rainbow reader ({issue}`103`) ({pull}`290`) by [@egouden](https://github.com/egouden)
 * ADD: read nyquist_velocity in ODIM and GAMIC HDF5 files ({pull}`291`) by
   [@katelbach](https://github.com/katelbach)
