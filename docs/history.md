@@ -6,7 +6,8 @@
 * ADD: read nyquist_velocity in ODIM and GAMIC HDF5 files ({pull}`291`) by
   [@katelbach](https://github.com/katelbach)
 * MNT: update and harden CI, add zizmor to precommit, add dependabot ({pull}`294`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
-* MNT: Fix Windows errors by [@egouden](https://github.com/egouden)
+* FIX: Return float32 for float types (keep other dtypes) and remove erroneous "units" from time attrs for hpl reader. ({issue}`296`) ({pull}`297`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* MNT: Fix Windows errors in file handling ({pull}`295`) by [@egouden](https://github.com/egouden)
 
 ## 0.10.0 (2025-07-11)
 
