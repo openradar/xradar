@@ -51,7 +51,6 @@ from ...model import (
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
-    get_time_attrs,
     radar_calibration_subgroup,
     radar_parameters_subgroup,
 )
@@ -135,7 +134,7 @@ variable_attr_dict["sweep_mode"] = {"dims": ()}
 variable_attr_dict["sweep_fixed_angle"] = {"dims": ()}
 variable_attr_dict["sweep_group_name"] = {"dims": ()}
 variable_attr_dict["sweep_number"] = {"dims": ()}
-variable_attr_dict["time"] = get_time_attrs()
+variable_attr_dict["time"] = dict(standard_name="time")
 variable_attr_dict["time"]["dims"] = ("time",)
 variable_attr_dict["azimuth"] = get_azimuth_attrs()
 variable_attr_dict["azimuth"]["dims"] = ("time",)
@@ -417,7 +416,10 @@ class HplArrayWrapper(BackendArray):
         self.data = data
         self.shape = data.shape
         self.name = name
-        self.dtype = np.dtype("float32")
+        # ToDo: check if we want all floats as float32!
+        # if not float, keep data dtype
+        # see https://github.com/openradar/xradar/issues/296
+        self.dtype = np.dtype("float32") if data.dtype.kind in "f" else data.dtype
 
     def __getitem__(self, key: tuple):
         return indexing.explicit_indexing_adapter(
