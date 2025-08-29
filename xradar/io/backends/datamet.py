@@ -24,7 +24,6 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import gzip
 import io
-import os
 import tarfile
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -136,26 +135,26 @@ class DataMetFile:
 
     def get_scan_metadata(self):
         # Get all metadata at scan level (valid for all sweeps/moments)
-        navigation = self.extract_parameters(os.path.join(".", "navigation.txt"))
-        archiviation = self.extract_parameters(os.path.join(".", "archiviation.txt"))
+        navigation = self.extract_parameters("./navigation.txt")
+        archiviation = self.extract_parameters("./archiviation.txt")
         return {**navigation, **archiviation}
 
     def get_mom_metadata(self, mom, sweep):
         # Get all metadata that is moment and/or sweep dependent
         # Note that DataMet uses 1-indexed but we switch to 0-indexed
         # as is done in other backends
-        mom_path = os.path.join(".", mom)
-        sweep_path = os.path.join(".", mom, str(sweep + 1))
+        mom_path = "/".join((".", mom))
+        sweep_path = "/".join((".", mom, str(sweep + 1)))
 
-        generic = self.extract_parameters(os.path.join(sweep_path, "generic.txt"))
+        generic = self.extract_parameters("/".join((sweep_path, "generic.txt")))
         calibration_momlvl = self.extract_parameters(
-            os.path.join(mom_path, "calibration.txt")
+            "/".join((mom_path, "calibration.txt"))
         )
         calibration_sweeplvl = self.extract_parameters(
-            os.path.join(sweep_path, "calibration.txt")
+            "/".join((sweep_path, "calibration.txt"))
         )
         navigation_var = self.extract_parameters(
-            os.path.join(sweep_path, "navigation.txt")
+            "/".join((sweep_path, "navigation.txt"))
         )
         return {
             **navigation_var,
@@ -168,7 +167,7 @@ class DataMetFile:
         # Get the data for a moment and apply byte to float conversion
         # Note that DataMet uses 1-indexed but we switch to 0-indexed
         # as is done in other backends
-        mom_path = os.path.join(".", mom, str(sweep + 1))
+        mom_path = "/".join((".", mom, str(sweep + 1)))
         mom_medata = self.get_mom_metadata(mom, sweep)
 
         bitplanes = 16 if mom == "PHIDP" else int(mom_medata["bitplanes"] or 8)
