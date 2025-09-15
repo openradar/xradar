@@ -157,11 +157,11 @@ def _variable_mapper(dtree, dim0=None):
     drop_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
     result_dataset = result_dataset.drop_vars(drop_coords, errors="ignore")
 
-    result_dataset = result_dataset.update(sweep_info)
+    result_dataset.update(sweep_info)
     sweep_indices = calculate_sweep_indices(dtree, result_dataset)
-    result_dataset = result_dataset.update(sweep_indices)
+    result_dataset.update(sweep_indices)
     result_dataset = result_dataset.reset_coords(["elevation", "azimuth"])
-    result_dataset = result_dataset.update(vol_info)
+    result_dataset.update(vol_info)
     return result_dataset
 
 
