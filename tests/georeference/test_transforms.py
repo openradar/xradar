@@ -3,6 +3,7 @@
 # Distributed under the MIT License. See LICENSE for more info.
 
 import numpy as np
+import pyproj
 import pytest
 from numpy.testing import assert_almost_equal
 
@@ -77,6 +78,26 @@ def test_get_x_y_z():
         "false_easting": 0.0,
         "false_northing": 0.0,
     }
+    for key, value in crs.items():
+        if isinstance(value, float):
+            assert ds.crs_wkt.attrs[key] == pytest.approx(value)
+        else:
+            assert ds.crs_wkt.attrs[key] == value
+
+
+def test_get_x_y_z_crs():
+    # Create default xradar dataset
+    ds = xradar.model.create_sweep_dataset()
+
+    # Define a target CRS (for example, WGS84)
+    target_crs = pyproj.CRS("EPSG:4326")
+
+    # apply georeferencing with target CRS
+    ds = get_x_y_z(ds, target_crs=target_crs)
+
+    # Make sure spatial_ref has been added with the correct values
+    assert ds.crs_wkt == 0
+    crs = target_crs.to_cf()
     for key, value in crs.items():
         if isinstance(value, float):
             assert ds.crs_wkt.attrs[key] == pytest.approx(value)
