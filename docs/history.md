@@ -10,6 +10,7 @@
 * FIX: Return float32 for float types (keep other dtypes) and remove erroneous "units" from time attrs for hpl reader. ({issue}`296`) ({pull}`297`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MNT: Fix Windows errors in file handling ({pull}`295`) by [@egouden](https://github.com/egouden)
 * MNT: do not overwrite Dataset for Dataset.update ({pull}`302`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: Properly handle zero and NaN values during IRIS/Sigmet KDP decode. ({pull}`301`) by [@billvieux](https://github.com/billvieux)
 
 ## 0.10.0 (2025-07-11)
 
