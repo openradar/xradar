@@ -2,6 +2,7 @@
 
 ## Development Version (unreleased)
 
+* ENH: get radar coordinates with given reference system ({issue}`243`) ({pull}`300`) by [@egouden](https://github.com/egouden)
 * ENH: Disable fill value in rainbow reader ({issue}`103`) ({pull}`290`) by [@egouden](https://github.com/egouden)
 * ADD: read nyquist_velocity in ODIM and GAMIC HDF5 files ({pull}`291`) by
   [@katelbach](https://github.com/katelbach)
