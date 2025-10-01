@@ -2,6 +2,7 @@
 
 ## Development Version (unreleased)
 
+* ENH: get radar coordinates with given reference system ({issue}`243`) ({pull}`300`) by [@egouden](https://github.com/egouden)
 * ENH: Disable fill value in rainbow reader ({issue}`103`) ({pull}`290`) by [@egouden](https://github.com/egouden)
 * ADD: read nyquist_velocity in ODIM and GAMIC HDF5 files ({pull}`291`) by
   [@katelbach](https://github.com/katelbach)
@@ -9,6 +10,7 @@
 * FIX: Return float32 for float types (keep other dtypes) and remove erroneous "units" from time attrs for hpl reader. ({issue}`296`) ({pull}`297`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MNT: Fix Windows errors in file handling ({pull}`295`) by [@egouden](https://github.com/egouden)
 * MNT: do not overwrite Dataset for Dataset.update ({pull}`302`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: Properly handle zero and NaN values during IRIS/Sigmet KDP decode. ({pull}`301`) by [@billvieux](https://github.com/billvieux)
 
 ## 0.10.0 (2025-07-11)
 
