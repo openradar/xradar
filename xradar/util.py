@@ -29,6 +29,7 @@ __all__ = [
     "get_sweep_dataset_vars",
     "get_sweep_metadata_vars",
     "select_sweep_dataset_vars",
+    "stack_volumes",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -740,3 +741,54 @@ def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=
     sweep_out = sweep[select]
 
     return sweep_out
+
+
+def stack_volumes(volumes):
+    """
+    Combine sweeps from multiple radar volumes or single scans into a single volume.
+
+    All sweeps are copied and renamed sequentially (sweep_0, sweep_1, ...).
+    Sweeps are sorted by their start time to ensure temporal consistency.
+
+    Parameters:
+        volumes: List of DataTree objects, each representing a radar volume or a single scan.
+
+    Returns:
+        A new DataTree representing a single volume with stacked sweeps.
+    """
+    sweep_entries = []
+    for volume in volumes:
+        for i in volume["sweep_group_name"].values:
+            name = f"sweep_{i}"
+            ds = volume[name].ds
+            if "time" in ds:
+                sweep_entries.append((ds["time"].min(), ds))
+
+    sweep_entries.sort(key=lambda x: x[0])
+
+    sweep_dict = {}
+    sweep_names = []
+    for i, (_, ds) in enumerate(sweep_entries):
+        name = f"sweep_{i}"
+        sweep_names.append(name)
+        sweep_dict[name] = xr.DataTree(
+            ds.copy(deep=True).drop_dims("sweep", errors="ignore")
+        )
+
+    root_ds = volumes[0].ds.copy(deep=True).drop_dims("sweep", errors="ignore")
+    root_ds["sweep_group_name"] = xr.DataArray(sweep_names, dims="sweep")
+
+    start_idx = np.argmin(
+        [np.datetime64(vol["time_coverage_start"].item()) for vol in volumes]
+    )
+    end_idx = np.argmax(
+        [np.datetime64(vol["time_coverage_end"].item()) for vol in volumes]
+    )
+    root_ds["time_coverage_start"].data = volumes[start_idx]["time_coverage_start"].data
+    root_ds["time_coverage_end"].data = volumes[end_idx]["time_coverage_end"].data
+
+    stacked = xr.DataTree(root_ds, name="root")
+    for name, subtree in sweep_dict.items():
+        stacked[name] = subtree
+
+    return stacked

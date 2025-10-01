@@ -4,6 +4,8 @@
 
 """Tests for `xradar` util package."""
 
+import fnmatch
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -536,3 +538,15 @@ def test_select_sweep_dataset_vars():
 
     metadata = required_metadata + ["polarization_mode", "nyquist_velocity"]
     assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
+
+
+def test_stack_volumes():
+    pattern = "T_PAZ?63_C_LFPW_20230420*"
+    filenames = list(DATASETS.registry.keys())
+    files = fnmatch.filter(filenames, pattern)
+    volumes = [io.open_odim_datatree(DATASETS.fetch(fn)) for fn in files]
+    stacked = util.stack_volumes(volumes)
+    print(stacked)
+    assert len(stacked.children) == len(files)
+    assert stacked.time_coverage_start == volumes[0].time_coverage_start
+    assert stacked.time_coverage_end == volumes[-1].time_coverage_end
