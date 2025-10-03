@@ -4,6 +4,10 @@
 
 """Tests for `xradar` util package."""
 
+import datetime
+import fnmatch
+import random
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -536,3 +540,28 @@ def test_select_sweep_dataset_vars():
 
     metadata = required_metadata + ["polarization_mode", "nyquist_velocity"]
     assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
+
+
+def test_create_volume():
+    pattern = "T_PAZ?63_C_LFPW_20230420*"
+    filenames = list(DATASETS.registry.keys())
+    files = fnmatch.filter(filenames, pattern)
+    random.shuffle(files)
+    sweeps = [io.open_odim_datatree(DATASETS.fetch(fn)) for fn in files]
+    stacked = util.create_volume(sweeps)
+    assert len(stacked.children) == len(files)
+    assert stacked.time_coverage_start == "2023-04-20T06:50:00Z"
+    assert stacked.time_coverage_end == "2023-04-20T06:59:45Z"
+
+    time_coverage_start = "2023-04-20T06:50:00"
+    time_coverage_start = datetime.datetime.fromisoformat(time_coverage_start)
+    time_coverage_end = "2023-04-20T06:55:00"
+    time_coverage_end = datetime.datetime.fromisoformat(time_coverage_end)
+    stacked = util.create_volume(
+        sweeps=sweeps,
+        time_coverage_start=time_coverage_start,
+        time_coverage_end=time_coverage_end,
+    )
+    np.testing.assert_array_equal(
+        stacked.ds.sweep_fixed_angle, [8.0, 3.6, 1.6, 1.0, 0.4]
+    )
