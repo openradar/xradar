@@ -29,11 +29,13 @@ __all__ = [
     "get_sweep_dataset_vars",
     "get_sweep_metadata_vars",
     "select_sweep_dataset_vars",
+    "create_volume",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import contextlib
+import datetime
 import functools
 import gzip
 import importlib.util
@@ -740,3 +742,87 @@ def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=
     sweep_out = sweep[select]
 
     return sweep_out
+
+
+def create_volume(
+    sweeps: list[xr.DataTree],
+    time_coverage_start: datetime.datetime = None,
+    time_coverage_end: datetime.datetime = None,
+    volume_number: int = 0,
+) -> xr.DataTree:
+    """
+    Combine sweeps into a single stacked radar volume.
+
+    Parameters
+    ----------
+    sweeps : list[xr.DataTree]
+        A list of DataTree objects, each representing one or more sweeps.
+    time_coverage_start : datetime, optional
+        Minimum start time for sweeps to include.
+    time_coverage_end : datetime, optional
+        Maximum end time for sweeps to include.
+    volume_number : int, default 0
+        Identifier for the volume, stored in the root node's attributes.
+
+    Returns
+    -------
+    xr.DataTree
+        A volume tree with root metadata and child nodes named 'sweep_0', 'sweep_1', etc.
+    """
+    # Step 1: Extract all sweep datasets with timestamps
+    sweep_entries = []
+    for dt in sweeps:
+        for key in get_sweep_keys(dt):
+            ds = xr.decode_cf(dt[key].ds)
+            t0 = ds["time"].min().values.astype("datetime64[ns]").astype("int64")
+            t1 = ds["time"].max().values.astype("datetime64[ns]").astype("int64")
+            t0 = datetime.datetime.utcfromtimestamp(t0 / 1e9)
+            t1 = datetime.datetime.utcfromtimestamp(t1 / 1e9)
+            sweep_entries.append((t0, t1, ds))
+
+    # Step 2: Filter by time bounds
+    if time_coverage_start is not None:
+        sweep_entries = [
+            entry for entry in sweep_entries if entry[0] >= time_coverage_start
+        ]
+    if time_coverage_end is not None:
+        sweep_entries = [
+            entry for entry in sweep_entries if entry[1] <= time_coverage_end
+        ]
+
+    # Step 3: Sort by start time
+    sweep_entries.sort(key=lambda x: x[0])
+
+    # Step 4: Prepare root metadata
+    root_ds = sweeps[0].ds.copy(deep=True)
+    root_ds = root_ds.drop_vars(
+        ["sweep_group_name", "sweep_fixed_angle"], errors="ignore"
+    )
+
+    sweep_names = [f"sweep_{i}" for i in range(len(sweep_entries))]
+    root_ds["sweep_group_name"] = xr.DataArray(sweep_names, dims="sweep")
+
+    sweep_fixed_angle = xr.DataArray(
+        [ds.sweep_fixed_angle.item() for _, _, ds in sweep_entries], dims="sweep"
+    )
+    root_ds["sweep_fixed_angle"] = sweep_fixed_angle
+
+    # Step 5: Assign time coverage
+    def format_zulu(dt: datetime.datetime) -> str:
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if time_coverage_start is None and sweep_entries:
+        time_coverage_start = sweep_entries[0][0]
+    if time_coverage_end is None and sweep_entries:
+        time_coverage_end = sweep_entries[-1][1]
+
+    root_ds["time_coverage_start"] = format_zulu(time_coverage_start)
+    root_ds["time_coverage_end"] = format_zulu(time_coverage_end)
+    root_ds.attrs["volume_number"] = volume_number
+
+    # Step 6: Assemble final tree
+    stacked = xr.DataTree(root_ds, name="root")
+    for i, (_, _, ds) in enumerate(sweep_entries):
+        stacked[f"sweep_{i}"] = xr.DataTree(ds.copy(deep=True))
+
+    return stacked
