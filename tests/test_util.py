@@ -4,6 +4,10 @@
 
 """Tests for `xradar` util package."""
 
+import datetime
+import fnmatch
+import random
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -536,3 +540,45 @@ def test_select_sweep_dataset_vars():
 
     metadata = required_metadata + ["polarization_mode", "nyquist_velocity"]
     assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
+
+
+def test_create_volume():
+    pattern = "T_PAZ?63_C_LFPW_20230420*"
+    filenames = list(DATASETS.registry.keys())
+    files = fnmatch.filter(filenames, pattern)
+    random.shuffle(files)
+    sweeps = [io.open_odim_datatree(DATASETS.fetch(fn)) for fn in files]
+
+    time_coverage_start = "2023-04-20T06:50:00Z"
+    time_coverage_start = datetime.datetime.fromisoformat(time_coverage_start)
+    time_coverage_end = "2023-04-20T06:55:00Z"
+    time_coverage_end = datetime.datetime.fromisoformat(time_coverage_end)
+    volume = util.create_volume(
+        sweeps=sweeps,
+        time_coverage_start=time_coverage_start,
+        time_coverage_end=time_coverage_end,
+        min_angle=0.5,
+        max_angle=5.0,
+    )
+    assert volume.ds.time_coverage_start == "2023-04-20T06:50:00Z"
+    assert volume.ds.time_coverage_end == "2023-04-20T06:55:00Z"
+    sweep_group_name = ["sweep_0", "sweep_1", "sweep_2"]
+    np.testing.assert_array_equal(volume.ds.sweep_group_name, sweep_group_name)
+    angles = [3.6, 1.6, 1.0]
+    np.testing.assert_array_equal(volume.ds.sweep_fixed_angle, angles)
+    sweep_fixed_angle = [
+        volume[sweep].ds.sweep_fixed_angle.values.item()
+        for sweep in util.get_sweep_keys(volume)
+    ]
+    np.testing.assert_array_equal(sweep_fixed_angle, angles)
+
+    time_coverage_start = "2023-04-19T06:50:00Z"
+    time_coverage_start = datetime.datetime.fromisoformat(time_coverage_start)
+    time_coverage_end = "2023-04-19T06:55:00Z"
+    time_coverage_end = datetime.datetime.fromisoformat(time_coverage_end)
+    with pytest.raises(ValueError, match="No sweeps remain after filtering."):
+        volume = util.create_volume(
+            sweeps=sweeps,
+            time_coverage_start=time_coverage_start,
+            time_coverage_end=time_coverage_end,
+        )

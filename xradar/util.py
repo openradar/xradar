@@ -29,6 +29,7 @@ __all__ = [
     "get_sweep_dataset_vars",
     "get_sweep_metadata_vars",
     "select_sweep_dataset_vars",
+    "create_volume",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
@@ -513,6 +514,7 @@ def get_sweep_keys(dtree):
     keys : list
         List of associated keys with sweep_n
     """
+
     sweep_group_keys = []
     for key in list(dtree.children):
         parts = key.split("_")
@@ -740,3 +742,90 @@ def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=
     sweep_out = sweep[select]
 
     return sweep_out
+
+
+def format_zulu(t: np.datetime64) -> str:
+    return str(t).split(".")[0] + "Z"
+
+
+def create_volume(
+    sweeps: list[xr.DataTree],
+    time_coverage_start: np.datetime64 = None,
+    time_coverage_end: np.datetime64 = None,
+    min_angle: float = None,
+    max_angle: float = None,
+    volume_number: int = 0,
+) -> xr.DataTree:
+    """
+    Combine sweeps into a single stacked radar volume with optional time and angle filtering.
+    All timestamps are handled as np.datetime64[ns] internally.
+    """
+
+    # Normalize time bounds
+    if time_coverage_start is not None:
+        time_coverage_start = np.datetime64(time_coverage_start, "ns")
+    if time_coverage_end is not None:
+        time_coverage_end = np.datetime64(time_coverage_end, "ns")
+
+    # Step 1: Extract (ds, time, angle) tuples
+    sweep_entries = []
+    for dt in sweeps:
+        for key in get_sweep_keys(dt):
+            ds = xr.decode_cf(dt[key].ds)
+            time = ds["time"].values.astype("datetime64[ns]")
+            mask = time != np.datetime64("NaT", "ns")
+            time = time[mask]
+            t0 = time.min()
+            angle = float(ds["sweep_fixed_angle"].item())
+            sweep_entries.append((ds, t0, angle))
+
+    # Step 2: Filter by time
+    if time_coverage_start is not None:
+        sweep_entries = [
+            entry for entry in sweep_entries if entry[1] >= time_coverage_start
+        ]
+    if time_coverage_end is not None:
+        sweep_entries = [
+            entry for entry in sweep_entries if entry[1] <= time_coverage_end
+        ]
+
+    # Step 3: Filter by angle
+    if min_angle is not None:
+        sweep_entries = [entry for entry in sweep_entries if entry[2] >= min_angle]
+    if max_angle is not None:
+        sweep_entries = [entry for entry in sweep_entries if entry[2] <= max_angle]
+
+    # Step 4: Sort by time
+    sweep_entries.sort(key=lambda x: x[1])
+
+    if not sweep_entries:
+        raise ValueError("No sweeps remain after filtering.")
+
+    # Step 5: Prepare root metadata
+    root_ds = sweeps[0].ds.copy(deep=True)
+    root_ds = root_ds.drop_vars(
+        ["sweep_group_name", "sweep_fixed_angle"], errors="ignore"
+    )
+
+    root_ds["sweep_group_name"] = xr.DataArray(
+        np.array([f"sweep_{i}" for i in range(len(sweep_entries))]),
+        dims="sweep",
+    )
+    root_ds["sweep_fixed_angle"] = xr.DataArray(
+        [angle for _, _, angle in sweep_entries], dims="sweep"
+    )
+
+    # Step 6: Assign time coverage
+    time_coverage_start = time_coverage_start or sweep_entries[0][1]
+    time_coverage_end = time_coverage_end or sweep_entries[-1][1]
+
+    root_ds["time_coverage_start"] = format_zulu(time_coverage_start)
+    root_ds["time_coverage_end"] = format_zulu(time_coverage_end)
+    root_ds.attrs["volume_number"] = volume_number
+
+    # Step 7: Assemble final tree
+    volume = xr.DataTree(root_ds, name="root")
+    for i, (ds, _, _) in enumerate(sweep_entries):
+        volume[f"sweep_{i}"] = xr.DataTree(ds.copy(deep=True))
+
+    return volume
