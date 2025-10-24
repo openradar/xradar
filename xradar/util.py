@@ -795,14 +795,14 @@ def create_volume(
     if max_angle is not None:
         sweep_entries = [entry for entry in sweep_entries if entry[2] <= max_angle]
 
-    # Step 4: Sort by time
-    sweep_entries.sort(key=lambda x: x[1])
-
     if not sweep_entries:
         raise ValueError("No sweeps remain after filtering.")
 
+    # Step 4: Sort by time
+    sweep_entries.sort(key=lambda x: x[1])
+
     # Step 5: Prepare root metadata
-    root_ds = sweeps[0].ds.copy(deep=True)
+    root_ds = sweeps[0].ds.copy()
     root_ds = root_ds.drop_vars(
         ["sweep_group_name", "sweep_fixed_angle"], errors="ignore"
     )
@@ -826,6 +826,6 @@ def create_volume(
     # Step 7: Assemble final tree
     volume = xr.DataTree(root_ds, name="root")
     for i, (ds, _, _) in enumerate(sweep_entries):
-        volume[f"sweep_{i}"] = xr.DataTree(ds.copy(deep=True))
+        volume[f"sweep_{i}"] = xr.DataTree(ds.copy())
 
     return volume
