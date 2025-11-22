@@ -34,9 +34,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import numpy as np
 from xarray import Dataset, DataTree, merge, open_dataset
-from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
-from xarray.backends.store import StoreBackendEntrypoint
 
 from ... import util
 from ...model import (
@@ -328,7 +326,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     site_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
     engine: str
-        Engine that will be passed to Xarray.open_dataset, defaults to "netcdf4"
+        Engine that will be passed to xarray.open_dataset, defaults to "h5netcdf"
 
     Returns
     -------
@@ -341,12 +339,12 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     optional = kwargs.pop("optional", True)
     site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
-    engine = kwargs.pop("engine", "netcdf4")
+    engine = kwargs.pop("engine", "h5netcdf")
     # needed for new xarray literal timedelta decoding
     kwargs.update(decode_timedelta=kwargs.pop("decode_timedelta", False))
 
     # open root group, cfradial1 only has one group
-    # open_cfradial1_datatree only opens the file once using netcdf4
+    # open_cfradial1_datatree only opens the file once using h5netcdf
     # and retrieves the different groups from the loaded object
     ds = open_dataset(filename_or_obj, engine=engine, **kwargs)
 
@@ -396,7 +394,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
     """
 
-    description = "Open CfRadial1 (.nc, .nc4) using netCDF4 in Xarray"
+    description = "Open CfRadial1 (.nc, .nc4) using h5netcdf in xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#cfradial1"
 
     def open_dataset(
@@ -418,16 +416,10 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         site_coords=True,
         optional=True,
     ):
-        store = NetCDF4DataStore.open(
+        # Open using h5netcdf engine and then construct the CfRadial1 view
+        ds0 = open_dataset(
             filename_or_obj,
-            format=format,
-            group=None,
-        )
-
-        store_entrypoint = StoreBackendEntrypoint()
-
-        ds0 = store_entrypoint.open_dataset(
-            store,
+            engine="h5netcdf",
             mask_and_scale=mask_and_scale,
             decode_times=decode_times,
             concat_characters=concat_characters,
