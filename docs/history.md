@@ -10,6 +10,7 @@
 * MNT: Fix Windows errors in file handling ({pull}`295`) by [@egouden](https://github.com/egouden)
 * MNT: do not overwrite Dataset for Dataset.update ({pull}`302`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: Properly handle zero and NaN values during IRIS/Sigmet KDP decode. ({pull}`301`) by [@billvieux](https://github.com/billvieux)
+* FIX: NEXRAD Level2 backend compatibility with older files and VCP-0 ({issue}`311`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.10.0 (2025-07-11)
 
