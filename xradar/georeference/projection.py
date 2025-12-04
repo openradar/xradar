@@ -78,12 +78,7 @@ def get_crs(ds, datum="WGS84"):
     if crs_wkt is not False:
         proj_crs = pyproj.CRS.from_cf(crs_wkt.attrs)
     else:
-        proj_crs = pyproj.CRS(
-            proj="aeqd",
-            datum=datum,
-            lon_0=ds.longitude.values,
-            lat_0=ds.latitude.values,
-        )
+        proj_crs = radar_crs(ds)
     return proj_crs
 
 
@@ -133,3 +128,25 @@ def add_crs_tree(radar, datum="WGS84"):
         if "sweep" in key:
             radar[key].ds = add_crs(radar[key].to_dataset(), datum=datum)
     return radar
+
+
+def radar_crs(ds):
+    """Return the radar native coordinate reference system (CRS)
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset containing radar metadata.
+
+    Returns
+    -------
+    crs : pyproj.CRS
+        Azimuthal equidistant projection centered on the radar location.
+    """
+    crs = pyproj.CRS(
+        proj="aeqd",
+        lon_0=ds.longitude.values,
+        lat_0=ds.latitude.values,
+    )
+
+    return crs
