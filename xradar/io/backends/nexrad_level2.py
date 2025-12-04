@@ -575,15 +575,28 @@ class NEXRADLevel2File(NEXRADRecordFile):
             byte_order=">",
         )
         msg_5["elevation_data"] = []
-        # unpack elevation cuts
-        for i in range(msg_5["number_elevation_cuts"]):
-            msg_5_elev = _unpack_dictionary(
-                self._rh.read(LEN_MSG_5_ELEV, width=1),
-                MSG_5_ELEV,
-                self._rawdata,
-                byte_order=">",
-            )
-            msg_5["elevation_data"].append(msg_5_elev)
+
+        # Validate number_elevation_cuts is reasonable
+        # VCP patterns typically have at most 25 elevation cuts
+        # VCP-0 (maintenance mode) may have invalid data
+        num_cuts = msg_5.get("number_elevation_cuts", 0)
+        if num_cuts < 0 or num_cuts > 25:
+            # Invalid elevation cut count, likely corrupted MSG_5 (e.g. VCP-0)
+            # Return partial MSG_5 without elevation data
+            return msg_5
+
+        try:
+            for i in range(num_cuts):
+                msg_5_elev = _unpack_dictionary(
+                    self._rh.read(LEN_MSG_5_ELEV, width=1),
+                    MSG_5_ELEV,
+                    self._rawdata,
+                    byte_order=">",
+                )
+                msg_5["elevation_data"].append(msg_5_elev)
+        except (struct.error, EOFError):
+            pass
+
         return msg_5
 
     def get_message_header(self):
