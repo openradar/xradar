@@ -647,7 +647,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
         # get the record number from the meta header
         # message 2 is the last meta header, after which the
         # data records are located
-        if self.meta_header:
+        if self.meta_header and self.meta_header.get("msg_2"):
             recnum = self.meta_header["msg_2"][0]["record_number"]
         else:
             # iterate over all records to retrieve data

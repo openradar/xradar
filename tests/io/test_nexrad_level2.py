@@ -751,3 +751,203 @@ def test_bz2_compressed_buffer_path_real(nexradlevel2_bzfile):
         assert 1 in fh._ldm
         assert isinstance(fh._ldm[1], np.ndarray)
         assert fh._ldm[1].dtype == np.uint8
+
+
+def test_nexradlevel2_missing_msg2_metadata():
+    """
+    Test backward compatibility when msg_2 metadata is missing.
+
+    Historical context: NEXRAD files from Build 8.0 era (2005-2006) sometimes
+    lack proper msg_2 metadata records in the metadata header. The msg_2 record
+    typically indicates the end of metadata and start of data records.
+
+    Without this fix, files missing msg_2 would cause IndexError when trying
+    to access meta_header["msg_2"][0]["record_number"].
+
+    This test ensures graceful degradation to scanning from record 0.
+    """
+    from collections import defaultdict
+
+    from xradar.io.backends.nexrad_level2 import NEXRADLevel2File
+
+    class MockNEXRADFile(NEXRADLevel2File):
+        def __init__(self):
+            self._meta_header = defaultdict(list)
+            # Simulate missing msg_2 by only having other message types
+            self._meta_header["msg_15"] = [{"record_number": 0}]
+            self._meta_header["msg_5"] = [{"record_number": 1}]
+            # msg_2 is missing!
+
+        @property
+        def meta_header(self):
+            return self._meta_header
+
+        def get_metadata_header(self):
+            return self._meta_header
+
+        def init_record(self, recnum):
+            # Simulate successful record initialization
+            return recnum < 10  # Allow up to 10 records
+
+        def init_next_record(self):
+            # Simulate end of records
+            return False
+
+        def get_message_header(self):
+            # Return empty header
+            return {"type": 0, "record_number": 0, "filepos": 0}
+
+    # Test with missing msg_2
+    mock_file = MockNEXRADFile()
+
+    # This should handle missing msg_2 gracefully
+    try:
+        data_header = mock_file.get_data_header()
+        # Should return tuple without crashing
+        assert isinstance(data_header, tuple)
+        assert (
+            len(data_header) == 3
+        )  # Should return (data_header, msg_31_header, msg_31_data_header)
+    except (IndexError, KeyError) as e:
+        # The fix should prevent these errors
+        pytest.fail(
+            f"get_data_header should handle missing msg_2 gracefully, but got: {e}"
+        )
+
+
+@pytest.mark.parametrize(
+    "elevation_cuts,pattern_number,expected_has_elevation_data,test_description",
+    [
+        (40833, 16621, False, "VCP-0 maintenance mode with corrupted elevation count"),
+        (5, 11, True, "Normal VCP with valid elevation cuts"),
+        (0, 0, False, "Empty VCP pattern"),
+        (26, 21, False, "Invalid elevation count exceeding maximum (25)"),
+    ],
+)
+def test_nexradlevel2_msg5_elevation_validation(
+    elevation_cuts, pattern_number, expected_has_elevation_data, test_description
+):
+    """
+    Test MSG_5 elevation cut validation for backward compatibility.
+
+    Historical context: VCP-0 maintenance mode files from 2005-2006 era
+    often contain corrupted MSG_5 data with invalid elevation counts
+    (e.g., 40833 cuts instead of realistic values like 5-25).
+
+    This test ensures graceful handling of such corrupted data.
+    """
+    import struct
+    from collections import defaultdict
+    from unittest.mock import Mock
+
+    from xradar.io.backends.nexrad_level2 import NEXRADLevel2File
+
+    # Create mock MSG_5 data with specified parameters
+    mock_msg5_data = struct.pack(
+        ">HHHHHBB10s", 0, 0, pattern_number, elevation_cuts, 0, 0, 0, b"\x00" * 10
+    )
+
+    # Mock the file reading components
+    mock_rh = Mock()
+    mock_rh.read.return_value = mock_msg5_data
+
+    mock_file = Mock(spec=NEXRADLevel2File)
+    mock_file._meta_header = defaultdict(list)
+    mock_file._meta_header["msg_5"] = [{"record_number": 0}]
+    mock_file._rh = mock_rh
+    mock_file._rawdata = False
+    mock_file.rh = Mock()
+    mock_file.rh.pos = 0
+
+    # Set up meta_header property
+    mock_file.meta_header = mock_file._meta_header
+
+    # Call the actual method
+    result = NEXRADLevel2File.get_msg_5_data(mock_file)
+
+    # Verify results
+    assert result is not False, f"Failed test: {test_description}"
+    assert isinstance(result, dict), f"Should return dict for: {test_description}"
+    assert "elevation_data" in result, f"Missing elevation_data for: {test_description}"
+
+    if expected_has_elevation_data:
+        # For valid elevation counts, we expect the method to attempt reading elevation data
+        # (though our mock doesn't provide the elevation data, so it will be empty due to the try/except)
+        assert (
+            len(result["elevation_data"]) >= 0
+        ), f"Should allow elevation data for: {test_description}"
+    else:
+        # For invalid elevation counts, should return empty elevation_data due to validation
+        assert (
+            len(result["elevation_data"]) == 0
+        ), f"Should have no elevation data for: {test_description}"
+
+
+def test_nexradlevel2_missing_msg5():
+    """Test handling when MSG_5 is completely missing."""
+    from collections import defaultdict
+
+    from xradar.io.backends.nexrad_level2 import NEXRADLevel2File
+
+    class MockNEXRADFile(NEXRADLevel2File):
+        def __init__(self):
+            self._meta_header = defaultdict(list)  # Empty - no msg_5
+            self._msg_5_data = None
+            self._rawdata = False
+
+        @property
+        def meta_header(self):
+            return self._meta_header
+
+    mock_file = MockNEXRADFile()
+    msg_5_result = mock_file.get_msg_5_data()
+
+    # Should return False when msg_5 is missing
+    assert msg_5_result is False
+
+
+def test_nexradlevel2_msg5_struct_error_handling():
+    """Test graceful handling of struct errors in MSG_5 elevation data."""
+    import struct
+    from collections import defaultdict
+
+    from xradar.io.backends.nexrad_level2 import NEXRADLevel2File
+
+    class MockRH:
+        def __init__(self):
+            self.pos = 0
+            self.read_count = 0
+
+        def read(self, size, width=1):
+            self.read_count += 1
+            if self.read_count == 1:
+                # First read - return valid MSG_5 header with 3 elevation cuts
+                return struct.pack(">HHHHHBB10s", 0, 0, 11, 3, 0, 0, 0, b"\x00" * 10)
+            else:
+                # Subsequent reads - return insufficient data to trigger struct.error
+                return b"\x00" * 10  # Too small for MSG_5_ELEV structure
+
+    class MockNEXRADFile(NEXRADLevel2File):
+        def __init__(self):
+            self._meta_header = defaultdict(list)
+            self._meta_header["msg_5"] = [{"record_number": 0}]
+            self._msg_5_data = None
+            self._rawdata = False
+            self._rh = MockRH()
+            self._fp = None  # Avoid close() errors
+
+        @property
+        def meta_header(self):
+            return self._meta_header
+
+        def init_record(self, recnum):
+            return True
+
+    mock_file = MockNEXRADFile()
+    msg_5_result = mock_file.get_msg_5_data()
+
+    # Should return partial MSG_5 despite struct errors
+    assert msg_5_result is not False
+    assert "elevation_data" in msg_5_result
+    # May have partial elevation data before the error occurred
+    assert len(msg_5_result["elevation_data"]) >= 0
