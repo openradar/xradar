@@ -534,5 +534,5 @@ def test_select_sweep_dataset_vars():
         sweep, select, ancillary=True, optional_metadata=True
     )
 
-    metadata = required_metadata + ["polarization_mode"]
+    metadata = required_metadata + ["polarization_mode", "nyquist_velocity"]
     assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
