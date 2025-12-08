@@ -283,7 +283,7 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
     extract_vars = set(data_vars) & set(meta_vars)
-    subgroup = xr.merge([ds[extract_vars] for ds in ls_ds])
+    subgroup = xr.merge([ds[extract_vars] for ds in ls_ds], compat="override")
     for k in subgroup.data_vars:
         rename = meta_vars[k]
         if rename:
