@@ -2,6 +2,7 @@
 
 ## 0.10.0 (2025-07-11)
 
+* FIX: Add explicit `compat='override'` to `xr.merge()` in `_get_subgroup` to silence xarray FutureWarning by [@aladinor](https://github.com/aladinor).
 * FIX: Use fixture for making temp file to avoid permission issue on Windows
 * ENH: Supporting for streaming NEXRAD Level 2 data via file-like objects and byte streams. ({issue}`265`) ({pull}`280`) by [@aladinor](https://github.com/aladinor)
 * ADD: function to select dataset variables in sweep ({issue}`104`) ({pull}`254`) by [@egouden](https://github.com/egouden)
