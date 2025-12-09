@@ -3,8 +3,6 @@
 Contributions are welcome, and they are greatly appreciated! Every little bit
 helps, and credit will always be given.
 
-You can contribute in many ways:
-
 ## Types of Contributions
 
 ### Report Bugs
@@ -40,7 +38,7 @@ The best way to send feedback is to file an issue at [xradar-issues](https://git
 If you are proposing a feature:
 
 * Explain in detail how it would work.
-* Keep the scope as narrow as possible, to make it easier to implement.
+* Keep the scope as narrow as possible to make it easier to implement.
 * Remember that this is a volunteer-driven project, and that contributions
   are welcome :)
 
@@ -49,94 +47,101 @@ If you are proposing a feature:
 Ready to contribute? Here's how to set up `xradar` for local development.
 
 1. Fork the `xradar` repo on GitHub.
-2. Clone your fork locally:
+2. Clone your fork locally.
 
    ```bash
-   $ git clone git@github.com:your_name_here/xradar.git
+   git clone git@github.com:your_name_here/xradar.git
+   git remote add upstream https://github.com/openradar/xradar
+   cd xradar
    ```
 
-3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development:
+3. Install `xradar` development environment.
 
-   ```bash
-   $ mkvirtualenv xradar
-   $ cd xradar/
-   $ python -m pip install -e .[dev]
-   ```
+  - Install with conda (Linux):
 
-   * Install `ffmpeg` using your OS package manager.
+    ```bash
+    curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+    bash Miniforge3-Linux-x86_64.sh -b
+    rm Miniforge3-Linux-x86_64.sh
+    source $HOME/miniforge3/etc/profile.d/conda.sh
+    conda env create --file environment.yml
+    conda activate xradar-dev
+    ```
 
-4. Create a branch for local development:
+  - Install with conda (Windows):
 
-   ```bash
-   $ git checkout -b name-of-your-bugfix-or-feature
-   ```
-   Now you can make your changes locally.
+    ```bash
+    winget install -e --id CondaForge.Miniforge3
+    & "$HOME\Miniforge3\shell\condabin\conda-hook.ps1"
+    conda env create --file environment.yml
+    conda activate xradar-dev
+    ```
 
-5. When you're done making changes, check that your changes pass `black`, `ruff` and the
-   tests:
+  - Install with uv (Linux):
 
-   ```bash
-   $ black --check .
-   $ ruff check .
-   $ python -m pytest
-   ```
-   To get `black` and `ruff`, just pip install them into your virtualenv.
+    ```bash
+    sudo apt install build-essential ffmpeg libhdf5-dev libnetcdf-dev pandoc
+    sudo snap install astral-uv --classic
+    uv python install 3.13
+    uv venv --python 3.13
+    source .venv/bin/activate
+    uv pip install -e .[dev] --no-binary=netcdf4 --no-binary=h5py
+    ```
 
-6. Install pre-commit hooks
+  - Install with uv (Windows):
 
-   We highly recommend that you setup [pre-commit](https://pre-commit.com/) hooks to automatically
-   run all the above tools (and more) every time you make a git commit. To install the hooks:
+    ```powershell
+    winget install ffmpeg
+    winget install uv
+    uv python install 3.13
+    uv venv --python 3.13
+    .venv\Scripts\Activate.ps1
+    uv pip install -e .[dev]
+    ```
 
-   ```bash
-   $ python -m pip install pre-commit
-   $ pre-commit install
-   ```
-   To run unconditionally against all files:
+4. Create a branch for local development.
 
-   ```bash
-   $ pre-commit run --all-files
-   ```
-   You can skip the pre-commit checks with ``git commit --no-verify``.
+    ```bash
+    git checkout -b name-of-your-bugfix-or-feature
+    ```
+    Now you can make your changes locally.
 
-7. Commit your changes and push your branch to GitHub:
+5. Perform tests and ensure your changes are covered.
+    ```bash
+    python -m pytest -k name_of_my_test
+    python -m pytest -n auto --dist loadfile --cov=xradar --cov-report xml --verbose
+    python -m coverage report
+    diff-cover coverage.xml --compare-branch=main
+    ```
 
-   ```bash
-   $ git add .
-   $ git commit -m "Your detailed description of your changes."
-   $ git push origin name-of-your-bugfix-or-feature
-   ```
+6. Update documentation.
+    - Add docstring to new functions
+        ```bash
+        python -m sphinx build -j auto -v -b html docs/ doc-build
+        ```
+    - Check at `docs/_build/html/index.html`
+    - Add new features to README.rst
 
-8. Submit a pull request through the GitHub website.
+7. Run pre-commit hooks
 
-## Pull Request Guidelines
+    ```bash
+    git add your-new-file.py
+    pre-commit run --all-files
+    ```
 
-Before you submit a pull request, check that it meets these guidelines:
+8. Commit your changes and push your branch to GitHub.
 
-1. The pull request should include tests.
-2. If the pull request adds functionality, the docs should be updated. Put
-   your new functionality into a function with a docstring, and add the
-   feature to the list in README.rst.
-3. The pull request should work for [supported Python versions](https://endoflife.date/python) and for PyPy. Check
-   [GHA](https://github.com/openradar/xradar/actions)
-   and make sure that the tests pass for all supported Python versions.
+    ```bash
+    git commit -a -m "Brief summary of the changes" -m " * Change A" -m " * Change B"
+    git push origin name-of-your-bugfix-or-feature
+    ```
 
-## Building the documentation
+9. Submit a pull request.
 
-To build the documentation run:
-
-   ```bash
-   $ cd docs
-   $ make html
-   ```
-Then you can access the documentation via browser locally by opening `docs/_build/html/index.html`.
-
-## Tips
-
-To run a subset of tests:
-
-   ```bash
-   $ pytest tests.test_xradar
-   ```
+    - Go to your fork on GitHub
+    - Submit your pull request as a draft
+    - Verify all checks are passing
+    - Mark your pull request as ready for review
 
 ## Deploying
 
