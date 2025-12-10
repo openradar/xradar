@@ -218,7 +218,10 @@ def decode_kdp(data, **kwargs):
     See 4.4.20 p.77
     """
     wavelength = kwargs.pop("wavelength")
-    zero = data[data == -128]
+    zero = data == -128
+    not_available = (data == 0) | (data == -1)
+    data = data.astype(np.float64)
+    data[not_available] = np.nan
     data = -0.25 * np.sign(data) * 600 ** ((127 - np.abs(data)) / 126.0)
     data /= wavelength
     data[zero] = 0

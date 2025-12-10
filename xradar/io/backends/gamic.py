@@ -243,6 +243,14 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
         """Return sweep number."""
         return int(self._group.split("/")[0][4:])
 
+    @property
+    def _nyquist_velocity(self):
+        """Return nyquist velocity."""
+        try:
+            return float(self.how["nyquist_velocity"])
+        except (AttributeError, KeyError, TypeError):
+            return None
+
 
 class GamicStore(AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
