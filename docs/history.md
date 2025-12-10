@@ -12,7 +12,7 @@
 * MNT: do not overwrite Dataset for Dataset.update ({pull}`302`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: Properly handle zero and NaN values during IRIS/Sigmet KDP decode. ({pull}`301`) by [@billvieux](https://github.com/billvieux)
 * FIX: NEXRAD Level2 backend compatibility with older files and VCP-0 ({issue}`311`) by [@aladinor](https://github.com/aladinor)
-* FIX: Add explicit `set_options(use_new_combine_kwarg_defaults=True)` to `xr.merge()` in `_get_subgroup` to silence xarray FutureWarning by [@aladinor](https://github.com/aladinor).
+* FIX: Add explicit `compat="no_conflicts",` to `xr.merge()` in `_get_subgroup` to silence xarray FutureWarning by [@aladinor](https://github.com/aladinor).
 
 ## 0.10.0 (2025-07-11)
 
