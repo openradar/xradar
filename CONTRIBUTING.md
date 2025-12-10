@@ -122,16 +122,16 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     - Check at `docs/_build/html/index.html`
     - Add new features to README.rst
 
-7. Run pre-commit hooks
+7. Install pre-commit hooks
 
     ```bash
-    git add your-new-file.py
-    pre-commit run --all-files
+    pre-commit install
     ```
 
 8. Commit your changes and push your branch to GitHub.
 
     ```bash
+    git add your-new-file.py
     git commit -a -m "Brief summary of the changes" -m " * Change A" -m " * Change B"
     git push origin name-of-your-bugfix-or-feature
     ```
