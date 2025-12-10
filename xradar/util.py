@@ -744,28 +744,38 @@ def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=
     return sweep_out
 
 
-def format_zulu(t: np.datetime64) -> str:
-    return str(t).split(".")[0] + "Z"
+def round_datetime64_to_second(dt):
+    """
+    Round numpy.datetime64 to nearest second (ties go up).
+    """
+    # Convert to integer nanoseconds since epoch
+    ns = dt.astype("datetime64[ns]").astype("int64")
+    one_sec = 1_000_000_000
+    # Add half a second, then floor-divide to get true rounding
+    ns_rounded = ((ns + one_sec // 2) // one_sec) * one_sec
+    # Construct back from epoch + timedelta
+    return np.datetime64(0, "ns") + np.timedelta64(ns_rounded, "ns")
+
+
+def format_zulu(dt):
+    """
+    Round to nearest second and format as ISO 8601 with 'Z' (UTC).
+    """
+    rounded = round_datetime64_to_second(dt).astype("datetime64[s]")
+    return str(rounded) + "Z"
 
 
 def create_volume(
-    sweeps: list[xr.DataTree],
-    time_coverage_start: np.datetime64 = None,
-    time_coverage_end: np.datetime64 = None,
-    min_angle: float = None,
-    max_angle: float = None,
-    volume_number: int = 0,
-) -> xr.DataTree:
+    sweeps,
+    time_coverage_start=None,
+    time_coverage_end=None,
+    min_angle=None,
+    max_angle=None,
+    volume_number=0,
+):
     """
     Combine sweeps into a single stacked radar volume with optional time and angle filtering.
-    All timestamps are handled as np.datetime64[ns] internally.
     """
-
-    # Normalize time bounds
-    if time_coverage_start is not None:
-        time_coverage_start = np.datetime64(time_coverage_start, "ns")
-    if time_coverage_end is not None:
-        time_coverage_end = np.datetime64(time_coverage_end, "ns")
 
     # Step 1: Extract (ds, time, angle) tuples
     sweep_entries = []
@@ -776,24 +786,23 @@ def create_volume(
             mask = time != np.datetime64("NaT", "ns")
             time = time[mask]
             t0 = time.min()
+            t1 = time.max()
             angle = float(ds["sweep_fixed_angle"].item())
-            sweep_entries.append((ds, t0, angle))
+            sweep_entries.append((ds, t0, t1, angle))
 
     # Step 2: Filter by time
     if time_coverage_start is not None:
-        sweep_entries = [
-            entry for entry in sweep_entries if entry[1] >= time_coverage_start
-        ]
+        t_start = np.datetime64(time_coverage_start)
+        sweep_entries = [entry for entry in sweep_entries if entry[1] >= t_start]
     if time_coverage_end is not None:
-        sweep_entries = [
-            entry for entry in sweep_entries if entry[1] <= time_coverage_end
-        ]
+        t_end = np.datetime64(time_coverage_end)
+        sweep_entries = [entry for entry in sweep_entries if entry[2] <= t_end]
 
     # Step 3: Filter by angle
     if min_angle is not None:
-        sweep_entries = [entry for entry in sweep_entries if entry[2] >= min_angle]
+        sweep_entries = [entry for entry in sweep_entries if entry[3] >= min_angle]
     if max_angle is not None:
-        sweep_entries = [entry for entry in sweep_entries if entry[2] <= max_angle]
+        sweep_entries = [entry for entry in sweep_entries if entry[3] <= max_angle]
 
     if not sweep_entries:
         raise ValueError("No sweeps remain after filtering.")
@@ -812,20 +821,26 @@ def create_volume(
         dims="sweep",
     )
     root_ds["sweep_fixed_angle"] = xr.DataArray(
-        [angle for _, _, angle in sweep_entries], dims="sweep"
+        [angle for _, _, _, angle in sweep_entries], dims="sweep"
     )
 
     # Step 6: Assign time coverage
-    time_coverage_start = time_coverage_start or sweep_entries[0][1]
-    time_coverage_end = time_coverage_end or sweep_entries[-1][1]
+    if time_coverage_start is None:
+        root_ds["time_coverage_start"] = format_zulu(sweep_entries[0][1])
+    else:
+        root_ds["time_coverage_start"] = time_coverage_start.strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    if time_coverage_end is None:
+        root_ds["time_coverage_end"] = format_zulu(sweep_entries[-1][2])
+    else:
+        root_ds["time_coverage_end"] = time_coverage_end.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    root_ds["time_coverage_start"] = format_zulu(time_coverage_start)
-    root_ds["time_coverage_end"] = format_zulu(time_coverage_end)
     root_ds.attrs["volume_number"] = volume_number
 
     # Step 7: Assemble final tree
     volume = xr.DataTree(root_ds, name="root")
-    for i, (ds, _, _) in enumerate(sweep_entries):
+    for i, (ds, _, _, _) in enumerate(sweep_entries):
         volume[f"sweep_{i}"] = xr.DataTree(ds.copy())
 
     return volume

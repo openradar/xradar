@@ -582,3 +582,9 @@ def test_create_volume():
             time_coverage_start=time_coverage_start,
             time_coverage_end=time_coverage_end,
         )
+
+    volume = util.create_volume(
+        sweeps=sweeps,
+    )
+    assert volume.ds.time_coverage_start == "2023-04-20T06:50:01Z"
+    assert volume.ds.time_coverage_end == "2023-04-20T06:59:46Z"
