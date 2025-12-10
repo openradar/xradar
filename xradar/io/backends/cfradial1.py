@@ -178,11 +178,11 @@ def _get_sweep_groups(
             ds = ds.isel(range=rslice)
             ds = ds.isel(n_points=nslice)
             ds_vars = ds[data_vars]
-            ds_vars = merge([ds_vars, ds[[dim0, "range"]]])
+            ds_vars = merge([ds_vars, ds[[dim0, "range"]]], compat="no_conflicts")
             ds_vars = ds_vars.stack(n_points=[dim0, "range"])
             ds_vars = ds_vars.unstack("n_points")
             ds = ds.drop_vars(ds_vars.data_vars)
-            ds = merge([ds, ds_vars])
+            ds = merge([ds, ds_vars], compat="no_conflicts")
 
         # assign site_coords
         if site_coords:
