@@ -16,3 +16,12 @@ boto3
 cartopy
 s3fs
 zarr>=2,<3
+pytest-xdist
+pytest-cov
+pre-commit
+diff-cover
+myst-parser
+sphinx-copybutton
+sphinx-favicon
+nbsphinx
+pydata-sphinx-theme
