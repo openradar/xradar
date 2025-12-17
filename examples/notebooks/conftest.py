@@ -1,82 +1,32 @@
 #!/usr/bin/env python
 # Copyright (c) 2019-2022, wradlib developers.
-# Copyright (c) 2022-2024, openradar developers.
+# Copyright (c) 2022-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE.txt for more info.
 
-import os
-import sys
-
-import nbformat
-import pytest
-from nbconvert.preprocessors import ExecutePreprocessor
-from nbconvert.preprocessors.execute import CellExecutionError
-from packaging.version import Version
+from pathlib import Path
 
 
-def pytest_collect_file(parent, file_path):
-    if file_path.suffix == ".ipynb":
-        return NotebookFile.from_parent(parent, path=file_path)
+def pytest_generate_tests(metafunc):
+    if "notebook_path" not in metafunc.fixturenames:
+        return
 
+    notebooks = []
 
-class NotebookFile(pytest.File):
-    if Version(pytest.__version__) < Version("5.4.0"):
+    for arg in metafunc.config.args:
+        arg_path = Path(arg)
+        if arg_path.is_dir():
+            notebooks.extend(
+                nb.resolve()
+                for nb in arg_path.rglob("*.ipynb")
+                if ".ipynb_checkpoints" not in nb.parts
+            )
+        elif arg_path.suffix == ".ipynb" and arg_path.exists():
+            notebooks.append(arg_path.resolve())
 
-        @classmethod
-        def from_parent(cls, parent, path):
-            return cls(parent=parent, path=path)
+    notebooks = sorted(set(notebooks))
 
-    def collect(self):
-        for f in [self.path]:
-            yield NotebookItem.from_parent(self, name=os.path.basename(f))
-
-    def setup(self):
-        kernel = f"python{sys.version_info[0]}"
-        self.exproc = ExecutePreprocessor(kernel_name=kernel, timeout=600)
-
-
-class NotebookItem(pytest.Item):
-    def __init__(self, name, parent):
-        super().__init__(name, parent)
-
-    if Version(pytest.__version__) < Version("5.4.0"):
-
-        @classmethod
-        def from_parent(cls, parent, name):
-            return cls(parent=parent, name=name)
-
-    def runtest(self):
-        # use current path to get coverage working
-        cur_dir = os.getcwd()
-
-        # See https://bugs.python.org/issue37373
-        if (
-            sys.version_info[0] == 3
-            and sys.version_info[1] >= 8
-            and sys.platform.startswith("win")
-        ):
-            import asyncio
-
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-        with self.path.open() as f:
-            nb = nbformat.read(f, as_version=4)
-            try:
-                self.parent.exproc.preprocess(nb, {"metadata": {"path": cur_dir}})
-            except CellExecutionError as e:
-                raise NotebookException(e)
-
-        with open(self.path, "w", encoding="utf-8") as f:
-            nbformat.write(nb, f)
-
-    def repr_failure(self, excinfo):
-        if isinstance(excinfo.value, NotebookException):
-            return excinfo.exconly()
-
-        return super().repr_failure(excinfo)
-
-    def reportinfo(self):
-        return self.path, 0, f"TestCase: {self.name}"
-
-
-class NotebookException(Exception):
-    pass
+    metafunc.parametrize(
+        "notebook_path",
+        notebooks,
+        ids=[nb.stem for nb in notebooks],  # short, readable IDs
+    )
