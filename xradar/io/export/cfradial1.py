@@ -328,4 +328,5 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
         time = str(dataset.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
         filename = f"cfrad1_{dataset.instrument_name}_{time}.nc"
 
-    dataset.to_netcdf(filename, format="netcdf4")
+    # Write using h5netcdf backend to avoid netCDF4 dependency
+    dataset.to_netcdf(filename, engine="h5netcdf")
