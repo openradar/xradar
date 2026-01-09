@@ -213,6 +213,11 @@ def uf_file_3(tmp_path_factory):
     return fnameo
 
 
+@pytest.fixture(scope="session")
+def hpl_file():
+    return DATASETS.fetch("User1_100_20240714_122137.hpl")
+
+
 @pytest.fixture
 def temp_file(tmp_path):
     rnd = uuid.uuid4().hex[:8]

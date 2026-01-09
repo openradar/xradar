@@ -8,7 +8,7 @@ Tests for the MRR2 backend for xradar
 
 import numpy as np
 import xarray as xr
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import metek, open_metek_datatree
 
@@ -263,6 +263,25 @@ test_arr = np.array(
         6.74,
     ]
 )
+
+
+def test_metek_open_mfdataset_context_manager(metek_pro_gz_file):
+    with open_mfdataset(
+        [metek_pro_gz_file],
+        engine="metek",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_metek_dataset_has_close(metek_pro_gz_file):
+    ds = open_dataset(metek_pro_gz_file, engine="metek", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_metek_datatree(metek_pro_gz_file):

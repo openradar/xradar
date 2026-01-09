@@ -6,7 +6,7 @@
 import pytest
 import xarray as xr
 from open_radar_data import DATASETS
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 import xradar as xd
 
@@ -57,6 +57,25 @@ def test_open_rhi():
 
         assert ds["mean_doppler_velocity"].dims == ("azimuth", "range")
         assert ds["mean_doppler_velocity"].max() == 19.5306
+
+
+def test_hpl_open_mfdataset_context_manager(hpl_file):
+    with open_mfdataset(
+        [hpl_file],
+        engine="hpl",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_hpl_dataset_has_close(hpl_file):
+    ds = open_dataset(hpl_file, engine="hpl", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_hpl_datatree():

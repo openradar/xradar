@@ -16,7 +16,7 @@ import tempfile
 
 import numpy as np
 import pytest
-from xarray import DataTree, Variable
+from xarray import DataTree, Variable, open_dataset, open_mfdataset
 from xarray.backends import CachingFileManager
 from xarray.core.indexing import OuterIndexer
 from xarray.core.utils import Frozen
@@ -604,6 +604,25 @@ def test_open_dataset_with_reindex_and_dimensions(furuno_scn_file):
     assert (
         "time" in ds_time_dim.DBZH.dims
     ), "Time dimension was not set as the primary dimension when expected."
+
+
+def test_furuno_open_mfdataset_context_manager(furuno_scn_file):
+    with open_mfdataset(
+        [furuno_scn_file],
+        engine="furuno",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_furuno_dataset_has_close(furuno_scn_file):
+    ds = open_dataset(furuno_scn_file, engine="furuno", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_furuno_datatree(furuno_scn_file):

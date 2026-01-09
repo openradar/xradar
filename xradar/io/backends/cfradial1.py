@@ -452,4 +452,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
             ds = ds.pipe(util.reindex_angle, **reindex_angle)
             ds = ds.pipe(util.ipol_time, **reindex_angle)
 
+        # ensure close works
+        ds._close = store.close
+
         return ds
