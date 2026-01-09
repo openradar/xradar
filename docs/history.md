@@ -14,6 +14,7 @@
 * FIX: NEXRAD Level2 backend compatibility with older files and VCP-0 ({issue}`311`, {pull}`312`) by [@aladinor](https://github.com/aladinor)
 * FIX: Add explicit `compat="no_conflicts",` to `xr.merge()` in `_get_subgroup` to silence xarray FutureWarning ({issue}`313`, {pull}`314`) by [@aladinor](https://github.com/aladinor).
 * MNT: create individual notebook tests with pytest_generate_tests and use tmp_path-fixture ({pull}`316`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: Ensure backend closers are available ({pull}`318`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.10.0 (2025-07-11)
 

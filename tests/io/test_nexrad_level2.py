@@ -11,7 +11,7 @@ from collections import OrderedDict
 import numpy as np
 import pytest
 import xarray
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends.nexrad_level2 import (
     NexradLevel2BackendEntrypoint,
@@ -951,3 +951,22 @@ def test_nexradlevel2_msg5_struct_error_handling():
     assert "elevation_data" in msg_5_result
     # May have partial elevation data before the error occurred
     assert len(msg_5_result["elevation_data"]) >= 0
+
+
+def test_nexradlevel2_open_mfdataset_context_manager(nexradlevel2_file):
+    with open_mfdataset(
+        [nexradlevel2_file],
+        engine="nexradlevel2",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_nexradlevel2_dataset_has_close(nexradlevel2_file):
+    ds = open_dataset(nexradlevel2_file, engine="nexradlevel2", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
