@@ -625,6 +625,9 @@ class MRRBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"velocity_bins": ds.velocity_bins})
         ds.encoding["engine"] = "metek"
 
+        # ensure close works
+        ds._close = store.close
+
         return ds
 
 

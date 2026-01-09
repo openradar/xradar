@@ -8,9 +8,9 @@ Ported from wradlib.
 """
 
 import numpy as np
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
-from xradar.io.backends import iris
+from xradar.io.backends import iris, open_iris_datatree
 from xradar.util import _get_data_file
 
 
@@ -297,7 +297,23 @@ def test_array_from_file(iris0_file, file_or_filelike):
         assert isinstance(array_data, np.ndarray)
 
 
-from xradar.io.backends.iris import open_iris_datatree
+def test_iris_open_mfdataset_context_manager(iris0_file):
+    with open_mfdataset(
+        [iris0_file],
+        engine="iris",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_iris_dataset_has_close(iris0_file):
+    ds = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_iris_datatree(iris0_file):

@@ -588,6 +588,9 @@ class HPLBackendEntrypoint(BackendEntrypoint):
                 ds = ds.swap_dims({dim0: "time"})
             ds = ds.sortby("time")
 
+        # ensure close works
+        ds._close = store.close
+
         return ds
 
 

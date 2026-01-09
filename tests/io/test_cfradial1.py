@@ -9,6 +9,25 @@ from open_radar_data import DATASETS
 import xradar as xd
 
 
+def test_cfradial1_open_mfdataset_context_manager(cfradial1_file):
+    with xr.open_mfdataset(
+        [cfradial1_file],
+        engine="cfradial1",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_cfradial1_dataset_has_close(cfradial1_file):
+    ds = xr.open_dataset(cfradial1_file, engine="cfradial1", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
+
+
 def test_compare_sweeps(temp_file):
     # Fetch the radar data file
     filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")

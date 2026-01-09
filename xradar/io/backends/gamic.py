@@ -489,6 +489,10 @@ class GamicBackendEntrypoint(BackendEntrypoint):
                 }
             )
         ds.attrs.update(store.get_calibration_parameters())
+
+        # ensure close works
+        ds._close = store.close
+
         return ds
 
 
