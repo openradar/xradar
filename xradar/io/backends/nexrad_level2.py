@@ -1636,6 +1636,9 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                 }
             )
 
+        # ensure close works
+        ds._close = store.close
+
         return ds
 
 

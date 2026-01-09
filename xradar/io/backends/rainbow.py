@@ -868,6 +868,9 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
                 }
             )
 
+        # ensure close works
+        ds._close = store.close
+
         return ds
 
 

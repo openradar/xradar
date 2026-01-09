@@ -6,7 +6,7 @@
 import tarfile
 
 import pytest
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import datamet, open_datamet_datatree
 from xradar.util import _get_data_file
@@ -59,6 +59,25 @@ def test_moment_metadata(data):
 )
 def test_moment_data(data, moment, expected_value):
     assert data.data[0][moment][(4, 107)] == expected_value
+
+
+def test_datamet_open_mfdataset_context_manager(datamet_file):
+    with open_mfdataset(
+        [datamet_file],
+        engine="datamet",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_datamet_dataset_has_close(datamet_file):
+    ds = open_dataset(datamet_file, engine="datamet", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_datamet_datatree(datamet_file):

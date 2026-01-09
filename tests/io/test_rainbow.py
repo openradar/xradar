@@ -14,7 +14,7 @@ from io import BytesIO
 import numpy as np
 import pytest
 import xmltodict
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import open_rainbow_datatree, rainbow
 
@@ -187,6 +187,25 @@ def test_rainbow_file_data(rainbow_file):
         np.testing.assert_equal(sdata["rayinfo"]["data"][0], np.array(47.0159912109375))
         np.testing.assert_equal(sdata["rawdata"]["data"][0, 0], np.array(113))
         assert sdata["rawdata"]["data"].shape == (361, 400)
+
+
+def test_rainbow_open_mfdataset_context_manager(rainbow_file):
+    with open_mfdataset(
+        [rainbow_file],
+        engine="rainbow",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_rainbow_dataset_has_close(rainbow_file):
+    ds = open_dataset(rainbow_file, engine="rainbow", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_rainbow_datatree(rainbow_file):

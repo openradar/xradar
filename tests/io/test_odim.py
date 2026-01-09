@@ -10,7 +10,7 @@ from contextlib import nullcontext
 
 import numpy as np
 import pytest
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import odim, open_odim_datatree
 
@@ -155,6 +155,25 @@ def test_OdimH5NetCDFMetadata(odim_file):
     store = odim.OdimStore.open(odim_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
         assert store.substore[0].root.first_dim == "azimuth"
+
+
+def test_odim_open_mfdataset_context_manager(odim_file):
+    with open_mfdataset(
+        [odim_file],
+        engine="odim",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_odim_dataset_has_close(odim_file):
+    ds = open_dataset(odim_file, engine="odim", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_odim_datatree(odim_file):

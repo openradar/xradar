@@ -9,7 +9,7 @@ ported from wradlib
 
 import numpy as np
 import pytest
-from xarray import DataTree
+from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import gamic
 from xradar.io.backends.gamic import open_gamic_datatree
@@ -102,6 +102,25 @@ def test_GamicH5NetCDFMetadata(gamic_file):
     store = gamic.GamicStore.open(gamic_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
         assert store.root.first_dim == "azimuth"
+
+
+def test_gamic_open_mfdataset_context_manager(gamic_file):
+    with open_mfdataset(
+        [gamic_file],
+        engine="gamic",
+        concat_dim="volume_time",
+        combine="nested",
+        group="sweep_0",
+    ) as ds:
+        assert ds is not None
+        # closer must exist while inside context
+        assert callable(getattr(ds, "_close", None))
+
+
+def test_gamic_dataset_has_close(gamic_file):
+    ds = open_dataset(gamic_file, engine="gamic", group="sweep_0")
+    assert callable(getattr(ds, "_close", None))
+    ds.close()
 
 
 def test_open_gamic_datatree(gamic_file):
