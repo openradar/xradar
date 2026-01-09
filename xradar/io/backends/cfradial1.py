@@ -176,7 +176,8 @@ def _get_sweep_groups(
             ds = ds.isel(n_points=nslice)
             ds_vars = ds[data_vars]
             ds_vars = merge([ds_vars, ds[[dim0, "range"]]], compat="no_conflicts")
-            ds_vars = ds_vars.reset_coords(["azimuth", "elevation"], drop=True)
+            coords_to_drop = list(set(["azimuth", "elevation"]) & set(ds_vars.coords)
+            ds_vars = ds_vars.reset_coords(coords_to_drop, drop=True)
             ds_vars = ds_vars.stack(n_points=["time", "range"])
             ds_vars = ds_vars.unstack("n_points")
             ds = ds.drop_vars(ds_vars.data_vars)
