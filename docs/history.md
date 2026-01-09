@@ -16,6 +16,7 @@
 * MNT: create individual notebook tests with pytest_generate_tests and use tmp_path-fixture ({pull}`316`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: Ensure backend closers are available ({pull}`318`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MNT: Enhance contributing experience ({pull}`315`) by [@egouden](https://github.com/egouden)
+* ENH: Add ``combine_sweeps`` function to stack sweeps into a single radar volume with optional time and angle filtering ({pull}`307`) by [@egouden](https://github.com/egouden)
 
 ## 0.10.0 (2025-07-11)
 
