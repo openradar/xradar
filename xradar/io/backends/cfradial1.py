@@ -162,6 +162,11 @@ def _get_sweep_groups(
 
         ds["sweep_mode"] = _maybe_decode(ds.sweep_mode).compute()
         dim0 = "elevation" if ds["sweep_mode"] == "rhi" else "azimuth"
+        # for cases where only time coordinate is available
+        if dim0 in ["azimuth", "elevation"] and dim0 not in ds.coords:
+            ds = ds.assign_coords(
+                {dim0: ("time", np.full(ds.time.size, ds.sweep_fixed_angle.item()))}
+            )
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
@@ -175,13 +180,20 @@ def _get_sweep_groups(
             ds = ds.isel(range=rslice)
             ds = ds.isel(n_points=nslice)
             ds_vars = ds[data_vars]
-            ds_vars = merge([ds_vars, ds[[dim0, "range"]]], compat="no_conflicts")
-            coords_to_drop = {"azimuth", "elevation"} & set(ds_vars.coords)
+            ds_vars = merge([ds_vars, ds[["time", "range"]]], compat="no_conflicts")
+            # keep original time coordinate and add fake _time for proper alignment
+            time = ds_vars.time
+            ds_vars = ds_vars.assign_coords(
+                _time=("time", np.arange(ds_vars.sizes["time"]))
+            ).swap_dims({"time": "_time"})
+            coords_to_drop = {"azimuth", "elevation", "time"} & set(ds_vars.coords)
             ds_vars = ds_vars.reset_coords(coords_to_drop, drop=True)
-            ds_vars = ds_vars.stack(n_points=["time", "range"])
+            ds_vars = ds_vars.stack(n_points=["_time", "range"])
             ds_vars = ds_vars.unstack("n_points")
             ds = ds.drop_vars(ds_vars.data_vars)
             ds = merge([ds, ds_vars], compat="no_conflicts")
+            ds = ds.assign_coords(time=("_time", time.data))
+            ds = ds.swap_dims({"_time": "time"}).reset_coords("_time", drop=True)
             ds = ds.swap_dims({"time": dim0})
 
         # assign site_coords
