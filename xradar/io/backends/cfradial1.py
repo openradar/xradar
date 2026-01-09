@@ -161,12 +161,13 @@ def _get_sweep_groups(
         ds = data.isel(time=tslice, sweep=swslice).squeeze("sweep")
 
         ds["sweep_mode"] = _maybe_decode(ds.sweep_mode).compute()
-        dim0 = "elevation" if ds["sweep_mode"] == "rhi" else "azimuth"
+        dim0 = "elevation" if str(ds["sweep_mode"]) == "rhi" else "azimuth"
         # for cases where only time coordinate is available
-        if dim0 in ["azimuth", "elevation"] and dim0 not in ds.coords:
+        if dim0 in ["azimuth", "elevation"] and dim0 not in ds:
             ds = ds.assign_coords(
                 {dim0: ("time", np.full(ds.time.size, ds.sweep_fixed_angle.item()))}
             )
+            dim0 = "time"
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
