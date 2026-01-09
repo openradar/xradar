@@ -165,9 +165,6 @@ def _get_sweep_groups(
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
-            # swap dimensions to correctly stack/unstack n_points = ["time", "range"]
-            ds = ds.swap_dims({"time": dim0})
-
             current_ray_n_gates = ray_n_gates.isel(time=tslice)
             current_rays_sum = current_ray_n_gates.sum().values.astype(int)
             nslice = slice(
@@ -179,10 +176,12 @@ def _get_sweep_groups(
             ds = ds.isel(n_points=nslice)
             ds_vars = ds[data_vars]
             ds_vars = merge([ds_vars, ds[[dim0, "range"]]], compat="no_conflicts")
-            ds_vars = ds_vars.stack(n_points=[dim0, "range"])
+            ds_vars = ds_vars.reset_coords(["azimuth", "elevation"], drop=True)
+            ds_vars = ds_vars.stack(n_points=["time", "range"])
             ds_vars = ds_vars.unstack("n_points")
             ds = ds.drop_vars(ds_vars.data_vars)
             ds = merge([ds, ds_vars], compat="no_conflicts")
+            ds = ds.swap_dims({"time": dim0})
 
         # assign site_coords
         if site_coords:
