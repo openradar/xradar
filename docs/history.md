@@ -1,6 +1,6 @@
 # History
 
-## Development Version (unreleased)
+## 0.11.0 (2026-01-12)
 
 * ENH: get radar coordinates with given reference system ({issue}`243`) ({pull}`300`) by [@egouden](https://github.com/egouden)
 * ENH: Disable fill value in rainbow reader ({issue}`103`) ({pull}`290`) by [@egouden](https://github.com/egouden)
