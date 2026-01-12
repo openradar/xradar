@@ -161,13 +161,10 @@ def _get_sweep_groups(
         ds = data.isel(time=tslice, sweep=swslice).squeeze("sweep")
 
         ds["sweep_mode"] = _maybe_decode(ds.sweep_mode).compute()
-        dim0 = "elevation" if ds["sweep_mode"] == "rhi" else "azimuth"
+        dim0 = "elevation" if str(ds["sweep_mode"]) == "rhi" else "azimuth"
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
-            # swap dimensions to correctly stack/unstack n_points = ["time", "range"]
-            ds = ds.swap_dims({"time": dim0})
-
             current_ray_n_gates = ray_n_gates.isel(time=tslice)
             current_rays_sum = current_ray_n_gates.sum().values.astype(int)
             nslice = slice(
@@ -178,10 +175,36 @@ def _get_sweep_groups(
             ds = ds.isel(range=rslice)
             ds = ds.isel(n_points=nslice)
             ds_vars = ds[data_vars]
-            ds_vars = merge([ds_vars, ds[[dim0, "range"]]], compat="no_conflicts")
-            ds_vars = ds_vars.stack(n_points=[dim0, "range"])
+
+            # always work over time dimension here assuming each ray has a different time
+            ds_vars = merge([ds_vars, ds[["time", "range"]]], compat="no_conflicts")
+
+            # in case of duplicates in time coordinate
+            #  1. reset index
+            #  2. create fake time coordinate with unique values
+            has_duplicate_times = ds_vars.time.to_index().has_duplicates
+            if has_duplicate_times:
+                ds_vars = ds_vars.reset_index("time")
+                ds_vars = ds_vars.assign_coords(
+                    time=("time", np.arange(ds_vars.time.size))
+                )
+
+            # drop first and second dim coordinates
+            # this prevents unstacking into 2 dims
+            coords_to_drop = {"azimuth", "elevation"} & set(ds_vars.coords)
+            ds_vars = ds_vars.reset_coords(coords_to_drop, drop=True)
+
+            # stack/unstack to extract variables into 2 dimensions
+            ds_vars = ds_vars.stack(n_points=["time", "range"])
             ds_vars = ds_vars.unstack("n_points")
+
             ds = ds.drop_vars(ds_vars.data_vars)
+
+            # reset fake time-coord/index and re-assign proper
+            if has_duplicate_times:
+                ds_vars = ds_vars.reset_index("time", drop=True)
+                ds_vars = ds_vars.assign_coords(time=ds.time)
+
             ds = merge([ds, ds_vars], compat="no_conflicts")
 
         # assign site_coords

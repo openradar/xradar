@@ -17,6 +17,7 @@
 * FIX: Ensure backend closers are available ({pull}`318`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MNT: Enhance contributing experience ({pull}`315`) by [@egouden](https://github.com/egouden)
 * ENH: Add ``combine_sweeps`` function to stack sweeps into a single radar volume with optional time and angle filtering ({pull}`307`) by [@egouden](https://github.com/egouden)
+* FIX: Use time-dimension to stack/unstack CfRadial1 data for variable number of gates, properly handle duplicates ({issue}`317`), ({pull}`320`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.10.0 (2025-07-11)
 
