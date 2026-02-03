@@ -122,7 +122,7 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
             fillvalue=_fillvalue,
             dtype=dtype,
         )
-        if enc["dtype"] == "uint8":
+        if dtype == "uint8":
             image = "IMAGE"
             version = "1.2"
             tid1 = h5py.h5t.C_S1.copy()
