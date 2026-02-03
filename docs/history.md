@@ -5,6 +5,7 @@
 
 * MNT: Pre-commit update + lint ({pull}`325`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: Use ``dtype`` with fallback in odim export ({pull}`324`) by [@katelbach](https://github.com/katelbach)
+* FIX: Prevent azimuth-folding for RHI ({pull}`326`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.11.0 (2026-01-12)
 

@@ -167,7 +167,10 @@ def _get_fixed_dim_and_angle(how):
 def _get_azimuth(ray_header):
     azstart = ray_header["azimuth_start"]
     azstop = ray_header["azimuth_stop"]
-    zero_index = np.where(azstop < azstart)
+    # thresholding prevents erroneous folding
+    # for little differences in RHI
+    threshold = np.median(np.diff(azstart)) / 10
+    zero_index = np.where(azstart - azstop > threshold)
     azstop[zero_index[0]] += 360
     return (azstart + azstop) / 2.0
 
