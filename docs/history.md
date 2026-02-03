@@ -1,11 +1,11 @@
 # History
 
 
-## Development version (unreleased)
+## 0.11.1 (2026-02-03)
 
 * MNT: Pre-commit update + lint ({pull}`325`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: Use ``dtype`` with fallback in odim export ({pull}`324`) by [@katelbach](https://github.com/katelbach)
-* FIX: Prevent azimuth-folding for RHI ({pull}`326`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: Prevent azimuth-folding for RHI for gamic reader ({pull}`326`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.11.0 (2026-01-12)
 
