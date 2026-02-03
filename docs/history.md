@@ -3,7 +3,7 @@
 
 ## Development version (unreleased)
 
-* MNT: Pre-commit update + lint
+* MNT: Pre-commit update + lint ({pull}`325`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.11.0 (2026-01-12)
 
