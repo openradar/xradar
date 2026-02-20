@@ -49,7 +49,7 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from .common import _attach_sweep_groups, _maybe_decode
+from .common import _STATION_VARS, _attach_sweep_groups, _maybe_decode
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -89,6 +89,12 @@ def _get_required_root_dataset(ds, optional=True):
     root.sweep_group_name.encoding["dtype"] = root.sweep_group_name.dtype
     # remove cf standard name
     root.sweep_group_name.attrs = []
+
+    # Promote station location to coordinates on the root node.
+    promote = _STATION_VARS & set(root.data_vars)
+    if promote:
+        root = root.set_coords(list(promote))
+
     return root
 
 
