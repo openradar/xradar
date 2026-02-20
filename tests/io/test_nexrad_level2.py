@@ -1080,6 +1080,15 @@ class TestNEXRADChunkFiles:
 
         assert ("instrument_name", "UNKNOWN") in attrs.items()
 
+    def test_is_compressed_empty_chunk(self):
+        """is_compressed returns False for chunk data shorter than 3 bytes."""
+        tiny_data = b"\x00"
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with NEXRADLevel2File(tiny_data, has_volume_header=False) as fh:
+                assert not fh.is_compressed
+
     def test_get_attrs_with_volume_header(self, nexradlevel2_file):
         """Test that get_attrs correctly reads ICAO when volume_header exists."""
         from xradar.io.backends.nexrad_level2 import NexradLevel2Store
@@ -1171,13 +1180,20 @@ class TestConcatenateChunks:
         assert result == vol + non_vol
 
     def test_no_volume_headers_ok(self):
-        """All I/E chunks without volume headers should succeed."""
+        """All I/E chunks without volume headers concatenate at the low level."""
         from xradar.io.backends.nexrad_level2 import _concatenate_chunks
 
         chunk1 = b"BZh9" + b"\x00" * 50
         chunk2 = b"BZh9" + b"\x00" * 30
         result = _concatenate_chunks([chunk1, chunk2])
         assert result == chunk1 + chunk2
+
+    def test_no_volume_header_in_chunks_raises(self):
+        """Passing I/E chunks without S file to open_nexradlevel2_datatree raises."""
+        ie_chunk1 = b"BZh9" + b"\x00" * 50
+        ie_chunk2 = b"BZh9" + b"\x00" * 30
+        with pytest.raises(ValueError, match="No chunk contains a volume header"):
+            open_nexradlevel2_datatree([ie_chunk1, ie_chunk2])
 
     def test_unsupported_chunk_type_raises(self):
         """Unsupported chunk type should raise TypeError."""
@@ -1389,6 +1405,28 @@ class TestSweepCompleteness:
         mock._data[2] = OrderedDict([("complete", False)])
         mock._data_header = []
         assert mock.incomplete_sweeps == {0, 1, 2}
+
+    def test_force_close_triggered_on_premature_end(self, nexradlevel2_file):
+        """get_data_header force-closes sweep when record stream ends mid-sweep."""
+        nex = NEXRADLevel2File(nexradlevel2_file, loaddata=False)
+
+        # Limit records to stop mid-sweep, triggering force-close at lines 919-924
+        orig = nex.init_next_record
+        count = [0]
+
+        def limited():
+            count[0] += 1
+            if count[0] > 50:
+                return False
+            return orig()
+
+        nex.init_next_record = limited
+        _ = nex.data_header  # triggers get_data_header
+
+        # Should have at least one incomplete (force-closed) sweep
+        assert len(nex.incomplete_sweeps) > 0
+        for idx in nex.incomplete_sweeps:
+            assert nex._data[idx]["complete"] is False
 
     def test_sweep_missing_complete_key_defaults_true(self):
         """Sweep dict without 'complete' key defaults to complete (True)."""
@@ -1778,6 +1816,41 @@ class TestPadModeReindexing:
         assert ds_reindexed.sizes["azimuth"] in (360, 720)
         nan_pct = np.isnan(ds_reindexed["DBZH"].values).mean()
         assert nan_pct > 0.5
+
+
+class TestOpenSweepsAsDict:
+    """Tests for open_sweeps_as_dict coverage of new code paths."""
+
+    def test_default_incomplete_sweeps(self, nexradlevel2_file):
+        """open_sweeps_as_dict defaults incomplete_sweeps=None to empty set."""
+        from xradar.io.backends.nexrad_level2 import open_sweeps_as_dict
+
+        result = open_sweeps_as_dict(
+            nexradlevel2_file,
+            sweeps=["sweep_0"],
+            decode_coords=True,
+            reindex_angle=False,
+            site_coords=True,
+        )
+        assert "sweep_0" in result
+
+    def test_pad_mode_reindex_for_incomplete_sweep(self, nexradlevel2_file):
+        """Pad-mode reindex branch fires when sweep is marked incomplete."""
+        from xradar.io.backends.nexrad_level2 import open_sweeps_as_dict
+
+        # Mark sweep 0 as "incomplete" to trigger the pad-mode reindex path
+        result = open_sweeps_as_dict(
+            nexradlevel2_file,
+            sweeps=["sweep_0"],
+            incomplete_sweeps={0},
+            decode_coords=True,
+            reindex_angle=False,
+            site_coords=True,
+        )
+        assert "sweep_0" in result
+        ds = result["sweep_0"]
+        # Should have been reindexed to a full azimuth grid
+        assert ds.sizes["azimuth"] in (360, 720)
 
 
 class TestListInputWithIncompleteSweep:
