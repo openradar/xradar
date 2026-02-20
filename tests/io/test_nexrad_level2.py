@@ -1016,7 +1016,7 @@ class TestNEXRADChunkFiles:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             with NEXRADLevel2File(bz2_chunk_data, has_volume_header=False) as fh:
-                assert fh.is_compressed == True
+                assert fh.is_compressed is True
 
     def test_is_compressed_uncompressed_chunk(self):
         """Test that is_compressed returns False for non-BZ2 chunk files."""
@@ -1028,7 +1028,7 @@ class TestNEXRADChunkFiles:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             with NEXRADLevel2File(non_bz2_data, has_volume_header=False) as fh:
-                assert fh.is_compressed == False
+                assert fh.is_compressed is False
 
     def test_has_volume_header_parameter(self):
         """Test that has_volume_header parameter is respected."""
@@ -1061,10 +1061,11 @@ class TestNEXRADChunkFiles:
 
     def test_get_attrs_handles_missing_volume_header(self):
         """Test that get_attrs works when volume_header is None."""
+        from unittest.mock import MagicMock, PropertyMock
+
         from xradar.io.backends.nexrad_level2 import NexradLevel2Store
 
         # Create a mock store with None volume_header
-        from unittest.mock import MagicMock, PropertyMock
 
         mock_store = MagicMock(spec=NexradLevel2Store)
         mock_root = MagicMock()
@@ -1306,8 +1307,6 @@ class TestSweepCompleteness:
 
     def test_force_closed_sweep_is_incomplete(self):
         """A sweep that is force-closed (no end-of-elevation marker) should be incomplete."""
-        import warnings
-
         # Use a real file but truncate it to simulate a chunk file ending mid-sweep
         # We'll create a mock scenario instead
         from collections import defaultdict
@@ -1466,7 +1465,7 @@ class TestIncompleteSweepParameter:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             try:
-                dtree = open_nexradlevel2_datatree(
+                open_nexradlevel2_datatree(
                     truncated,
                     reindex_angle=False,
                     site_coords=True,
@@ -1563,7 +1562,7 @@ class TestIncompleteSweepParameter:
         ):
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
-                dtree = open_nexradlevel2_datatree(
+                open_nexradlevel2_datatree(
                     b"\x00" * 100,
                     reindex_angle=False,
                     incomplete_sweep="drop",
