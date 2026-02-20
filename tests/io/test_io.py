@@ -182,6 +182,9 @@ def test_open_odim_datatree(odim_file):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -336,6 +339,9 @@ def test_open_gamic_datatree(gamic_file):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -561,6 +567,9 @@ def test_open_rainbow_datatree(rainbow_file):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -656,6 +665,9 @@ def test_open_iris_datatree(iris0_file):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -890,6 +902,9 @@ def test_open_datamet_datatree(datamet_file):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.isclose(ds.elevation.mean().values.item(), elevations[i], atol=0.05)
@@ -1094,6 +1109,9 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -1231,6 +1249,9 @@ def test_open_uf_datatree(uf_file_1):
             "azimuth",
             "elevation",
             "time",
+            "latitude",
+            "longitude",
+            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]

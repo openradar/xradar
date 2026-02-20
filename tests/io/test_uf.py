@@ -254,11 +254,6 @@ def test_open_uf_datatree(uf_file_1):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    # Sweeps should NOT have local station coords
-    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
-    assert "latitude" not in sweep_ds.coords
-    assert "latitude" not in sweep_ds.data_vars
-
     assert len(dtree.attrs) == 10
     print(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "rvp8-rel"
@@ -305,16 +300,11 @@ def test_open_uf_datatree_2(uf_file_2):
     ), f"DBTH should be a data variable in {sample_sweep}"
     assert dtree[sample_sweep]["DBTH"].shape == (360, 476)
 
-    # Station coords should be on root as coordinates, NOT on sweeps
+    # Station coords should be on root as coordinates
     assert "latitude" in dtree.ds.coords
     assert "longitude" in dtree.ds.coords
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
-
-    # Sweeps should NOT have local station coords
-    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
-    assert "latitude" not in sweep_ds.coords
-    assert "latitude" not in sweep_ds.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "CHILL"

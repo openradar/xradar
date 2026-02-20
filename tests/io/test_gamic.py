@@ -173,11 +173,6 @@ def test_open_gamic_datatree(gamic_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    # Sweeps should NOT have local station coords
-    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
-    assert "latitude" not in sweep_ds.coords
-    assert "latitude" not in sweep_ds.data_vars
-
     # Validate attributes
     assert len(dtree.attrs) == 9
     assert dtree.attrs["source"] == "gamic", "Source should match expected value"

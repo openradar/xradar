@@ -57,7 +57,6 @@ from xradar.io.backends.common import (
     _assign_root,
     _get_radar_calibration,
     _get_subgroup,
-    _remove_sweep_station_coords,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -1812,7 +1811,6 @@ def open_nexradlevel2_datatree(
         sweep_path: sweep_dict[sweep_path].drop_attrs(deep=False)
         for sweep_path in sweep_dict.keys()
     }
-    sweep_dict = _remove_sweep_station_coords(sweep_dict)
     dtree = dtree | sweep_dict
     return DataTree.from_dict(dtree)
 

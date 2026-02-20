@@ -9,13 +9,12 @@ All ``open_*_datatree()`` functions share the following behavior:
 ### Station coordinates
 
 Station location variables (``latitude``, ``longitude``, ``altitude``) are placed as
-**coordinates** on the root node of the {py:class}`xarray:xarray.DataTree`. Sweep child
-nodes do not carry their own copies of these variables — they are designed to inherit
-them from root via DataTree coordinate inheritance.
-
-When opening a single sweep with {py:func}`xarray.open_dataset` and ``site_coords=True``
-(the default), station coordinates are still attached directly to the returned
-{py:class}`xarray:xarray.Dataset`.
+**coordinates** on the root node of the {py:class}`xarray:xarray.DataTree`, following
+CfRadial 2.0 Section 4.4. Sweep child nodes also retain local copies of these variables
+for compatibility with code that accesses them directly on sweep datasets (e.g.
+georeferencing). Once xarray supports scalar coordinate inheritance
+(`pydata/xarray#9077 <https://github.com/pydata/xarray/issues/9077>`_), the sweep-level
+copies can be removed in a future release.
 
 ### Optional metadata subgroups
 

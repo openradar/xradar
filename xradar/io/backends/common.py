@@ -66,27 +66,9 @@ _STATION_VARS = {"latitude", "longitude", "altitude"}
 def _attach_sweep_groups(dtree, sweeps):
     """Attach sweep groups to DataTree."""
     for i, sw in enumerate(sweeps):
-        # Remove station coords — they live on the root node and are
-        # inherited by sweep children via DataTree coordinate inheritance.
-        to_drop = _STATION_VARS & (set(sw.coords) | set(sw.data_vars))
-        if to_drop:
-            sw = sw.drop_vars(to_drop)
         # remove attributes only from Dataset's not DataArrays
         dtree[f"sweep_{i}"] = xr.DataTree(sw.drop_attrs(deep=False))
     return dtree
-
-
-def _remove_sweep_station_coords(sweep_dict):
-    """Remove station coords from a sweep dict (they inherit from root).
-
-    Used by backends that build a ``{"/sweep_0": ds, ...}`` dict directly
-    instead of going through :func:`_attach_sweep_groups`.
-    """
-    for key, ds in sweep_dict.items():
-        to_drop = _STATION_VARS & (set(ds.coords) | set(ds.data_vars))
-        if to_drop:
-            sweep_dict[key] = ds.drop_vars(to_drop)
-    return sweep_dict
 
 
 def _get_h5group_names(filename, engine):

@@ -584,16 +584,11 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     ), f"VRADH should be a data variable in {sample_sweep}"
     assert dtree[sample_sweep]["DBZH"].shape == (360, 1832)
 
-    # Station coords should be on root as coordinates, NOT on sweeps
+    # Station coords should be on root as coordinates
     assert "latitude" in dtree.ds.coords
     assert "longitude" in dtree.ds.coords
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
-
-    # Sweeps should NOT have local station coords
-    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
-    assert "latitude" not in sweep_ds.coords
-    assert "latitude" not in sweep_ds.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "KATX"
@@ -645,11 +640,6 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     assert "longitude" in dtree.ds.coords
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
-
-    # Sweeps should NOT have local station coords
-    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
-    assert "latitude" not in sweep_ds.coords
-    assert "latitude" not in sweep_ds.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "KLIX"
