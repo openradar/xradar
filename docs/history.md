@@ -1,6 +1,11 @@
 # History
 
 
+## Development
+
+* ENH: Move station coordinates (``latitude``, ``longitude``, ``altitude``) to root node as coordinates for DataTree coordinate inheritance ({issue}`331`) by [@aladinor](https://github.com/aladinor)
+* ENH: Add ``optional_groups`` parameter (default ``False``) to all ``open_*_datatree()`` functions to control inclusion of ``/radar_parameters``, ``/georeferencing_correction``, and ``/radar_calibration`` subgroups ({issue}`331`) by [@aladinor](https://github.com/aladinor)
+
 ## 0.11.1 (2026-02-03)
 
 * MNT: Pre-commit update + lint ({pull}`325`) by [@kmuehlbauer](https://github.com/kmuehlbauer)

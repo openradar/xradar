@@ -17,6 +17,7 @@ This group holds data and metadata relevant to the entire volume. These are:
 
 - attributes
 - ancillary variables
+- station coordinates (``latitude``, ``longitude``, ``altitude``) — placed as coordinates on the root node so that sweep child nodes can inherit them via DataTree coordinate inheritance
 
 Internal representation: {py:class}`xarray:xarray.Dataset`
 

@@ -2,6 +2,37 @@
 
 The backends use different approaches to ingest the data.
 
+## Common DataTree behavior
+
+All ``open_*_datatree()`` functions share the following behavior:
+
+### Station coordinates
+
+Station location variables (``latitude``, ``longitude``, ``altitude``) are placed as
+**coordinates** on the root node of the {py:class}`xarray:xarray.DataTree`. Sweep child
+nodes do not carry their own copies of these variables — they are designed to inherit
+them from root via DataTree coordinate inheritance.
+
+When opening a single sweep with {py:func}`xarray.open_dataset` and ``site_coords=True``
+(the default), station coordinates are still attached directly to the returned
+{py:class}`xarray:xarray.Dataset`.
+
+### Optional metadata subgroups
+
+By default, the metadata subgroups ``/radar_parameters``, ``/georeferencing_correction``,
+and ``/radar_calibration`` are **not** included in the DataTree. Pass
+``optional_groups=True`` to include them:
+
+```python
+import xradar as xd
+
+# Default: lean DataTree without metadata subgroups
+dtree = xd.io.open_nexradlevel2_datatree(filename)
+
+# Include optional metadata subgroups
+dtree = xd.io.open_nexradlevel2_datatree(filename, optional_groups=True)
+```
+
 ## CfRadial1
 
 ### CfRadial1BackendEntrypoint
