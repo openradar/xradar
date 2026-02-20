@@ -39,6 +39,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import bz2
 import os
 import struct
+import warnings
 from collections import OrderedDict, defaultdict
 
 import numpy as np
@@ -82,6 +83,65 @@ from .iris import (
 )
 
 NEXRADL2_LOCK = SerializableLock()
+
+#: NEXRAD volume header magic prefix
+_VOLUME_HEADER_PREFIX = b"AR2V"
+
+
+def _concatenate_chunks(file_list):
+    """Concatenate a list of NEXRAD Level 2 chunk files into a single bytes object.
+
+    Each item in the list can be:
+    - ``bytes`` or ``bytearray``: raw chunk data
+    - A file-like object with a ``.read()`` method
+    - A ``str`` or ``os.PathLike`` path to a local file
+
+    Validation
+    ----------
+    - If more than one chunk starts with a volume header (``AR2V`` prefix),
+      a ``ValueError`` is raised (multiple full volumes).
+    - If exactly one chunk has a volume header it must be the first item.
+
+    Parameters
+    ----------
+    file_list : list
+        Ordered list of chunk sources.
+
+    Returns
+    -------
+    data : bytes
+        Concatenated raw bytes.
+    """
+    chunks: list[bytes] = []
+    for item in file_list:
+        if isinstance(item, (bytes, bytearray)):
+            chunks.append(bytes(item))
+        elif hasattr(item, "read"):
+            chunks.append(item.read())
+        elif isinstance(item, (str, os.PathLike)):
+            with open(item, "rb") as f:
+                chunks.append(f.read())
+        else:
+            raise TypeError(f"Unsupported chunk type: {type(item)}")
+
+    # Validate volume headers
+    vol_header_indices = [
+        i for i, c in enumerate(chunks) if c[:4].startswith(_VOLUME_HEADER_PREFIX)
+    ]
+
+    if len(vol_header_indices) > 1:
+        raise ValueError(
+            f"Multiple chunks contain a volume header (indices {vol_header_indices}). "
+            "Pass chunks from a single volume only."
+        )
+
+    if len(vol_header_indices) == 1 and vol_header_indices[0] != 0:
+        raise ValueError(
+            "The chunk with a volume header must be the first item in the list "
+            f"(found at index {vol_header_indices[0]})."
+        )
+
+    return b"".join(chunks)
 
 
 #: mapping from NEXRAD names to CfRadial2/ODIM
@@ -144,7 +204,7 @@ class NEXRADFile:
 
     """
 
-    def __init__(self, filename, mode="r", loaddata=False):
+    def __init__(self, filename, mode="r", loaddata=False, has_volume_header=True):
         """initalize the object."""
         self._fp = None
         self._filename = filename
@@ -152,6 +212,7 @@ class NEXRADFile:
         self._rawdata = False
         self._loaddata = loaddata
         self._bz2_indices = None
+        self._has_volume_header = has_volume_header
 
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
@@ -163,8 +224,27 @@ class NEXRADFile:
             self._fh = np.memmap(self._fp.name, mode=mode)
         else:
             raise TypeError(f"Unsupported input type: {type(filename)}")
-        self.volume_header = self.get_header(VOLUME_HEADER)
+        self.volume_header = self._read_volume_header()
         return
+
+    def _read_volume_header(self):
+        """Read volume header, handling missing headers for chunk files."""
+        if not self._has_volume_header:
+            warnings.warn(
+                "Reading file without volume header (chunk file mode).",
+                UserWarning,
+            )
+            return None
+
+        try:
+            return self.get_header(VOLUME_HEADER)
+        except (struct.error, ValueError, OSError) as e:
+            warnings.warn(
+                f"Unable to read volume header: {e}. Reading as chunk file.",
+                UserWarning,
+            )
+            self._filepos = 0  # Reset file position
+            return None
 
     @property
     def filename(self):
@@ -218,6 +298,13 @@ class NEXRADFile:
     @property
     def is_compressed(self):
         """File contains bz2 compressed data."""
+        if self.volume_header is None:
+            # For chunk files without volume header, check for BZ2 magic number
+            if len(self._fh) >= 3:
+                return (
+                    self._fh[0] == 0x42 and self._fh[1] == 0x5A and self._fh[2] == 0x68
+                )
+            return False
         size = self._fh[24:28].view(dtype=">u4")[0]
         return size > 0
 
@@ -323,7 +410,9 @@ class NEXRADRecordFile(NEXRADFile):
         if recnum < 134:
             start = recnum * RECORD_BYTES
             if not self.is_compressed:
-                start += 24
+                # Only add volume header offset if header exists
+                if self.volume_header is not None:
+                    start += 24
             stop = start + RECORD_BYTES
         else:
             if self.is_compressed:
@@ -498,6 +587,17 @@ class NEXRADLevel2File(NEXRADRecordFile):
     def data(self):
         """Retrieve data."""
         return self._data
+
+    @property
+    def incomplete_sweeps(self):
+        """Return set of sweep indices that are incomplete.
+
+        A sweep is incomplete when it was force-closed because the data
+        ended mid-sweep (e.g. chunk files that don't cover a full VCP).
+        """
+        # Trigger data_header parsing so self._data is populated
+        _ = self.data_header
+        return {k for k, v in self._data.items() if not v.get("complete", True)}
 
     def get_sweep(self, sweep_number, moments=None):
         """Retrieve sweep according sweep_number."""
@@ -700,6 +800,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
                     # 4 - end of volume
                     sweep["record_end"] = self.rh.recnum
                     sweep["intermediate_records"] = sweep_intermediate_records
+                    sweep["complete"] = True
                     self._data[current_sweep] = sweep
                     _msg_31_header.append(sweep_msg_31_header)
                 if status in [0, 3, 5]:
@@ -812,6 +913,15 @@ class NEXRADLevel2File(NEXRADRecordFile):
                 sweep_msg_31_header.append(msg_31_header)
             else:
                 sweep_intermediate_records.append(msg_header)
+
+        # Close any in-progress sweep that never saw an end-of-elevation marker.
+        # This happens with chunk files where the data ends mid-sweep.
+        if current_sweep >= 0 and current_sweep not in self._data:
+            sweep["record_end"] = self.rh.recnum
+            sweep["intermediate_records"] = sweep_intermediate_records
+            sweep["complete"] = False
+            self._data[current_sweep] = sweep
+            _msg_31_header.append(sweep_msg_31_header)
 
         return data_header, _msg_31_header, _msg_31_data_header
 
@@ -1546,9 +1656,15 @@ class NexradLevel2Store(AbstractDataStore):
         )
 
     def get_attrs(self):
-        _attributes = [
-            ("instrument_name", self.root.volume_header["icao"].decode()),
-        ]
+        _attributes = []
+
+        if self.root.volume_header is not None:
+            _attributes.append(
+                ("instrument_name", self.root.volume_header["icao"].decode())
+            )
+        else:
+            _attributes.append(("instrument_name", "UNKNOWN"))
+
         if self.root.msg_5:
             _attributes.append(
                 ("scan_name", f"VCP-{self.root.msg_5['pattern_number']}")
@@ -1659,6 +1775,7 @@ def open_nexradlevel2_datatree(
     site_coords=True,
     optional=True,
     optional_groups=False,
+    incomplete_sweep="drop",
     lock=None,
     **kwargs,
 ):
@@ -1670,9 +1787,11 @@ def open_nexradlevel2_datatree(
 
     Parameters
     ----------
-    filename_or_obj : str, Path, file-like, or DataStore
+    filename_or_obj : str, Path, file-like, bytes, list, or DataStore
         The path or file-like object representing the radar file.
         Path-like objects are interpreted as local or remote paths.
+        A list or tuple of chunk sources (bytes, file-like, or paths)
+        will be concatenated before reading.
 
     mask_and_scale : bool, optional
         If True, replaces values in the dataset that match `_FillValue` with NaN
@@ -1731,6 +1850,13 @@ def open_nexradlevel2_datatree(
         and ``/radar_calibration`` metadata subgroups in the DataTree. These
         groups are often empty or sparsely populated. Default is False.
 
+    incomplete_sweep : {"drop", "pad"}, optional
+        How to handle incomplete sweeps (sweeps that were force-closed because
+        the data ended mid-sweep, e.g. chunk files).
+        ``"drop"`` (default) excludes incomplete sweeps and emits a warning.
+        ``"pad"`` includes them, reindexing to a full azimuth grid with
+        NaN-filled rays for missing positions.
+
     kwargs : dict
         Additional keyword arguments passed to `xarray.open_dataset`.
 
@@ -1740,6 +1866,12 @@ def open_nexradlevel2_datatree(
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
     from xarray.core.treenode import NodePath
+
+    # Handle list/tuple of chunk files or bytes
+    if isinstance(filename_or_obj, (list, tuple)):
+        filename_or_obj = _concatenate_chunks(filename_or_obj)
+
+    incomplete = set()
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -1772,7 +1904,39 @@ def open_nexradlevel2_datatree(
                 # Adjust nsweeps to the actual number of recorded sweeps
                 exp_sweeps = act_sweeps
 
-        sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
+            incomplete = nex.incomplete_sweeps
+
+        if incomplete_sweep == "drop":
+            sweeps = [
+                f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete
+            ]
+            if incomplete:
+                warnings.warn(
+                    f"Dropped {len(incomplete)} incomplete sweep(s): "
+                    f"{sorted(incomplete)}. Use incomplete_sweep='pad' to "
+                    f"include them with NaN-filled rays.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            if not sweeps:
+                warnings.warn(
+                    "All sweeps are incomplete. Returning empty DataTree.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                return DataTree()
+        elif incomplete_sweep == "pad":
+            sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
+        else:
+            raise ValueError(
+                f"Invalid incomplete_sweep={incomplete_sweep!r}. "
+                "Expected 'drop' or 'pad'."
+            )
+
+    # For pad mode with user-specified sweeps, read incomplete set
+    if incomplete_sweep == "pad" and not incomplete:
+        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+            incomplete = nex.incomplete_sweeps
 
     sweep_dict = open_sweeps_as_dict(
         filename_or_obj=filename_or_obj,
@@ -1789,6 +1953,7 @@ def open_nexradlevel2_datatree(
         fix_second_angle=fix_second_angle,
         site_coords=site_coords,
         optional=optional,
+        incomplete_sweeps=incomplete,
         lock=lock,
         **kwargs,
     )
@@ -1830,9 +1995,13 @@ def open_sweeps_as_dict(
     fix_second_angle=False,
     site_coords=True,
     optional=True,
+    incomplete_sweeps=None,
     lock=None,
     **kwargs,
 ):
+    if incomplete_sweeps is None:
+        incomplete_sweeps = set()
+
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
         lock=lock,
@@ -1840,6 +2009,9 @@ def open_sweeps_as_dict(
     )
     groups_dict = {}
     for path_group, store in stores.items():
+        # Extract sweep index from group name (e.g. "sweep_3" -> 3)
+        sweep_idx = int(path_group.split("_")[-1])
+
         store_entrypoint = StoreBackendEntrypoint()
         with close_on_error(store):
             group_ds = store_entrypoint.open_dataset(
@@ -1860,7 +2032,20 @@ def open_sweeps_as_dict(
             group_ds.encoding["engine"] = "nexradlevel2"
 
             # handle duplicates and reindex
-            if decode_coords and reindex_angle is not False:
+            # For incomplete sweeps in pad mode, auto-detect angle parameters
+            # and force reindex even when reindex_angle=False
+            if decode_coords and sweep_idx in incomplete_sweeps:
+                group_ds = group_ds.pipe(util.remove_duplicate_rays)
+                angle_params = util.extract_angle_parameters(group_ds)
+                reindex_kwargs = {
+                    "start_angle": angle_params["start_angle"],
+                    "stop_angle": angle_params["stop_angle"],
+                    "angle_res": float(angle_params["angle_res"]),
+                    "direction": angle_params["direction"],
+                }
+                group_ds = group_ds.pipe(util.reindex_angle, **reindex_kwargs)
+                group_ds = group_ds.pipe(util.ipol_time, **reindex_kwargs)
+            elif decode_coords and reindex_angle is not False:
                 group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
                 group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
