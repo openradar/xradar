@@ -362,6 +362,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     # handle kwargs, extract first_dim
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
+    optional_groups = kwargs.pop("optional_groups", False)
     site_coords = kwargs.pop("site_coords", True)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
@@ -376,12 +377,13 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     # create datatree root node additional root metadata groups
     dtree: dict = {
         "/": _get_required_root_dataset(ds, optional=optional),
-        "/radar_parameters": _get_subgroup(ds, radar_parameters_subgroup),
-        "/georeferencing_correction": _get_subgroup(
-            ds, georeferencing_correction_subgroup
-        ),
-        "/radar_calibration": _get_radar_calibration(ds),
     }
+    if optional_groups:
+        dtree["/radar_parameters"] = _get_subgroup(ds, radar_parameters_subgroup)
+        dtree["/georeferencing_correction"] = _get_subgroup(
+            ds, georeferencing_correction_subgroup
+        )
+        dtree["/radar_calibration"] = _get_radar_calibration(ds)
 
     # radar_calibration (connected with calib-dimension)
     dtree = _attach_sweep_groups(

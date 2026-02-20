@@ -60,12 +60,33 @@ def _fix_angle(da):
     return da
 
 
+_STATION_VARS = {"latitude", "longitude", "altitude"}
+
+
 def _attach_sweep_groups(dtree, sweeps):
     """Attach sweep groups to DataTree."""
     for i, sw in enumerate(sweeps):
+        # Remove station coords — they live on the root node and are
+        # inherited by sweep children via DataTree coordinate inheritance.
+        to_drop = _STATION_VARS & (set(sw.coords) | set(sw.data_vars))
+        if to_drop:
+            sw = sw.drop_vars(to_drop)
         # remove attributes only from Dataset's not DataArrays
         dtree[f"sweep_{i}"] = xr.DataTree(sw.drop_attrs(deep=False))
     return dtree
+
+
+def _remove_sweep_station_coords(sweep_dict):
+    """Remove station coords from a sweep dict (they inherit from root).
+
+    Used by backends that build a ``{"/sweep_0": ds, ...}`` dict directly
+    instead of going through :func:`_attach_sweep_groups`.
+    """
+    for key, ds in sweep_dict.items():
+        to_drop = _STATION_VARS & (set(ds.coords) | set(ds.data_vars))
+        if to_drop:
+            sweep_dict[key] = ds.drop_vars(to_drop)
+    return sweep_dict
 
 
 def _get_h5group_names(filename, engine):
@@ -121,6 +142,12 @@ def _assign_root(sweeps):
             "altitude": sweeps[1]["altitude"],
         }
     ).reset_coords()
+
+    # Promote station location to coordinates on the root node.
+    # Sweep children inherit these via DataTree coordinate inheritance.
+    promote = _STATION_VARS & set(root.data_vars)
+    if promote:
+        root = root.set_coords(list(promote))
 
     # assign root attributes
     attrs = {}
@@ -257,6 +284,12 @@ def _get_required_root_dataset(ls_ds, optional=True):
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
     root = _assign_root(ls)
+
+    # Drop station coords from _vars to avoid merge conflict
+    # (they are already placed as coordinates on root by _assign_root)
+    to_drop = _STATION_VARS & set(_vars.data_vars)
+    if to_drop:
+        _vars = _vars.drop_vars(to_drop)
 
     # merging both the created and the variables within each dataset
     root = xr.merge([root, _vars], compat="override")

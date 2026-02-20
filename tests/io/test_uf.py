@@ -225,16 +225,13 @@ def test_open_uf_datatree(uf_file_1):
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
-    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
-    assert (
-        "/radar_parameters" in dtree.subtree
-    ), "Radar parameters group should be in the DataTree"
-    assert (
-        "/georeferencing_correction" in dtree.subtree
-    ), "Georeferencing correction group should be in the DataTree"
-    assert (
-        "/radar_calibration" in dtree.subtree
-    ), "Radar calibration group should be in the DataTree"
+    subtree_paths = [n.path for n in dtree.subtree]
+    assert "/" in subtree_paths, "Root group should be present in the DataTree"
+
+    # optional_groups=False by default: metadata subgroups should NOT be present
+    assert "radar_parameters" not in dtree.children
+    assert "georeferencing_correction" not in dtree.children
+    assert "radar_calibration" not in dtree.children
 
     # Check if at least one sweep group is attached (e.g., "/sweep_0")
     sweep_groups = [key for key in dtree.match("sweep_*")]
@@ -250,16 +247,17 @@ def test_open_uf_datatree(uf_file_1):
         "ZDR" in dtree[sample_sweep].data_vars
     ), f"ZDR should be a data variable in {sample_sweep}"
     assert dtree[sample_sweep]["DBTH"].shape == (360, 997)
-    # Validate coordinates are attached correctly
-    assert (
-        "latitude" in dtree[sample_sweep]
-    ), "Latitude should be attached to the root dataset"
-    assert (
-        "longitude" in dtree[sample_sweep]
-    ), "Longitude should be attached to the root dataset"
-    assert (
-        "altitude" in dtree[sample_sweep]
-    ), "Altitude should be attached to the root dataset"
+
+    # Station coords should be on root as coordinates, NOT on sweeps
+    assert "latitude" in dtree.ds.coords
+    assert "longitude" in dtree.ds.coords
+    assert "altitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
+
+    # Sweeps should NOT have local station coords
+    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
+    assert "latitude" not in sweep_ds.coords
+    assert "latitude" not in sweep_ds.data_vars
 
     assert len(dtree.attrs) == 10
     print(dtree.attrs)
@@ -287,16 +285,13 @@ def test_open_uf_datatree_2(uf_file_2):
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
-    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
-    assert (
-        "/radar_parameters" in dtree.subtree
-    ), "Radar parameters group should be in the DataTree"
-    assert (
-        "/georeferencing_correction" in dtree.subtree
-    ), "Georeferencing correction group should be in the DataTree"
-    assert (
-        "/radar_calibration" in dtree.subtree
-    ), "Radar calibration group should be in the DataTree"
+    subtree_paths = [n.path for n in dtree.subtree]
+    assert "/" in subtree_paths, "Root group should be present in the DataTree"
+
+    # optional_groups=False by default: metadata subgroups should NOT be present
+    assert "radar_parameters" not in dtree.children
+    assert "georeferencing_correction" not in dtree.children
+    assert "radar_calibration" not in dtree.children
 
     # Check if at least one sweep group is attached (e.g., "/sweep_0")
     sweep_groups = [key for key in dtree.match("sweep_*")]
@@ -309,16 +304,17 @@ def test_open_uf_datatree_2(uf_file_2):
         "DBTH" in dtree[sample_sweep].data_vars
     ), f"DBTH should be a data variable in {sample_sweep}"
     assert dtree[sample_sweep]["DBTH"].shape == (360, 476)
-    # Validate coordinates are attached correctly
-    assert (
-        "latitude" in dtree[sample_sweep]
-    ), "Latitude should be attached to the root dataset"
-    assert (
-        "longitude" in dtree[sample_sweep]
-    ), "Longitude should be attached to the root dataset"
-    assert (
-        "altitude" in dtree[sample_sweep]
-    ), "Altitude should be attached to the root dataset"
+
+    # Station coords should be on root as coordinates, NOT on sweeps
+    assert "latitude" in dtree.ds.coords
+    assert "longitude" in dtree.ds.coords
+    assert "altitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
+
+    # Sweeps should NOT have local station coords
+    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
+    assert "latitude" not in sweep_ds.coords
+    assert "latitude" not in sweep_ds.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "CHILL"

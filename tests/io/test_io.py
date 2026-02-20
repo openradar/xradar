@@ -52,9 +52,11 @@ def test_open_cfradial1_datatree(cfradial1_file):
     assert rvars["instrument_type"] == b"radar"
     assert rvars["time_coverage_start"] == b"2008-06-04T00:15:03Z"
     assert rvars["time_coverage_end"] == b"2008-06-04T00:22:17Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(22.526699))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(120.4335022))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(45.0000018))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(22.526699))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(120.4335022))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(45.0000018))
 
     # iterate over subgroups and check some values
     moments = ["DBZ", "VR"]
@@ -126,9 +128,11 @@ def test_open_odim_datatree(odim_file):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2018-12-20T06:06:28Z"
     assert rvars["time_coverage_end"] == "2018-12-20T06:10:42Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(-33.7008018))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(151.2089996))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(195.0))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(-33.7008018))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(151.2089996))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(195.0))
 
     # iterate over subgroups and check some values
     moments = ["PHIDP", "VRADH", "DBZH", "TH", "ZDR", "RHOHV", "WRADH", "KDP"]
@@ -178,9 +182,6 @@ def test_open_odim_datatree(odim_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -276,9 +277,11 @@ def test_open_gamic_datatree(gamic_file):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2018-06-01T05:40:47Z"
     assert rvars["time_coverage_end"] == "2018-06-01T05:44:16Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(50.9287272))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(6.4569489))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(310.0))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(50.9287272))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(6.4569489))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(310.0))
 
     # iterate over subgroups and check some values
     moments = [
@@ -333,9 +336,6 @@ def test_open_gamic_datatree(gamic_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -520,9 +520,11 @@ def test_open_rainbow_datatree(rainbow_file):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2013-05-10T00:00:06Z"
     assert rvars["time_coverage_end"] == "2013-05-10T00:03:14Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(50.856633))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(6.379967))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(116.7))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(50.856633))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(6.379967))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(116.7))
 
     # iterate over subgroups and check some values
     moments = [
@@ -559,9 +561,6 @@ def test_open_rainbow_datatree(rainbow_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -614,9 +613,11 @@ def test_open_iris_datatree(iris0_file):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2013-11-25T10:55:04Z"
     assert rvars["time_coverage_end"] == "2013-11-25T10:59:24Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(9.331))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-75.2829999))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(143.0))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(9.331))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(-75.2829999))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(143.0))
 
     # iterate over subgroups and check some values
     moments = [
@@ -655,9 +656,6 @@ def test_open_iris_datatree(iris0_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -867,9 +865,11 @@ def test_open_datamet_datatree(datamet_file):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2019-07-10T07:00:00Z"
     assert rvars["time_coverage_end"] == "2019-07-10T07:00:00Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(41.9394))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(14.6208))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(710))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(41.9394))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(14.6208))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(710))
 
     # iterate over subgroups and check some values
     moments = ["DBTH", "DBZH", "KDP", "PHIDP", "RHOHV", "VRADH", "WRADH", "ZDR"]
@@ -890,9 +890,6 @@ def test_open_datamet_datatree(datamet_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.isclose(ds.elevation.mean().values.item(), elevations[i], atol=0.05)
@@ -901,11 +898,11 @@ def test_open_datamet_datatree(datamet_file):
 
     # Try to reed single sweep
     dtree = open_datamet_datatree(datamet_file, sweep=1)
-    assert len(dtree.groups) == 5
+    assert len(dtree.groups) == 2
 
     # Try to read list of sweeps
     dtree = open_datamet_datatree(datamet_file, sweep=[1, 2])
-    assert len(dtree.groups) == 6
+    assert len(dtree.groups) == 3
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
@@ -952,9 +949,11 @@ def test_cfradial_n_points_file(cfradial1n_file):
     assert rvars["instrument_type"] == b"radar"
     assert rvars["time_coverage_start"] == b"2024-05-22T16:00:47Z"
     assert rvars["time_coverage_end"] == b"2024-05-22T16:03:20Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(45.6272661))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(9.1963181))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(241.0))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(45.6272661))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(9.1963181))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(241.0))
 
     # iterate over subgroups and check some values
     moments = ["ZDR", "RHOHV", "KDP", "DBZ", "VEL", "PHIDP"]
@@ -1021,9 +1020,11 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2016-06-01T15:00:25Z"
     assert rvars["time_coverage_end"] == "2016-06-01T15:06:06Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(33.65414047))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-101.81416321))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(1029))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(33.65414047))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(-101.81416321))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(1029))
 
     # iterate over subgroups and check some values
     moments = [
@@ -1078,7 +1079,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
         308,
         232,
     ]
-    assert len(dtree.groups[1:]) == 14
+    assert len(dtree.groups[1:]) == 11
     for i, grp in enumerate(dtree.match("sweep_*")):
         print(i)
         ds = dtree[grp].ds
@@ -1093,9 +1094,6 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -1147,9 +1145,11 @@ def test_open_uf_datatree(uf_file_1):
     assert rvars["instrument_type"] == "radar"
     assert rvars["time_coverage_start"] == "2011-04-27T16:42:32Z"
     assert rvars["time_coverage_end"] == "2011-04-27T16:46:50Z"
-    np.testing.assert_almost_equal(rvars["latitude"].values, np.array(34.9318099))
-    np.testing.assert_almost_equal(rvars["longitude"].values, np.array(-86.4658203))
-    np.testing.assert_almost_equal(rvars["altitude"].values, np.array(226))
+    # station coords are now coordinates on root, not data_vars
+    rcoords = dtree.ds.coords
+    np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(34.9318099))
+    np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(-86.4658203))
+    np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(226))
 
     # iterate over subgroups and check some values
     moments = [
@@ -1216,7 +1216,7 @@ def test_open_uf_datatree(uf_file_1):
         476,
         422,
     ]
-    assert len(dtree.groups[1:]) == 17
+    assert len(dtree.groups[1:]) == 14
     for i, grp in enumerate(dtree.match("sweep_*")):
         print(i)
         ds = dtree[grp].ds
@@ -1231,9 +1231,6 @@ def test_open_uf_datatree(uf_file_1):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]

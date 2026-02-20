@@ -96,16 +96,12 @@ def test_open_hpl_datatree():
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
-    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
-    assert (
-        "/radar_parameters" in dtree.subtree
-    ), "Radar parameters group should be in the DataTree"
-    assert (
-        "/georeferencing_correction" in dtree.subtree
-    ), "Georeferencing correction group should be in the DataTree"
-    assert (
-        "/radar_calibration" in dtree.subtree
-    ), "Radar calibration group should be in the DataTree"
+    subtree_paths = [n.path for n in dtree.subtree]
+    assert "/" in subtree_paths, "Root group should be present in the DataTree"
+    # optional_groups=False by default: metadata subgroups should NOT be present
+    assert "radar_parameters" not in dtree.children
+    assert "georeferencing_correction" not in dtree.children
+    assert "radar_calibration" not in dtree.children
 
     # Verify that each sweep group is attached correctly (e.g., "/sweep_0")
     sweep_groups = [key for key in dtree.match("sweep_*")]
@@ -124,15 +120,15 @@ def test_open_hpl_datatree():
         19.5306, rel=1e-3
     )
     assert dtree[sample_sweep]["mean_doppler_velocity"].shape == (34, 400)
-    # Validate coordinates are attached correctly in the root dataset
-    assert (
-        "latitude" in dtree[sample_sweep]
-    ), "Latitude should be attached to the root dataset"
-    assert (
-        "longitude" in dtree[sample_sweep]
-    ), "Longitude should be attached to the root dataset"
-    assert (
-        "altitude" in dtree[sample_sweep]
-    ), "Altitude should be attached to the root dataset"
+    # Station coords should be on root as coordinates, NOT on sweeps
+    assert "latitude" in dtree.ds.coords
+    assert "longitude" in dtree.ds.coords
+    assert "altitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
+
+    # Sweeps should NOT have local station coords
+    sweep_ds = dtree[sample_sweep].to_dataset(inherit=False)
+    assert "latitude" not in sweep_ds.coords
+    assert "latitude" not in sweep_ds.data_vars
     # Validate attributes
     assert len(dtree.attrs) == 9
