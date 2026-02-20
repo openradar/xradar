@@ -1907,9 +1907,7 @@ def open_nexradlevel2_datatree(
             incomplete = nex.incomplete_sweeps
 
         if incomplete_sweep == "drop":
-            sweeps = [
-                f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete
-            ]
+            sweeps = [f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete]
             if incomplete:
                 warnings.warn(
                     f"Dropped {len(incomplete)} incomplete sweep(s): "

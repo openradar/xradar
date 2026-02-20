@@ -1157,9 +1157,7 @@ class TestConcatenateChunks:
 
         non_vol = b"\x00" * 50
         vol = b"AR2V0006." + b"\x00" * 50
-        with pytest.raises(
-            ValueError, match="volume header must be the first item"
-        ):
+        with pytest.raises(ValueError, match="volume header must be the first item"):
             _concatenate_chunks([non_vol, vol])
 
     def test_volume_header_first_is_ok(self):
@@ -1475,9 +1473,7 @@ class TestIncompleteSweepParameter:
                     incomplete_sweep="drop",
                 )
                 # Check if a warning about incomplete sweeps was issued
-                drop_warnings = [
-                    x for x in w if "incomplete" in str(x.message).lower()
-                ]
+                drop_warnings = [x for x in w if "incomplete" in str(x.message).lower()]
                 if drop_warnings:
                     assert "Dropped" in str(drop_warnings[0].message)
             except Exception:
@@ -1511,9 +1507,7 @@ class TestIncompleteSweepParameter:
                 )
                 assert len(dtree.children) == 0
                 all_incomplete_warnings = [
-                    x
-                    for x in w
-                    if "All sweeps are incomplete" in str(x.message)
+                    x for x in w if "All sweeps are incomplete" in str(x.message)
                 ]
                 assert len(all_incomplete_warnings) == 1
 
@@ -1543,25 +1537,29 @@ class TestIncompleteSweepParameter:
 
         dummy_ds = xarray.Dataset(
             {
-                "time": ("azimuth", np.array(
-                    ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
-                    dtype="datetime64[ns]",
-                )),
+                "time": (
+                    "azimuth",
+                    np.array(
+                        ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
+                        dtype="datetime64[ns]",
+                    ),
+                ),
                 "latitude": 35.0,
                 "longitude": -97.0,
                 "altitude": 300.0,
             },
         )
-        mock_sweep_dict = OrderedDict(
-            [("sweep_0", dummy_ds), ("sweep_2", dummy_ds)]
-        )
+        mock_sweep_dict = OrderedDict([("sweep_0", dummy_ds), ("sweep_2", dummy_ds)])
 
-        with patch(
-            "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
-            return_value=mock_nex,
-        ), patch(
-            "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
-            return_value=mock_sweep_dict,
+        with (
+            patch(
+                "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
+                return_value=mock_nex,
+            ),
+            patch(
+                "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
+                return_value=mock_sweep_dict,
+            ),
         ):
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
@@ -1571,9 +1569,7 @@ class TestIncompleteSweepParameter:
                     incomplete_sweep="drop",
                 )
 
-                drop_warnings = [
-                    x for x in w if "Dropped" in str(x.message)
-                ]
+                drop_warnings = [x for x in w if "Dropped" in str(x.message)]
                 assert len(drop_warnings) == 1
                 msg = str(drop_warnings[0].message)
                 assert "2 incomplete sweep(s)" in msg
@@ -1590,26 +1586,30 @@ class TestIncompleteSweepParameter:
 
         dummy_ds = xarray.Dataset(
             {
-                "time": ("azimuth", np.array(
-                    ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
-                    dtype="datetime64[ns]",
-                )),
+                "time": (
+                    "azimuth",
+                    np.array(
+                        ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
+                        dtype="datetime64[ns]",
+                    ),
+                ),
                 "latitude": 35.0,
                 "longitude": -97.0,
                 "altitude": 300.0,
             },
         )
-        mock_sweep_dict = OrderedDict(
-            [("sweep_0", dummy_ds), ("sweep_1", dummy_ds)]
-        )
+        mock_sweep_dict = OrderedDict([("sweep_0", dummy_ds), ("sweep_1", dummy_ds)])
 
-        with patch(
-            "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
-            return_value=mock_nex,
-        ), patch(
-            "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
-            return_value=mock_sweep_dict,
-        ) as mock_open_sweeps:
+        with (
+            patch(
+                "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
+                return_value=mock_nex,
+            ),
+            patch(
+                "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
+                return_value=mock_sweep_dict,
+            ) as mock_open_sweeps,
+        ):
             open_nexradlevel2_datatree(
                 b"\x00" * 100,
                 reindex_angle=False,
@@ -1628,26 +1628,30 @@ class TestIncompleteSweepParameter:
 
         dummy_ds = xarray.Dataset(
             {
-                "time": ("azimuth", np.array(
-                    ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
-                    dtype="datetime64[ns]",
-                )),
+                "time": (
+                    "azimuth",
+                    np.array(
+                        ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
+                        dtype="datetime64[ns]",
+                    ),
+                ),
                 "latitude": 35.0,
                 "longitude": -97.0,
                 "altitude": 300.0,
             },
         )
-        mock_sweep_dict = OrderedDict(
-            [("sweep_0", dummy_ds), ("sweep_1", dummy_ds)]
-        )
+        mock_sweep_dict = OrderedDict([("sweep_0", dummy_ds), ("sweep_1", dummy_ds)])
 
-        with patch(
-            "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
-            return_value=mock_nex,
-        ), patch(
-            "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
-            return_value=mock_sweep_dict,
-        ) as mock_open_sweeps:
+        with (
+            patch(
+                "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
+                return_value=mock_nex,
+            ),
+            patch(
+                "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
+                return_value=mock_sweep_dict,
+            ) as mock_open_sweeps,
+        ):
             open_nexradlevel2_datatree(
                 b"\x00" * 100,
                 sweep=[0, 1],
