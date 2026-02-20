@@ -96,6 +96,14 @@ def _concatenate_chunks(file_list):
     - A file-like object with a ``.read()`` method
     - A ``str`` or ``os.PathLike`` path to a local file
 
+    .. warning::
+
+       Chunks **must** be passed in chronological order (S file first,
+       then I/E chunks in sequence: ``.001``, ``.002``, …).
+       Out-of-order chunks will produce **silently corrupted data** for
+       uncompressed files or **BZ2 decompression errors** for compressed
+       files.  This function does not reorder chunks.
+
     Validation
     ----------
     - If more than one chunk starts with a volume header (``AR2V`` prefix),
@@ -105,7 +113,8 @@ def _concatenate_chunks(file_list):
     Parameters
     ----------
     file_list : list
-        Ordered list of chunk sources.
+        Ordered list of chunk sources.  The S file (volume header) must be
+        first, followed by I/E chunks in their natural sequence order.
 
     Returns
     -------
@@ -1791,7 +1800,10 @@ def open_nexradlevel2_datatree(
         The path or file-like object representing the radar file.
         Path-like objects are interpreted as local or remote paths.
         A list or tuple of chunk sources (bytes, file-like, or paths)
-        will be concatenated before reading.
+        will be concatenated before reading.  When passing chunks, the
+        S file (volume header) **must** be the first element and I/E
+        chunks **must** follow in sequence order (``.001``, ``.002``, …).
+        Out-of-order chunks produce corrupted data or decompression errors.
 
     mask_and_scale : bool, optional
         If True, replaces values in the dataset that match `_FillValue` with NaN
