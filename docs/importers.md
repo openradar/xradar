@@ -203,7 +203,7 @@ dtree = xd.io.open_nexradlevel2_datatree(
 )
 ```
 
-See the ``nexrad_read_chunks`` notebook for a full walkthrough.
+See the {doc}`notebooks/nexrad_read_chunks` notebook for a full walkthrough.
 
 ## Datamet
 
