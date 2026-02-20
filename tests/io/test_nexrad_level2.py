@@ -1016,7 +1016,7 @@ class TestNEXRADChunkFiles:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             with NEXRADLevel2File(bz2_chunk_data, has_volume_header=False) as fh:
-                assert fh.is_compressed is True
+                assert fh.is_compressed
 
     def test_is_compressed_uncompressed_chunk(self):
         """Test that is_compressed returns False for non-BZ2 chunk files."""
@@ -1028,7 +1028,7 @@ class TestNEXRADChunkFiles:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             with NEXRADLevel2File(non_bz2_data, has_volume_header=False) as fh:
-                assert fh.is_compressed is False
+                assert not fh.is_compressed
 
     def test_has_volume_header_parameter(self):
         """Test that has_volume_header parameter is respected."""
