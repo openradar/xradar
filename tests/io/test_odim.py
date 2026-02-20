@@ -226,3 +226,11 @@ def test_open_odim_datatree(odim_file):
     assert (
         dtree.attrs["Conventions"] == "ODIM_H5/V2_2"
     ), "Instrument name should match expected value"
+
+
+def test_open_odim_datatree_optional_groups(odim_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_odim_datatree(odim_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

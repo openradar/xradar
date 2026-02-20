@@ -139,3 +139,11 @@ def test_open_datamet_datatree(datamet_file):
     ), "Scan name should match expected value"
 
     # Verify a sample variable in on
+
+
+def test_open_datamet_datatree_optional_groups(datamet_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_datamet_datatree(datamet_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

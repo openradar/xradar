@@ -176,3 +176,11 @@ def test_open_gamic_datatree(gamic_file):
     # Validate attributes
     assert len(dtree.attrs) == 9
     assert dtree.attrs["source"] == "gamic", "Source should match expected value"
+
+
+def test_open_gamic_datatree_optional_groups(gamic_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_gamic_datatree(gamic_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

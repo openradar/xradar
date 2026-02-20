@@ -372,3 +372,11 @@ def test_open_iris_datatree(iris0_file):
         dtree.attrs["instrument_name"] == "Corozal, Radar"
     ), "Instrument name should match expected value"
     assert dtree.attrs["source"] == "Sigmet", "Source should match expected value"
+
+
+def test_open_iris_datatree_optional_groups(iris0_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_iris_datatree(iris0_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

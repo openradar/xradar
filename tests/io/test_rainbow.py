@@ -251,3 +251,11 @@ def test_open_rainbow_datatree(rainbow_file):
 
     # Validate attributes
     assert len(dtree.attrs) == 9
+
+
+def test_open_rainbow_datatree_optional_groups(rainbow_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_rainbow_datatree(rainbow_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

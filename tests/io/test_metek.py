@@ -326,3 +326,11 @@ def test_open_metek_datatree(metek_pro_gz_file):
 
     # Validate attributes
     assert len(dtree.attrs) == 9
+
+
+def test_open_metek_datatree_optional_groups(metek_pro_gz_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_metek_datatree(metek_pro_gz_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

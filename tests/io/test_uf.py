@@ -383,6 +383,14 @@ def test_open_uf_with_bytes(uf_file_3):
         assert fh.ray_headers[1][0]["mhead"]["SweepMode"] == 3
 
 
+def test_open_uf_datatree_optional_groups(uf_file_1):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_uf_datatree(uf_file_1, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children
+
+
 def test_uf_unsupported_input_type():
     unsupported_input = 12345  # int is not supported
     with pytest.raises(TypeError, match="Unsupported input type: <class 'int'>"):

@@ -128,3 +128,14 @@ def test_open_hpl_datatree():
 
     # Validate attributes
     assert len(dtree.attrs) == 9
+
+
+def test_open_hpl_datatree_optional_groups():
+    """Test that optional_groups=True includes metadata subgroups."""
+    from open_radar_data import DATASETS
+
+    hpl_file = DATASETS.fetch("User1_184_20240601_013257.hpl")
+    dtree = xd.io.open_hpl_datatree(hpl_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children
