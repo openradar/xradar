@@ -55,6 +55,7 @@ from xarray.core.variable import Variable
 from xradar import util
 from xradar.io.backends.common import (
     _assign_root,
+    _deprecation_warning,
     _get_radar_calibration,
     _get_subgroup,
 )
@@ -1564,6 +1565,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
 
     description = "Open NEXRAD Level2 files in Xarray"
     url = "tbd"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -1641,6 +1643,102 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         ds._close = store.close
 
         return ds
+
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        sweep=None,
+        first_dim="auto",
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        optional=True,
+        optional_groups=False,
+        lock=None,
+        **kwargs,
+    ):
+        from xarray.core.treenode import NodePath
+
+        if isinstance(sweep, str):
+            sweep = NodePath(sweep).name
+            sweeps = [sweep]
+        elif isinstance(sweep, int):
+            sweeps = [f"sweep_{sweep}"]
+        elif isinstance(sweep, list):
+            if isinstance(sweep[0], int):
+                sweeps = [f"sweep_{i}" for i in sweep]
+            elif isinstance(sweep[0], str):
+                sweeps = [NodePath(i).name for i in sweep]
+            else:
+                raise ValueError(
+                    "Invalid type in 'sweep' list. Expected integers "
+                    "(e.g., [0, 1, 2]) or strings "
+                    "(e.g. [/sweep_0, sweep_1])."
+                )
+        else:
+            with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+                if nex.msg_5:
+                    exp_sweeps = nex.msg_5["number_elevation_cuts"]
+                else:
+                    exp_sweeps = 0
+                act_sweeps = len(nex.msg_31_data_header)
+                if exp_sweeps > act_sweeps:
+                    exp_sweeps = act_sweeps
+            sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
+
+        sweep_dict = open_sweeps_as_dict(
+            filename_or_obj=filename_or_obj,
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            sweeps=sweeps,
+            first_dim=first_dim,
+            reindex_angle=reindex_angle,
+            fix_second_angle=fix_second_angle,
+            site_coords=site_coords,
+            optional=optional,
+            lock=lock,
+            **kwargs,
+        )
+
+        ls_ds = [sweep_dict[s] for s in sweep_dict]
+        ls_ds_with_root = [xr.Dataset()] + list(ls_ds)
+        groups_dict = {
+            "/": _assign_root(ls_ds_with_root),
+        }
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                ls_ds_with_root, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                ls_ds_with_root, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                ls_ds_with_root, radar_calibration_subgroup
+            )
+        for sweep_path, ds in sweep_dict.items():
+            groups_dict[f"/{sweep_path}"] = ds.drop_attrs(deep=False)
+        return groups_dict
+
+    def open_datatree(
+        self,
+        filename_or_obj,
+        **kwargs,
+    ):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
 
 
 def open_nexradlevel2_datatree(
@@ -1739,43 +1837,10 @@ def open_nexradlevel2_datatree(
     dtree : xarray.DataTree
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
-    from xarray.core.treenode import NodePath
+    _deprecation_warning("open_nexradlevel2_datatree", "nexradlevel2")
 
-    if isinstance(sweep, str):
-        sweep = NodePath(sweep).name
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        elif isinstance(sweep[0], str):
-            sweeps = [NodePath(i).name for i in sweep]
-        else:
-            raise ValueError(
-                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
-            )
-    else:
-        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            # Expected number of elevation cuts from the VCP definition
-            if nex.msg_5:
-                exp_sweeps = nex.msg_5["number_elevation_cuts"]
-            else:
-                exp_sweeps = 0
-            # Actual number of sweeps recorded in the file
-            act_sweeps = len(nex.msg_31_data_header)
-            # Check for AVSET mode: If AVSET was active, the actual number of sweeps (act_sweeps)
-            # will be fewer than the expected number (exp_sweeps), as higher elevations were skipped.
-            # More info https://www.test.roc.noaa.gov/radar-techniques/avset.php
-            # https://www.test.roc.noaa.gov/public-documents/engineering-branch/new-technology/misc/avset/AVSET_AMS_RADAR_CONF_Final.pdf
-            if exp_sweeps > act_sweeps:
-                # Adjust nsweeps to the actual number of recorded sweeps
-                exp_sweeps = act_sweeps
-
-        sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
-
-    sweep_dict = open_sweeps_as_dict(
-        filename_or_obj=filename_or_obj,
+    return NexradLevel2BackendEntrypoint().open_datatree(
+        filename_or_obj,
         mask_and_scale=mask_and_scale,
         decode_times=decode_times,
         concat_characters=concat_characters,
@@ -1783,36 +1848,16 @@ def open_nexradlevel2_datatree(
         drop_variables=drop_variables,
         use_cftime=use_cftime,
         decode_timedelta=decode_timedelta,
-        sweeps=sweeps,
+        sweep=sweep,
         first_dim=first_dim,
         reindex_angle=reindex_angle,
         fix_second_angle=fix_second_angle,
         site_coords=site_coords,
         optional=optional,
+        optional_groups=optional_groups,
         lock=lock,
         **kwargs,
     )
-    ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
-    ls_ds.insert(0, xr.Dataset())
-    dtree: dict = {
-        "/": _assign_root(ls_ds),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    # todo: refactor _assign_root and _get_subgroup to recieve dict instead of list of datasets.
-    # avoiding remove the attributes in the following line
-    sweep_dict = {
-        sweep_path: sweep_dict[sweep_path].drop_attrs(deep=False)
-        for sweep_path in sweep_dict.keys()
-    }
-    dtree = dtree | sweep_dict
-    return DataTree.from_dict(dtree)
 
 
 def open_sweeps_as_dict(

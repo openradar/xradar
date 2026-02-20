@@ -38,7 +38,6 @@ import warnings
 
 import h5netcdf
 import numpy as np
-import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
@@ -55,7 +54,6 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -65,17 +63,13 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
-    _attach_sweep_groups,
+    _build_groups_dict,
+    _deprecation_warning,
     _fix_angle,
     _get_h5group_names,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
     _maybe_decode,
 )
 
@@ -790,6 +784,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#odim-h5"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -880,9 +875,79 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        format=None,
+        invalid_netcdf=None,
+        phony_dims="access",
+        decode_vlen_strings=True,
+        first_dim="auto",
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        if isinstance(sweep, str):
+            sweeps = [sweep]
+        elif isinstance(sweep, int):
+            sweeps = [f"sweep_{sweep}"]
+        elif isinstance(sweep, list):
+            if isinstance(sweep[0], int):
+                sweeps = [f"sweep_{i}" for i in sweep]
+            else:
+                sweeps = list(sweep)
+        else:
+            sweeps = _get_h5group_names(filename_or_obj, "odim")
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            format=format,
+            invalid_netcdf=invalid_netcdf,
+            phony_dims=phony_dims,
+            decode_vlen_strings=decode_vlen_strings,
+            first_dim=first_dim,
+            reindex_angle=reindex_angle,
+            fix_second_angle=fix_second_angle,
+            site_coords=site_coords,
+        )
+
+        ls_ds = [
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
+        ]
+        return _build_groups_dict(ls_ds, optional=optional, optional_groups=optional_groups)
+
+    def open_datatree(
+        self,
+        filename_or_obj,
+        **kwargs,
+    ):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
 
 def open_odim_datatree(filename_or_obj, **kwargs):
     """Open ODIM_H5 dataset as :py:class:`xarray.DataTree`.
+
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="odim")`` or
+        ``xr.open_datatree(file, engine="odim")`` instead.
 
     Parameters
     ----------
@@ -914,41 +979,18 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     dtree: xarray.DataTree
         DataTree
     """
-    # handle kwargs, extract first_dim
+    _deprecation_warning("open_odim_datatree", "odim")
+
+    # Bridge old backend_kwargs to direct kwargs
     backend_kwargs = kwargs.pop("backend_kwargs", {})
     optional = backend_kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
     sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i+1}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_h5group_names(filename_or_obj, "odim")
-
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="odim", **kwargs)
-        for swp in sweeps
-    ]
-    # todo: apply CfRadial2 group structure below
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return OdimBackendEntrypoint().open_datatree(
+        filename_or_obj,
+        sweep=sweep,
+        optional=optional,
+        optional_groups=optional_groups,
+        **kwargs,
+    )
