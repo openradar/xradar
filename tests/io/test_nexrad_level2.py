@@ -1563,6 +1563,21 @@ class TestIncompleteSweepParameter:
             dtree_explicit.match("sweep_*").keys()
         )
 
+    def test_backward_compat_pad_full_volume(self, nexradlevel2_file):
+        """Pad mode on a full volume produces the same sweeps as default (drop)."""
+        dtree_default = open_nexradlevel2_datatree(
+            nexradlevel2_file, reindex_angle=False, site_coords=True
+        )
+        dtree_pad = open_nexradlevel2_datatree(
+            nexradlevel2_file,
+            reindex_angle=False,
+            site_coords=True,
+            incomplete_sweep="pad",
+        )
+        assert list(dtree_default.match("sweep_*").keys()) == list(
+            dtree_pad.match("sweep_*").keys()
+        )
+
     def test_drop_mode_warns_with_specific_indices(self):
         """Drop mode warns with correct sweep indices when multiple are incomplete."""
         mock_nex = MagicMock()
