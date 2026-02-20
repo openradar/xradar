@@ -1870,6 +1870,15 @@ def open_nexradlevel2_datatree(
     # Handle list/tuple of chunk files or bytes
     if isinstance(filename_or_obj, (list, tuple)):
         filename_or_obj = _concatenate_chunks(filename_or_obj)
+        # Validate that the concatenated data starts with a volume header.
+        # The first chunk must be the S file (volume scan start).
+        if not filename_or_obj[:4].startswith(_VOLUME_HEADER_PREFIX):
+            raise ValueError(
+                "No chunk contains a volume header (AR2V prefix). "
+                "The first chunk must be the S file (volume scan start) which "
+                "contains the volume header and metadata. I/E chunks alone "
+                "cannot be decoded without it."
+            )
 
     incomplete = set()
 
