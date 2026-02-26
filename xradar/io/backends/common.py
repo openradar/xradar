@@ -60,6 +60,9 @@ def _fix_angle(da):
     return da
 
 
+_STATION_VARS = {"latitude", "longitude", "altitude"}
+
+
 def _attach_sweep_groups(dtree, sweeps):
     """Attach sweep groups to DataTree."""
     for i, sw in enumerate(sweeps):
@@ -121,6 +124,12 @@ def _assign_root(sweeps):
             "altitude": sweeps[1]["altitude"],
         }
     ).reset_coords()
+
+    # Promote station location to coordinates on the root node.
+    # Sweep children inherit these via DataTree coordinate inheritance.
+    promote = _STATION_VARS & set(root.data_vars)
+    if promote:
+        root = root.set_coords(list(promote))
 
     # assign root attributes
     attrs = {}
@@ -257,6 +266,12 @@ def _get_required_root_dataset(ls_ds, optional=True):
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
     root = _assign_root(ls)
+
+    # Drop station coords from _vars to avoid merge conflict
+    # (they are already placed as coordinates on root by _assign_root)
+    to_drop = _STATION_VARS & set(_vars.data_vars)
+    if to_drop:
+        _vars = _vars.drop_vars(to_drop)
 
     # merging both the created and the variables within each dataset
     root = xr.merge([root, _vars], compat="override")

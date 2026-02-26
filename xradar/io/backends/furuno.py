@@ -822,17 +822,21 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
     # handle kwargs, extract first_dim
     backend_kwargs = kwargs.pop("backend_kwargs", {})
     optional = backend_kwargs.pop("optional", True)
+    optional_groups = kwargs.pop("optional_groups", False)
     kwargs["backend_kwargs"] = backend_kwargs
 
     ls_ds = [xr.open_dataset(filename_or_obj, engine="furuno", **kwargs)]
 
     dtree: dict = {
         "/": _get_required_root_dataset(ls_ds, optional=optional),
-        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
-        "/georeferencing_correction": _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        ),
-        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
     }
+    if optional_groups:
+        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        dtree["/georeferencing_correction"] = _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        )
+        dtree["/radar_calibration"] = _get_radar_calibration(
+            ls_ds, radar_calibration_subgroup
+        )
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)

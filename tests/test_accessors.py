@@ -215,7 +215,7 @@ def test_accessor_to_cfradial1():
 def test_accessor_to_cfradial2():
     """Test the accessor function to convert CfRadial1 Dataset back to DataTree."""
     file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = xd.io.open_cfradial1_datatree(file)
+    dtree = xd.io.open_cfradial1_datatree(file, optional_groups=True)
 
     # Convert to CfRadial1 dataset
     ds_cf1 = dtree.xradar.to_cfradial1_dataset()

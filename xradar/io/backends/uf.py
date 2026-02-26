@@ -831,6 +831,7 @@ def open_uf_datatree(
     fix_second_angle=False,
     site_coords=True,
     optional=True,
+    optional_groups=False,
     lock=None,
     **kwargs,
 ):
@@ -951,12 +952,15 @@ def open_uf_datatree(
     ls_ds.insert(0, xr.Dataset())
     dtree: dict = {
         "/": _assign_root(ls_ds),
-        "/radar_parameters": _get_subgroup(ls_ds, radar_parameters_subgroup),
-        "/georeferencing_correction": _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        ),
-        "/radar_calibration": _get_radar_calibration(ls_ds, radar_calibration_subgroup),
     }
+    if optional_groups:
+        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        dtree["/georeferencing_correction"] = _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        )
+        dtree["/radar_calibration"] = _get_radar_calibration(
+            ls_ds, radar_calibration_subgroup
+        )
     # todo: refactor _assign_root and _get_subgroup to recieve dict instead of list of datasets.
     # avoiding remove the attributes in the following line
     sweep_dict = {

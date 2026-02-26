@@ -192,16 +192,12 @@ def test_open_odim_datatree(odim_file):
 
     # Assertions to check DataTree structure
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
-    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
-    assert (
-        "/radar_parameters" in dtree.subtree
-    ), "Radar parameters group should be in the DataTree"
-    assert (
-        "/georeferencing_correction" in dtree.subtree
-    ), "Georeferencing correction group should be in the DataTree"
-    assert (
-        "/radar_calibration" in dtree.subtree
-    ), "Radar calibration group should be in the DataTree"
+    subtree_paths = [n.path for n in dtree.subtree]
+    assert "/" in subtree_paths, "Root group should be present in the DataTree"
+    # optional_groups=False by default: metadata subgroups should NOT be present
+    assert "radar_parameters" not in dtree.children
+    assert "georeferencing_correction" not in dtree.children
+    assert "radar_calibration" not in dtree.children
 
     # Check if the correct sweep groups are attached
     sweep_groups = [key for key in dtree.match("sweep_*")]
@@ -219,19 +215,22 @@ def test_open_odim_datatree(odim_file):
         360,
         1200,
     ), "Shape mismatch for 'DBZH' variable"
-    # Validate coordinates in the root dataset
-    assert (
-        "latitude" in dtree[sample_sweep]
-    ), "Latitude should be attached to the root dataset"
-    assert (
-        "longitude" in dtree[sample_sweep]
-    ), "Longitude should be attached to the root dataset"
-    assert (
-        "altitude" in dtree[sample_sweep]
-    ), "Altitude should be attached to the root dataset"
+    # Station coords should be on root as coordinates, NOT on sweeps
+    assert "latitude" in dtree.ds.coords
+    assert "longitude" in dtree.ds.coords
+    assert "altitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 9
     assert (
         dtree.attrs["Conventions"] == "ODIM_H5/V2_2"
     ), "Instrument name should match expected value"
+
+
+def test_open_odim_datatree_optional_groups(odim_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_odim_datatree(odim_file, optional_groups=True)
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children

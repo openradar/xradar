@@ -29,7 +29,7 @@ def test_to_cfradial1(cfradial1_file):
 
 def test_to_cfradial2(cfradial1_file):
     """Test the conversion from CfRadial1 to CfRadial2 DataTree format."""
-    with xd.io.open_cfradial1_datatree(cfradial1_file) as dtree:
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
 
         # Convert to CfRadial1 dataset first
         ds_cf1 = xd.transform.to_cfradial1(dtree)

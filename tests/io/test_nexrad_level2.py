@@ -561,16 +561,13 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
-    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
-    assert (
-        "/radar_parameters" in dtree.subtree
-    ), "Radar parameters group should be in the DataTree"
-    assert (
-        "/georeferencing_correction" in dtree.subtree
-    ), "Georeferencing correction group should be in the DataTree"
-    assert (
-        "/radar_calibration" in dtree.subtree
-    ), "Radar calibration group should be in the DataTree"
+    subtree_paths = [n.path for n in dtree.subtree]
+    assert "/" in subtree_paths, "Root group should be present in the DataTree"
+
+    # optional_groups=False by default: metadata subgroups should NOT be present
+    assert "radar_parameters" not in dtree.children
+    assert "georeferencing_correction" not in dtree.children
+    assert "radar_calibration" not in dtree.children
 
     # Check if at least one sweep group is attached (e.g., "/sweep_0")
     sweep_groups = [key for key in dtree.match("sweep_*")]
@@ -586,16 +583,12 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
         "ZDR" in dtree[sample_sweep].data_vars
     ), f"VRADH should be a data variable in {sample_sweep}"
     assert dtree[sample_sweep]["DBZH"].shape == (360, 1832)
-    # Validate coordinates are attached correctly
-    assert (
-        "latitude" in dtree[sample_sweep]
-    ), "Latitude should be attached to the root dataset"
-    assert (
-        "longitude" in dtree[sample_sweep]
-    ), "Longitude should be attached to the root dataset"
-    assert (
-        "altitude" in dtree[sample_sweep]
-    ), "Altitude should be attached to the root dataset"
+
+    # Station coords should be on root as coordinates
+    assert "latitude" in dtree.ds.coords
+    assert "longitude" in dtree.ds.coords
+    assert "altitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "KATX"
@@ -622,16 +615,13 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
-    assert "/" in dtree.subtree, "Root group should be present in the DataTree"
-    assert (
-        "/radar_parameters" in dtree.subtree
-    ), "Radar parameters group should be in the DataTree"
-    assert (
-        "/georeferencing_correction" in dtree.subtree
-    ), "Georeferencing correction group should be in the DataTree"
-    assert (
-        "/radar_calibration" in dtree.subtree
-    ), "Radar calibration group should be in the DataTree"
+    subtree_paths = [n.path for n in dtree.subtree]
+    assert "/" in subtree_paths, "Root group should be present in the DataTree"
+
+    # optional_groups=False by default: metadata subgroups should NOT be present
+    assert "radar_parameters" not in dtree.children
+    assert "georeferencing_correction" not in dtree.children
+    assert "radar_calibration" not in dtree.children
 
     # Check if at least one sweep group is attached (e.g., "/sweep_0")
     sweep_groups = [key for key in dtree.match("sweep_*")]
@@ -644,20 +634,43 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"
     assert dtree[sample_sweep]["DBZH"].shape == (360, 460)
-    # Validate coordinates are attached correctly
-    assert (
-        "latitude" in dtree[sample_sweep]
-    ), "Latitude should be attached to the root dataset"
-    assert (
-        "longitude" in dtree[sample_sweep]
-    ), "Longitude should be attached to the root dataset"
-    assert (
-        "altitude" in dtree[sample_sweep]
-    ), "Altitude should be attached to the root dataset"
+
+    # Station coords should be on root as coordinates
+    assert "latitude" in dtree.ds.coords
+    assert "longitude" in dtree.ds.coords
+    assert "altitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "KLIX"
     assert dtree.attrs["scan_name"] == "VCP-0"
+
+
+def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
+    """Test that optional_groups=True includes metadata subgroups."""
+    dtree = open_nexradlevel2_datatree(
+        nexradlevel2_file, sweep=[0], optional_groups=True
+    )
+    assert "radar_parameters" in dtree.children
+    assert "georeferencing_correction" in dtree.children
+    assert "radar_calibration" in dtree.children
+
+    # Station coords should still be on root as coordinates
+    assert "latitude" in dtree.ds.coords
+    assert "latitude" not in dtree.ds.data_vars
+
+
+def test_open_nexradlevel2_single_dataset_site_coords(nexradlevel2_file):
+    """Single-dataset access via open_dataset still has lat/lon/alt with site_coords=True."""
+    ds = xarray.open_dataset(
+        nexradlevel2_file,
+        engine=NexradLevel2BackendEntrypoint,
+        group="sweep_0",
+        site_coords=True,
+    )
+    assert "latitude" in ds.coords
+    assert "longitude" in ds.coords
+    assert "altitude" in ds.coords
 
 
 @pytest.mark.parametrize(
