@@ -14,6 +14,7 @@ Currently, all private and not part of the public API.
 
 import io
 import struct
+import warnings
 from collections import OrderedDict
 
 import h5netcdf
@@ -21,8 +22,11 @@ import numpy as np
 import xarray as xr
 
 from ...model import (
+    georeferencing_correction_subgroup,
     optional_root_attrs,
     optional_root_vars,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     required_global_attrs,
     required_root_vars,
 )
@@ -317,6 +321,53 @@ def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset
         return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
     else:
         return xr.Dataset()
+
+
+def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
+    """Build CfRadial2 groups dict from a list of sweep Datasets.
+
+    Parameters
+    ----------
+    ls_ds : list of xr.Dataset
+        List of sweep Datasets.
+    optional : bool
+        Import optional metadata, defaults to True.
+    optional_groups : bool
+        If True, includes ``/radar_parameters``, ``/georeferencing_correction``
+        and ``/radar_calibration`` metadata subgroups. Default is False.
+
+    Returns
+    -------
+    groups_dict : dict[str, xr.Dataset]
+        Dictionary with CfRadial2 group structure.
+    """
+    groups_dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+    }
+    if optional_groups:
+        groups_dict["/radar_parameters"] = _get_subgroup(
+            ls_ds, radar_parameters_subgroup
+        )
+        groups_dict["/georeferencing_correction"] = _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        )
+        groups_dict["/radar_calibration"] = _get_radar_calibration(
+            ls_ds, radar_calibration_subgroup
+        )
+    for i, ds in enumerate(ls_ds):
+        groups_dict[f"/sweep_{i}"] = ds.drop_attrs(deep=False)
+    return groups_dict
+
+
+def _deprecation_warning(old_name, engine):
+    """Emit FutureWarning for deprecated standalone open_*_datatree functions."""
+    warnings.warn(
+        f"`{old_name}` is deprecated. Use "
+        f'`xd.open_datatree(file, engine="{engine}")` or '
+        f'`xr.open_datatree(file, engine="{engine}")` instead.',
+        FutureWarning,
+        stacklevel=3,
+    )
 
 
 # IRIS Data Types and corresponding python struct format characters
