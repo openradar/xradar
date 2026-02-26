@@ -931,7 +931,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         ls_ds = [
             self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
         ]
-        return _build_groups_dict(ls_ds, optional=optional, optional_groups=optional_groups)
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
 
     def open_datatree(
         self,

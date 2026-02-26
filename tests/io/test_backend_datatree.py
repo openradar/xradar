@@ -63,13 +63,18 @@ REQUIRED_GROUPS = {
 # -- Helper ------------------------------------------------------------------
 
 
-def _assert_cfradial2_structure(dtree):
+def _assert_cfradial2_structure(dtree, optional_groups=False):
     """Verify that a DataTree has CfRadial2 group structure."""
     assert isinstance(dtree, DataTree)
     children = set(dtree.children.keys())
-    # Must have metadata groups
-    for grp in ["radar_parameters", "georeferencing_correction", "radar_calibration"]:
-        assert grp in children, f"Missing group: {grp}"
+    # Metadata groups only present when optional_groups=True
+    if optional_groups:
+        for grp in [
+            "radar_parameters",
+            "georeferencing_correction",
+            "radar_calibration",
+        ]:
+            assert grp in children, f"Missing group: {grp}"
     # Must have at least one sweep
     sweep_groups = [k for k in children if k.startswith("sweep_")]
     assert len(sweep_groups) > 0, "No sweep groups found"
@@ -171,7 +176,9 @@ class TestOpenGroupsAsDict:
 
     def test_odim_groups_dict(self, odim_file):
         backend = OdimBackendEntrypoint()
-        groups = backend.open_groups_as_dict(odim_file, sweep=[0, 1])
+        groups = backend.open_groups_as_dict(
+            odim_file, sweep=[0, 1], optional_groups=True
+        )
         assert isinstance(groups, dict)
         assert "/" in groups
         assert "/radar_parameters" in groups
