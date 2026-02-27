@@ -350,7 +350,7 @@ def test_open_iris_datatree(iris0_file):
     # Verify a sample variable in one of the sweep groups (adjust based on expected variables)
     sample_sweep = sweep_groups[0]
     assert (
-        len(dtree[sample_sweep].data_vars) == 12
+        len(dtree[sample_sweep].data_vars) == 15
     ), f"Expected data variables in {sample_sweep}"
     assert dtree[sample_sweep]["DBZH"].shape == (360, 664)
     assert (

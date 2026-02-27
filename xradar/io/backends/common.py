@@ -63,6 +63,37 @@ def _fix_angle(da):
 _STATION_VARS = {"latitude", "longitude", "altitude"}
 
 
+def _apply_site_coords(ds, site_coords):
+    """Promote or demote station coordinates on a sweep Dataset.
+
+    When *site_coords* is true the latitude / longitude / altitude
+    variables are promoted to coordinates.  When false they are demoted
+    back to data variables so the root node owns the single authoritative
+    copy in a DataTree context.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        Sweep dataset to modify.
+    site_coords : bool
+        If True, promote station vars to coordinates.
+        If False, demote them to data variables.
+
+    Returns
+    -------
+    xr.Dataset
+    """
+    if site_coords:
+        present = _STATION_VARS & (set(ds.data_vars) | set(ds.coords))
+        if present:
+            return ds.assign_coords({v: ds[v] for v in present})
+        return ds
+    to_demote = _STATION_VARS & set(ds.coords)
+    if to_demote:
+        return ds.reset_coords(list(to_demote))
+    return ds
+
+
 def _attach_sweep_groups(dtree, sweeps):
     """Attach sweep groups to DataTree."""
     for i, sw in enumerate(sweeps):

@@ -54,6 +54,7 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _apply_site_coords,
     _assign_root,
     _get_radar_calibration,
     _get_subgroup,
@@ -1628,14 +1629,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby(dim0)
 
         # assign geo-coords
-        if site_coords:
-            ds = ds.assign_coords(
-                {
-                    "latitude": ds.latitude,
-                    "longitude": ds.longitude,
-                    "altitude": ds.altitude,
-                }
-            )
+        ds = _apply_site_coords(ds, site_coords)
 
         # ensure close works
         ds._close = store.close
@@ -1787,7 +1781,7 @@ def open_nexradlevel2_datatree(
         first_dim=first_dim,
         reindex_angle=reindex_angle,
         fix_second_angle=fix_second_angle,
-        site_coords=site_coords,
+        site_coords=False,
         optional=optional,
         lock=lock,
         **kwargs,
@@ -1876,14 +1870,7 @@ def open_sweeps_as_dict(
                 group_ds = group_ds.sortby(dim0)
 
             # assign geo-coords
-            if site_coords:
-                group_ds = group_ds.assign_coords(
-                    {
-                        "latitude": group_ds.latitude,
-                        "longitude": group_ds.longitude,
-                        "altitude": group_ds.altitude,
-                    }
-                )
+            group_ds = _apply_site_coords(group_ds, site_coords)
 
             groups_dict[path_group] = group_ds
     return groups_dict

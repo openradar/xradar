@@ -49,7 +49,12 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
-from .common import _STATION_VARS, _attach_sweep_groups, _maybe_decode
+from .common import (
+    _STATION_VARS,
+    _apply_site_coords,
+    _attach_sweep_groups,
+    _maybe_decode,
+)
 
 
 def _get_required_root_dataset(ds, optional=True):
@@ -213,16 +218,16 @@ def _get_sweep_groups(
 
             ds = merge([ds, ds_vars], compat="no_conflicts")
 
-        # assign site_coords
-        if site_coords:
-
-            ds = ds.assign_coords(
-                {
-                    "latitude": root.latitude,
-                    "longitude": root.longitude,
-                    "altitude": root.altitude,
-                }
-            )
+        # Always assign station vars (conform_cfradial2_sweep_group strips them).
+        # _apply_site_coords promotes to coords or keeps as data vars.
+        ds = ds.assign(
+            {
+                "latitude": root.latitude,
+                "longitude": root.longitude,
+                "altitude": root.altitude,
+            }
+        )
+        ds = _apply_site_coords(ds, site_coords)
 
         # handling first dimension
         # for CfRadial1 first dimension is time
@@ -369,7 +374,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
-    site_coords = kwargs.pop("site_coords", True)
+    kwargs.pop("site_coords", None)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
     # needed for new xarray literal timedelta decoding
@@ -400,7 +405,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
                 sweep=sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=site_coords,
+                site_coords=False,
             ).values()
         ),
     )

@@ -239,7 +239,7 @@ def test_open_uf_datatree(uf_file_1):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 14
+    assert len(dtree[sample_sweep].data_vars) == 17
     assert (
         "DBTH" in dtree[sample_sweep].data_vars
     ), f"DBTH should be a data variable in {sample_sweep}"
@@ -294,7 +294,7 @@ def test_open_uf_datatree_2(uf_file_2):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 13
+    assert len(dtree[sample_sweep].data_vars) == 16
     assert (
         "DBTH" in dtree[sample_sweep].data_vars
     ), f"DBTH should be a data variable in {sample_sweep}"

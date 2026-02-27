@@ -76,6 +76,7 @@ from .common import (
     UINT1,
     UINT2,
     UINT4,
+    _apply_site_coords,
     _attach_sweep_groups,
     _calculate_angle_res,
     _get_fmt_string,
@@ -770,14 +771,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby("time")
 
         # assign geo-coords
-        if site_coords:
-            ds = ds.assign_coords(
-                {
-                    "latitude": ds.latitude,
-                    "longitude": ds.longitude,
-                    "altitude": ds.altitude,
-                }
-            )
+        ds = _apply_site_coords(ds, site_coords)
         ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works

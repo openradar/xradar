@@ -684,8 +684,9 @@ def open_metek_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = ["sweep_0"]
 
+    kw = {**kwargs, "site_coords": False}
     ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kwargs)
+        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kw)
         for swp in sweeps
     ].copy()
     dtree: dict = {
