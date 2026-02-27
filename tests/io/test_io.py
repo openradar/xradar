@@ -1275,3 +1275,11 @@ class TestStationCoordsOnRoot:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert STATION_VARS <= set(sweep_ds.data_vars)
+
+    def test_cfradial1_station_coords_on_root(self, cfradial1_file):
+        dtree = open_cfradial1_datatree(cfradial1_file)
+        assert STATION_VARS <= set(dtree.ds.coords)
+        for name in [k for k in dtree.children if k.startswith("sweep_")]:
+            sweep_ds = dtree[name].ds
+            assert not (STATION_VARS & set(sweep_ds.coords))
+            assert STATION_VARS <= set(sweep_ds.data_vars)
