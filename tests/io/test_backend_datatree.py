@@ -116,10 +116,11 @@ class TestXdOpenDatatree:
             site_coords=True,
             sweep=[0],
         )
-        sweep_ds = dtree["sweep_0"].ds
-        assert "latitude" in sweep_ds.coords
-        assert "longitude" in sweep_ds.coords
-        assert "altitude" in sweep_ds.coords
+        # Station coords live on root, not on individual sweep nodes
+        root_ds = dtree.ds
+        assert "latitude" in root_ds.coords
+        assert "longitude" in root_ds.coords
+        assert "altitude" in root_ds.coords
 
     def test_unknown_engine_raises(self, odim_file):
         with pytest.raises(ValueError, match="Unknown engine"):
@@ -285,3 +286,43 @@ class TestDeprecation:
             old = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
         new = xd.open_datatree(nexradlevel2_file, engine="nexradlevel2", sweep=[0, 1])
         assert set(old.children.keys()) == set(new.children.keys())
+
+
+# -- Station coord optimization tests ----------------------------------------
+
+STATION_VARS = {"latitude", "longitude", "altitude"}
+
+
+class TestStationCoordsOnRoot:
+    """Verify station coords are on root, not redundantly on sweep nodes."""
+
+    def test_odim_station_coords_on_root(self, odim_file):
+        dtree = xd.open_datatree(odim_file, engine="odim", sweep=[0, 1])
+        # Root has station coords as coordinates
+        assert STATION_VARS <= set(dtree.ds.coords)
+        # Sweep nodes do NOT have station coords as coordinates
+        for name in ["sweep_0", "sweep_1"]:
+            sweep_coords = set(dtree[name].ds.coords)
+            assert not (
+                STATION_VARS & sweep_coords
+            ), f"{name} should not have station coords as coordinates"
+
+    def test_nexrad_station_coords_on_root(self, nexradlevel2_file):
+        dtree = xd.open_datatree(nexradlevel2_file, engine="nexradlevel2", sweep=[0, 1])
+        assert STATION_VARS <= set(dtree.ds.coords)
+        for name in ["sweep_0", "sweep_1"]:
+            sweep_coords = set(dtree[name].ds.coords)
+            assert not (STATION_VARS & sweep_coords)
+
+    def test_cfradial1_station_coords_on_root(self, cfradial1_file):
+        backend = CfRadial1BackendEntrypoint()
+        dtree = backend.open_datatree(
+            cfradial1_file,
+            engine="h5netcdf",
+            decode_timedelta=False,
+            sweep=[0, 1],
+        )
+        assert STATION_VARS <= set(dtree.ds.coords)
+        for name in ["sweep_0", "sweep_1"]:
+            sweep_coords = set(dtree[name].ds.coords)
+            assert not (STATION_VARS & sweep_coords)

@@ -55,6 +55,7 @@ from ...model import (
     radar_parameters_subgroup,
 )
 from .common import (
+    _apply_site_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
     _get_required_root_dataset,
@@ -571,10 +572,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"azimuth": ds.azimuth})
         ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
-        if site_coords is True:
-            ds = ds.assign_coords({"longitude": ds.longitude})
-            ds = ds.assign_coords({"latitude": ds.latitude})
-            ds = ds.assign_coords({"altitude": ds.altitude})
+        ds = _apply_site_coords(ds, site_coords)
 
         ds.encoding["engine"] = "hpl"
         # handling first dimension
@@ -652,8 +650,11 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_h5group_names(filename_or_obj)
 
+    # Skip station coord promotion for all sweeps in datatree context;
+    # root inherits them via _assign_root / DataTree coordinate inheritance.
+    kw = {**kwargs, "site_coords": False}
     ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="hpl", **kwargs)
+        xr.open_dataset(filename_or_obj, group=swp, engine="hpl", **kw)
         for swp in sweeps
     ]
 

@@ -684,10 +684,13 @@ def open_metek_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = ["sweep_0"]
 
+    # Skip station coord promotion for all sweeps in datatree context;
+    # root inherits them via _assign_root / DataTree coordinate inheritance.
+    kw = {**kwargs, "site_coords": False}
     ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kwargs)
+        xr.open_dataset(filename_or_obj, group=swp, engine="metek", **kw)
         for swp in sweeps
-    ].copy()
+    ]
     dtree: dict = {
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }

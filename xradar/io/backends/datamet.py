@@ -54,6 +54,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
+    _apply_site_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
     _get_required_root_dataset,
@@ -442,14 +443,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby("time")
 
         # assign geo-coords
-        if site_coords:
-            ds = ds.assign_coords(
-                {
-                    "latitude": ds.latitude,
-                    "longitude": ds.longitude,
-                    "altitude": ds.altitude,
-                }
-            )
+        ds = _apply_site_coords(ds, site_coords)
 
         # ensure close works
         ds._close = store.close
@@ -516,9 +510,12 @@ def open_datamet_datatree(filename_or_obj, **kwargs):
             f"sweep_{i}" for i in range(0, dmet.scan_metadata["elevation_number"])
         ]
 
+    # Skip station coord promotion for all sweeps in datatree context;
+    # root inherits them via _assign_root / DataTree coordinate inheritance.
+    kw = {**kwargs, "site_coords": False}
     ls_ds: list[xr.Dataset] = [
         xr.open_dataset(
-            filename_or_obj, group=swp, engine=DataMetBackendEntrypoint, **kwargs
+            filename_or_obj, group=swp, engine=DataMetBackendEntrypoint, **kw
         )
         for swp in sweeps
     ]

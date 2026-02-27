@@ -66,6 +66,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
+    _apply_site_coords,
     _build_groups_dict,
     _deprecation_warning,
     _fix_angle,
@@ -862,13 +863,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             ds = ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        ds = _apply_site_coords(ds, site_coords)
 
         # ensure close works
         ds._close = store.close
@@ -928,8 +923,12 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             site_coords=site_coords,
         )
 
+        # Skip station coord promotion for all sweeps in datatree context;
+        # root inherits them via _assign_root / DataTree coordinate inheritance.
+        ds_kwargs_no_site = {**ds_kwargs, "site_coords": False}
         ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs_no_site)
+            for swp in sweeps
         ]
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups

@@ -524,7 +524,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
                 sweep=sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=site_coords,
+                site_coords=False,
             ).values()
         )
 

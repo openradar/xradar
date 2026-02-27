@@ -112,7 +112,7 @@ def test_open_datamet_datatree(datamet_file):
     # Verify a sample variable in one of the sweep groups (adjust based on expected variables)
     sample_sweep = sweep_groups[0]
     assert (
-        len(dtree[sample_sweep].data_vars) == 13
+        len(dtree[sample_sweep].data_vars) == 16
     ), f"Expected data variables in {sample_sweep}"
     assert dtree[sample_sweep]["DBZH"].shape == (360, 493)
     assert (
