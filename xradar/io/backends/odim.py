@@ -70,6 +70,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
+    _apply_site_coords,
     _attach_sweep_groups,
     _fix_angle,
     _get_h5group_names,
@@ -867,13 +868,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             ds = ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
         # assign geo-coords
-        ds = ds.assign_coords(
-            {
-                "latitude": ds.latitude,
-                "longitude": ds.longitude,
-                "altitude": ds.altitude,
-            }
-        )
+        ds = _apply_site_coords(ds, site_coords)
 
         # ensure close works
         ds._close = store.close
@@ -934,8 +929,9 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_h5group_names(filename_or_obj, "odim")
 
+    kw = {**kwargs, "site_coords": False}
     ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="odim", **kwargs)
+        xr.open_dataset(filename_or_obj, group=swp, engine="odim", **kw)
         for swp in sweeps
     ]
     # todo: apply CfRadial2 group structure below

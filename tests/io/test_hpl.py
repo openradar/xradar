@@ -110,7 +110,7 @@ def test_open_hpl_datatree():
     # Verify a sample variable in one of the sweep groups
     sample_sweep = sweep_groups[0]
     assert (
-        len(dtree[sample_sweep].data_vars) == 11
+        len(dtree[sample_sweep].data_vars) == 14
     ), f"Expected data variables in {sample_sweep}"
     assert (
         "mean_doppler_velocity" in dtree[sample_sweep].data_vars

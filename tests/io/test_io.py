@@ -182,9 +182,6 @@ def test_open_odim_datatree(odim_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -339,9 +336,6 @@ def test_open_gamic_datatree(gamic_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -567,9 +561,6 @@ def test_open_rainbow_datatree(rainbow_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -665,9 +656,6 @@ def test_open_iris_datatree(iris0_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -902,9 +890,6 @@ def test_open_datamet_datatree(datamet_file):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.isclose(ds.elevation.mean().values.item(), elevations[i], atol=0.05)
@@ -1109,9 +1094,6 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -1249,9 +1231,6 @@ def test_open_uf_datatree(uf_file_1):
             "azimuth",
             "elevation",
             "time",
-            "latitude",
-            "longitude",
-            "altitude",
             "range",
         }
         assert np.round(ds.elevation.mean().values.item(), 1) == elevations[i]
@@ -1265,3 +1244,34 @@ def test_open_uf_datatree(uf_file_1):
 def test_uf_dask_load(uf_files):
     ds = xr.open_dataset(uf_files, group="sweep_0", engine="uf", chunks={})
     ds.load()
+
+
+STATION_VARS = {"latitude", "longitude", "altitude"}
+
+
+class TestStationCoordsOnRoot:
+    """Verify station coords are on root and not on sweep nodes in DataTree."""
+
+    def test_odim_station_coords_on_root(self, odim_file):
+        dtree = open_odim_datatree(odim_file)
+        assert STATION_VARS <= set(dtree.ds.coords)
+        for name in [k for k in dtree.children if k.startswith("sweep_")]:
+            sweep_ds = dtree[name].ds
+            assert not (STATION_VARS & set(sweep_ds.coords))
+            assert STATION_VARS <= set(sweep_ds.data_vars)
+
+    def test_nexrad_station_coords_on_root(self, nexradlevel2_file):
+        dtree = open_nexradlevel2_datatree(nexradlevel2_file)
+        assert STATION_VARS <= set(dtree.ds.coords)
+        for name in [k for k in dtree.children if k.startswith("sweep_")]:
+            sweep_ds = dtree[name].ds
+            assert not (STATION_VARS & set(sweep_ds.coords))
+            assert STATION_VARS <= set(sweep_ds.data_vars)
+
+    def test_gamic_station_coords_on_root(self, gamic_file):
+        dtree = open_gamic_datatree(gamic_file)
+        assert STATION_VARS <= set(dtree.ds.coords)
+        for name in [k for k in dtree.children if k.startswith("sweep_")]:
+            sweep_ds = dtree[name].ds
+            assert not (STATION_VARS & set(sweep_ds.coords))
+            assert STATION_VARS <= set(sweep_ds.data_vars)

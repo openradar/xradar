@@ -575,7 +575,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 9
+    assert len(dtree[sample_sweep].data_vars) == 12
     assert (
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"
@@ -629,7 +629,7 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 6
+    assert len(dtree[sample_sweep].data_vars) == 9
     assert (
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"

@@ -369,7 +369,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
-    site_coords = kwargs.pop("site_coords", True)
+    kwargs.pop("site_coords", None)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
     # needed for new xarray literal timedelta decoding
@@ -400,7 +400,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
                 sweep=sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=site_coords,
+                site_coords=False,
             ).values()
         ),
     )
