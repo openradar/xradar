@@ -135,7 +135,7 @@ def test_open_gamic_datatree(gamic_file):
             "direction": 1,  # Set a valid direction within reindex_angle
         },
         "fix_second_angle": True,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual GAMIC HDF5 file

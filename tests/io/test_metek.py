@@ -289,7 +289,7 @@ def test_open_metek_datatree(metek_pro_gz_file):
     kwargs = {
         "sweep": [0],  # Test with specific sweep
         "first_dim": "auto",
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual Metek file

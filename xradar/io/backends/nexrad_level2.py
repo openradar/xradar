@@ -54,7 +54,7 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
-    _apply_site_coords,
+    _apply_site_as_coords,
     _assign_root,
     _get_radar_calibration,
     _get_subgroup,
@@ -1582,7 +1582,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
-        site_coords=True,
+        site_as_coords=True,
         optional=True,
     ):
         store = NexradLevel2Store.open(
@@ -1629,7 +1629,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby(dim0)
 
         # assign geo-coords
-        ds = _apply_site_coords(ds, site_coords)
+        ds = _apply_site_as_coords(ds, site_as_coords)
 
         # ensure close works
         ds._close = store.close
@@ -1650,7 +1650,7 @@ def open_nexradlevel2_datatree(
     first_dim="auto",
     reindex_angle=False,
     fix_second_angle=False,
-    site_coords=True,
+    site_as_coords=True,
     optional=True,
     optional_groups=False,
     lock=None,
@@ -1713,7 +1713,7 @@ def open_nexradlevel2_datatree(
         If True, corrects errors in the second angle data, such as misaligned
         elevation or azimuth values. Default is False.
 
-    site_coords : bool, optional
+    site_as_coords : bool, optional
         Attaches radar site coordinates to the dataset if True. Default is True.
 
     optional : bool, optional
@@ -1781,7 +1781,7 @@ def open_nexradlevel2_datatree(
         first_dim=first_dim,
         reindex_angle=reindex_angle,
         fix_second_angle=fix_second_angle,
-        site_coords=False,
+        site_as_coords=False,
         optional=optional,
         lock=lock,
         **kwargs,
@@ -1822,7 +1822,7 @@ def open_sweeps_as_dict(
     first_dim="auto",
     reindex_angle=False,
     fix_second_angle=False,
-    site_coords=True,
+    site_as_coords=True,
     optional=True,
     lock=None,
     **kwargs,
@@ -1870,7 +1870,7 @@ def open_sweeps_as_dict(
                 group_ds = group_ds.sortby(dim0)
 
             # assign geo-coords
-            group_ds = _apply_site_coords(group_ds, site_coords)
+            group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
             groups_dict[path_group] = group_ds
     return groups_dict

@@ -63,7 +63,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
-    _apply_site_coords,
+    _apply_site_as_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
     _get_required_root_dataset,
@@ -514,7 +514,7 @@ class RainbowFile(RainbowFileBase):
         return self.header.get("history", None)
 
     @property
-    def site_coords(self):
+    def site_as_coords(self):
         si = self.sensorinfo
         return (
             float(_get_dict_value(si, "lon", "@lon")),
@@ -762,7 +762,7 @@ class RainbowStore(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        lon, lat, alt = self.root.site_coords
+        lon, lat, alt = self.root.site_as_coords
 
         coords = {
             "azimuth": azimuth,
@@ -814,7 +814,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         group=None,
         reindex_angle=False,
         first_dim="auto",
-        site_coords=True,
+        site_as_coords=True,
     ):
         store = RainbowStore.open(
             filename_or_obj,
@@ -860,7 +860,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby("time")
 
         # assign geo-coords
-        ds = _apply_site_coords(ds, site_coords)
+        ds = _apply_site_as_coords(ds, site_as_coords)
 
         # ensure close works
         ds._close = store.close
@@ -897,7 +897,7 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs : dict
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
@@ -927,7 +927,7 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_rainbow_group_names(filename_or_obj)
 
-    kw = {**kwargs, "site_coords": False}
+    kw = {**kwargs, "site_as_coords": False}
     ls_ds: list[xr.Dataset] = [
         xr.open_dataset(filename_or_obj, group=swp, engine="rainbow", **kw)
         for swp in sweeps

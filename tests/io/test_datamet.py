@@ -91,7 +91,7 @@ def test_open_datamet_datatree(datamet_file):
             "angle_res": 1.0,
             "direction": 1,  # Set a valid direction within reindex_angle
         },
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual DataMet file

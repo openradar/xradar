@@ -54,7 +54,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
-    _apply_site_coords,
+    _apply_site_as_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
     _get_required_root_dataset,
@@ -398,7 +398,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
         group=None,
         reindex_angle=False,
         first_dim="auto",
-        site_coords=True,
+        site_as_coords=True,
     ):
         store = DataMetStore.open(
             filename_or_obj,
@@ -443,7 +443,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby("time")
 
         # assign geo-coords
-        ds = _apply_site_coords(ds, site_coords)
+        ds = _apply_site_as_coords(ds, site_as_coords)
 
         # ensure close works
         ds._close = store.close
@@ -474,7 +474,7 @@ def open_datamet_datatree(filename_or_obj, **kwargs):
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs : dict
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
@@ -510,7 +510,7 @@ def open_datamet_datatree(filename_or_obj, **kwargs):
             f"sweep_{i}" for i in range(0, dmet.scan_metadata["elevation_number"])
         ]
 
-    kw = {**kwargs, "site_coords": False}
+    kw = {**kwargs, "site_as_coords": False}
     ls_ds: list[xr.Dataset] = [
         xr.open_dataset(
             filename_or_obj, group=swp, engine=DataMetBackendEntrypoint, **kw

@@ -5,7 +5,7 @@
 
 * ENH: Move station coordinates (``latitude``, ``longitude``, ``altitude``) to root node as coordinates for DataTree coordinate inheritance ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
 * ENH: Add ``optional_groups`` parameter (default ``False``) to all ``open_*_datatree()`` functions to control inclusion of ``/radar_parameters``, ``/georeferencing_correction``, and ``/radar_calibration`` subgroups ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
-* ENH: Skip redundant station coordinate reads for subsequent sweeps in DataTree by passing ``site_coords=False`` and extracting shared ``_apply_site_coords`` helper ({issue}`334`, {pull}`337`) by [@aladinor](https://github.com/aladinor)
+* ENH: Skip redundant station coordinate reads for subsequent sweeps in DataTree by passing ``site_as_coords=False`` and extracting shared ``_apply_site_as_coords`` helper ({issue}`334`, {pull}`337`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.11.1 (2026-02-03)
 

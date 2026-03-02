@@ -184,7 +184,7 @@ def test_open_odim_datatree(odim_file):
         "first_dim": "auto",
         "reindex_angle": False,
         "fix_second_angle": False,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an ODIM file

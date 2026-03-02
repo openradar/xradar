@@ -51,7 +51,7 @@ from ...model import (
 )
 from .common import (
     _STATION_VARS,
-    _apply_site_coords,
+    _apply_site_as_coords,
     _attach_sweep_groups,
     _maybe_decode,
 )
@@ -104,7 +104,7 @@ def _get_required_root_dataset(ds, optional=True):
 
 
 def _get_sweep_groups(
-    obj, sweep=None, first_dim="auto", optional=True, site_coords=True
+    obj, sweep=None, first_dim="auto", optional=True, site_as_coords=True
 ):
     """Extract Sweep Groups.
 
@@ -123,7 +123,7 @@ def _get_sweep_groups(
         type of sweep. Defaults to ``auto``.
     optional : bool
         Import optional mandatory data and metadata, defaults to ``True``.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
 
     Ported from wradlib.
@@ -219,7 +219,7 @@ def _get_sweep_groups(
             ds = merge([ds, ds_vars], compat="no_conflicts")
 
         # Always assign station vars (conform_cfradial2_sweep_group strips them).
-        # _apply_site_coords promotes to coords or keeps as data vars.
+        # _apply_site_as_coords promotes to coords or keeps as data vars.
         ds = ds.assign(
             {
                 "latitude": root.latitude,
@@ -227,7 +227,7 @@ def _get_sweep_groups(
                 "altitude": root.altitude,
             }
         )
-        ds = _apply_site_coords(ds, site_coords)
+        ds = _apply_site_as_coords(ds, site_as_coords)
 
         # handling first dimension
         # for CfRadial1 first dimension is time
@@ -249,7 +249,7 @@ def _get_sweep_groups(
 
 
 def _get_cfradial2_group(
-    ds, sweep="sweep_0", first_dim="time", optional=True, site_coords=False
+    ds, sweep="sweep_0", first_dim="time", optional=True, site_as_coords=False
 ):
     """Assign CfRadial2 group from CfRadial1 data structure.
 
@@ -265,7 +265,7 @@ def _get_cfradial2_group(
         type of sweep. Defaults to ``auto``.
     optional : bool
         Import optional mandatory data and metadata, defaults to ``True``.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
 
     Returns
@@ -288,7 +288,7 @@ def _get_cfradial2_group(
                 sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=site_coords,
+                site_as_coords=site_as_coords,
             ).values()
         )[0]
     else:
@@ -359,7 +359,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         If True, fixes erroneous second angle data. Defaults to ``False``.
     optional : bool
         Import optional mandatory data and metadata, defaults to ``True``.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
     engine: str
         Engine that will be passed to Xarray.open_dataset, defaults to "netcdf4"
@@ -374,7 +374,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
-    kwargs.pop("site_coords", None)
+    kwargs.pop("site_as_coords", None)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
     # needed for new xarray literal timedelta decoding
@@ -405,7 +405,7 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
                 sweep=sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=False,
+                site_as_coords=False,
             ).values()
         ),
     )
@@ -426,7 +426,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
         For PPI only. If True, fixes erroneous second angle data. Defaults to False.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs : dict
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
@@ -451,7 +451,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
-        site_coords=True,
+        site_as_coords=True,
         optional=True,
     ):
         store = NetCDF4DataStore.open(
@@ -478,7 +478,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
             sweep=group,
             first_dim=first_dim,
             optional=optional,
-            site_coords=site_coords,
+            site_as_coords=site_as_coords,
         )
         if ds is None:
             raise ValueError(f"Group `{group}` missing from file `{filename_or_obj}`.")

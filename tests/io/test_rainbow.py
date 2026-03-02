@@ -160,7 +160,7 @@ def test_rainbow_file_meta(rainbow_file):
     with rainbow.RainbowFile(rainbow_file, loaddata=False) as rbdict:
         assert rbdict.version == "5.36.5"
         assert rbdict.header
-        assert rbdict.site_coords == (6.379967, 50.856633, 116.7)
+        assert rbdict.site_as_coords == (6.379967, 50.856633, 116.7)
         assert rbdict.first_dimension == "azimuth"
         assert rbdict.history is None
         assert rbdict.pargroup
@@ -214,7 +214,7 @@ def test_open_rainbow_datatree(rainbow_file):
         "sweep": [0, 1],  # Specify sweeps to extract
         "first_dim": "auto",
         "reindex_angle": False,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with the Rainbow file
