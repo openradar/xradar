@@ -47,7 +47,7 @@ def test_open_scn(furuno_scn_file, file_or_filelike):
     assert data.angle_resolution == 0.26
     assert data.first_dimension == "azimuth"
     assert data.fixed_angle == 7.8
-    assert data.site_as_coords == (15.44729, 47.07734000000001, 407.9)
+    assert data.site_coords == (15.44729, 47.07734000000001, 407.9)
     assert data.header["scan_start_time"] == datetime.datetime(2021, 7, 30, 16, 0)
     assert list(data.data.keys()) == [
         "RATE",
@@ -86,7 +86,7 @@ def test_open_scnx(furuno_scnx_file, file_or_filelike):
     assert data.angle_resolution == 0.5
     assert data.first_dimension == "azimuth"
     assert data.fixed_angle == 0.5
-    assert data.site_as_coords == (13.243970000000001, 53.55478, 38.0)
+    assert data.site_coords == (13.243970000000001, 53.55478, 38.0)
     assert data.header["scan_start_time"] == datetime.datetime(2022, 3, 24, 0, 0, 1)
     assert len(data.data) == 11
     assert list(data.data.keys()) == [

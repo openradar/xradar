@@ -401,7 +401,7 @@ class FurunoFile:
         return self.header["format_version"]
 
     @property
-    def site_as_coords(self):
+    def site_coords(self):
         if self.version in [3, 103]:
             lon = self.header["longitude"]
             lat = self.header["latitude"]
@@ -666,7 +666,7 @@ class FurunoStore(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        lon, lat, alt = self.ds.site_as_coords
+        lon, lat, alt = self.ds.site_coords
 
         coords = {
             "range": rng,

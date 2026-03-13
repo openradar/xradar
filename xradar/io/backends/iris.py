@@ -3727,7 +3727,7 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 self._data[current_sweep] = sweep
 
     @property
-    def site_as_coords(self):
+    def site_coords(self):
         """Return Radar Location Tuple"""
         ing_conf = self.ingest_header["ingest_configuration"]
         lon = ing_conf["longitude_radar"]
@@ -3892,7 +3892,7 @@ class IrisStore(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        lon, lat, alt = self.root.site_as_coords
+        lon, lat, alt = self.root.site_coords
 
         task = self.root.ingest_header["task_configuration"]["task_range_info"]
         range_first_bin = task["range_first_bin"]

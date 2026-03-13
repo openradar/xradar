@@ -514,7 +514,7 @@ class RainbowFile(RainbowFileBase):
         return self.header.get("history", None)
 
     @property
-    def site_as_coords(self):
+    def site_coords(self):
         si = self.sensorinfo
         return (
             float(_get_dict_value(si, "lon", "@lon")),
@@ -762,7 +762,7 @@ class RainbowStore(AbstractDataStore):
         prt_mode = "not_set"
         follow_mode = "not_set"
 
-        lon, lat, alt = self.root.site_as_coords
+        lon, lat, alt = self.root.site_coords
 
         coords = {
             "azimuth": azimuth,

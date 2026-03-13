@@ -293,8 +293,8 @@ class _H5NetCDFMetadata:
         return tuple(dimensions)
 
     @property
-    def site_as_coords(self):
-        return self._get_site_as_coords()
+    def site_coords(self):
+        return self._get_site_coords()
 
     @property
     def how(self):
@@ -321,7 +321,7 @@ class _H5NetCDFMetadata:
         version = self._root.attrs.get("Conventions", "None")
         return version
 
-    def _get_site_as_coords(self):
+    def _get_site_coords(self):
         lon = self._root["where"].attrs["lon"]
         lat = self._root["where"].attrs["lat"]
         alt = self._root["where"].attrs["height"]
