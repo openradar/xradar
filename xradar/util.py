@@ -411,10 +411,9 @@ def _ipol_time(da, dim0, a1gate=0, direction=1):
     # interpolate and round to the least significant digit
     data = np.rint(ipol(angles) / sig).astype(int) * sig
 
-    # apply interpolated times into original DataArray
-    da = da.copy()
-    da.loc[{dim0: idx}] = data.astype(dtype)
-    return da
+    # apply interpolated times into original DataArray without copying
+    interpolated = xr.DataArray(data.astype(dtype), dims=da.dims, coords=da.coords)
+    return da.where(da.notnull(), interpolated)
 
 
 def ipol_time(ds, *, a1gate_idx=None, direction=None, **kwargs):
