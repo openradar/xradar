@@ -380,7 +380,7 @@ def _ipol_time(da, dim0, a1gate=0, direction=1):
     sidx = da_sel[dim0].argsort()
 
     # special handling for wrap-around angles
-    angles = da_sel[dim0].values
+    angles = da_sel[dim0].values.copy()
     # a1gate should normally only be set for PPI,
     if a1gate > 0:
         angles[-a1gate:] += 360
@@ -412,6 +412,7 @@ def _ipol_time(da, dim0, a1gate=0, direction=1):
     data = np.rint(ipol(angles) / sig).astype(int) * sig
 
     # apply interpolated times into original DataArray
+    da = da.copy()
     da.loc[{dim0: idx}] = data.astype(dtype)
     return da
 
