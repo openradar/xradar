@@ -1260,7 +1260,7 @@ class TestStationCoordsOnRoot:
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
-            assert STATION_VARS <= set(sweep_ds.data_vars)
+            assert not (STATION_VARS & set(sweep_ds.data_vars))
 
     def test_nexrad_station_coords_on_root(self, nexradlevel2_file):
         dtree = open_nexradlevel2_datatree(nexradlevel2_file)
@@ -1268,7 +1268,7 @@ class TestStationCoordsOnRoot:
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
-            assert STATION_VARS <= set(sweep_ds.data_vars)
+            assert not (STATION_VARS & set(sweep_ds.data_vars))
 
     def test_gamic_station_coords_on_root(self, gamic_file):
         dtree = open_gamic_datatree(gamic_file)
@@ -1276,7 +1276,7 @@ class TestStationCoordsOnRoot:
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
-            assert STATION_VARS <= set(sweep_ds.data_vars)
+            assert not (STATION_VARS & set(sweep_ds.data_vars))
 
     def test_cfradial1_station_coords_on_root(self, cfradial1_file):
         dtree = open_cfradial1_datatree(cfradial1_file)
@@ -1284,4 +1284,4 @@ class TestStationCoordsOnRoot:
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
-            assert STATION_VARS <= set(sweep_ds.data_vars)
+            assert not (STATION_VARS & set(sweep_ds.data_vars))
