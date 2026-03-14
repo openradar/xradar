@@ -942,11 +942,9 @@ def open_uf_datatree(
         lock=lock,
         **kwargs,
     )
-    ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
-    ls_ds.insert(0, xr.Dataset())
-    dtree: dict = {
-        "/": _assign_root(ls_ds),
-    }
+    ls_ds: list[xr.Dataset] = [xr.Dataset()] + list(sweep_dict.values())
+    root, ls_ds = _assign_root(ls_ds)
+    dtree: dict = {"/": root}
     if optional_groups:
         dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
         dtree["/georeferencing_correction"] = _get_subgroup(
@@ -955,13 +953,11 @@ def open_uf_datatree(
         dtree["/radar_calibration"] = _get_radar_calibration(
             ls_ds, radar_calibration_subgroup
         )
-    # todo: refactor _assign_root and _get_subgroup to recieve dict instead of list of datasets.
-    # avoiding remove the attributes in the following line
-    sweep_dict = {
-        sweep_path: sweep_dict[sweep_path].drop_attrs(deep=False)
-        for sweep_path in sweep_dict.keys()
+    # Build from ls_ds (station vars already stripped by _assign_root).
+    dtree |= {
+        key: ds.drop_attrs(deep=False)
+        for key, ds in zip(sweep_dict, ls_ds[1:])
     }
-    dtree = dtree | sweep_dict
     return xr.DataTree.from_dict(dtree)
 
 
