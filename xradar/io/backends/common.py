@@ -309,7 +309,7 @@ def _get_required_root_dataset(ls_ds, optional=True):
     # Creating the root group using _assign_root function
     ls = ls_ds.copy()
     ls.insert(0, xr.Dataset())
-    root, _ = _assign_root(ls)
+    root, ls = _assign_root(ls)
 
     # Drop station coords from _vars to avoid merge conflict
     # (they are already placed as coordinates on root by _assign_root)
