@@ -1798,10 +1798,7 @@ def open_nexradlevel2_datatree(
             ls_ds, radar_calibration_subgroup
         )
     # Build from ls_ds (station vars already stripped by _assign_root).
-    dtree |= {
-        key: ds.drop_attrs(deep=False)
-        for key, ds in zip(sweep_dict, ls_ds[1:])
-    }
+    dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
     return DataTree.from_dict(dtree)
 
 
