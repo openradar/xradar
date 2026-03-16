@@ -538,6 +538,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
         self._msg_5_data = None
         # message 2
         # RDA Status Data
+        self._msg_2_data = None
 
         # message 31 headers
         # Digital Radar Data Generic Format
@@ -592,6 +593,13 @@ class NEXRADLevel2File(NEXRADRecordFile):
         if self._msg_5_data is None:
             self._msg_5_data = self.get_msg_5_data()
         return self._msg_5_data
+
+    @property
+    def msg_2(self):
+        """Retrieve MSG2 (RDA Status) data."""
+        if self._msg_2_data is None:
+            self._msg_2_data = self.get_msg_2_data()
+        return self._msg_2_data
 
     @property
     def data(self):
@@ -685,6 +693,12 @@ class NEXRADLevel2File(NEXRADRecordFile):
             self._rawdata,
             byte_order=">",
         )
+        msg_5["vcp_sequencing_decoded"] = decode_vcp_sequencing(
+            msg_5.get("vcp_sequencing", 0)
+        )
+        msg_5["vcp_supplemental_decoded"] = decode_vcp_supplemental(
+            msg_5.get("vcp_supplemental", 0)
+        )
         msg_5["elevation_data"] = []
 
         # Validate number_elevation_cuts is reasonable
@@ -704,11 +718,33 @@ class NEXRADLevel2File(NEXRADRecordFile):
                     self._rawdata,
                     byte_order=">",
                 )
+                msg_5_elev["supplemental_data_decoded"] = decode_elevation_supplemental(
+                    msg_5_elev.get("supplemental_data", 0)
+                )
                 msg_5["elevation_data"].append(msg_5_elev)
         except (struct.error, EOFError):
             pass
 
         return msg_5
+
+    def get_msg_2_data(self):
+        """Get MSG2 (RDA Status) data."""
+        if self.meta_header["msg_2"]:
+            recnum = self.meta_header["msg_2"][0]["record_number"]
+        else:
+            return False
+        self.init_record(recnum)
+        self.rh.pos += LEN_MSG_HEADER + 12
+        msg_2 = _unpack_dictionary(
+            self._rh.read(LEN_MSG_2, width=1),
+            MSG_2,
+            self._rawdata,
+            byte_order=">",
+        )
+        msg_2["rda_scan_data_flags_decoded"] = decode_rda_scan_data_flags(
+            msg_2.get("rda_scan_data_flags", 0)
+        )
+        return msg_2
 
     def get_message_header(self):
         """Read and unpack message header."""
@@ -1062,7 +1098,10 @@ MSG_5 = OrderedDict(
         ("clutter_map_group_number", UINT2),
         ("doppler_velocity_resolution", CODE1),  # 2: 0.5 degrees, 4: 1.0 degrees
         ("pulse_width", CODE1),  # 2: short, 4: long
-        ("spare", {"fmt": "10s"}),  # halfwords 7-11 (10 bytes, 5 halfwords)
+        ("spare_7_8", {"fmt": "4s"}),  # HW 7-8: Reserved
+        ("vcp_sequencing", CODE2),  # HW 9: VCP sequencing values (ICD Note 15)
+        ("vcp_supplemental", CODE2),  # HW 10: SAILS/MRLE/MPDA flags (ICD Note 16)
+        ("spare_11", {"fmt": "2s"}),  # HW 11: Reserved
     ]
 )
 LEN_MSG_5 = struct.calcsize(_get_fmt_string(MSG_5, byte_order=">"))
@@ -1085,7 +1124,7 @@ MSG_5_ELEV = OrderedDict(
         ("edge_angle_1", CODE2),
         ("dop_prf_num_1", UINT2),
         ("dop_prf_pulse_count_1", UINT2),
-        ("spare_1", {"fmt": "2s"}),
+        ("supplemental_data", CODE2),  # E15: SAILS/MRLE/MPDA per-cut flags
         ("edge_angle_2", CODE2),
         ("dop_prf_num_2", UINT2),
         ("dop_prf_pulse_count_2", UINT2),
@@ -1097,6 +1136,80 @@ MSG_5_ELEV = OrderedDict(
     ]
 )
 LEN_MSG_5_ELEV = struct.calcsize(_get_fmt_string(MSG_5_ELEV, byte_order=">"))
+
+
+def decode_vcp_sequencing(value):
+    """Decode VCP Sequencing Values (MSG_5 HW 9, ICD 2620002AA Note 15)."""
+    return {
+        "num_elevations": value & 0x1F,  # Bits 0-4
+        "max_sails_cuts": (value >> 5) & 0x03,  # Bits 5-6
+        "sequence_active": bool(value & 0x2000),  # Bit 13
+        "truncated_vcp": bool(value & 0x4000),  # Bit 14
+    }
+
+
+def decode_vcp_supplemental(value):
+    """Decode VCP Supplemental Data (MSG_5 HW 10, ICD 2620002AA Note 16)."""
+    return {
+        "sails_vcp": bool(value & 0x0001),  # Bit 0
+        "num_sails_cuts": (value >> 1) & 0x07,  # Bits 1-3
+        "mrle_vcp": bool(value & 0x0010),  # Bit 4
+        "num_mrle_cuts": (value >> 5) & 0x07,  # Bits 5-7
+        # Bits 8-10: Spares per ICD
+        "mpda_vcp": bool(value & 0x0800),  # Bit 11
+        "base_tilt_vcp": bool(value & 0x1000),  # Bit 12
+        "num_base_tilts": (value >> 13) & 0x07,  # Bits 13-15
+    }
+
+
+def decode_elevation_supplemental(value):
+    """Decode per-elevation supplemental data (MSG_5_ELEV E15, ICD Note 17)."""
+    return {
+        "sails_cut": bool(value & 0x0001),  # Bit 0
+        "sails_sequence_number": (value >> 1) & 0x07,  # Bits 1-3
+        "mrle_cut": bool(value & 0x0010),  # Bit 4
+        "mrle_sequence_number": (value >> 5) & 0x07,  # Bits 5-7
+        # Bit 8: Spare
+        "mpda_cut": bool(value & 0x0200),  # Bit 9
+        "base_tilt_cut": bool(value & 0x0400),  # Bit 10
+    }
+
+
+def decode_rda_scan_data_flags(value):
+    """Decode RDA Scan and Data Flags (MSG_2 HW 14, ICD 2620002AA Note 10).
+
+    Bits 1 and 2 are mutually exclusive and represent AVSET status.
+    """
+    return {
+        "avset_enabled": bool(value & 0x0002),  # Bit 1
+        "avset_disabled": bool(value & 0x0004),  # Bit 2
+        "ebc_enabled": bool(value & 0x0008),  # Bit 3
+        "rda_log_data_enabled": bool(value & 0x0010),  # Bit 4
+        "time_series_recording": bool(value & 0x0020),  # Bit 5
+    }
+
+
+# Table IV RDA Status Data (Message Type 2)
+# pages 3-12 to 3-16
+MSG_2 = OrderedDict(
+    [
+        ("rda_status", CODE2),  # HW 1
+        ("operability_status", CODE2),  # HW 2
+        ("control_status", CODE2),  # HW 3
+        ("aux_power_gen_state", CODE2),  # HW 4
+        ("avg_xmtr_power", UINT2),  # HW 5
+        ("horiz_ref_calib_corr", SINT2),  # HW 6
+        ("data_xmission_enabled", CODE2),  # HW 7
+        ("vcp_number", SINT2),  # HW 8
+        ("rda_control_auth", CODE2),  # HW 9
+        ("rda_build_number", UINT2),  # HW 10
+        ("operational_mode", CODE2),  # HW 11
+        ("super_res_status", CODE2),  # HW 12
+        ("cmd_status", CODE2),  # HW 13
+        ("rda_scan_data_flags", CODE2),  # HW 14: AVSET/EBC bits
+    ]
+)
+LEN_MSG_2 = struct.calcsize(_get_fmt_string(MSG_2, byte_order=">"))
 
 MSG_18 = OrderedDict(
     [
