@@ -380,10 +380,16 @@ def _ipol_time(da, dim0, a1gate=0, direction=1):
     sidx = da_sel[dim0].argsort()
 
     # special handling for wrap-around angles
-    angles = da_sel[dim0].values.copy()
+    angles = da_sel[dim0]
     # a1gate should normally only be set for PPI,
     if a1gate > 0:
-        angles[-a1gate:] += 360
+        # create a boolean mask for the last a1gate indices
+        mask = xr.DataArray(
+            np.arange(angles.size) >= angles.size - a1gate,
+            dims=dim0
+        )
+        # lazily add 360 to only the masked entries
+        angles = angles + 360 * mask
     da_sel = da_sel.assign_coords({dim0: angles})
 
     # prepare azimuth array for interpolation
