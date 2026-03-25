@@ -83,7 +83,7 @@ def test_open_hpl_datatree():
     kwargs = {
         "sweep": [0, 1, 2, 3, 4, 5, 6, 7, 8],
         "first_dim": "auto",
-        "site_coords": True,
+        "site_as_coords": True,
         "backend_kwargs": {
             "latitude": 41.24276244459537,
             "longitude": -70.1070364814594,

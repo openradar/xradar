@@ -217,7 +217,7 @@ def test_open_uf_datatree(uf_file_1):
             "direction": 1,  # Set a valid direction within reindex_angle
         },
         "fix_second_angle": True,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual UF file
@@ -272,7 +272,7 @@ def test_open_uf_datatree_2(uf_file_2):
             "direction": 1,  # Set a valid direction within reindex_angle
         },
         "fix_second_angle": True,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual NEXRAD Level 2 file
@@ -335,7 +335,7 @@ def test_open_uf_datatree_sweeps_initialization(
         "first_dim": "auto",
         "reindex_angle": False,
         "fix_second_angle": False,
-        "site_coords": True,
+        "site_as_coords": True,
         "optional": True,
     }
 

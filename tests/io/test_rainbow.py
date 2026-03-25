@@ -214,7 +214,7 @@ def test_open_rainbow_datatree(rainbow_file):
         "sweep": [0, 1],  # Specify sweeps to extract
         "first_dim": "auto",
         "reindex_angle": False,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with the Rainbow file

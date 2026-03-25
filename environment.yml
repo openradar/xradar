@@ -19,7 +19,8 @@ dependencies:
   - netCDF4
   - open-radar-data>=0.1.0
   - pyproj
-  - xarray>=2024.10.0
+  - pip:
+    - xarray @ git+https://github.com/pydata/xarray.git@main
   - xmltodict
   - cartopy
   - cmweather

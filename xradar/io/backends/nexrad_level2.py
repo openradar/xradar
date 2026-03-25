@@ -54,6 +54,7 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _apply_site_as_coords,
     _assign_root,
     _get_radar_calibration,
     _get_subgroup,
@@ -1581,7 +1582,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
-        site_coords=True,
+        site_as_coords=True,
         optional=True,
     ):
         store = NexradLevel2Store.open(
@@ -1628,14 +1629,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby(dim0)
 
         # assign geo-coords
-        if site_coords:
-            ds = ds.assign_coords(
-                {
-                    "latitude": ds.latitude,
-                    "longitude": ds.longitude,
-                    "altitude": ds.altitude,
-                }
-            )
+        ds = _apply_site_as_coords(ds, site_as_coords)
 
         # ensure close works
         ds._close = store.close
@@ -1656,7 +1650,7 @@ def open_nexradlevel2_datatree(
     first_dim="auto",
     reindex_angle=False,
     fix_second_angle=False,
-    site_coords=True,
+    site_as_coords=True,
     optional=True,
     optional_groups=False,
     lock=None,
@@ -1719,7 +1713,7 @@ def open_nexradlevel2_datatree(
         If True, corrects errors in the second angle data, such as misaligned
         elevation or azimuth values. Default is False.
 
-    site_coords : bool, optional
+    site_as_coords : bool, optional
         Attaches radar site coordinates to the dataset if True. Default is True.
 
     optional : bool, optional
@@ -1787,16 +1781,14 @@ def open_nexradlevel2_datatree(
         first_dim=first_dim,
         reindex_angle=reindex_angle,
         fix_second_angle=fix_second_angle,
-        site_coords=site_coords,
+        site_as_coords=False,
         optional=optional,
         lock=lock,
         **kwargs,
     )
-    ls_ds: list[xr.Dataset] = [sweep_dict[sweep] for sweep in sweep_dict.keys()]
-    ls_ds.insert(0, xr.Dataset())
-    dtree: dict = {
-        "/": _assign_root(ls_ds),
-    }
+    ls_ds: list[xr.Dataset] = [xr.Dataset()] + list(sweep_dict.values())
+    root, ls_ds = _assign_root(ls_ds)
+    dtree: dict = {"/": root}
     if optional_groups:
         dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
         dtree["/georeferencing_correction"] = _get_subgroup(
@@ -1805,13 +1797,8 @@ def open_nexradlevel2_datatree(
         dtree["/radar_calibration"] = _get_radar_calibration(
             ls_ds, radar_calibration_subgroup
         )
-    # todo: refactor _assign_root and _get_subgroup to recieve dict instead of list of datasets.
-    # avoiding remove the attributes in the following line
-    sweep_dict = {
-        sweep_path: sweep_dict[sweep_path].drop_attrs(deep=False)
-        for sweep_path in sweep_dict.keys()
-    }
-    dtree = dtree | sweep_dict
+    # Build from ls_ds (station vars already stripped by _assign_root).
+    dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
     return DataTree.from_dict(dtree)
 
 
@@ -1828,7 +1815,7 @@ def open_sweeps_as_dict(
     first_dim="auto",
     reindex_angle=False,
     fix_second_angle=False,
-    site_coords=True,
+    site_as_coords=True,
     optional=True,
     lock=None,
     **kwargs,
@@ -1876,14 +1863,7 @@ def open_sweeps_as_dict(
                 group_ds = group_ds.sortby(dim0)
 
             # assign geo-coords
-            if site_coords:
-                group_ds = group_ds.assign_coords(
-                    {
-                        "latitude": group_ds.latitude,
-                        "longitude": group_ds.longitude,
-                        "altitude": group_ds.altitude,
-                    }
-                )
+            group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
             groups_dict[path_group] = group_ds
     return groups_dict

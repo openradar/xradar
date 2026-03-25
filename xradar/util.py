@@ -380,10 +380,13 @@ def _ipol_time(da, dim0, a1gate=0, direction=1):
     sidx = da_sel[dim0].argsort()
 
     # special handling for wrap-around angles
-    angles = da_sel[dim0].values
+    angles = da_sel[dim0]
     # a1gate should normally only be set for PPI,
     if a1gate > 0:
-        angles[-a1gate:] += 360
+        # create a boolean mask for the last a1gate indices
+        mask = xr.DataArray(np.arange(angles.size) >= angles.size - a1gate, dims=dim0)
+        # lazily add 360 to only the masked entries
+        angles = angles + 360 * mask
     da_sel = da_sel.assign_coords({dim0: angles})
 
     # prepare azimuth array for interpolation
@@ -411,9 +414,9 @@ def _ipol_time(da, dim0, a1gate=0, direction=1):
     # interpolate and round to the least significant digit
     data = np.rint(ipol(angles) / sig).astype(int) * sig
 
-    # apply interpolated times into original DataArray
-    da.loc[{dim0: idx}] = data.astype(dtype)
-    return da
+    # apply interpolated times into original DataArray without copying
+    interpolated = xr.DataArray(data.astype(dtype), dims=da.dims, coords=da.coords)
+    return da.where(da.notnull(), interpolated)
 
 
 def ipol_time(ds, *, a1gate_idx=None, direction=None, **kwargs):
@@ -565,7 +568,9 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     # Apply the function to all sweep nodes and update the tree dictionary
     tree.update(
         {
-            node.path: func(dtree[node.path].to_dataset(), *args, **kwargs)
+            node.path: func(
+                dtree[node.path].to_dataset(inherit="all_coords"), *args, **kwargs
+            )
             for node in dtree.match("sweep*").subtree
             if node.path.startswith("/sweep")
         }
@@ -626,33 +631,11 @@ def map_over_sweeps(func):
     """
 
     @functools.wraps(func)
-    def _func(*args, **kwargs):
-        """
-        Internal function to apply `func` only to sweep nodes.
-
-        Checks for the presence of the 'range' dimension to identify sweep nodes. Non-sweep nodes
-        are left unchanged.
-
-        Parameters
-        ----------
-        *args : tuple
-            Positional arguments passed to the function.
-        **kwargs : dict
-            Keyword arguments passed to the function.
-
-        Returns
-        -------
-        Dataset or unchanged object
-            The modified Dataset if applied to a sweep node, otherwise the unchanged object.
-        """
-        if "range" in args[0].dims:
-            return func(*args, **kwargs)
-        else:
-            return args[0]
-
-    # map _func over datasets in a DataTree
     def _map_over_sweeps(*args, **kwargs):
-        return xr.map_over_datasets(functools.partial(_func, **kwargs), *args)
+        """Apply *func* to every sweep node, inheriting root coordinates."""
+        dtree = args[0]
+        extra_args = args[1:]
+        return apply_to_sweeps(dtree, func, *extra_args, **kwargs)
 
     return _map_over_sweeps
 

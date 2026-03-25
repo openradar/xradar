@@ -71,7 +71,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
         if "sweep" in grp:
             dtree[grp] = xr.DataTree(
                 conform_cfradial2_sweep_group(
-                    dtree[grp].to_dataset(),
+                    dtree[grp].to_dataset(inherit="all_coords"),
                     optional=False,
                 )
             )

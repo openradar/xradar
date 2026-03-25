@@ -130,7 +130,7 @@ def to_cfradial2(ds, **kwargs):
     """Convert a CfRadial1 Dataset to CfRadial2 DataTree."""
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
-    kwargs.pop("site_coords", True)
+    kwargs.pop("site_as_coords", True)
     sweep = kwargs.pop("sweep", None)
 
     # Create DataTree root node with required data
@@ -159,7 +159,7 @@ def to_cfradial2(ds, **kwargs):
             sweep=sweep,
             first_dim=first_dim,
             optional=optional,
-            site_coords=True,
+            site_as_coords=True,
         ).values()
     )
     dtree = _attach_sweep_groups(dtree, sweep_groups)

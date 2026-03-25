@@ -328,7 +328,7 @@ def test_open_iris_datatree(iris0_file):
             "direction": 1,
         },
         "fix_second_angle": True,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual Iris/Sigmet file

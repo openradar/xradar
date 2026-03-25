@@ -67,6 +67,10 @@ jobs:
               python=${{matrix.python-version}}
               numpy=${{matrix.numpy-version}}
               conda
+    - name: Install xarray dev
+      run: |
+        python -m pip install --no-deps --no-cache-dir \
+        git+https://github.com/pydata/xarray.git@main
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
@@ -116,6 +120,10 @@ jobs:
               python=${{matrix.python-version}}
               numpy=${{matrix.numpy-version}}
               conda
+    - name: Install xarray dev
+      run: |
+        python -m pip install --no-deps --no-cache-dir \
+        git+https://github.com/pydata/xarray.git@main
     - name: Install xradar
       run: |
         python -m pip install . --no-deps

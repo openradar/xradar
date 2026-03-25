@@ -216,7 +216,7 @@ def to_odim(
     # datasets
     ds_list = [f"dataset{i + 1}" for i in range(len(grps))]
     for idx in range(len(ds_list)):
-        ds = dtree[grps[idx]].to_dataset()
+        ds = dtree[grps[idx]].to_dataset(inherit="all_coords")
         dim0 = "elevation" if ds.sweep_mode == "rhi" else "azimuth"
 
         # datasetN group

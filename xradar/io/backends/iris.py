@@ -68,6 +68,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
+    _apply_site_as_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
     _get_required_root_dataset,
@@ -4007,7 +4008,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         first_dim="auto",
         reindex_angle=False,
         fix_second_angle=False,
-        site_coords=True,
+        site_as_coords=True,
         optional=True,
     ):
         store = IrisStore.open(
@@ -4060,14 +4061,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             ds = ds.sortby(dim0)
 
         # assign geo-coords
-        if site_coords:
-            ds = ds.assign_coords(
-                {
-                    "latitude": ds.latitude,
-                    "longitude": ds.longitude,
-                    "altitude": ds.altitude,
-                }
-            )
+        ds = _apply_site_as_coords(ds, site_as_coords)
 
         # ensure close works
         ds._close = store.close
@@ -4098,7 +4092,7 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         reindex_angle. Only invoked if `decode_coord=True`.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_coords : bool
+    site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
     kwargs : dict
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
@@ -4128,8 +4122,9 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     else:
         sweeps = _get_iris_group_names(filename_or_obj)
 
+    kw = {**kwargs, "site_as_coords": False}
     ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kwargs)
+        xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kw)
         for swp in sweeps
     ]
     dtree: dict = {

@@ -553,7 +553,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
             "direction": 1,  # Set a valid direction within reindex_angle
         },
         "fix_second_angle": True,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual NEXRAD Level 2 file
@@ -607,7 +607,7 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
             "direction": 1,  # Set a valid direction within reindex_angle
         },
         "fix_second_angle": True,
-        "site_coords": True,
+        "site_as_coords": True,
     }
 
     # Call the function with an actual NEXRAD Level 2 file
@@ -660,13 +660,13 @@ def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
     assert "latitude" not in dtree.ds.data_vars
 
 
-def test_open_nexradlevel2_single_dataset_site_coords(nexradlevel2_file):
-    """Single-dataset access via open_dataset still has lat/lon/alt with site_coords=True."""
+def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file):
+    """Single-dataset access via open_dataset still has lat/lon/alt with site_as_coords=True."""
     ds = xarray.open_dataset(
         nexradlevel2_file,
         engine=NexradLevel2BackendEntrypoint,
         group="sweep_0",
-        site_coords=True,
+        site_as_coords=True,
     )
     assert "latitude" in ds.coords
     assert "longitude" in ds.coords
@@ -697,7 +697,7 @@ def test_open_nexradlevel2_datatree_sweeps_initialization(
         "first_dim": "auto",
         "reindex_angle": False,
         "fix_second_angle": False,
-        "site_coords": True,
+        "site_as_coords": True,
         "optional": True,
     }
 
