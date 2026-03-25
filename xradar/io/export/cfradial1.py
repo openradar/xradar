@@ -109,7 +109,7 @@ def _variable_mapper(dtree, dim0=None):
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
-            data = dtree[grp].to_dataset()
+            data = dtree[grp].to_dataset(inherit="all_coords")
 
             # handling first dimension
             if dim0 is None:

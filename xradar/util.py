@@ -568,7 +568,9 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     # Apply the function to all sweep nodes and update the tree dictionary
     tree.update(
         {
-            node.path: func(dtree[node.path].to_dataset(), *args, **kwargs)
+            node.path: func(
+                dtree[node.path].to_dataset(inherit="all_coords"), *args, **kwargs
+            )
             for node in dtree.match("sweep*").subtree
             if node.path.startswith("/sweep")
         }
