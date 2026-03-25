@@ -126,7 +126,9 @@ def add_crs_tree(radar, datum="WGS84"):
     """
     for key in list(radar.children):
         if "sweep" in key:
-            radar[key].ds = add_crs(radar[key].to_dataset(inherit="all_coords"), datum=datum)
+            radar[key].ds = add_crs(
+                radar[key].to_dataset(inherit="all_coords"), datum=datum
+            )
     return radar
 
 
