@@ -7,5 +7,5 @@ netCDF4
 numpy
 pyproj
 scipy
-xarray >= 2024.10.0
+xarray @ git+https://github.com/pydata/xarray.git@main
 xmltodict

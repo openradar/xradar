@@ -252,7 +252,7 @@ def get_x_y_z_tree(
     for key in list(radar.children):
         if "sweep" in key:
             radar[key].ds = get_x_y_z(
-                radar[key].to_dataset(),
+                radar[key].to_dataset(inherit="all_coords"),
                 earth_radius=earth_radius,
                 effective_radius_fraction=effective_radius_fraction,
                 target_crs=target_crs,

@@ -1,7 +1,7 @@
 [project]
 name = "xradar"
 description = """Xradar includes all the tools to get your weather radar into the xarray data model."""
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 
@@ -54,6 +54,9 @@ requires = [
     "setuptools_scm[toml]>=8.0",
 ]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["xradar*"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
