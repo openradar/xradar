@@ -631,33 +631,11 @@ def map_over_sweeps(func):
     """
 
     @functools.wraps(func)
-    def _func(*args, **kwargs):
-        """
-        Internal function to apply `func` only to sweep nodes.
-
-        Checks for the presence of the 'range' dimension to identify sweep nodes. Non-sweep nodes
-        are left unchanged.
-
-        Parameters
-        ----------
-        *args : tuple
-            Positional arguments passed to the function.
-        **kwargs : dict
-            Keyword arguments passed to the function.
-
-        Returns
-        -------
-        Dataset or unchanged object
-            The modified Dataset if applied to a sweep node, otherwise the unchanged object.
-        """
-        if "range" in args[0].dims:
-            return func(*args, **kwargs)
-        else:
-            return args[0]
-
-    # map _func over datasets in a DataTree
     def _map_over_sweeps(*args, **kwargs):
-        return xr.map_over_datasets(functools.partial(_func, **kwargs), *args)
+        """Apply *func* to every sweep node, inheriting root coordinates."""
+        dtree = args[0]
+        extra_args = args[1:]
+        return apply_to_sweeps(dtree, func, *extra_args, **kwargs)
 
     return _map_over_sweeps
 
