@@ -27,7 +27,8 @@ dependencies:
   - pytest-xdist
   - scipy
   - setuptools
-  - xarray>=2024.10.0
+  - pip:
+    - xarray @ git+https://github.com/pydata/xarray.git@main
   - xmltodict
   - boto3
   - arm_pyart
