@@ -16,6 +16,8 @@ import xarray
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends.nexrad_level2 import (
+    _CHANNEL_CONFIGS,
+    _WAVEFORM_TYPES,
     NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
     open_nexradlevel2_datatree,
@@ -2354,3 +2356,61 @@ def test_nexradlevel2_missing_msg2_returns_false():
 
     mock = MockNEXRADFile()
     assert mock.msg_2 is False
+
+
+def test_root_attrs_from_real_file(nexradlevel2_file):
+    """Root attrs include all expected ICD scan metadata fields."""
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
+    attrs = dtree.attrs
+
+    # MSG_5 attrs
+    assert attrs["scan_name"].startswith("VCP-")
+    assert (
+        attrs["dynamic_scan_type"] in ("standard", "SAILS", "MRLE")
+        or "x" in attrs["dynamic_scan_type"]
+    )
+    assert isinstance(attrs["mpda_vcp"], bool)
+    assert isinstance(attrs["base_tilt_vcp"], bool)
+    assert isinstance(attrs["num_base_tilts"], int)
+    assert isinstance(attrs["vcp_truncated"], bool)
+    assert isinstance(attrs["vcp_sequence_active"], bool)
+    assert attrs["number_elevation_cuts"] > 0
+    assert attrs["doppler_velocity_resolution"] in (0.5, 1.0)
+    assert attrs["vcp_pulse_width"] in ("short", "long")
+
+    # MSG_2 attrs
+    assert isinstance(attrs["avset_enabled"], bool)
+    assert isinstance(attrs["ebc_enabled"], bool)
+    assert isinstance(attrs["super_res_status"], int)
+    assert isinstance(attrs["rda_build_number"], int)
+    assert isinstance(attrs["operational_mode"], int)
+
+
+def test_sweep_vars_from_real_file(nexradlevel2_file):
+    """Per-sweep vars include waveform and supplemental data."""
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
+    sweep_ds = dtree["sweep_0"].to_dataset()
+
+    assert sweep_ds["waveform_type"].item() in _WAVEFORM_TYPES.values()
+    assert sweep_ds["channel_config"].item() in _CHANNEL_CONFIGS.values()
+    assert isinstance(sweep_ds["super_resolution"].item(), (int, np.integer))
+    assert isinstance(sweep_ds["sails_cut"].item(), (bool, np.bool_))
+    assert isinstance(sweep_ds["mrle_cut"].item(), (bool, np.bool_))
+    assert isinstance(sweep_ds["mpda_cut"].item(), (bool, np.bool_))
+    assert isinstance(sweep_ds["base_tilt_cut"].item(), (bool, np.bool_))
+    assert isinstance(sweep_ds["sails_sequence_number"].item(), (int, np.integer))
+    assert isinstance(sweep_ds["mrle_sequence_number"].item(), (int, np.integer))
+
+
+def test_get_dynamic_scan_type():
+    """Test _get_dynamic_scan_type helper for all cases."""
+    from xradar.io.backends.nexrad_level2 import _get_dynamic_scan_type
+
+    assert _get_dynamic_scan_type({}) == "standard"
+    assert (
+        _get_dynamic_scan_type({"sails_vcp": True, "num_sails_cuts": 3}) == "SAILS x 3"
+    )
+    assert _get_dynamic_scan_type({"mrle_vcp": True, "num_mrle_cuts": 4}) == "MRLE x 4"
+    assert _get_dynamic_scan_type({"sails_vcp": True, "num_sails_cuts": 0}) == "SAILS"
+    assert _get_dynamic_scan_type({"mrle_vcp": True, "num_mrle_cuts": 0}) == "MRLE"
+    assert _get_dynamic_scan_type({"sails_vcp": False, "mrle_vcp": False}) == "standard"

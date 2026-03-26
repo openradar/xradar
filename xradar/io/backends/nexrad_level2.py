@@ -1790,27 +1790,27 @@ class NexradLevel2Store(AbstractDataStore):
             "sweep_fixed_angle": Variable((), fixed_angle),
         }
 
-        # Per-sweep waveform and supplemental data from MSG_5_ELEV
+        # Per-sweep metadata from MSG_5_ELEV (ICD Table XI)
         if elev_data:
             elev_info = elev_data[self._group]
             wf = elev_info.get("waveform_type", 0)
-            coords["waveform_type"] = Variable((), _WAVEFORM_TYPES.get(wf, str(wf)))
             ch = elev_info.get("channel_config", 0)
+            coords["waveform_type"] = Variable((), _WAVEFORM_TYPES.get(wf, str(wf)))
             coords["channel_config"] = Variable((), _CHANNEL_CONFIGS.get(ch, str(ch)))
-            sr = elev_info.get("super_resolution", 0)
-            coords["super_resolution"] = Variable((), sr)
+            coords["super_resolution"] = Variable(
+                (), elev_info.get("super_resolution", 0)
+            )
+            # Per-elevation supplemental data (ICD Note 17, E15)
             sup = elev_info.get("supplemental_data_decoded", {})
-            if sup:
-                coords["sails_cut"] = Variable((), sup.get("sails_cut", False))
-                coords["sails_sequence_number"] = Variable(
-                    (), sup.get("sails_sequence_number", 0)
-                )
-                coords["mrle_cut"] = Variable((), sup.get("mrle_cut", False))
-                coords["mrle_sequence_number"] = Variable(
-                    (), sup.get("mrle_sequence_number", 0)
-                )
-                coords["mpda_cut"] = Variable((), sup.get("mpda_cut", False))
-                coords["base_tilt_cut"] = Variable((), sup.get("base_tilt_cut", False))
+            for key in (
+                "sails_cut",
+                "mrle_cut",
+                "mpda_cut",
+                "base_tilt_cut",
+            ):
+                coords[key] = Variable((), sup.get(key, False))
+            for key in ("sails_sequence_number", "mrle_sequence_number"):
+                coords[key] = Variable((), sup.get(key, 0))
 
         return coords
 
@@ -1827,61 +1827,51 @@ class NexradLevel2Store(AbstractDataStore):
         )
 
     def get_attrs(self):
-        _attributes = []
+        attrs = {}
 
-        if self.root.volume_header is not None:
-            _attributes.append(
-                ("instrument_name", self.root.volume_header["icao"].decode())
-            )
-        else:
-            _attributes.append(("instrument_name", "UNKNOWN"))
+        vh = self.root.volume_header
+        attrs["instrument_name"] = vh["icao"].decode() if vh else "UNKNOWN"
 
         if self.root.msg_5:
-            msg_5 = self.root.msg_5
-            _attributes.append(("scan_name", f"VCP-{msg_5['pattern_number']}"))
-            # dynamic scan type from VCP supplemental (ICD Note 16)
-            supplemental = msg_5.get("vcp_supplemental_decoded", {})
-            _attributes.append(
-                ("dynamic_scan_type", _get_dynamic_scan_type(supplemental))
-            )
-            _attributes.append(("mpda_vcp", supplemental.get("mpda_vcp", False)))
-            _attributes.append(
-                ("base_tilt_vcp", supplemental.get("base_tilt_vcp", False))
-            )
-            _attributes.append(
-                ("num_base_tilts", supplemental.get("num_base_tilts", 0))
-            )
-            # VCP sequencing (ICD Note 15)
-            sequencing = msg_5.get("vcp_sequencing_decoded", {})
-            _attributes.append(
-                ("vcp_truncated", sequencing.get("truncated_vcp", False))
-            )
-            _attributes.append(
-                ("vcp_sequence_active", sequencing.get("sequence_active", False))
-            )
-            # VCP-level waveform info
-            _attributes.append(
-                ("number_elevation_cuts", msg_5.get("number_elevation_cuts", 0))
-            )
-            vel_res = msg_5.get("doppler_velocity_resolution", 0)
-            _attributes.append(
-                ("doppler_velocity_resolution", 0.5 if vel_res == 2 else 1.0)
-            )
-            pw = msg_5.get("pulse_width", 0)
-            _attributes.append(
-                ("vcp_pulse_width", "short" if pw == 2 else "long" if pw == 4 else pw)
-            )
+            attrs.update(self._attrs_from_msg_5(self.root.msg_5))
 
         msg_2 = self.root.msg_2
         if msg_2:
-            flags = msg_2.get("rda_scan_data_flags_decoded", {})
-            _attributes.append(("avset_enabled", flags.get("avset_enabled", False)))
-            _attributes.append(("ebc_enabled", flags.get("ebc_enabled", False)))
-            _attributes.append(("super_res_status", msg_2.get("super_res_status", 0)))
-            _attributes.append(("rda_build_number", msg_2.get("rda_build_number", 0)))
-            _attributes.append(("operational_mode", msg_2.get("operational_mode", 0)))
+            attrs.update(self._attrs_from_msg_2(msg_2))
 
-        return FrozenDict(_attributes)
+        return FrozenDict(attrs)
+
+    @staticmethod
+    def _attrs_from_msg_5(msg_5):
+        """Extract root attributes from MSG_5 (VCP definition)."""
+        supplemental = msg_5.get("vcp_supplemental_decoded", {})
+        sequencing = msg_5.get("vcp_sequencing_decoded", {})
+        vel_res = msg_5.get("doppler_velocity_resolution", 0)
+        pw = msg_5.get("pulse_width", 0)
+        return {
+            "scan_name": f"VCP-{msg_5['pattern_number']}",
+            "dynamic_scan_type": _get_dynamic_scan_type(supplemental),
+            "mpda_vcp": supplemental.get("mpda_vcp", False),
+            "base_tilt_vcp": supplemental.get("base_tilt_vcp", False),
+            "num_base_tilts": supplemental.get("num_base_tilts", 0),
+            "vcp_truncated": sequencing.get("truncated_vcp", False),
+            "vcp_sequence_active": sequencing.get("sequence_active", False),
+            "number_elevation_cuts": msg_5.get("number_elevation_cuts", 0),
+            "doppler_velocity_resolution": 0.5 if vel_res == 2 else 1.0,
+            "vcp_pulse_width": "short" if pw == 2 else "long" if pw == 4 else pw,
+        }
+
+    @staticmethod
+    def _attrs_from_msg_2(msg_2):
+        """Extract root attributes from MSG_2 (RDA Status)."""
+        flags = msg_2.get("rda_scan_data_flags_decoded", {})
+        return {
+            "avset_enabled": flags.get("avset_enabled", False),
+            "ebc_enabled": flags.get("ebc_enabled", False),
+            "super_res_status": msg_2.get("super_res_status", 0),
+            "rda_build_number": msg_2.get("rda_build_number", 0),
+            "operational_mode": msg_2.get("operational_mode", 0),
+        }
 
 
 class NexradLevel2BackendEntrypoint(BackendEntrypoint):
