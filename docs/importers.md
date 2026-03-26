@@ -155,6 +155,56 @@ With {func}`~xradar.io.backends.nexrad_level2.open_nexradlevel2_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
+#### Chunk file / list input
+
+``open_nexradlevel2_datatree`` accepts a **list or tuple** of chunk sources
+as the first argument. Each element can be ``bytes``, a file-like object with
+a ``.read()`` method, or a ``str``/``os.PathLike`` path. The chunks are
+concatenated internally before parsing.
+
+This enables streaming NEXRAD Level 2 data directly from the
+``unidata-nexrad-level2-chunks`` S3 bucket without downloading full volume
+files:
+
+```python
+import fsspec
+import xradar as xd
+
+fs = fsspec.filesystem("s3", anon=True)
+chunks = sorted(fs.ls("unidata-nexrad-level2-chunks/KABR/903"))
+all_bytes = [fs.open(p, "rb").read() for p in chunks]
+
+dtree = xd.io.open_nexradlevel2_datatree(all_bytes)
+```
+
+#### Handling incomplete sweeps
+
+When working with partial volumes (not all chunks have arrived yet), the last
+sweep is typically incomplete. The ``incomplete_sweep`` parameter controls how
+these are handled:
+
+- ``incomplete_sweep="drop"`` (default): Incomplete sweeps are excluded from
+  the DataTree and a warning is emitted. This is the safest option for
+  downstream processing that expects full 360-degree sweeps.
+
+- ``incomplete_sweep="pad"``: Incomplete sweeps are kept and reindexed to a
+  full azimuth grid (360 or 720 azimuths depending on the auto-detected
+  angular resolution). Missing rays are filled with ``NaN``.
+
+```python
+# Drop mode (default) -- only complete sweeps
+dtree = xd.io.open_nexradlevel2_datatree(
+    partial_bytes, incomplete_sweep="drop"
+)
+
+# Pad mode -- all sweeps, missing rays filled with NaN
+dtree = xd.io.open_nexradlevel2_datatree(
+    partial_bytes, incomplete_sweep="pad"
+)
+```
+
+See the {doc}`notebooks/nexrad_read_chunks` notebook for a full walkthrough.
+
 ## Datamet
 
 ### DataMetBackendEntrypoint
