@@ -965,6 +965,7 @@ def test_nexradlevel2_missing_msg2_metadata():
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._meta_header = defaultdict(list)
             # Simulate missing msg_2 by only having other message types
             self._meta_header["msg_15"] = [{"record_number": 0}]
@@ -1095,6 +1096,7 @@ def test_nexradlevel2_missing_msg5():
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._meta_header = defaultdict(list)  # Empty - no msg_5
             self._msg_5_data = None
             self._rawdata = False
@@ -1146,6 +1148,7 @@ def test_nexradlevel2_msg5_struct_error_handling():
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._meta_header = defaultdict(list)
             self._meta_header["msg_5"] = [{"record_number": 0}]
             self._msg_5_data = None
@@ -2327,13 +2330,9 @@ def test_nexradlevel2_missing_msg2_returns_false():
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._msg_2_data = None
             self._meta_header = {"msg_2": []}
-
-        def get_msg_2_data(self):
-            if self.meta_header["msg_2"]:
-                return {}
-            return False
 
         @property
         def meta_header(self):
