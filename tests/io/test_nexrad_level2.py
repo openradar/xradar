@@ -755,7 +755,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 9
+    assert len(dtree[sample_sweep].data_vars) == 18
     assert (
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"
@@ -770,9 +770,13 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree.attrs) == 10
+    assert len(dtree.attrs) == 24
     assert dtree.attrs["instrument_name"] == "KATX"
     assert dtree.attrs["scan_name"] == "VCP-11"
+    assert dtree.attrs["dynamic_scan_type"] == "standard"
+    assert dtree.attrs["avset_enabled"] is False
+    assert dtree.attrs["base_tilt_vcp"] is False
+    assert dtree.attrs["mpda_vcp"] is False
 
 
 def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
@@ -821,9 +825,19 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree.attrs) == 10
+    assert len(dtree.attrs) == 24
     assert dtree.attrs["instrument_name"] == "KLIX"
     assert dtree.attrs["scan_name"] == "VCP-0"
+    assert "dynamic_scan_type" in dtree.attrs
+    assert "avset_enabled" in dtree.attrs
+    assert "base_tilt_vcp" in dtree.attrs
+    assert "mpda_vcp" in dtree.attrs
+    assert "vcp_truncated" in dtree.attrs
+    assert "doppler_velocity_resolution" in dtree.attrs
+    assert "vcp_pulse_width" in dtree.attrs
+    assert "ebc_enabled" in dtree.attrs
+    assert "super_res_status" in dtree.attrs
+    assert "rda_build_number" in dtree.attrs
 
 
 def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
