@@ -5,9 +5,13 @@ jupytext:
     format_name: myst
     format_version: 0.13
     jupytext_version: 1.19.1
+  main_language: python
+kernelspec:
+  display_name: Python 3
+  name: python3
 ---
 
-## Halo Photonics Doppler Lidar
+# Halo Photonics Doppler Lidar
 
 ```{code-cell}
 import matplotlib.pyplot as plt
@@ -20,7 +24,7 @@ Opening a Halo Photonics Doppler lidar .hpl file.
 
 We use the `xd.io.open_hpl_datatree` in order to load the Halo Photonics Doppler lidar data. After that we will need to enter in the latitude and longitude in order to properly georeference the data. The .hpl file does not contain the latitude, longitude, or altitude of the lidar, so these need to be entered in as keywords as a part of the  `backend_kwargs` argument to `xd.io.open_hpl_datatree`.
 
-In this example, we are using the coordinates of the Doppler lidar at the Nantucket Wastewater Management Facility, deployed as as part of the DOE Energy Effciency and Renewable Energy Office's [3rd Wind Forecast Improvement Project](https://www2.whoi.edu/site/wfip3/).
+In this example, we are using the coordinates of the Doppler lidar at the Nantucket Wastewater Management Facility, deployed as as part of the DOE Energy Efficiency and Renewable Energy Office's [3rd Wind Forecast Improvement Project](https://www2.whoi.edu/site/wfip3/).
 
 ```{code-cell}
 ds = xd.io.open_hpl_datatree(

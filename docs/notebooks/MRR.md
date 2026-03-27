@@ -5,9 +5,13 @@ jupytext:
     format_name: myst
     format_version: 0.13
     jupytext_version: 1.19.1
+  main_language: python
+kernelspec:
+  display_name: Python 3
+  name: python3
 ---
 
-## Metek MRR2
+# Metek MRR2
 
 ```{code-cell}
 import cmweather  # noqa
@@ -17,7 +21,7 @@ from open_radar_data import DATASETS
 import xradar as xd
 ```
 
-`xd.io.open_metek_datatree` supports the Metek MRR2 processed (.pro, .ave) and raw (.raw) files. The initalized datatree will contain all of the vertically pointing radar data in one sweep.
+`xd.io.open_metek_datatree` supports the Metek MRR2 processed (.pro, .ave) and raw (.raw) files. The initialized datatree will contain all vertically pointing radar data in one sweep.
 
 In this example, we are loading the 60 s average files from the MRR2 sampling a rain event over the Argonne Testbed for Multiscale Observational Science at Argonne National Laboratory in the Chicago suburbs.
 

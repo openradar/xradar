@@ -5,6 +5,10 @@ jupytext:
     format_name: myst
     format_version: 0.13
     jupytext_version: 1.19.1
+  main_language: python
+kernelspec:
+  display_name: Python 3
+  name: python3
 ---
 
 # Streaming NEXRAD Level 2 Chunks from S3

@@ -5,8 +5,11 @@ jupytext:
     format_name: myst
     format_version: 0.13
     jupytext_version: 1.19.1
+  main_language: python
+kernelspec:
+  display_name: Python 3
+  name: python3
 ---
-
 # NDPointIndex
 
 This uses one of the new indexes xarray is providing. See [xarray-indexes](https://xarray-indexes.readthedocs.io/) for more in-depth details on that.

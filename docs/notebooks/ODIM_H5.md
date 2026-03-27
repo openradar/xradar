@@ -5,9 +5,13 @@ jupytext:
     format_name: myst
     format_version: 0.13
     jupytext_version: 1.19.1
+  main_language: python
+kernelspec:
+  display_name: Python 3
+  name: python3
 ---
 
-# GAMIC
+# ODIM_H5
 
 ```{code-cell}
 import xarray as xr
@@ -18,19 +22,23 @@ import xradar as xd
 
 ## Download
 
-Fetching GAMIC radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository.
+Fetching ODIM_H5 radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository.
 
 ```{code-cell}
-filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+filename = DATASETS.fetch("71_20181220_060628.pvol.h5")
 ```
 
 ## xr.open_dataset
 
-Making use of the xarray `gamic` backend. We also need to provide the group. Note, that we are using CfRadial2 group access pattern.
+Making use of the xarray `odim` backend. We also need to provide the group. We use CfRadial2 group access pattern.
 
 ```{code-cell}
-ds = xr.open_dataset(filename, group="sweep_9", engine="gamic")
+ds = xr.open_dataset(filename, group="sweep_0", engine="odim")
 display(ds)
+```
+
+```{code-cell}
+ds.sweep_fixed_angle.values
 ```
 
 ### Plot Time vs. Azimuth
@@ -58,11 +66,11 @@ ds.DBZH.sortby("azimuth").plot(y="azimuth")
 Beside `first_dim` there are several additional backend_kwargs for the odim backend, which handle different aspects of angle alignment. This comes into play, when azimuth and/or elevation arrays are not evenly spacend and other issues.
 
 ```{code-cell}
-help(xd.io.GamicBackendEntrypoint)
+?xd.io.OdimBackendEntrypoint
 ```
 
 ```{code-cell}
-ds = xr.open_dataset(filename, group="sweep_9", engine="gamic", first_dim="time")
+ds = xr.open_dataset(filename, group="sweep_0", engine="odim", first_dim="time")
 display(ds)
 ```
 
@@ -71,11 +79,11 @@ display(ds)
 The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list.
 
 ```{code-cell}
-help(xd.io.open_gamic_datatree)
+?xd.io.open_odim_datatree
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep=8)
+dtree = xd.io.open_odim_datatree(filename, sweep=8)
 display(dtree)
 ```
 
@@ -92,16 +100,16 @@ dtree["sweep_0"].ds.DBZH.plot()
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep="sweep_8")
+dtree = xd.io.open_odim_datatree(filename, sweep="sweep_8")
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep=[0, 1, 8])
+dtree = xd.io.open_odim_datatree(filename, sweep=[0, 1, 8])
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep=["sweep_1", "sweep_2", "sweep_8"])
+dtree = xd.io.open_odim_datatree(filename, sweep=["sweep_0", "sweep_1", "sweep_8"])
 display(dtree)
 ```

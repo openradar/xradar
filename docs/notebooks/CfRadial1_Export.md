@@ -5,13 +5,15 @@ jupytext:
     format_name: myst
     format_version: 0.13
     jupytext_version: 1.19.1
+  main_language: python
+kernelspec:
+  display_name: Python 3
+  name: python3
 ---
 
 # CfRadial1 - Export
 
-+++
-
-### Imports
+## Imports
 
 ```{code-cell}
 import cmweather  # noqa
@@ -21,7 +23,7 @@ from open_radar_data import DATASETS
 import xradar as xd
 ```
 
-### Download
+## Download
 
 Fetching CfRadial1 radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository.
 
@@ -34,13 +36,13 @@ radar = xd.io.open_cfradial1_datatree(filename, first_dim="auto")
 display(radar)
 ```
 
-### Plot Azimuth vs. Range
+## Plot Azimuth vs. Range
 
 ```{code-cell}
 radar.sweep_0.DBZ.plot(cmap="ChaseSpectral", vmin=-10, vmax=70)
 ```
 
-### Plot Time vs. Range
+## Plot Time vs. Range
 
 ```{code-cell}
 radar.sweep_0.DBZ.swap_dims({"azimuth": "time"}).sortby("time").plot(
@@ -48,20 +50,20 @@ radar.sweep_0.DBZ.swap_dims({"azimuth": "time"}).sortby("time").plot(
 )
 ```
 
-### Georeference
+## Georeference
 
 ```{code-cell}
 radar = radar.xradar.georeference()
 display(radar)
 ```
 
-### Plot PPI
+## Plot PPI
 
 ```{code-cell}
 radar["sweep_0"]["DBZ"].plot(x="x", y="y", cmap="ChaseSpectral", vmin=-10, vmax=70)
 ```
 
-### Filter
+## Filter
 
 Apply basic reflectivity filter. This is just a demonstration.
 
@@ -95,7 +97,7 @@ swp0 = ref_filter(radar, sweep="sweep_0", field="DBZ")
 swp0.corr_DBZ.plot(x="x", y="y", cmap="ChaseSpectral", vmin=-10, vmax=70)
 ```
 
-### Filter full volume
+## Filter full volume
 
 ```{code-cell}
 # Initialize an empty DataTree
@@ -116,7 +118,7 @@ for sweep in radar.sweep_group_name.values:
 radar.sweep_6.corr_DBZ.plot(x="x", y="y", cmap="ChaseSpectral", vmin=-10, vmax=70)
 ```
 
-### Export
+## Export
 
 Export to CfRadial1
 
@@ -128,7 +130,7 @@ xd.io.to_cfradial1(dtree=radar, filename="cfradial1_qced.nc", calibs=True)
 ?xd.io.to_cfradial1
 ```
 
-### Note
+## Note
 
 If `filename` is `None` in the `xd.io.to_cfradial1` function, it will automatically generate a<br>
 filename using the instrument name and the first available timestamp from the data.
