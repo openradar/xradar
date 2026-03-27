@@ -73,6 +73,7 @@ from .common import (
     _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _prepare_backend_ds,
 )
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
 
@@ -453,6 +454,8 @@ class GamicBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
 
+        ds = _prepare_backend_ds(ds)
+
         # reassign azimuth/elevation/time coordinates
         ds = ds.assign_coords({"azimuth": ds.azimuth})
         ds = ds.assign_coords({"elevation": ds.elevation})
@@ -483,7 +486,6 @@ class GamicBackendEntrypoint(BackendEntrypoint):
             dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
             ds = ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
-        # assign geo-coords
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
         ds.attrs.update(store.get_calibration_parameters())
