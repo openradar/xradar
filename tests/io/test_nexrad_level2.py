@@ -783,6 +783,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
         "ebc_enabled",
         "super_res_status",
         "rda_build_number",
+        "actual_elevation_cuts",
     }
     assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KATX"
@@ -790,6 +791,8 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert dtree.attrs["dynamic_scan_type"] == "standard"
     assert dtree.attrs["avset_enabled"] is False
     assert dtree.attrs["base_tilt_vcp"] is False
+    # User-specified 5 sweeps out of 16 VCP-defined cuts
+    assert dtree.attrs["actual_elevation_cuts"] == 5
     assert dtree.attrs["mpda_vcp"] is False
 
 
@@ -852,6 +855,7 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
         "ebc_enabled",
         "super_res_status",
         "rda_build_number",
+        "actual_elevation_cuts",
     }
     assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KLIX"
