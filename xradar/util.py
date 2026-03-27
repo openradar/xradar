@@ -554,8 +554,15 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     **kwargs : dict
         Additional keyword arguments to pass to the function.
         The ``inherit`` key, if present, is popped and forwarded to
-        ``DataTree.to_dataset()`` instead of *func*.  Defaults to
-        ``"all_coords"`` for backward compatibility.
+        :py:meth:`xarray.DataTree.to_dataset` instead of *func*.
+        Accepted values (see xarray docs for details):
+
+        - ``True`` or ``"indexes"``: inherit only indexed coordinates.
+        - ``"all_coords"``: inherit all coordinates, including
+          non-index coordinates.
+        - ``False``: only include coordinates defined at the sweep node.
+
+        Defaults to ``"all_coords"`` for backward compatibility.
 
     Returns
     -------
