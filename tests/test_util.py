@@ -325,6 +325,38 @@ def test_apply_to_sweeps():
         util.apply_to_sweeps(dtree, error_function)
 
 
+def test_apply_to_sweeps_inherit_false(cfradial1_sgp_dtree):
+    """inherit=False prevents root coords from leaking onto sweeps."""
+    root_coords = {"latitude", "longitude", "altitude"}
+
+    def identity(ds):
+        return ds
+
+    # Default (inherit="all_coords"): root coords appear on sweeps
+    result_default = util.apply_to_sweeps(cfradial1_sgp_dtree, identity)
+    sweep_ds = result_default["sweep_0"].to_dataset(inherit=False)
+    inherited = root_coords & set(sweep_ds.coords)
+    assert inherited, "Default should inherit root coords"
+
+    # inherit=False: root coords stay on root only
+    result_no_inherit = util.apply_to_sweeps(
+        cfradial1_sgp_dtree, identity, inherit=False
+    )
+    sweep_ds = result_no_inherit["sweep_0"].to_dataset(inherit=False)
+    leaked = root_coords & (set(sweep_ds.coords) | set(sweep_ds.data_vars))
+    assert not leaked, f"inherit=False should not leak root coords: {leaked}"
+
+
+def test_apply_to_sweeps_inherit_via_map_over_sweeps(cfradial1_sgp_dtree):
+    """inherit parameter works through map_over_sweeps accessor."""
+    root_coords = {"latitude", "longitude", "altitude"}
+
+    result = cfradial1_sgp_dtree.xradar.map_over_sweeps(lambda ds: ds, inherit=False)
+    sweep_ds = result["sweep_0"].to_dataset(inherit=False)
+    leaked = root_coords & (set(sweep_ds.coords) | set(sweep_ds.data_vars))
+    assert not leaked, f"inherit=False via accessor should not leak: {leaked}"
+
+
 def test_apply_to_volume():
     # Fetch the sample radar file
     filename = DATASETS.fetch("sample_sgp_data.nc")
