@@ -1154,7 +1154,11 @@ _CHANNEL_CONFIGS = {
 
 
 def _assign_sweep_attrs(dtree, elev_data):
-    """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes."""
+    """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes.
+
+    The elev_data list index aligns with sweep_{i} naming because both
+    are ordered by elevation cut index in the VCP definition.
+    """
     if not elev_data:
         return
     for i, elev in enumerate(elev_data):
@@ -1180,7 +1184,10 @@ def _assign_sweep_attrs(dtree, elev_data):
 
 
 def _get_dynamic_scan_type(supplemental):
-    """Derive dynamic scan type string from VCP supplemental decoded dict."""
+    """Derive dynamic scan type string from VCP supplemental decoded dict.
+
+    SAILS and MRLE are mutually exclusive per ICD Note 16.
+    """
     if supplemental.get("sails_vcp"):
         n = supplemental.get("num_sails_cuts", 0)
         return f"SAILS x {n}" if n else "SAILS"
@@ -1862,7 +1869,8 @@ class NexradLevel2Store(AbstractDataStore):
             "vcp_sequence_active": sequencing.get("sequence_active", False),
             "number_elevation_cuts": msg_5.get("number_elevation_cuts", 0),
             "doppler_velocity_resolution": 0.5 if vel_res == 2 else 1.0,
-            "vcp_pulse_width": "short" if pw == 2 else "long" if pw == 4 else pw,
+            # ICD MSG_5 HW6: 2=short, 4=long
+            "vcp_pulse_width": "short" if pw == 2 else "long" if pw == 4 else str(pw),
         }
 
     @staticmethod
@@ -2081,8 +2089,16 @@ def open_nexradlevel2_datatree(
                 "cannot be decoded without it."
             )
 
-    incomplete = set()
-    elev_data = []
+    # Single metadata read for sweep count, completeness, and elevation data
+    with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+        act_sweeps = len(nex.msg_31_data_header)
+        incomplete = nex.incomplete_sweeps
+        if nex.msg_5:
+            exp_sweeps = nex.msg_5["number_elevation_cuts"]
+            elev_data = nex.msg_5.get("elevation_data", [])
+        else:
+            exp_sweeps = 0
+            elev_data = []
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -2099,24 +2115,9 @@ def open_nexradlevel2_datatree(
                 "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
             )
     else:
-        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            # Expected number of elevation cuts from the VCP definition
-            if nex.msg_5:
-                exp_sweeps = nex.msg_5["number_elevation_cuts"]
-                elev_data = nex.msg_5.get("elevation_data", [])
-            else:
-                exp_sweeps = 0
-            # Actual number of sweeps recorded in the file
-            act_sweeps = len(nex.msg_31_data_header)
-            # Check for AVSET mode: If AVSET was active, the actual number of sweeps (act_sweeps)
-            # will be fewer than the expected number (exp_sweeps), as higher elevations were skipped.
-            # More info https://www.test.roc.noaa.gov/radar-techniques/avset.php
-            # https://www.test.roc.noaa.gov/public-documents/engineering-branch/new-technology/misc/avset/AVSET_AMS_RADAR_CONF_Final.pdf
-            if exp_sweeps > act_sweeps:
-                # Adjust nsweeps to the actual number of recorded sweeps
-                exp_sweeps = act_sweeps
-
-            incomplete = nex.incomplete_sweeps
+        # Check for AVSET mode: actual sweeps may be fewer than VCP definition
+        if exp_sweeps > act_sweeps:
+            exp_sweeps = act_sweeps
 
         if incomplete_sweep == "drop":
             sweeps = [f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete]
@@ -2142,19 +2143,6 @@ def open_nexradlevel2_datatree(
                 f"Invalid incomplete_sweep={incomplete_sweep!r}. "
                 "Expected 'drop' or 'pad'."
             )
-
-    # For pad mode with user-specified sweeps, read incomplete set
-    if incomplete_sweep == "pad" and not incomplete:
-        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            incomplete = nex.incomplete_sweeps
-            if not elev_data and nex.msg_5:
-                elev_data = nex.msg_5.get("elevation_data", [])
-
-    # Read elevation metadata for per-sweep attrs if not yet available
-    if not elev_data:
-        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            if nex.msg_5:
-                elev_data = nex.msg_5.get("elevation_data", [])
 
     sweep_dict = open_sweeps_as_dict(
         filename_or_obj=filename_or_obj,

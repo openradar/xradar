@@ -16,8 +16,6 @@ import xarray
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends.nexrad_level2 import (
-    _CHANNEL_CONFIGS,
-    _WAVEFORM_TYPES,
     NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
     open_nexradlevel2_datatree,
@@ -772,7 +770,21 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree.attrs) == 24
+    required_attrs = {
+        "instrument_name",
+        "scan_name",
+        "dynamic_scan_type",
+        "avset_enabled",
+        "base_tilt_vcp",
+        "mpda_vcp",
+        "vcp_truncated",
+        "doppler_velocity_resolution",
+        "vcp_pulse_width",
+        "ebc_enabled",
+        "super_res_status",
+        "rda_build_number",
+    }
+    assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KATX"
     assert dtree.attrs["scan_name"] == "VCP-11"
     assert dtree.attrs["dynamic_scan_type"] == "standard"
@@ -827,19 +839,23 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree.attrs) == 24
+    required_attrs = {
+        "instrument_name",
+        "scan_name",
+        "dynamic_scan_type",
+        "avset_enabled",
+        "base_tilt_vcp",
+        "mpda_vcp",
+        "vcp_truncated",
+        "doppler_velocity_resolution",
+        "vcp_pulse_width",
+        "ebc_enabled",
+        "super_res_status",
+        "rda_build_number",
+    }
+    assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KLIX"
     assert dtree.attrs["scan_name"] == "VCP-0"
-    assert "dynamic_scan_type" in dtree.attrs
-    assert "avset_enabled" in dtree.attrs
-    assert "base_tilt_vcp" in dtree.attrs
-    assert "mpda_vcp" in dtree.attrs
-    assert "vcp_truncated" in dtree.attrs
-    assert "doppler_velocity_resolution" in dtree.attrs
-    assert "vcp_pulse_width" in dtree.attrs
-    assert "ebc_enabled" in dtree.attrs
-    assert "super_res_status" in dtree.attrs
-    assert "rda_build_number" in dtree.attrs
 
 
 def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
@@ -2231,14 +2247,19 @@ def test_decode_vcp_sequencing():
         "truncated_vcp": False,
     }
     # 5 elevations, 2 max SAILS cuts, sequence active
-    result = decode_vcp_sequencing(0x2045)
-    assert result["num_elevations"] == 5
-    assert result["max_sails_cuts"] == 2
-    assert result["sequence_active"] is True
-    assert result["truncated_vcp"] is False
-    # Truncated VCP
-    result = decode_vcp_sequencing(0x4000)
-    assert result["truncated_vcp"] is True
+    assert decode_vcp_sequencing(0x2045) == {
+        "num_elevations": 5,
+        "max_sails_cuts": 2,
+        "sequence_active": True,
+        "truncated_vcp": False,
+    }
+    # Truncated VCP only
+    assert decode_vcp_sequencing(0x4000) == {
+        "num_elevations": 0,
+        "max_sails_cuts": 0,
+        "sequence_active": False,
+        "truncated_vcp": True,
+    }
 
 
 def test_decode_vcp_supplemental():
@@ -2254,22 +2275,30 @@ def test_decode_vcp_supplemental():
     assert result["base_tilt_vcp"] is False
     assert result["num_base_tilts"] == 0
     # SAILS VCP with 2 cuts
-    result = decode_vcp_supplemental(0x0005)
-    assert result["sails_vcp"] is True
-    assert result["num_sails_cuts"] == 2
-    assert result["mrle_vcp"] is False
+    assert decode_vcp_supplemental(0x0005) == {
+        "sails_vcp": True,
+        "num_sails_cuts": 2,
+        "mrle_vcp": False,
+        "num_mrle_cuts": 0,
+        "mpda_vcp": False,
+        "base_tilt_vcp": False,
+        "num_base_tilts": 0,
+    }
     # MRLE VCP with 3 cuts
-    result = decode_vcp_supplemental(0x0070)
-    assert result["mrle_vcp"] is True
-    assert result["num_mrle_cuts"] == 3
-    assert result["sails_vcp"] is False
+    assert decode_vcp_supplemental(0x0070) == {
+        "sails_vcp": False,
+        "num_sails_cuts": 0,
+        "mrle_vcp": True,
+        "num_mrle_cuts": 3,
+        "mpda_vcp": False,
+        "base_tilt_vcp": False,
+        "num_base_tilts": 0,
+    }
     # MPDA VCP
-    result = decode_vcp_supplemental(0x0800)
-    assert result["mpda_vcp"] is True
+    assert decode_vcp_supplemental(0x0800)["mpda_vcp"] is True
     # BASE TILT VCP with 1 base tilt
-    result = decode_vcp_supplemental(0x3000)
-    assert result["base_tilt_vcp"] is True
-    assert result["num_base_tilts"] == 1
+    assert decode_vcp_supplemental(0x3000)["base_tilt_vcp"] is True
+    assert decode_vcp_supplemental(0x3000)["num_base_tilts"] == 1
 
 
 def test_decode_elevation_supplemental():
@@ -2284,21 +2313,27 @@ def test_decode_elevation_supplemental():
     assert result["mpda_cut"] is False
     assert result["base_tilt_cut"] is False
     # SAILS cut, sequence 1
-    result = decode_elevation_supplemental(0x0003)
-    assert result["sails_cut"] is True
-    assert result["sails_sequence_number"] == 1
-    assert result["mrle_cut"] is False
+    assert decode_elevation_supplemental(0x0003) == {
+        "sails_cut": True,
+        "sails_sequence_number": 1,
+        "mrle_cut": False,
+        "mrle_sequence_number": 0,
+        "mpda_cut": False,
+        "base_tilt_cut": False,
+    }
     # MRLE cut, sequence 2
-    result = decode_elevation_supplemental(0x0050)
-    assert result["mrle_cut"] is True
-    assert result["mrle_sequence_number"] == 2
-    assert result["sails_cut"] is False
+    assert decode_elevation_supplemental(0x0050) == {
+        "sails_cut": False,
+        "sails_sequence_number": 0,
+        "mrle_cut": True,
+        "mrle_sequence_number": 2,
+        "mpda_cut": False,
+        "base_tilt_cut": False,
+    }
     # MPDA cut
-    result = decode_elevation_supplemental(0x0200)
-    assert result["mpda_cut"] is True
+    assert decode_elevation_supplemental(0x0200)["mpda_cut"] is True
     # BASE TILT cut
-    result = decode_elevation_supplemental(0x0400)
-    assert result["base_tilt_cut"] is True
+    assert decode_elevation_supplemental(0x0400)["base_tilt_cut"] is True
 
 
 def test_decode_rda_scan_data_flags():
@@ -2391,15 +2426,17 @@ def test_sweep_attrs_from_real_file(nexradlevel2_file):
     dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
     attrs = dtree["sweep_0"].ds.attrs
 
-    assert attrs["waveform_type"] in _WAVEFORM_TYPES.values()
-    assert attrs["channel_config"] in _CHANNEL_CONFIGS.values()
+    # Known values for KATX VCP-11 sweep_0
+    assert attrs["waveform_type"] == "contiguous_surveillance"
+    assert attrs["channel_config"] == "constant_phase"
     assert isinstance(attrs["super_resolution"], int)
-    assert isinstance(attrs["sails_cut"], bool)
-    assert isinstance(attrs["mrle_cut"], bool)
-    assert isinstance(attrs["mpda_cut"], bool)
-    assert isinstance(attrs["base_tilt_cut"], bool)
-    assert isinstance(attrs["sails_sequence_number"], int)
-    assert isinstance(attrs["mrle_sequence_number"], int)
+    # Standard VCP-11: no dynamic scan cuts on sweep_0
+    assert attrs["sails_cut"] is False
+    assert attrs["mrle_cut"] is False
+    assert attrs["mpda_cut"] is False
+    assert attrs["base_tilt_cut"] is False
+    assert attrs["sails_sequence_number"] == 0
+    assert attrs["mrle_sequence_number"] == 0
 
 
 def test_get_dynamic_scan_type():
