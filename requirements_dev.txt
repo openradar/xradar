@@ -21,6 +21,7 @@ pytest-cov
 pre-commit
 diff-cover
 myst-parser
+myst-nb
 sphinx-copybutton
 sphinx-favicon
 nbsphinx

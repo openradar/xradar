@@ -35,3 +35,4 @@ dependencies:
   - pytest-cov
   - pre-commit
   - diff-cover
+  - myst-nb
