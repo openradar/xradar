@@ -225,8 +225,7 @@ def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
 
 def test_open_odim_dataset_stream(odim_file):
     with open(odim_file, mode="rb") as fhandle:
-        contents = io.BytesIO(fhandle.read())
-        with xr.open_dataset(contents, group="sweep_0", engine="odim") as ds:
+        with xr.open_dataset(fhandle, group="sweep_0", engine="odim") as ds:
             assert isinstance(ds, xr.Dataset)
 
 
