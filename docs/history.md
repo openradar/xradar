@@ -10,6 +10,7 @@
 * ADD: ``incomplete_sweep`` parameter (``"drop"``/``"pad"``) to ``open_nexradlevel2_datatree`` for handling incomplete sweeps in partial volume data ({pull}`332`) by [@aladinor](https://github.com/aladinor)
 * ADD: Notebook example for streaming NEXRAD Level 2 chunks from S3 (``nexrad_read_chunks.ipynb``) ({pull}`332`) by [@aladinor](https://github.com/aladinor)
 * ADD: Comprehensive test suite for chunk list-input and incomplete sweep handling ({pull}`332`) by [@aladinor](https://github.com/aladinor)
+* MNT: Add ``cfradial1_sgp_dtree`` session fixture and refactor tests in ``test_util.py`` and ``test_accessors.py`` to use it ({issue}`346`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.11.1 (2026-02-03)
 
