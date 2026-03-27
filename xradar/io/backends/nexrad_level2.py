@@ -1153,6 +1153,32 @@ _CHANNEL_CONFIGS = {
 }
 
 
+def _assign_sweep_attrs(dtree, elev_data):
+    """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes."""
+    if not elev_data:
+        return
+    for i, elev in enumerate(elev_data):
+        sweep_key = f"sweep_{i}"
+        if sweep_key not in dtree.children:
+            continue
+        wf = elev.get("waveform_type", 0)
+        ch = elev.get("channel_config", 0)
+        sup = elev.get("supplemental_data_decoded", {})
+        dtree[sweep_key].ds.attrs.update(
+            {
+                "waveform_type": _WAVEFORM_TYPES.get(wf, str(wf)),
+                "channel_config": _CHANNEL_CONFIGS.get(ch, str(ch)),
+                "super_resolution": elev.get("super_resolution", 0),
+                "sails_cut": sup.get("sails_cut", False),
+                "sails_sequence_number": sup.get("sails_sequence_number", 0),
+                "mrle_cut": sup.get("mrle_cut", False),
+                "mrle_sequence_number": sup.get("mrle_sequence_number", 0),
+                "mpda_cut": sup.get("mpda_cut", False),
+                "base_tilt_cut": sup.get("base_tilt_cut", False),
+            }
+        )
+
+
 def _get_dynamic_scan_type(supplemental):
     """Derive dynamic scan type string from VCP supplemental decoded dict."""
     if supplemental.get("sails_vcp"):
@@ -1790,28 +1816,6 @@ class NexradLevel2Store(AbstractDataStore):
             "sweep_fixed_angle": Variable((), fixed_angle),
         }
 
-        # Per-sweep metadata from MSG_5_ELEV (ICD Table XI)
-        if elev_data:
-            elev_info = elev_data[self._group]
-            wf = elev_info.get("waveform_type", 0)
-            ch = elev_info.get("channel_config", 0)
-            coords["waveform_type"] = Variable((), _WAVEFORM_TYPES.get(wf, str(wf)))
-            coords["channel_config"] = Variable((), _CHANNEL_CONFIGS.get(ch, str(ch)))
-            coords["super_resolution"] = Variable(
-                (), elev_info.get("super_resolution", 0)
-            )
-            # Per-elevation supplemental data (ICD Note 17, E15)
-            sup = elev_info.get("supplemental_data_decoded", {})
-            for key in (
-                "sails_cut",
-                "mrle_cut",
-                "mpda_cut",
-                "base_tilt_cut",
-            ):
-                coords[key] = Variable((), sup.get(key, False))
-            for key in ("sails_sequence_number", "mrle_sequence_number"):
-                coords[key] = Variable((), sup.get(key, 0))
-
         return coords
 
     def get_variables(self):
@@ -2078,6 +2082,7 @@ def open_nexradlevel2_datatree(
             )
 
     incomplete = set()
+    elev_data = []
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -2098,6 +2103,7 @@ def open_nexradlevel2_datatree(
             # Expected number of elevation cuts from the VCP definition
             if nex.msg_5:
                 exp_sweeps = nex.msg_5["number_elevation_cuts"]
+                elev_data = nex.msg_5.get("elevation_data", [])
             else:
                 exp_sweeps = 0
             # Actual number of sweeps recorded in the file
@@ -2141,6 +2147,14 @@ def open_nexradlevel2_datatree(
     if incomplete_sweep == "pad" and not incomplete:
         with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
             incomplete = nex.incomplete_sweeps
+            if not elev_data and nex.msg_5:
+                elev_data = nex.msg_5.get("elevation_data", [])
+
+    # Read elevation metadata for per-sweep attrs if not yet available
+    if not elev_data:
+        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+            if nex.msg_5:
+                elev_data = nex.msg_5.get("elevation_data", [])
 
     sweep_dict = open_sweeps_as_dict(
         filename_or_obj=filename_or_obj,
@@ -2174,7 +2188,12 @@ def open_nexradlevel2_datatree(
         )
     # Build from ls_ds (station vars already stripped by _assign_root).
     dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
-    return DataTree.from_dict(dtree)
+    result = DataTree.from_dict(dtree)
+
+    # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI)
+    _assign_sweep_attrs(result, elev_data)
+
+    return result
 
 
 def open_sweeps_as_dict(

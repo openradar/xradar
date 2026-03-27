@@ -757,7 +757,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 18
+    assert len(dtree[sample_sweep].data_vars) == 9
     assert (
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"
@@ -2386,20 +2386,20 @@ def test_root_attrs_from_real_file(nexradlevel2_file):
     assert isinstance(attrs["operational_mode"], int)
 
 
-def test_sweep_vars_from_real_file(nexradlevel2_file):
-    """Per-sweep vars include waveform and supplemental data."""
+def test_sweep_attrs_from_real_file(nexradlevel2_file):
+    """Per-sweep attrs include waveform and supplemental data from MSG_5_ELEV."""
     dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
-    sweep_ds = dtree["sweep_0"].to_dataset()
+    attrs = dtree["sweep_0"].ds.attrs
 
-    assert sweep_ds["waveform_type"].item() in _WAVEFORM_TYPES.values()
-    assert sweep_ds["channel_config"].item() in _CHANNEL_CONFIGS.values()
-    assert isinstance(sweep_ds["super_resolution"].item(), (int, np.integer))
-    assert isinstance(sweep_ds["sails_cut"].item(), (bool, np.bool_))
-    assert isinstance(sweep_ds["mrle_cut"].item(), (bool, np.bool_))
-    assert isinstance(sweep_ds["mpda_cut"].item(), (bool, np.bool_))
-    assert isinstance(sweep_ds["base_tilt_cut"].item(), (bool, np.bool_))
-    assert isinstance(sweep_ds["sails_sequence_number"].item(), (int, np.integer))
-    assert isinstance(sweep_ds["mrle_sequence_number"].item(), (int, np.integer))
+    assert attrs["waveform_type"] in _WAVEFORM_TYPES.values()
+    assert attrs["channel_config"] in _CHANNEL_CONFIGS.values()
+    assert isinstance(attrs["super_resolution"], int)
+    assert isinstance(attrs["sails_cut"], bool)
+    assert isinstance(attrs["mrle_cut"], bool)
+    assert isinstance(attrs["mpda_cut"], bool)
+    assert isinstance(attrs["base_tilt_cut"], bool)
+    assert isinstance(attrs["sails_sequence_number"], int)
+    assert isinstance(attrs["mrle_sequence_number"], int)
 
 
 def test_get_dynamic_scan_type():
