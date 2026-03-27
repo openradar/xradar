@@ -36,3 +36,5 @@ dependencies:
   - pre-commit
   - diff-cover
   - myst-nb
+  - sphinx-copybutton
+  - linkify-it-py

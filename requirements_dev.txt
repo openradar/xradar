@@ -26,3 +26,4 @@ sphinx-copybutton
 sphinx-favicon
 nbsphinx
 pydata-sphinx-theme
+linkify-it-py
