@@ -553,12 +553,17 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
         Additional positional arguments to pass to the function.
     **kwargs : dict
         Additional keyword arguments to pass to the function.
+        The ``inherit`` key, if present, is popped and forwarded to
+        ``DataTree.to_dataset()`` instead of *func*.  Defaults to
+        ``"all_coords"`` for backward compatibility.
 
     Returns
     -------
     xarray.DataTree
         A new DataTree object with the function applied to all sweeps.
     """
+    inherit = kwargs.pop("inherit", "all_coords")
+
     # Create a new tree dictionary
     tree = {"/": dtree.ds}  # Start with the root Dataset
 
@@ -569,7 +574,7 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     tree.update(
         {
             node.path: func(
-                dtree[node.path].to_dataset(inherit="all_coords"), *args, **kwargs
+                dtree[node.path].to_dataset(inherit=inherit), *args, **kwargs
             )
             for node in dtree.match("sweep*").subtree
             if node.path.startswith("/sweep")
