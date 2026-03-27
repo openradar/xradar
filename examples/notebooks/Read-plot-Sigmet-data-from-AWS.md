@@ -1,383 +1,225 @@
-{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "id": "0",
-   "metadata": {},
-   "source": [
-    "# Work with AWS\n",
-    "This example shows how to access radar data from the Colombian national radar network public on Amazon Web Services. We will look at the bucket structure and plot a PPI using the Xradar library. Radar reflectivity is filtered using some polarimetric values and xarray functionality."
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "1",
-   "metadata": {},
-   "source": [
-    "## Imports"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "2",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "from datetime import datetime\n",
-    "\n",
-    "import boto3\n",
-    "import botocore\n",
-    "import cmweather  # noqa\n",
-    "import fsspec\n",
-    "import matplotlib.pyplot as plt\n",
-    "import xarray as xr\n",
-    "from botocore.client import Config\n",
-    "from pandas import to_datetime\n",
-    "\n",
-    "import xradar as xd"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "3",
-   "metadata": {},
-   "source": [
-    "## IDEAM AWS Bucket\n",
-    "Instituto de Hidrología, Meteorología y Estudios Ambientales - IDEAM (Colombian National Weather Service) has made public the weather radar data. Data can be found [here](https://registry.opendata.aws/ideam-radares/), and documentation [here](http://www.pronosticosyalertas.gov.co/archivos-radar#:~:text=RED%20DE%20RADARES%20DE%20IDEAM%20EN%20AWS).\n",
-    "\n",
-    "The bucket structure is s3://s3-radaresideam/l2_data/YYYY/MM/DD/Radar_name/RRRAAMMDDTTTTTT.RAWXXXX where:\n",
-    "* YYYY is the 4-digit year\n",
-    "* MM is the 2-digit month\n",
-    "* DD is the 2-digit day\n",
-    "* Radar_name radar name. Options are Guaviare, Munchique, Barrancabermja, and Carimagua\n",
-    "* RRRAAMMDDTTTTTT.RAWXXXX is the radar filename with the following:\n",
-    "    - RRR three first letters of the radar name (e.g., GUA for Guaviare radar)\n",
-    "    - YY is the 2-digit year\n",
-    "    - MM is the 2-digit month\n",
-    "    - DD is the 2-digit day\n",
-    "    - TTTTTT is the time at which the scan was made (GTM)\n",
-    "    - RAWXXXX Sigmet file format and unique code provided by IRIS software\n",
-    "    \n",
-    "This is too complicated! No worries. We created a function to help you list files within the bucket."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "4",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "def create_query(date, radar_site):\n",
-    "    \"\"\"\n",
-    "    Creates a string for quering the IDEAM radar files stored in AWS bucket\n",
-    "    :param date: date to be queried. e.g datetime(2021, 10, 3, 12). Datetime python object\n",
-    "    :param radar_site: radar site e.g. Guaviare\n",
-    "    :return: string with a IDEAM radar bucket format\n",
-    "    \"\"\"\n",
-    "    if (date.hour != 0) and (date.minute != 0):\n",
-    "        return f\"l2_data/{date:%Y}/{date:%m}/{date:%d}/{radar_site}/{radar_site[:3].upper()}{date:%y%m%d%H%M}\"\n",
-    "    elif (date.hour != 0) and (date.minute == 0):\n",
-    "        return f\"l2_data/{date:%Y}/{date:%m}/{date:%d}/{radar_site}/{radar_site[:3].upper()}{date:%y%m%d%H}\"\n",
-    "    else:\n",
-    "        return f\"l2_data/{date:%Y}/{date:%m}/{date:%d}/{radar_site}/{radar_site[:3].upper()}{date:%y%m%d}\""
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "5",
-   "metadata": {},
-   "source": [
-    "Let's suppose we want to check the radar files on **2022-10-6** from the Guaviare radar"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "6",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "date_query = datetime(2022, 10, 6)\n",
-    "radar_name = \"Guaviare\"\n",
-    "query = create_query(date=date_query, radar_site=radar_name)\n",
-    "query"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "7",
-   "metadata": {},
-   "source": [
-    "### Connecting to the AWS bucket\n",
-    "Once the query is defined, we can procced to list all the available files in the bucket using **boto3** and **botocore** libraries"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "8",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "str_bucket = \"s3://s3-radaresideam/\"\n",
-    "s3 = boto3.resource(\n",
-    "    \"s3\",\n",
-    "    config=Config(signature_version=botocore.UNSIGNED, user_agent_extra=\"Resource\"),\n",
-    ")\n",
-    "\n",
-    "bucket = s3.Bucket(\"s3-radaresideam\")\n",
-    "\n",
-    "radar_files = [f\"{str_bucket}{i.key}\" for i in bucket.objects.filter(Prefix=f\"{query}\")]\n",
-    "radar_files[:5]"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "9",
-   "metadata": {},
-   "source": [
-    "We can use the Filesystem interfaces for Python [fsspec](https://filesystem-spec.readthedocs.io/en/latest/) to access the data from the s3 bucket"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "10",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "file = fsspec.open_local(\n",
-    "    f\"simplecache::{radar_files[0]}\",\n",
-    "    s3={\"anon\": True},\n",
-    "    filecache={\"cache_storage\": \".\"},\n",
-    ")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "11",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds = xr.open_dataset(file, engine=\"iris\", group=\"sweep_0\")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "12",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "display(ds)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "13",
-   "metadata": {},
-   "source": [
-    "## Reflectivity and Correlation coefficient plot"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "14",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4), dpi=120)\n",
-    "ds.DBZH.plot(cmap=\"ChaseSpectral\", vmin=-10, vmax=50, ax=ax)\n",
-    "ds.RHOHV.plot(cmap=\"ChaseSpectral\", vmin=0, vmax=1, ax=ax1)\n",
-    "fig.tight_layout()"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "15",
-   "metadata": {},
-   "source": [
-    "The dataset object has range and azimuth as coordinates. To create a polar plot, we need to add the georeference information using  `xd.georeference.get_x_y_z()` module from [xradar](https://docs.openradarscience.org/projects/xradar/en/stable/index.html)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "16",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds = xd.georeference.get_x_y_z(ds)\n",
-    "display(ds)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "17",
-   "metadata": {},
-   "source": [
-    "Now x, y, and z have been added to the dataset coordinates. Let's create the new plot using the georeference information. "
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "18",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))\n",
-    "ds.DBZH.plot(x=\"x\", y=\"y\", cmap=\"ChaseSpectral\", vmin=-10, vmax=50, ax=ax)\n",
-    "ds.RHOHV.plot(x=\"x\", y=\"y\", cmap=\"ChaseSpectral\", vmin=0, vmax=1, ax=ax1)\n",
-    "ax.set_title(\"\")\n",
-    "ax1.set_title(\"\")\n",
-    "fig.tight_layout()"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "19",
-   "metadata": {},
-   "source": [
-    "## Filtering data\n",
-    "\n",
-    "The blue background color indicates that the radar reflectivity is less than -10 dBZ. we can filter radar data using [xarray.where](https://docs.xarray.dev/en/stable/generated/xarray.where.html) module\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "20",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))\n",
-    "ds.DBZH.where(ds.DBZH >= -10).plot(\n",
-    "    x=\"x\", y=\"y\", cmap=\"ChaseSpectral\", vmin=-10, vmax=50, ax=ax\n",
-    ")\n",
-    "ds.RHOHV.where(ds.DBZH >= -10).plot(\n",
-    "    x=\"x\", y=\"y\", cmap=\"ChaseSpectral\", vmin=0, vmax=1, ax=ax1\n",
-    ")\n",
-    "ax.set_title(\"\")\n",
-    "ax1.set_title(\"\")\n",
-    "fig.tight_layout()"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "21",
-   "metadata": {},
-   "source": [
-    "Polarimetric variables can also be used as indicators to remove different noises from different sources. For example, the $\\rho_{HV}$ measures the consistency of the shapes and sizes of targets within the radar beam. Thus, the greater the $\\rho_{HV}$, the more consistent the measurement. For this example we can use $\\rho_{HV} > 0.80$ as an acceptable threshold "
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "22",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))\n",
-    "ds.DBZH.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.80).plot(\n",
-    "    x=\"x\", y=\"y\", cmap=\"ChaseSpectral\", vmin=-10, vmax=50, ax=ax\n",
-    ")\n",
-    "\n",
-    "ds.DBZH.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.85).plot(\n",
-    "    x=\"x\", y=\"y\", cmap=\"ChaseSpectral\", vmin=0, vmax=1, ax=ax1\n",
-    ")\n",
-    "ax.set_title(\"\")\n",
-    "ax1.set_title(\"\")\n",
-    "fig.tight_layout()"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "23",
-   "metadata": {},
-   "source": [
-    "##  Axis labels and titles\n",
-    "We can change some axis labels as well as the colorbar label "
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "24",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))\n",
-    "ds.DBZH.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.85).plot(\n",
-    "    x=\"x\",\n",
-    "    y=\"y\",\n",
-    "    cmap=\"ChaseSpectral\",\n",
-    "    vmin=-10,\n",
-    "    vmax=50,\n",
-    "    ax=ax,\n",
-    "    cbar_kwargs={\"label\": r\"$Reflectivity \\ [dBZ]$\"},\n",
-    ")\n",
-    "\n",
-    "ds.RHOHV.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.85).plot(\n",
-    "    x=\"x\",\n",
-    "    y=\"y\",\n",
-    "    cmap=\"ChaseSpectral\",\n",
-    "    vmin=0,\n",
-    "    vmax=1,\n",
-    "    ax=ax1,\n",
-    "    cbar_kwargs={\"label\": r\"$Corr. \\ Coef. \\  [unitless]$\"},\n",
-    ")\n",
-    "\n",
-    "# lambda fucntion for unit trasformation m->km\n",
-    "m2km = lambda x, _: f\"{x/1000:g}\"\n",
-    "# set new ticks\n",
-    "ax.xaxis.set_major_formatter(m2km)\n",
-    "ax.yaxis.set_major_formatter(m2km)\n",
-    "ax1.xaxis.set_major_formatter(m2km)\n",
-    "ax1.yaxis.set_major_formatter(m2km)\n",
-    "# removing the title in both plots\n",
-    "ax.set_title(\"\")\n",
-    "ax1.set_title(\"\")\n",
-    "\n",
-    "# renaming the axis\n",
-    "ax.set_ylabel(r\"$North - South \\ distance \\ [km]$\")\n",
-    "ax.set_xlabel(r\"$East - West \\ distance \\ [km]$\")\n",
-    "ax1.set_ylabel(r\"$North - South \\ distance \\ [km]$\")\n",
-    "ax1.set_xlabel(r\"$East - West \\ distance \\ [km]$\")\n",
-    "\n",
-    "# setting up the title\n",
-    "ax.set_title(\n",
-    "    r\"$Guaviare \\ radar$\"\n",
-    "    + \"\\n\"\n",
-    "    + f\"${to_datetime(ds.time.values[0]): %Y-%m-%d - %X}$\"\n",
-    "    + \"$ UTC$\"\n",
-    ")\n",
-    "ax1.set_title(\n",
-    "    r\"$Guaviare \\ radar$\"\n",
-    "    + \"\\n\"\n",
-    "    + f\"${to_datetime(ds.time.values[0]): %Y-%m-%d - %X}$\"\n",
-    "    + \"$ UTC$\"\n",
-    ")\n",
-    "fig.tight_layout()"
-   ]
-  }
- ],
- "metadata": {
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+---
+jupytext:
+  text_representation:
+    extension: .md
+    format_name: myst
+    format_version: 0.13
+    jupytext_version: 1.19.1
+---
+
+# Work with AWS
+This example shows how to access radar data from the Colombian national radar network public on Amazon Web Services. We will look at the bucket structure and plot a PPI using the Xradar library. Radar reflectivity is filtered using some polarimetric values and xarray functionality.
+
++++
+
+## Imports
+
+```{code-cell}
+from datetime import datetime
+
+import boto3
+import botocore
+import cmweather  # noqa
+import fsspec
+import matplotlib.pyplot as plt
+import xarray as xr
+from botocore.client import Config
+from pandas import to_datetime
+
+import xradar as xd
+```
+
+## IDEAM AWS Bucket
+Instituto de Hidrología, Meteorología y Estudios Ambientales - IDEAM (Colombian National Weather Service) has made public the weather radar data. Data can be found [here](https://registry.opendata.aws/ideam-radares/), and documentation [here](http://www.pronosticosyalertas.gov.co/archivos-radar#:~:text=RED%20DE%20RADARES%20DE%20IDEAM%20EN%20AWS).
+
+The bucket structure is s3://s3-radaresideam/l2_data/YYYY/MM/DD/Radar_name/RRRAAMMDDTTTTTT.RAWXXXX where:
+* YYYY is the 4-digit year
+* MM is the 2-digit month
+* DD is the 2-digit day
+* Radar_name radar name. Options are Guaviare, Munchique, Barrancabermja, and Carimagua
+* RRRAAMMDDTTTTTT.RAWXXXX is the radar filename with the following:
+    - RRR three first letters of the radar name (e.g., GUA for Guaviare radar)
+    - YY is the 2-digit year
+    - MM is the 2-digit month
+    - DD is the 2-digit day
+    - TTTTTT is the time at which the scan was made (GTM)
+    - RAWXXXX Sigmet file format and unique code provided by IRIS software
+
+This is too complicated! No worries. We created a function to help you list files within the bucket.
+
+```{code-cell}
+def create_query(date, radar_site):
+    """
+    Creates a string for quering the IDEAM radar files stored in AWS bucket
+    :param date: date to be queried. e.g datetime(2021, 10, 3, 12). Datetime python object
+    :param radar_site: radar site e.g. Guaviare
+    :return: string with a IDEAM radar bucket format
+    """
+    if (date.hour != 0) and (date.minute != 0):
+        return f"l2_data/{date:%Y}/{date:%m}/{date:%d}/{radar_site}/{radar_site[:3].upper()}{date:%y%m%d%H%M}"
+    elif (date.hour != 0) and (date.minute == 0):
+        return f"l2_data/{date:%Y}/{date:%m}/{date:%d}/{radar_site}/{radar_site[:3].upper()}{date:%y%m%d%H}"
+    else:
+        return f"l2_data/{date:%Y}/{date:%m}/{date:%d}/{radar_site}/{radar_site[:3].upper()}{date:%y%m%d}"
+```
+
+Let's suppose we want to check the radar files on **2022-10-6** from the Guaviare radar
+
+```{code-cell}
+date_query = datetime(2022, 10, 6)
+radar_name = "Guaviare"
+query = create_query(date=date_query, radar_site=radar_name)
+query
+```
+
+### Connecting to the AWS bucket
+Once the query is defined, we can procced to list all the available files in the bucket using **boto3** and **botocore** libraries
+
+```{code-cell}
+str_bucket = "s3://s3-radaresideam/"
+s3 = boto3.resource(
+    "s3",
+    config=Config(signature_version=botocore.UNSIGNED, user_agent_extra="Resource"),
+)
+
+bucket = s3.Bucket("s3-radaresideam")
+
+radar_files = [f"{str_bucket}{i.key}" for i in bucket.objects.filter(Prefix=f"{query}")]
+radar_files[:5]
+```
+
+We can use the Filesystem interfaces for Python [fsspec](https://filesystem-spec.readthedocs.io/en/latest/) to access the data from the s3 bucket
+
+```{code-cell}
+file = fsspec.open_local(
+    f"simplecache::{radar_files[0]}",
+    s3={"anon": True},
+    filecache={"cache_storage": "."},
+)
+```
+
+```{code-cell}
+ds = xr.open_dataset(file, engine="iris", group="sweep_0")
+```
+
+```{code-cell}
+display(ds)
+```
+
+## Reflectivity and Correlation coefficient plot
+
+```{code-cell}
+fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4), dpi=120)
+ds.DBZH.plot(cmap="ChaseSpectral", vmin=-10, vmax=50, ax=ax)
+ds.RHOHV.plot(cmap="ChaseSpectral", vmin=0, vmax=1, ax=ax1)
+fig.tight_layout()
+```
+
+The dataset object has range and azimuth as coordinates. To create a polar plot, we need to add the georeference information using  `xd.georeference.get_x_y_z()` module from [xradar](https://docs.openradarscience.org/projects/xradar/en/stable/index.html)
+
+```{code-cell}
+ds = xd.georeference.get_x_y_z(ds)
+display(ds)
+```
+
+Now x, y, and z have been added to the dataset coordinates. Let's create the new plot using the georeference information.
+
+```{code-cell}
+fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))
+ds.DBZH.plot(x="x", y="y", cmap="ChaseSpectral", vmin=-10, vmax=50, ax=ax)
+ds.RHOHV.plot(x="x", y="y", cmap="ChaseSpectral", vmin=0, vmax=1, ax=ax1)
+ax.set_title("")
+ax1.set_title("")
+fig.tight_layout()
+```
+
+## Filtering data
+
+The blue background color indicates that the radar reflectivity is less than -10 dBZ. we can filter radar data using [xarray.where](https://docs.xarray.dev/en/stable/generated/xarray.where.html) module
+
+```{code-cell}
+fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))
+ds.DBZH.where(ds.DBZH >= -10).plot(
+    x="x", y="y", cmap="ChaseSpectral", vmin=-10, vmax=50, ax=ax
+)
+ds.RHOHV.where(ds.DBZH >= -10).plot(
+    x="x", y="y", cmap="ChaseSpectral", vmin=0, vmax=1, ax=ax1
+)
+ax.set_title("")
+ax1.set_title("")
+fig.tight_layout()
+```
+
+Polarimetric variables can also be used as indicators to remove different noises from different sources. For example, the $\rho_{HV}$ measures the consistency of the shapes and sizes of targets within the radar beam. Thus, the greater the $\rho_{HV}$, the more consistent the measurement. For this example we can use $\rho_{HV} > 0.80$ as an acceptable threshold
+
+```{code-cell}
+fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))
+ds.DBZH.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.80).plot(
+    x="x", y="y", cmap="ChaseSpectral", vmin=-10, vmax=50, ax=ax
+)
+
+ds.DBZH.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.85).plot(
+    x="x", y="y", cmap="ChaseSpectral", vmin=0, vmax=1, ax=ax1
+)
+ax.set_title("")
+ax1.set_title("")
+fig.tight_layout()
+```
+
+##  Axis labels and titles
+We can change some axis labels as well as the colorbar label
+
+```{code-cell}
+fig, (ax, ax1) = plt.subplots(1, 2, figsize=(10, 4))
+ds.DBZH.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.85).plot(
+    x="x",
+    y="y",
+    cmap="ChaseSpectral",
+    vmin=-10,
+    vmax=50,
+    ax=ax,
+    cbar_kwargs={"label": r"$Reflectivity \ [dBZ]$"},
+)
+
+ds.RHOHV.where(ds.DBZH >= -10).where(ds.RHOHV >= 0.85).plot(
+    x="x",
+    y="y",
+    cmap="ChaseSpectral",
+    vmin=0,
+    vmax=1,
+    ax=ax1,
+    cbar_kwargs={"label": r"$Corr. \ Coef. \  [unitless]$"},
+)
+
+# lambda fucntion for unit trasformation m->km
+m2km = lambda x, _: f"{x/1000:g}"
+# set new ticks
+ax.xaxis.set_major_formatter(m2km)
+ax.yaxis.set_major_formatter(m2km)
+ax1.xaxis.set_major_formatter(m2km)
+ax1.yaxis.set_major_formatter(m2km)
+# removing the title in both plots
+ax.set_title("")
+ax1.set_title("")
+
+# renaming the axis
+ax.set_ylabel(r"$North - South \ distance \ [km]$")
+ax.set_xlabel(r"$East - West \ distance \ [km]$")
+ax1.set_ylabel(r"$North - South \ distance \ [km]$")
+ax1.set_xlabel(r"$East - West \ distance \ [km]$")
+
+# setting up the title
+ax.set_title(
+    r"$Guaviare \ radar$"
+    + "\n"
+    + f"${to_datetime(ds.time.values[0]): %Y-%m-%d - %X}$"
+    + "$ UTC$"
+)
+ax1.set_title(
+    r"$Guaviare \ radar$"
+    + "\n"
+    + f"${to_datetime(ds.time.values[0]): %Y-%m-%d - %X}$"
+    + "$ UTC$"
+)
+fig.tight_layout()
+```

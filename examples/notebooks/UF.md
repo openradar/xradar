@@ -1,363 +1,167 @@
-{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "id": "0",
-   "metadata": {},
-   "source": [
-    "# Universal Format (UF)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "1",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import cmweather  # noqa\n",
-    "import xarray as xr\n",
-    "from open_radar_data import DATASETS\n",
-    "\n",
-    "import xradar as xd"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "2",
-   "metadata": {},
-   "source": [
-    "## Download\n",
-    "\n",
-    "Fetching Universal Format radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "3",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import atexit\n",
-    "from pathlib import Path\n",
-    "from tempfile import TemporaryDirectory\n",
-    "\n",
-    "tmpdir_obj = TemporaryDirectory()\n",
-    "atexit.register(tmpdir_obj.cleanup)  # remove even if you forget\n",
-    "tmpdir = Path(tmpdir_obj.name)\n",
-    "\n",
-    "\n",
-    "def get_temp_file(fname):\n",
-    "    import gzip\n",
-    "    import shutil\n",
-    "\n",
-    "    fnamei = Path(DATASETS.fetch(fname))\n",
-    "    fnameo = tmpdir / fnamei.stem\n",
-    "    with gzip.open(fnamei) as fin:\n",
-    "        with open(fnameo, \"wb\") as fout:\n",
-    "            shutil.copyfileobj(fin, fout)\n",
-    "            fout.flush()\n",
-    "            fout.close()\n",
-    "    return fnameo\n",
-    "\n",
-    "\n",
-    "fname = get_temp_file(\"20110427_164233_rvp8-rel_v001_SUR.uf.gz\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "4",
-   "metadata": {},
-   "source": [
-    "## xr.open_dataset\n",
-    "\n",
-    "Making use of the xarray `uf` backend. We also need to provide the group. Note, that we are using CfRadial2 group access pattern."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "5",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds = xr.open_dataset(fname, group=\"sweep_0\", engine=\"uf\")\n",
-    "display(ds)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "6",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import numpy as np\n",
-    "\n",
-    "np.testing.assert_almost_equal(ds.sweep_fixed_angle.values, 0.703125)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "7",
-   "metadata": {},
-   "source": [
-    "### Plot Time vs. Azimuth"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "8",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds.azimuth.plot()"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "9",
-   "metadata": {},
-   "source": [
-    "### Plot Range vs. Time\n",
-    "\n",
-    "We need to sort by time and specify the y-coordinate."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "10",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds.DBZH.sortby(\"time\").plot(y=\"time\", cmap=\"HomeyerRainbow\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "11",
-   "metadata": {},
-   "source": [
-    "### Plot Range vs. Azimuth\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "12",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds.DBZH.plot(cmap=\"HomeyerRainbow\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "13",
-   "metadata": {},
-   "source": [
-    "## backend_kwargs\n",
-    "\n",
-    "Beside `first_dim` there are several additional backend_kwargs for the `uf` backend, which handle different aspects of angle alignment. This comes into play, when azimuth and/or elevation arrays are not evenly spacend and other issues."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "14",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "help(xd.io.UFBackendEntrypoint)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "15",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds = xr.open_dataset(fname, group=\"sweep_0\", engine=\"uf\", first_dim=\"time\")\n",
-    "display(ds)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "16",
-   "metadata": {},
-   "source": [
-    "## open_uf_datatree\n",
-    "\n",
-    "The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "17",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "help(xd.io.open_uf_datatree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "18",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_uf_datatree(fname, sweep=4)\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "19",
-   "metadata": {},
-   "source": [
-    "### Plot Sweep Range vs. Time"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "20",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_4\"].ds.DBZH.sortby(\"time\").plot(y=\"time\", cmap=\"HomeyerRainbow\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "21",
-   "metadata": {},
-   "source": [
-    "### Plot Sweep Range vs. Azimuth"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "22",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_4\"].ds.DBZH.plot(cmap=\"HomeyerRainbow\")"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "23",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_uf_datatree(fname, sweep=\"sweep_8\")\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "24",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_uf_datatree(fname, sweep=[0, 1, 8])\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "25",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_0\"][\"sweep_fixed_angle\"].values"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "26",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_8\"][\"sweep_fixed_angle\"].values"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "27",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_uf_datatree(fname)\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "28",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_1\"]"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "29",
-   "metadata": {},
-   "source": [
-    "## clean up"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "30",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import time\n",
-    "\n",
-    "for node in dtree.values():\n",
-    "    if hasattr(node, \"close\"):\n",
-    "        node.close()\n",
-    "for file in tmpdir.iterdir():\n",
-    "    if file.is_file():\n",
-    "        for _ in range(5):\n",
-    "            try:\n",
-    "                file.unlink()\n",
-    "                break\n",
-    "            except PermissionError:\n",
-    "                time.sleep(0.5)"
-   ]
-  }
- ],
- "metadata": {
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+---
+jupytext:
+  text_representation:
+    extension: .md
+    format_name: myst
+    format_version: 0.13
+    jupytext_version: 1.19.1
+---
+
+# Universal Format (UF)
+
+```{code-cell}
+import cmweather  # noqa
+import xarray as xr
+from open_radar_data import DATASETS
+
+import xradar as xd
+```
+
+## Download
+
+Fetching Universal Format radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository.
+
+```{code-cell}
+import atexit
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+tmpdir_obj = TemporaryDirectory()
+atexit.register(tmpdir_obj.cleanup)  # remove even if you forget
+tmpdir = Path(tmpdir_obj.name)
+
+
+def get_temp_file(fname):
+    import gzip
+    import shutil
+
+    fnamei = Path(DATASETS.fetch(fname))
+    fnameo = tmpdir / fnamei.stem
+    with gzip.open(fnamei) as fin:
+        with open(fnameo, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+            fout.flush()
+            fout.close()
+    return fnameo
+
+
+fname = get_temp_file("20110427_164233_rvp8-rel_v001_SUR.uf.gz")
+```
+
+## xr.open_dataset
+
+Making use of the xarray `uf` backend. We also need to provide the group. Note, that we are using CfRadial2 group access pattern.
+
+```{code-cell}
+ds = xr.open_dataset(fname, group="sweep_0", engine="uf")
+display(ds)
+```
+
+```{code-cell}
+import numpy as np
+
+np.testing.assert_almost_equal(ds.sweep_fixed_angle.values, 0.703125)
+```
+
+### Plot Time vs. Azimuth
+
+```{code-cell}
+ds.azimuth.plot()
+```
+
+### Plot Range vs. Time
+
+We need to sort by time and specify the y-coordinate.
+
+```{code-cell}
+ds.DBZH.sortby("time").plot(y="time", cmap="HomeyerRainbow")
+```
+
+### Plot Range vs. Azimuth
+
+```{code-cell}
+ds.DBZH.plot(cmap="HomeyerRainbow")
+```
+
+## backend_kwargs
+
+Beside `first_dim` there are several additional backend_kwargs for the `uf` backend, which handle different aspects of angle alignment. This comes into play, when azimuth and/or elevation arrays are not evenly spacend and other issues.
+
+```{code-cell}
+help(xd.io.UFBackendEntrypoint)
+```
+
+```{code-cell}
+ds = xr.open_dataset(fname, group="sweep_0", engine="uf", first_dim="time")
+display(ds)
+```
+
+## open_uf_datatree
+
+The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list.
+
+```{code-cell}
+help(xd.io.open_uf_datatree)
+```
+
+```{code-cell}
+dtree = xd.io.open_uf_datatree(fname, sweep=4)
+display(dtree)
+```
+
+### Plot Sweep Range vs. Time
+
+```{code-cell}
+dtree["sweep_4"].ds.DBZH.sortby("time").plot(y="time", cmap="HomeyerRainbow")
+```
+
+### Plot Sweep Range vs. Azimuth
+
+```{code-cell}
+dtree["sweep_4"].ds.DBZH.plot(cmap="HomeyerRainbow")
+```
+
+```{code-cell}
+dtree = xd.io.open_uf_datatree(fname, sweep="sweep_8")
+display(dtree)
+```
+
+```{code-cell}
+dtree = xd.io.open_uf_datatree(fname, sweep=[0, 1, 8])
+display(dtree)
+```
+
+```{code-cell}
+dtree["sweep_0"]["sweep_fixed_angle"].values
+```
+
+```{code-cell}
+dtree["sweep_8"]["sweep_fixed_angle"].values
+```
+
+```{code-cell}
+dtree = xd.io.open_uf_datatree(fname)
+display(dtree)
+```
+
+```{code-cell}
+dtree["sweep_1"]
+```
+
+## clean up
+
+```{code-cell}
+import time
+
+for node in dtree.values():
+    if hasattr(node, "close"):
+        node.close()
+for file in tmpdir.iterdir():
+    if file.is_file():
+        for _ in range(5):
+            try:
+                file.unlink()
+                break
+            except PermissionError:
+                time.sleep(0.5)
+```

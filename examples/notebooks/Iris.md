@@ -1,307 +1,135 @@
-{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "id": "0",
-   "metadata": {},
-   "source": [
-    "# Iris/Sigmet - Reader"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "1",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import xarray as xr\n",
-    "from open_radar_data import DATASETS\n",
-    "\n",
-    "import xradar as xd"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "2",
-   "metadata": {},
-   "source": [
-    "## Download\n",
-    "\n",
-    "Fetching Iris radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "3",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "filename_single = DATASETS.fetch(\"SUR210819000227.RAWKPJV\")\n",
-    "filename_volume = DATASETS.fetch(\"cor-main131125105503.RAW2049\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "4",
-   "metadata": {},
-   "source": [
-    "## xr.open_dataset\n",
-    "\n",
-    "Making use of the xarray `iris` backend. We also need to provide the group. We use the group notation from `CfRadial2`."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "5",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds = xr.open_dataset(filename_single, group=\"sweep_0\", engine=\"iris\")\n",
-    "display(ds)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "6",
-   "metadata": {},
-   "source": [
-    "### Plot Time vs. Azimuth"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "7",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds.azimuth.plot(y=\"time\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "8",
-   "metadata": {},
-   "source": [
-    "### Plot Range vs. Time\n",
-    "\n",
-    "We need to sort by time and specify the y-coordinate."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "9",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds.DBZH.sortby(\"time\").plot(y=\"time\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "10",
-   "metadata": {},
-   "source": [
-    "### Plot Range vs. Azimuth\n"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "11",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds.DBZH.plot(y=\"azimuth\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "12",
-   "metadata": {},
-   "source": [
-    "## backend_kwargs\n",
-    "\n",
-    "Beside `first_dim` there are several additional backend_kwargs for the iris backend, which handle different aspects of angle alignment. This comes into play, when azimuth and/or elevation arrays are not evenly spacend and other issues."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "13",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "help(xd.io.IrisBackendEntrypoint)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "14",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "ds = xr.open_dataset(filename_single, group=\"sweep_0\", engine=\"iris\", first_dim=\"time\")\n",
-    "display(ds)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "15",
-   "metadata": {},
-   "source": [
-    "## open_iris_datatree\n",
-    "\n",
-    "The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.ds`."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "16",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "help(xd.io.open_iris_datatree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "17",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_iris_datatree(filename_volume)\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "18",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_iris_datatree(filename_volume, sweep=\"sweep_8\")\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "19",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_iris_datatree(filename_volume, sweep=[1, 2, 8])\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "20",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree = xd.io.open_iris_datatree(\n",
-    "    filename_volume,\n",
-    "    sweep=[\"sweep_0\", \"sweep_1\", \"sweep_8\"],\n",
-    ")\n",
-    "display(dtree)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "21",
-   "metadata": {},
-   "source": [
-    "### Plot Time vs. Azimuth"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "22",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_0\"].ds.azimuth.plot(y=\"time\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "23",
-   "metadata": {},
-   "source": [
-    "### Plot Sweep Range vs. Time\n",
-    "\n",
-    "We need to sort by time and specify the y-coordinate. Please also observe the different resolutions of this plot, compared to the `Azimuth vs. Range` plot below. This is due to second-resolution of the time coordinate."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "24",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_0\"].ds.DBZH.sortby(\"time\").plot(y=\"time\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "25",
-   "metadata": {},
-   "source": [
-    "### Plot Sweep Range vs. Azimuth"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "26",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "dtree[\"sweep_0\"].ds.DBZH.plot()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "27",
-   "metadata": {},
-   "outputs": [],
-   "source": "import matplotlib.pyplot as plt\n\nsweep = dtree[\"sweep_0\"].to_dataset(inherit=\"all_coords\")\nsweep = sweep.sel(range=slice(0, 60000))\nsweep = xd.georeference.get_x_y_z(sweep)\nfor var in xd.util.get_sweep_dataset_vars(sweep):\n    plt.figure()\n    sweep[var].plot(x=\"x\", y=\"y\")\n    plt.title(var)"
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "28",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+---
+jupytext:
+  text_representation:
+    extension: .md
+    format_name: myst
+    format_version: 0.13
+    jupytext_version: 1.19.1
+---
+
+# Iris/Sigmet - Reader
+
+```{code-cell}
+import xarray as xr
+from open_radar_data import DATASETS
+
+import xradar as xd
+```
+
+## Download
+
+Fetching Iris radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository.
+
+```{code-cell}
+filename_single = DATASETS.fetch("SUR210819000227.RAWKPJV")
+filename_volume = DATASETS.fetch("cor-main131125105503.RAW2049")
+```
+
+## xr.open_dataset
+
+Making use of the xarray `iris` backend. We also need to provide the group. We use the group notation from `CfRadial2`.
+
+```{code-cell}
+ds = xr.open_dataset(filename_single, group="sweep_0", engine="iris")
+display(ds)
+```
+
+### Plot Time vs. Azimuth
+
+```{code-cell}
+ds.azimuth.plot(y="time")
+```
+
+### Plot Range vs. Time
+
+We need to sort by time and specify the y-coordinate.
+
+```{code-cell}
+ds.DBZH.sortby("time").plot(y="time")
+```
+
+### Plot Range vs. Azimuth
+
+```{code-cell}
+ds.DBZH.plot(y="azimuth")
+```
+
+## backend_kwargs
+
+Beside `first_dim` there are several additional backend_kwargs for the iris backend, which handle different aspects of angle alignment. This comes into play, when azimuth and/or elevation arrays are not evenly spacend and other issues.
+
+```{code-cell}
+help(xd.io.IrisBackendEntrypoint)
+```
+
+```{code-cell}
+ds = xr.open_dataset(filename_single, group="sweep_0", engine="iris", first_dim="time")
+display(ds)
+```
+
+## open_iris_datatree
+
+The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.ds`.
+
+```{code-cell}
+help(xd.io.open_iris_datatree)
+```
+
+```{code-cell}
+dtree = xd.io.open_iris_datatree(filename_volume)
+display(dtree)
+```
+
+```{code-cell}
+dtree = xd.io.open_iris_datatree(filename_volume, sweep="sweep_8")
+display(dtree)
+```
+
+```{code-cell}
+dtree = xd.io.open_iris_datatree(filename_volume, sweep=[1, 2, 8])
+display(dtree)
+```
+
+```{code-cell}
+dtree = xd.io.open_iris_datatree(
+    filename_volume,
+    sweep=["sweep_0", "sweep_1", "sweep_8"],
+)
+display(dtree)
+```
+
+### Plot Time vs. Azimuth
+
+```{code-cell}
+dtree["sweep_0"].ds.azimuth.plot(y="time")
+```
+
+### Plot Sweep Range vs. Time
+
+We need to sort by time and specify the y-coordinate. Please also observe the different resolutions of this plot, compared to the `Azimuth vs. Range` plot below. This is due to second-resolution of the time coordinate.
+
+```{code-cell}
+dtree["sweep_0"].ds.DBZH.sortby("time").plot(y="time")
+```
+
+### Plot Sweep Range vs. Azimuth
+
+```{code-cell}
+dtree["sweep_0"].ds.DBZH.plot()
+```
+
+```{code-cell}
+import matplotlib.pyplot as plt
+
+sweep = dtree["sweep_0"].to_dataset(inherit="all_coords")
+sweep = sweep.sel(range=slice(0, 60000))
+sweep = xd.georeference.get_x_y_z(sweep)
+for var in xd.util.get_sweep_dataset_vars(sweep):
+    plt.figure()
+    sweep[var].plot(x="x", y="y")
+    plt.title(var)
+```
+
+```{code-cell}
+
+```

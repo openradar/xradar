@@ -1,266 +1,121 @@
-{
- "cells": [
-  {
-   "cell_type": "markdown",
-   "id": "0",
-   "metadata": {},
-   "source": [
-    "# Plan Position Indicator\n",
-    "A Plan Position Indicator (PPI) plot is a common plot requested by radar scientists. Let's show how to create this plot using `xradar`"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "1",
-   "metadata": {},
-   "source": [
-    "## Imports"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "2",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import cmweather  # noqa\n",
-    "from open_radar_data import DATASETS\n",
-    "\n",
-    "import xradar as xd"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "3",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "import cartopy\n",
-    "import matplotlib.pyplot as plt"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "4",
-   "metadata": {},
-   "source": [
-    "## Read in some data\n",
-    "\n",
-    "Fetching CfRadial1 radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "5",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "filename = DATASETS.fetch(\"cfrad.20080604_002217_000_SPOL_v36_SUR.nc\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "6",
-   "metadata": {},
-   "source": [
-    "Read the data using the `cfradial1` engine"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "7",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "radar = xd.io.open_cfradial1_datatree(filename, first_dim=\"auto\")\n",
-    "display(radar)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "8",
-   "metadata": {},
-   "source": [
-    "## Add georeferencing\n",
-    "We can use the georeference function, or the accessor to add our georeference information!"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "9",
-   "metadata": {},
-   "source": [
-    "### Georeference Accessor\n",
-    "If you prefer the accessor (`.xradar.georefence()`), this is how you would add georeference information to your radar object."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "10",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "radar = radar.xradar.georeference()\n",
-    "display(radar)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "11",
-   "metadata": {},
-   "source": [
-    "Please observe, that the additional coordinates `x`, `y`, `z` have been added to the dataset. This will also add `spatial_ref` CRS information on the used Azimuthal Equidistant Projection."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "12",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "radar[\"sweep_0\"]"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "13",
-   "metadata": {},
-   "source": [
-    "### Use the Function\n",
-    "We can also use the function `xd.geoference.get_x_y_z_tree` function if you prefer that method."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "14",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "radar = xd.georeference.get_x_y_z_tree(radar)\n",
-    "display(radar[\"sweep_0\"])"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "15",
-   "metadata": {},
-   "source": [
-    "## Plot our Data\n",
-    "\n",
-    "### Plot simple PPI\n",
-    "\n",
-    "Now, let's create our PPI plot! We just use the newly created 2D-coordinates `x` and `y` to create a meshplot."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "16",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "radar[\"sweep_0\"][\"DBZ\"].plot(x=\"x\", y=\"y\", cmap=\"ChaseSpectral\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "17",
-   "metadata": {},
-   "source": [
-    "### Plot PPI with geographic coordinates"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "18",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig, ax = plt.subplots(figsize=(10, 8))\n",
-    "radar = xd.georeference.get_x_y_z_tree(radar, target_crs=4326)\n",
-    "sweep = radar[\"sweep_0\"]\n",
-    "sweep[\"DBZ\"].plot(x=\"x\", y=\"y\", cmap=\"ChaseSpectral\")\n",
-    "ax.grid(True, which=\"both\", linestyle=\"--\", color=\"gray\", alpha=0.5)\n",
-    "ax.set_xlabel(\"Longitude\")\n",
-    "ax.set_ylabel(\"Latitude\")\n",
-    "ax.set_title(\"Radar Reflectivity Sweep\")"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "id": "19",
-   "metadata": {},
-   "source": [
-    "### Plot PPI on map with cartopy\n",
-    "\n",
-    "If you have `cartopy` installed, you can easily plot on maps. We first have to extract the CRS from the dataset and to wrap it in a `cartopy.crs.Projection`."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "20",
-   "metadata": {},
-   "outputs": [],
-   "source": "proj_crs = xd.georeference.get_crs(radar[\"sweep_0\"].to_dataset(inherit=\"all_coords\"))\ncart_crs = cartopy.crs.Projection(proj_crs)"
-  },
-  {
-   "cell_type": "markdown",
-   "id": "21",
-   "metadata": {},
-   "source": [
-    "Second, we create a matplotlib GeoAxes and a nice map."
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "22",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "fig = plt.figure(figsize=(10, 10))\n",
-    "ax = fig.add_subplot(111, projection=cartopy.crs.PlateCarree())\n",
-    "radar[\"sweep_0\"][\"DBZ\"].plot(\n",
-    "    x=\"x\",\n",
-    "    y=\"y\",\n",
-    "    cmap=\"ChaseSpectral\",\n",
-    "    transform=cart_crs,\n",
-    "    cbar_kwargs=dict(pad=0.075, shrink=0.75),\n",
-    ")\n",
-    "ax.coastlines()\n",
-    "ax.gridlines(draw_labels=True)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "23",
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+---
+jupytext:
+  text_representation:
+    extension: .md
+    format_name: myst
+    format_version: 0.13
+    jupytext_version: 1.19.1
+---
+
+# Plan Position Indicator
+A Plan Position Indicator (PPI) plot is a common plot requested by radar scientists. Let's show how to create this plot using `xradar`
+
++++
+
+## Imports
+
+```{code-cell}
+import cmweather  # noqa
+from open_radar_data import DATASETS
+
+import xradar as xd
+```
+
+```{code-cell}
+import cartopy
+import matplotlib.pyplot as plt
+```
+
+## Read in some data
+
+Fetching CfRadial1 radar data file from [open-radar-data](https://github.com/openradar/open-radar-data) repository.
+
+```{code-cell}
+filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+```
+
+Read the data using the `cfradial1` engine
+
+```{code-cell}
+radar = xd.io.open_cfradial1_datatree(filename, first_dim="auto")
+display(radar)
+```
+
+## Add georeferencing
+We can use the georeference function, or the accessor to add our georeference information!
+
++++
+
+### Georeference Accessor
+If you prefer the accessor (`.xradar.georefence()`), this is how you would add georeference information to your radar object.
+
+```{code-cell}
+radar = radar.xradar.georeference()
+display(radar)
+```
+
+Please observe, that the additional coordinates `x`, `y`, `z` have been added to the dataset. This will also add `spatial_ref` CRS information on the used Azimuthal Equidistant Projection.
+
+```{code-cell}
+radar["sweep_0"]
+```
+
+### Use the Function
+We can also use the function `xd.geoference.get_x_y_z_tree` function if you prefer that method.
+
+```{code-cell}
+radar = xd.georeference.get_x_y_z_tree(radar)
+display(radar["sweep_0"])
+```
+
+## Plot our Data
+
+### Plot simple PPI
+
+Now, let's create our PPI plot! We just use the newly created 2D-coordinates `x` and `y` to create a meshplot.
+
+```{code-cell}
+radar["sweep_0"]["DBZ"].plot(x="x", y="y", cmap="ChaseSpectral")
+```
+
+### Plot PPI with geographic coordinates
+
+```{code-cell}
+fig, ax = plt.subplots(figsize=(10, 8))
+radar = xd.georeference.get_x_y_z_tree(radar, target_crs=4326)
+sweep = radar["sweep_0"]
+sweep["DBZ"].plot(x="x", y="y", cmap="ChaseSpectral")
+ax.grid(True, which="both", linestyle="--", color="gray", alpha=0.5)
+ax.set_xlabel("Longitude")
+ax.set_ylabel("Latitude")
+ax.set_title("Radar Reflectivity Sweep")
+```
+
+### Plot PPI on map with cartopy
+
+If you have `cartopy` installed, you can easily plot on maps. We first have to extract the CRS from the dataset and to wrap it in a `cartopy.crs.Projection`.
+
+```{code-cell}
+proj_crs = xd.georeference.get_crs(radar["sweep_0"].to_dataset(inherit="all_coords"))
+cart_crs = cartopy.crs.Projection(proj_crs)
+```
+
+Second, we create a matplotlib GeoAxes and a nice map.
+
+```{code-cell}
+fig = plt.figure(figsize=(10, 10))
+ax = fig.add_subplot(111, projection=cartopy.crs.PlateCarree())
+radar["sweep_0"]["DBZ"].plot(
+    x="x",
+    y="y",
+    cmap="ChaseSpectral",
+    transform=cart_crs,
+    cbar_kwargs=dict(pad=0.075, shrink=0.75),
+)
+ax.coastlines()
+ax.gridlines(draw_labels=True)
+```
+
+```{code-cell}
+
+```
