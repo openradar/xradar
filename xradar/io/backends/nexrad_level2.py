@@ -2181,8 +2181,8 @@ def open_nexradlevel2_datatree(
     # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI)
     _assign_sweep_attrs(result, elev_data)
 
-    # Add actual sweep count to root attrs for AVSET termination detection
-    result.ds.attrs["actual_elevation_cuts"] = len(sweep_dict)
+    # Actual sweeps recorded in the file (from MSG_31 headers, not user selection)
+    result.ds.attrs["actual_elevation_cuts"] = act_sweeps
 
     return result
 

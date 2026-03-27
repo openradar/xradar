@@ -791,8 +791,8 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert dtree.attrs["dynamic_scan_type"] == "standard"
     assert dtree.attrs["avset_enabled"] is False
     assert dtree.attrs["base_tilt_vcp"] is False
-    # User-specified 5 sweeps out of 16 VCP-defined cuts
-    assert dtree.attrs["actual_elevation_cuts"] == 5
+    # actual_elevation_cuts reflects sweeps in the file, not user selection
+    assert dtree.attrs["actual_elevation_cuts"] == dtree.attrs["number_elevation_cuts"]
     assert dtree.attrs["mpda_vcp"] is False
 
 
