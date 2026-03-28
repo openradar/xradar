@@ -11,7 +11,7 @@ fsspec
 ruff
 nbconvert
 notebook
-open_radar_data
+open_radar_data @ git+https://github.com/aladinor/open-radar-data.git@nexrad-chunks
 boto3
 cartopy
 s3fs

@@ -79,6 +79,18 @@ def nexradlevel2_file():
 
 
 @pytest.fixture(scope="session")
+def nexrad_chunks_klot(tmp_path_factory):
+    import tarfile
+
+    archive = DATASETS.fetch("nexrad_level2_chunks_KLOT.tar.gz")
+    extract_dir = tmp_path_factory.mktemp("nexrad_chunks")
+    with tarfile.open(archive) as tar:
+        tar.extractall(extract_dir, filter="data")
+    chunk_dir = extract_dir / "nexrad_chunks_KLOT"
+    return sorted(chunk_dir.iterdir())
+
+
+@pytest.fixture(scope="session")
 def nexradlevel2_msg1_file(tmp_path_factory):
     fnamei = DATASETS.fetch("KLIX20050828_180149.gz")
     fnameo = os.path.join(
