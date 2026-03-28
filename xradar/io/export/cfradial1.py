@@ -33,6 +33,53 @@ import numpy as np
 import xarray as xr
 
 
+def _first_valid_scalar(data_array):
+    """Collapse a metadata variable to its first non-missing scalar value."""
+    values = np.asarray(data_array.values).ravel()
+    for value in values:
+        try:
+            if np.ma.is_masked(value):
+                continue
+            if np.isnan(value):
+                continue
+        except TypeError:
+            pass
+        try:
+            if np.isnat(value):
+                continue
+        except TypeError:
+            pass
+        return np.asarray(value).item()
+    return np.nan
+
+
+def _normalize_sweep_metadata(data):
+    """Restore sweep metadata variables to scalar form before CfRadial1 export."""
+    metadata_vars = [
+        "sweep_number",
+        "sweep_mode",
+        "polarization_mode",
+        "prt_mode",
+        "follow_mode",
+        "sweep_fixed_angle",
+        "sweep_start_ray_index",
+        "sweep_end_ray_index",
+    ]
+
+    data = data.copy()
+    for name in metadata_vars:
+        if name not in data:
+            continue
+        if data[name].ndim == 0:
+            continue
+        data[name] = xr.DataArray(
+            _first_valid_scalar(data[name]),
+            attrs=data[name].attrs,
+        )
+
+    return data
+
+
 def _calib_mapper(calib_params):
     """
     Map calibration parameters to a new dataset format.
@@ -109,13 +156,15 @@ def _variable_mapper(dtree, dim0=None):
     sweep_datasets = []
     for grp in dtree.groups:
         if "sweep" in grp:
-            data = dtree[grp].to_dataset(inherit="all_coords")
+            data = _normalize_sweep_metadata(
+                dtree[grp].to_dataset(inherit="all_coords")
+            )
 
             # handling first dimension
             if dim0 is None:
                 dim0 = (
                     "elevation"
-                    if data.sweep_mode.load().astype(str) == "rhi"
+                    if str(data.sweep_mode.load().values) == "rhi"
                     else "azimuth"
                 )
                 if dim0 not in data.dims:
@@ -200,7 +249,7 @@ def _sweep_info_mapper(dtree):
     for var_name in sweep_vars:
         var_data_list = [
             (
-                np.unique(dtree[s][var_name].values[np.newaxis, ...])
+                np.asarray([_first_valid_scalar(dtree[s][var_name])])
                 if var_name in dtree[s]
                 else np.array([np.nan])
             )
