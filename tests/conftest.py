@@ -90,7 +90,10 @@ def nexradlevel2_file():
 def nexrad_chunks_klot(tmp_path_factory):
     import tarfile
 
-    archive = DATASETS.fetch("nexrad_level2_chunks_KLOT.tar.gz")
+    try:
+        archive = DATASETS.fetch("nexrad_level2_chunks_KLOT.tar.gz")
+    except (ValueError, Exception):
+        pytest.skip("nexrad_level2_chunks_KLOT.tar.gz not in open-radar-data registry")
     extract_dir = tmp_path_factory.mktemp("nexrad_chunks")
     with tarfile.open(archive) as tar:
         tar.extractall(extract_dir, filter="data")
