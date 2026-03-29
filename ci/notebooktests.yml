@@ -17,7 +17,7 @@ dependencies:
   - netCDF4
   - notebook
   - numpy
-  - open-radar-data>=0.4.2
+  - open-radar-data>=0.6.0
   - pip
   - pyproj
   - pytest

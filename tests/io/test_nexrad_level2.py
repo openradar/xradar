@@ -1940,3 +1940,56 @@ class TestListInputWithIncompleteSweep:
         assert list(dtree_direct.match("sweep_*").keys()) == list(
             dtree_tuple.match("sweep_*").keys()
         )
+
+
+class TestRealChunkFiles:
+    """Integration tests using real NEXRAD chunk files from open-radar-data."""
+
+    def test_full_volume_from_chunks(self, nexrad_chunks_klot):
+        """All chunks produce a complete volume with sweeps and data."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot]
+        dtree = open_nexradlevel2_datatree(chunk_bytes, reindex_angle=False)
+
+        sweep_keys = list(dtree.match("sweep_*").keys())
+        assert len(sweep_keys) > 0
+        assert "DBZH" in dtree["sweep_0"].data_vars
+        assert dtree.attrs["scan_name"].startswith("VCP-")
+
+    def test_partial_chunks_drop_mode(self, nexrad_chunks_klot):
+        """Partial chunks with drop mode have fewer sweeps than full volume."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
+        dtree = open_nexradlevel2_datatree(
+            chunk_bytes, reindex_angle=False, incomplete_sweep="drop"
+        )
+
+        all_bytes = [f.read_bytes() for f in nexrad_chunks_klot]
+        dtree_full = open_nexradlevel2_datatree(all_bytes, reindex_angle=False)
+        assert len(dtree.match("sweep_*")) <= len(dtree_full.match("sweep_*"))
+
+    def test_partial_chunks_pad_mode(self, nexrad_chunks_klot):
+        """Partial chunks with pad mode produce full azimuth grid with NaN."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
+        dtree = open_nexradlevel2_datatree(
+            chunk_bytes, reindex_angle=False, incomplete_sweep="pad"
+        )
+
+        sweep_keys = list(dtree.match("sweep_*").keys())
+        assert len(sweep_keys) > 0
+        ds = dtree["sweep_0"].to_dataset()
+        assert ds.sizes["azimuth"] in (360, 720)
+
+    def test_early_stream_few_chunks(self, nexrad_chunks_klot):
+        """Only 5 chunks with pad mode still produce data."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:5]]
+        dtree = open_nexradlevel2_datatree(
+            chunk_bytes, reindex_angle=False, incomplete_sweep="pad"
+        )
+
+        assert len(dtree.match("sweep_*")) > 0
+
+    def test_chunk_file_paths_input(self, nexrad_chunks_klot):
+        """List of file paths (not bytes) works as input."""
+        dtree = open_nexradlevel2_datatree(nexrad_chunks_klot, reindex_angle=False)
+
+        assert len(dtree.match("sweep_*")) > 0
+        assert "DBZH" in dtree["sweep_0"].data_vars
