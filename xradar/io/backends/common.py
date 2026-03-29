@@ -366,8 +366,11 @@ def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset
 def _prepare_backend_ds(ds):
     """ wrap variables in CopyOnWriteArray and create indexes
     
-    Needed for hdf5-based `odim` and `gamic` backends to work with 
-    file-like objects (see https://github.com/openradar/xradar/issues/189)
+    Needed for hdf5-based `odim` and `gamic` backends to work with
+    file-like objects (see https://github.com/openradar/xradar/issues/189),
+    as the wrapping in standard xarray pipeline happens after returning the
+    dataset.
+    """
     for name, variable in ds.variables.items():
         if name not in ds._indexes:
             data = xr.core.indexing.CopyOnWriteArray(variable._data)
