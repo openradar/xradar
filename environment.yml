@@ -17,7 +17,7 @@ dependencies:
   - h5py
   - lat_lon_parser
   - netCDF4
-  - open-radar-data>=0.1.0
+  - open-radar-data>=0.6.0
   - pyproj
   - pip:
     - xarray @ git+https://github.com/pydata/xarray.git@main
