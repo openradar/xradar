@@ -78,6 +78,7 @@ from .common import (
     _get_required_root_dataset,
     _get_subgroup,
     _maybe_decode,
+    _prepare_backend_ds,
 )
 
 HDF5_LOCK = SerializableLock()
@@ -837,6 +838,8 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
         )
+
+        ds = _prepare_backend_ds(ds)
 
         # reassign azimuth/elevation/time coordinates
         ds = ds.assign_coords({"azimuth": ds.azimuth})
