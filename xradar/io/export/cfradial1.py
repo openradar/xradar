@@ -35,21 +35,15 @@ import xarray as xr
 
 def _first_valid_scalar(data_array):
     """Collapse a metadata variable to its first non-missing scalar value."""
-    values = np.asarray(data_array.values).ravel()
-    for value in values:
-        try:
-            if np.ma.is_masked(value):
-                continue
-            if np.isnan(value):
-                continue
-        except TypeError:
-            pass
-        try:
-            if np.isnat(value):
-                continue
-        except TypeError:
-            pass
-        return np.asarray(value).item()
+    if data_array.ndim == 0:
+        if data_array.notnull().item():
+            return data_array.to_numpy()[()]
+        return np.nan
+
+    flat = data_array.stack(_flat=data_array.dims)
+    valid = flat.where(flat.notnull(), drop=True)
+    if valid.size:
+        return valid.isel(_flat=0).to_numpy()[()]
     return np.nan
 
 
