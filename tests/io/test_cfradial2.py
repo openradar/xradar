@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2023-2025, openradar developers.
+# Copyright (c) 2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 import numpy as np
@@ -138,17 +138,34 @@ def test_open_cfradial2_invalid_path():
         xd.io.open_cfradial2_datatree("missing-cfradial2-file.nc")
 
 
-def test_cfradial2_helper_selection_and_name_normalization():
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("sweep_0002", "sweep_2"),
+        ("sweep_x", "sweep_x"),
+        ("root", "root"),
+    ],
+)
+def test_cfradial2_helper_normalize_sweep_name(name, expected):
+    assert cf2._normalize_sweep_name(name) == expected
+
+
+@pytest.mark.parametrize(
+    ("selection", "expected"),
+    [
+        (None, ["sweep_0", "sweep_2", "sweep_10"]),
+        ("sweep_0002", ["sweep_2"]),
+        (10, ["sweep_10"]),
+        ([0, "sweep_0002"], ["sweep_0", "sweep_2"]),
+    ],
+)
+def test_cfradial2_helper_selection(selection, expected):
     tree = _make_selection_tree()
+    assert cf2._iter_selected_sweeps(tree, selection) == expected
 
-    assert cf2._normalize_sweep_name("sweep_0002") == "sweep_2"
-    assert cf2._normalize_sweep_name("sweep_x") == "sweep_x"
-    assert cf2._normalize_sweep_name("root") == "root"
 
-    assert cf2._iter_selected_sweeps(tree, None) == ["sweep_0", "sweep_2", "sweep_10"]
-    assert cf2._iter_selected_sweeps(tree, "sweep_0002") == ["sweep_2"]
-    assert cf2._iter_selected_sweeps(tree, 10) == ["sweep_10"]
-    assert cf2._iter_selected_sweeps(tree, [0, "sweep_0002"]) == ["sweep_0", "sweep_2"]
+def test_cfradial2_helper_selection_error():
+    tree = _make_selection_tree()
 
     with pytest.raises(TypeError):
         cf2._iter_selected_sweeps(tree, 1.5)
@@ -198,6 +215,24 @@ def test_cfradial2_helper_root_and_subgroup_normalization():
     normalized_sub = cf2._normalize_subgroup(sub, cf2._SUBGROUPS["radar_parameters"])
     assert "radar_receiver_bandwidth" in normalized_sub.data_vars
     assert normalized_sub.attrs == {}
+
+
+def test_cfradial2_helper_root_fixed_angle_precedence_warning():
+    root = xr.Dataset()
+    sweep = xr.Dataset(
+        data_vars={
+            "sweep_fixed_angle": ((), 1.0),
+            "fixed_angle": ((), 2.0),
+            "elevation": ("time", np.array([3.0], dtype="float32")),
+            "azimuth": ("time", np.array([4.0], dtype="float32")),
+            "time": ("time", np.array(["2025-01-01"], dtype="datetime64[ns]")),
+        }
+    )
+
+    with pytest.warns(UserWarning, match="multiple fixed-angle candidates"):
+        out = cf2._normalize_root_dataset(root, ["sweep_0"], [sweep], optional=True)
+
+    assert out["sweep_fixed_angle"].item() == pytest.approx(1.0)
 
 
 def test_cfradial2_helper_sweep_normalization_branches():

@@ -84,6 +84,67 @@ _SUBGROUPS = {
 }
 
 
+def _update_var_attrs(ds, name: str, attrs: dict[str, Any]):
+    if name in ds:
+        merged = dict(ds[name].attrs)
+        merged.update(attrs)
+        ds[name].attrs = merged
+    return ds
+
+
+def _fixed_angle_values_conflict(candidates):
+    normalized = [np.asarray(value).reshape(-1) for _, value in candidates]
+    first = normalized[0]
+    for other in normalized[1:]:
+        if first.shape != other.shape:
+            return True
+        try:
+            if not np.allclose(first, other, equal_nan=True):
+                return True
+        except TypeError:
+            if not np.array_equal(first, other):
+                return True
+    return False
+
+
+def _get_sweep_fixed_angle(sw, sweep_name: str):
+    candidates = []
+    explicit_candidates = []
+    if "sweep_fixed_angle" in sw:
+        candidate = ("sweep_fixed_angle", sw["sweep_fixed_angle"].values)
+        candidates.append(candidate)
+        explicit_candidates.append(candidate)
+    if "fixed_angle" in sw:
+        candidate = ("fixed_angle", sw["fixed_angle"].values)
+        candidates.append(candidate)
+        explicit_candidates.append(candidate)
+    if "elevation" in sw:
+        candidates.append(
+            ("elevation", np.asarray(sw["elevation"].median(skipna=True).values))
+        )
+    if "azimuth" in sw:
+        candidates.append(
+            ("azimuth", np.asarray(sw["azimuth"].median(skipna=True).values))
+        )
+
+    if len(explicit_candidates) > 1 and _fixed_angle_values_conflict(
+        explicit_candidates
+    ):
+        ordered = ", ".join(name for name, _ in candidates)
+        warnings.warn(
+            f"CfRadial2 sweep `{sweep_name}` contains multiple fixed-angle candidates "
+            f"({ordered}); using `{candidates[0][0]}`.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    if not candidates:
+        return np.nan
+
+    fixed = candidates[0][1]
+    return np.asarray(fixed).item() if np.asarray(fixed).ndim == 0 else fixed
+
+
 def _normalize_sweep_name(name: str) -> str:
     if name.startswith("sweep_"):
         suffix = name.split("_", 1)[1]
@@ -143,21 +204,10 @@ def _normalize_root_dataset(
     ds = ds.drop_vars(["sweep_group_name", "sweep_fixed_angle"], errors="ignore")
     ds["sweep_group_name"] = ("sweep", np.array(sweep_names, dtype=str))
 
-    fixed_angles = []
-    for sw in sweep_datasets:
-        if "sweep_fixed_angle" in sw:
-            fixed = sw["sweep_fixed_angle"].values
-        elif "fixed_angle" in sw:
-            fixed = sw["fixed_angle"].values
-        elif "elevation" in sw:
-            fixed = np.asarray(sw["elevation"].median(skipna=True).values)
-        elif "azimuth" in sw:
-            fixed = np.asarray(sw["azimuth"].median(skipna=True).values)
-        else:
-            fixed = np.nan
-        fixed_angles.append(
-            np.asarray(fixed).item() if np.asarray(fixed).ndim == 0 else fixed
-        )
+    fixed_angles = [
+        _get_sweep_fixed_angle(sw, sweep_names[idx])
+        for idx, sw in enumerate(sweep_datasets)
+    ]
     ds["sweep_fixed_angle"] = ("sweep", np.asarray(fixed_angles, dtype="float32"))
 
     if "time_coverage_start" not in ds or "time_coverage_end" not in ds:
@@ -250,61 +300,36 @@ def _derive_range_attrs(ds):
 
 
 def _normalize_root_attrs(ds):
-    if "latitude" in ds:
-        attrs = dict(ds["latitude"].attrs)
-        attrs.update(get_latitude_attrs())
-        ds["latitude"].attrs = attrs
-    if "longitude" in ds:
-        attrs = dict(ds["longitude"].attrs)
-        attrs.update(get_longitude_attrs())
-        ds["longitude"].attrs = attrs
-    if "altitude" in ds:
-        attrs = dict(ds["altitude"].attrs)
-        attrs.update(get_altitude_attrs())
-        ds["altitude"].attrs = attrs
-    if "time_coverage_start" in ds:
-        attrs = dict(ds["time_coverage_start"].attrs)
-        attrs.update(get_time_attrs())
-        ds["time_coverage_start"].attrs = attrs
-    if "time_coverage_end" in ds:
-        attrs = dict(ds["time_coverage_end"].attrs)
-        attrs.update(get_time_attrs())
-        ds["time_coverage_end"].attrs = attrs
+    for name, attrs in {
+        "latitude": get_latitude_attrs(),
+        "longitude": get_longitude_attrs(),
+        "altitude": get_altitude_attrs(),
+        "time_coverage_start": get_time_attrs(),
+        "time_coverage_end": get_time_attrs(),
+    }.items():
+        ds = _update_var_attrs(ds, name, attrs)
     return ds
 
 
 def _normalize_sweep_coord_attrs(ds):
-    if "time" in ds:
-        attrs = dict(ds["time"].attrs)
-        attrs.update(get_time_attrs())
-        ds["time"].attrs = attrs
+    ds = _update_var_attrs(ds, "time", get_time_attrs())
     if "range" in ds:
-        attrs = dict(ds["range"].attrs)
-        attrs.update(get_range_attrs(ds["range"].values))
-        ds["range"].attrs = attrs
+        ds = _update_var_attrs(ds, "range", get_range_attrs(ds["range"].values))
     if "azimuth" in ds:
-        attrs = dict(ds["azimuth"].attrs)
-        if ds["azimuth"].size > 2:
-            attrs.update(get_azimuth_attrs(ds["azimuth"].values))
-        else:
-            attrs.update(get_azimuth_attrs())
-        ds["azimuth"].attrs = attrs
-    if "elevation" in ds:
-        attrs = dict(ds["elevation"].attrs)
-        if ds["elevation"].size > 2:
-            attrs.update(get_elevation_attrs(ds["elevation"].values))
-        else:
-            attrs.update(get_elevation_attrs())
-        ds["elevation"].attrs = attrs
-    if "frequency" in ds:
-        attrs = dict(ds["frequency"].attrs)
-        attrs.update(
-            {
-                "units": "s-1",
-                "standard_name": "",
-            }
+        attrs = (
+            get_azimuth_attrs(ds["azimuth"].values)
+            if ds["azimuth"].size > 2
+            else get_azimuth_attrs()
         )
-        ds["frequency"].attrs = attrs
+        ds = _update_var_attrs(ds, "azimuth", attrs)
+    if "elevation" in ds:
+        attrs = (
+            get_elevation_attrs(ds["elevation"].values)
+            if ds["elevation"].size > 2
+            else get_elevation_attrs()
+        )
+        ds = _update_var_attrs(ds, "elevation", attrs)
+    ds = _update_var_attrs(ds, "frequency", {"units": "s-1", "standard_name": ""})
     return ds
 
 
