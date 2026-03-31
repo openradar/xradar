@@ -16,6 +16,7 @@
 * FIX: Allow passing ``inherit`` parameter to ``apply_to_sweeps`` / ``map_over_sweeps`` to control coordinate inheritance from root node ({issue}`343`, {pull}`344`) by [@aladinor](https://github.com/aladinor)
 * FIX: Use ``open-radar-data`` fixture as fallback for ``nexrad_read_chunks.ipynb`` notebook, replacing dependency on ephemeral S3 chunk data ({issue}`351`, {pull}`352`) by [@aladinor](https://github.com/aladinor)
 * MNT: Pin ``open-radar-data>=0.6.0`` for NEXRAD chunk test data ({pull}`352`) by [@aladinor](https://github.com/aladinor)
+* DOC: Link WMO Manual on Codes in README.md ({issue}`308`, {pull}`353` ) [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.11.1 (2026-02-03)
 
