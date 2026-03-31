@@ -1984,10 +1984,26 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         site_coords=True,
         optional=True,
         optional_groups=False,
+        incomplete_sweep="drop",
         lock=None,
         **kwargs,
     ):
         from xarray.core.treenode import NodePath
+
+        # Handle list/tuple of chunk files or bytes
+        if isinstance(filename_or_obj, (list, tuple)):
+            filename_or_obj = _concatenate_chunks(filename_or_obj)
+            if not filename_or_obj[:4].startswith(_VOLUME_HEADER_PREFIX):
+                raise ValueError(
+                    "No chunk contains a volume header (AR2V prefix). "
+                    "The first chunk must be the S file (volume scan start) "
+                    "which contains the volume header and metadata."
+                )
+
+        # Single metadata read
+        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+            act_sweeps = len(nex.msg_31_data_header)
+            incomplete = nex.incomplete_sweeps
 
         if isinstance(sweep, str):
             sweep = NodePath(sweep).name
@@ -1995,6 +2011,8 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         elif isinstance(sweep, int):
             sweeps = [f"sweep_{sweep}"]
         elif isinstance(sweep, list):
+            if not sweep:
+                raise ValueError("sweep list is empty.")
             if isinstance(sweep[0], int):
                 sweeps = [f"sweep_{i}" for i in sweep]
             elif isinstance(sweep[0], str):
@@ -2006,15 +2024,35 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                     "(e.g. [/sweep_0, sweep_1])."
                 )
         else:
-            with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-                if nex.msg_5:
-                    exp_sweeps = nex.msg_5["number_elevation_cuts"]
-                else:
-                    exp_sweeps = 0
-                act_sweeps = len(nex.msg_31_data_header)
-                if exp_sweeps > act_sweeps:
-                    exp_sweeps = act_sweeps
-            sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
+            if incomplete_sweep == "drop":
+                sweeps = [
+                    f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete
+                ]
+                if incomplete:
+                    warnings.warn(
+                        f"Dropped {len(incomplete)} incomplete sweep(s): "
+                        f"{sorted(incomplete)}. Use incomplete_sweep='pad' "
+                        f"to include them with NaN-filled rays.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                if not sweeps:
+                    warnings.warn(
+                        "All sweeps are incomplete. Returning empty dict.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    return {"/": xr.Dataset()}
+            elif incomplete_sweep == "pad":
+                sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
+            else:
+                raise ValueError(
+                    f"Invalid incomplete_sweep={incomplete_sweep!r}. "
+                    "Expected 'drop' or 'pad'."
+                )
+
+        # For pad mode, pass incomplete set to open_sweeps_as_dict
+        incomplete_sweeps = incomplete if incomplete_sweep == "pad" else set()
 
         sweep_dict = open_sweeps_as_dict(
             filename_or_obj=filename_or_obj,
@@ -2029,16 +2067,18 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             first_dim=first_dim,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
-            site_coords=site_coords,
+            site_as_coords=site_coords,
             optional=optional,
+            incomplete_sweeps=incomplete_sweeps,
             lock=lock,
             **kwargs,
         )
 
         ls_ds = [sweep_dict[s] for s in sweep_dict]
         ls_ds_with_root = [xr.Dataset()] + list(ls_ds)
+        root, ls_ds_with_root = _assign_root(ls_ds_with_root)
         groups_dict = {
-            "/": _assign_root(ls_ds_with_root),
+            "/": root,
         }
         if optional_groups:
             groups_dict["/radar_parameters"] = _get_subgroup(
@@ -2187,7 +2227,7 @@ def open_nexradlevel2_datatree(
         first_dim=first_dim,
         reindex_angle=reindex_angle,
         fix_second_angle=fix_second_angle,
-        site_as_coords=False,
+        site_coords=False,
         optional=optional,
         optional_groups=optional_groups,
         incomplete_sweep=incomplete_sweep,

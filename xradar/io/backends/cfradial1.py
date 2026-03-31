@@ -52,7 +52,6 @@ from ...model import (
 from .common import (
     _STATION_VARS,
     _apply_site_as_coords,
-    _attach_sweep_groups,
     _deprecation_warning,
     _maybe_decode,
 )
@@ -380,12 +379,11 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
-    kwargs.pop("site_as_coords", None)
+    site_coords = kwargs.pop("site_as_coords", True)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
     kwargs.setdefault("decode_timedelta", False)
 
-    _deprecation_warning("open_cfradial1_datatree", "cfradial1")
     return CfRadial1BackendEntrypoint().open_datatree(
         filename_or_obj,
         first_dim=first_dim,
@@ -531,7 +529,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
                 sweep=sweep,
                 first_dim=first_dim,
                 optional=optional,
-                site_coords=site_coords,
+                site_as_coords=site_coords,
             ).values()
         )
 

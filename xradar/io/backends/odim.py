@@ -67,7 +67,6 @@ from ...model import (
 )
 from .common import (
     _apply_site_as_coords,
-    _attach_sweep_groups,
     _build_groups_dict,
     _deprecation_warning,
     _fix_angle,
@@ -924,7 +923,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             first_dim=first_dim,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
-            site_coords=site_coords,
+            site_as_coords=site_coords,
         )
 
         ls_ds = [
@@ -988,7 +987,6 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     optional_groups = kwargs.pop("optional_groups", False)
     sweep = kwargs.pop("sweep", None)
 
-    _deprecation_warning("open_odim_datatree", "odim")
     return OdimBackendEntrypoint().open_datatree(
         filename_or_obj,
         sweep=sweep,
