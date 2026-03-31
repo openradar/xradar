@@ -29,7 +29,6 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 import numpy as np
-import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
@@ -40,7 +39,6 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -49,16 +47,13 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
     _apply_site_as_coords,
-    _attach_sweep_groups,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _build_groups_dict,
+    _deprecation_warning,
+    _resolve_sweeps,
 )
 
 #: mapping from DataMet names to CfRadial2/ODIM
@@ -383,6 +378,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
 
     description = "Open DataMet files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#datamet-data-i-o"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -450,84 +446,75 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        first_dim="auto",
+        reindex_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        def _discover():
+            dmet = DataMetFile(filename_or_obj)
+            return [f"sweep_{i}" for i in range(dmet.scan_metadata["elevation_number"])]
+
+        sweeps = _resolve_sweeps(sweep, _discover)
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            first_dim=first_dim,
+            reindex_angle=reindex_angle,
+            site_as_coords=site_coords,
+        )
+
+        ls_ds = [
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
+        ]
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
 
 def open_datamet_datatree(filename_or_obj, **kwargs):
     """Open DataMet dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="datamet")`` instead.
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
+    _deprecation_warning("open_datamet_datatree", "datamet")
+
+    kwargs.pop("backend_kwargs", {})
     optional = kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
-    kwargs["backend_kwargs"] = backend_kwargs
-
     sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    # Remap legacy kwarg name
+    if "site_as_coords" in kwargs:
+        kwargs["site_coords"] = kwargs.pop("site_as_coords")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        # Get number of sweeps from data
-        dmet = DataMetFile(filename_or_obj)
-        sweeps = [
-            f"sweep_{i}" for i in range(0, dmet.scan_metadata["elevation_number"])
-        ]
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(
-            filename_or_obj, group=swp, engine=DataMetBackendEntrypoint, **kw
-        )
-        for swp in sweeps
-    ]
-
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return DataMetBackendEntrypoint().open_datatree(
+        filename_or_obj,
+        sweep=sweep,
+        optional=optional,
+        optional_groups=optional_groups,
+        **kwargs,
+    )
