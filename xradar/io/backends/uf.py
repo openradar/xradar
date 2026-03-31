@@ -35,6 +35,7 @@ from collections import OrderedDict, defaultdict
 import dateutil
 import numpy as np
 import xarray as xr
+from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
@@ -45,10 +46,13 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _STATION_VARS,
     _apply_site_as_coords,
     _assign_root,
+    _deprecation_warning,
     _get_radar_calibration,
     _get_subgroup,
+    _resolve_sweeps,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -741,6 +745,7 @@ class UFBackendEntrypoint(BackendEntrypoint):
 
     description = "Open Universal Format (UF) files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#uf-data-i-o"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -809,153 +814,98 @@ class UFBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        sweep=None,
+        first_dim="auto",
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        optional=True,
+        optional_groups=False,
+        lock=None,
+        **kwargs,
+    ):
+        sweeps = _resolve_sweeps(
+            sweep,
+            lambda: [
+                f"sweep_{i}"
+                for i in range(UFFile(filename_or_obj, loaddata=False).nsweeps)
+            ],
+        )
 
-def open_uf_datatree(
-    filename_or_obj,
-    mask_and_scale=True,
-    decode_times=True,
-    concat_characters=True,
-    decode_coords=True,
-    drop_variables=None,
-    use_cftime=None,
-    decode_timedelta=None,
-    sweep=None,
-    first_dim="auto",
-    reindex_angle=False,
-    fix_second_angle=False,
-    site_as_coords=True,
-    optional=True,
-    optional_groups=False,
-    lock=None,
-    **kwargs,
-):
+        sweep_dict = open_sweeps_as_dict(
+            filename_or_obj=filename_or_obj,
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            sweeps=sweeps,
+            first_dim=first_dim,
+            reindex_angle=reindex_angle,
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+            optional=optional,
+            lock=lock,
+            **kwargs,
+        )
+
+        ls_ds = [xr.Dataset()] + list(sweep_dict.values())
+        root, ls_ds = _assign_root(ls_ds)
+        groups_dict = {"/": root}
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                ls_ds, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                ls_ds, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                ls_ds, radar_calibration_subgroup
+            )
+        for sweep_path, ds in sweep_dict.items():
+            sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
+            groups_dict[f"/{sweep_path}"] = sw
+        return groups_dict
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
+
+def open_uf_datatree(filename_or_obj, **kwargs):
     """Open a Universal Format (UF) dataset as :py:class:`xarray.DataTree`.
 
-    This function loads UF radar data into a DataTree structure, which
-    organizes radar sweeps as separate nodes. Provides options for decoding time
-    and applying various transformations to the data.
-
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like, or DataStore
-        The path or file-like object representing the radar file.
-        Path-like objects are interpreted as local or remote paths.
-
-    mask_and_scale : bool, optional
-        If True, replaces values in the dataset that match `_FillValue` with NaN
-        and applies scale and offset adjustments. Default is True.
-
-    decode_times : bool, optional
-        If True, decodes time variables according to CF conventions. Default is True.
-
-    concat_characters : bool, optional
-        If True, concatenates character arrays along the last dimension, forming
-        string arrays. Default is True.
-
-    decode_coords : bool, optional
-        If True, decodes the "coordinates" attribute to identify coordinates in the
-        resulting dataset. Default is True.
-
-    drop_variables : str or list of str, optional
-        Specifies variables to exclude from the dataset. Useful for removing problematic
-        or inconsistent variables. Default is None.
-
-    use_cftime : bool, optional
-        If True, uses cftime objects to represent time variables; if False, uses
-        `np.datetime64` objects. If None, chooses the best format automatically.
-        Default is None.
-
-    decode_timedelta : bool, optional
-        If True, decodes variables with units of time (e.g., seconds, minutes) into
-        timedelta objects. If False, leaves them as numeric values. Default is None.
-
-    sweep : int or list of int, optional
-        Sweep numbers to extract from the dataset. If None, extracts all sweeps into
-        a list. Default is the first sweep.
-
-    first_dim : {"time", "auto"}, optional
-        Defines the first dimension for each sweep. If "time," uses time as the
-        first dimension. If "auto," determines the first dimension based on the sweep
-        type (azimuth or elevation). Default is "auto."
-
-    reindex_angle : bool or dict, optional
-        Controls angle reindexing. If True or a dictionary, applies reindexing with
-        specified settings (if given). Only used if `decode_coords=True`. Default is False.
-
-    fix_second_angle : bool, optional
-        If True, corrects errors in the second angle data, such as misaligned
-        elevation or azimuth values. Default is False.
-
-    site_as_coords : bool, optional
-        Attaches radar site coordinates to the dataset if True. Default is True.
-
-    optional : bool, optional
-        If True, suppresses errors for optional dataset attributes, making them
-        optional instead of required. Default is True.
-
-    kwargs : dict
-        Additional keyword arguments passed to `xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree : xarray.DataTree
-        An `xarray.DataTree` representing the radar data organized by sweeps.
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="uf")`` instead.
     """
-    from xarray.core.treenode import NodePath
+    _deprecation_warning("open_uf_datatree", "uf")
 
-    if isinstance(sweep, str):
-        sweep = NodePath(sweep).name
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        elif isinstance(sweep[0], str):
-            sweeps = [NodePath(i).name for i in sweep]
-        else:
-            raise ValueError(
-                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
-            )
-    else:
-        with UFFile(filename_or_obj, loaddata=False) as ufh:
-            # Actual number of sweeps recorded in the file
-            act_sweeps = ufh.nsweeps
+    optional = kwargs.pop("optional", True)
+    optional_groups = kwargs.pop("optional_groups", False)
+    sweep = kwargs.pop("sweep", None)
+    if "site_as_coords" in kwargs:
+        kwargs["site_coords"] = kwargs.pop("site_as_coords")
 
-        sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
-
-    sweep_dict = open_sweeps_as_dict(
-        filename_or_obj=filename_or_obj,
-        mask_and_scale=mask_and_scale,
-        decode_times=decode_times,
-        concat_characters=concat_characters,
-        decode_coords=decode_coords,
-        drop_variables=drop_variables,
-        use_cftime=use_cftime,
-        decode_timedelta=decode_timedelta,
-        sweeps=sweeps,
-        first_dim=first_dim,
-        reindex_angle=reindex_angle,
-        fix_second_angle=fix_second_angle,
-        site_as_coords=False,
+    return UFBackendEntrypoint().open_datatree(
+        filename_or_obj,
+        sweep=sweep,
         optional=optional,
-        lock=lock,
+        optional_groups=optional_groups,
         **kwargs,
     )
-    ls_ds: list[xr.Dataset] = [xr.Dataset()] + list(sweep_dict.values())
-    root, ls_ds = _assign_root(ls_ds)
-    dtree: dict = {"/": root}
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    # Build from ls_ds (station vars already stripped by _assign_root).
-    dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
-    return xr.DataTree.from_dict(dtree)
 
 
 def open_sweeps_as_dict(

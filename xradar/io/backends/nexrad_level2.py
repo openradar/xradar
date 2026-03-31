@@ -55,6 +55,7 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _STATION_VARS,
     _apply_site_as_coords,
     _assign_root,
     _deprecation_warning,
@@ -2085,7 +2086,8 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                 ls_ds_with_root, radar_calibration_subgroup
             )
         for sweep_path, ds in sweep_dict.items():
-            groups_dict[f"/{sweep_path}"] = ds.drop_attrs(deep=False)
+            sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
+            groups_dict[f"/{sweep_path}"] = sw
         return groups_dict
 
     def open_datatree(
@@ -2221,7 +2223,7 @@ def open_nexradlevel2_datatree(
         first_dim=first_dim,
         reindex_angle=reindex_angle,
         fix_second_angle=fix_second_angle,
-        site_coords=False,
+        site_coords=site_as_coords,
         optional=optional,
         optional_groups=optional_groups,
         incomplete_sweep=incomplete_sweep,

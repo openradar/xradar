@@ -33,6 +33,7 @@ from xradar.io import _ENGINE_REGISTRY
         pytest.param(("datamet", "datamet_file"), id="datamet"),
         pytest.param(("hpl", "hpl_file"), id="hpl"),
         pytest.param(("metek", "metek_ave_gz_file"), id="metek"),
+        pytest.param(("uf", "uf_file_1"), id="uf"),
     ]
 )
 def engine_and_file(request):
@@ -166,6 +167,30 @@ class TestXrOpenDatatree:
         dtree = xr.open_datatree(iris0_file, engine="iris")
         _assert_cfradial2_structure(dtree)
 
+    def test_xr_open_datatree_furuno(self, furuno_scn_file):
+        dtree = xr.open_datatree(furuno_scn_file, engine="furuno")
+        _assert_cfradial2_structure(dtree)
+
+    def test_xr_open_datatree_rainbow(self, rainbow_file):
+        dtree = xr.open_datatree(rainbow_file, engine="rainbow")
+        _assert_cfradial2_structure(dtree)
+
+    def test_xr_open_datatree_datamet(self, datamet_file):
+        dtree = xr.open_datatree(datamet_file, engine="datamet")
+        _assert_cfradial2_structure(dtree)
+
+    def test_xr_open_datatree_hpl(self, hpl_file):
+        dtree = xr.open_datatree(hpl_file, engine="hpl")
+        _assert_cfradial2_structure(dtree)
+
+    def test_xr_open_datatree_metek(self, metek_ave_gz_file):
+        dtree = xr.open_datatree(metek_ave_gz_file, engine="metek")
+        _assert_cfradial2_structure(dtree)
+
+    def test_xr_open_datatree_uf(self, uf_file_1):
+        dtree = xr.open_datatree(uf_file_1, engine="uf")
+        _assert_cfradial2_structure(dtree)
+
 
 # -- supports_groups attribute -----------------------------------------------
 
@@ -200,6 +225,7 @@ class TestEngineRegistry:
             "datamet",
             "hpl",
             "metek",
+            "uf",
         }
         assert set(_ENGINE_REGISTRY.keys()) == expected
 
@@ -226,6 +252,7 @@ _DEPRECATED_FUNCTIONS = {
     "open_datamet_datatree": ("xradar.io.backends.datamet", "datamet_file", {}),
     "open_hpl_datatree": ("xradar.io.backends.hpl", "hpl_file", {}),
     "open_metek_datatree": ("xradar.io.backends.metek", "metek_ave_gz_file", {}),
+    "open_uf_datatree": ("xradar.io.backends.uf", "uf_file_1", {}),
 }
 
 

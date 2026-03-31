@@ -27,6 +27,7 @@ from .backends.metek import MRRBackendEntrypoint
 from .backends.nexrad_level2 import NexradLevel2BackendEntrypoint
 from .backends.odim import OdimBackendEntrypoint
 from .backends.rainbow import RainbowBackendEntrypoint
+from .backends.uf import UFBackendEntrypoint
 
 #: Registry mapping engine names to backend classes that support groups.
 _ENGINE_REGISTRY = {
@@ -40,6 +41,7 @@ _ENGINE_REGISTRY = {
     "datamet": DataMetBackendEntrypoint,
     "hpl": HPLBackendEntrypoint,
     "metek": MRRBackendEntrypoint,
+    "uf": UFBackendEntrypoint,
 }
 
 
