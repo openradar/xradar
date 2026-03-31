@@ -73,6 +73,7 @@ from .common import (
     _get_h5group_names,
     _maybe_decode,
     _prepare_backend_ds,
+    _resolve_sweeps,
 )
 
 HDF5_LOCK = SerializableLock()
@@ -896,17 +897,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         optional=True,
         optional_groups=False,
     ):
-        if isinstance(sweep, str):
-            sweeps = [sweep]
-        elif isinstance(sweep, int):
-            sweeps = [f"sweep_{sweep}"]
-        elif isinstance(sweep, list):
-            if isinstance(sweep[0], int):
-                sweeps = [f"sweep_{i}" for i in sweep]
-            else:
-                sweeps = list(sweep)
-        else:
-            sweeps = _get_h5group_names(filename_or_obj, "odim")
+        sweeps = _resolve_sweeps(
+            sweep, lambda: _get_h5group_names(filename_or_obj, "odim")
+        )
 
         ds_kwargs = dict(
             mask_and_scale=mask_and_scale,

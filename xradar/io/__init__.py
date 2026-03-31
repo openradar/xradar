@@ -18,14 +18,28 @@ from .backends import *  # noqa
 from .export import *  # noqa
 
 from .backends.cfradial1 import CfRadial1BackendEntrypoint
+from .backends.datamet import DataMetBackendEntrypoint
+from .backends.furuno import FurunoBackendEntrypoint
+from .backends.gamic import GamicBackendEntrypoint
+from .backends.hpl import HPLBackendEntrypoint
+from .backends.iris import IrisBackendEntrypoint
+from .backends.metek import MRRBackendEntrypoint
 from .backends.nexrad_level2 import NexradLevel2BackendEntrypoint
 from .backends.odim import OdimBackendEntrypoint
+from .backends.rainbow import RainbowBackendEntrypoint
 
 #: Registry mapping engine names to backend classes that support groups.
 _ENGINE_REGISTRY = {
     "odim": OdimBackendEntrypoint,
     "cfradial1": CfRadial1BackendEntrypoint,
     "nexradlevel2": NexradLevel2BackendEntrypoint,
+    "gamic": GamicBackendEntrypoint,
+    "iris": IrisBackendEntrypoint,
+    "furuno": FurunoBackendEntrypoint,
+    "rainbow": RainbowBackendEntrypoint,
+    "datamet": DataMetBackendEntrypoint,
+    "hpl": HPLBackendEntrypoint,
+    "metek": MRRBackendEntrypoint,
 }
 
 

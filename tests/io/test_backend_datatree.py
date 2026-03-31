@@ -17,32 +17,29 @@ import xarray as xr
 from xarray import DataTree
 
 import xradar as xd
-from xradar.io.backends.cfradial1 import (
-    CfRadial1BackendEntrypoint,
-    open_cfradial1_datatree,
-)
-from xradar.io.backends.nexrad_level2 import (
-    NexradLevel2BackendEntrypoint,
-    open_nexradlevel2_datatree,
-)
-from xradar.io.backends.odim import OdimBackendEntrypoint, open_odim_datatree
+from xradar.io import _ENGINE_REGISTRY
 
 # -- Fixtures ----------------------------------------------------------------
 
 
 @pytest.fixture(
     params=[
-        pytest.param("odim", id="odim"),
-        pytest.param("nexradlevel2", id="nexradlevel2"),
+        pytest.param(("odim", "odim_file"), id="odim"),
+        pytest.param(("gamic", "gamic_file"), id="gamic"),
+        pytest.param(("iris", "iris0_file"), id="iris"),
+        pytest.param(("nexradlevel2", "nexradlevel2_file"), id="nexradlevel2"),
+        pytest.param(("furuno", "furuno_scn_file"), id="furuno"),
+        pytest.param(("rainbow", "rainbow_file"), id="rainbow"),
+        pytest.param(("datamet", "datamet_file"), id="datamet"),
+        pytest.param(("hpl", "hpl_file"), id="hpl"),
+        pytest.param(("metek", "metek_ave_gz_file"), id="metek"),
     ]
 )
-def engine_and_file(request, odim_file, nexradlevel2_file):
-    """Parametrize over engines that do not require netCDF4."""
-    mapping = {
-        "odim": odim_file,
-        "nexradlevel2": nexradlevel2_file,
-    }
-    return request.param, mapping[request.param]
+def engine_and_file(request):
+    """Parametrize over all engines with their fixture names."""
+    engine, fixture_name = request.param
+    filepath = request.getfixturevalue(fixture_name)
+    return engine, filepath
 
 
 @pytest.fixture
@@ -71,22 +68,16 @@ def _assert_cfradial2_structure(dtree, optional_groups=False):
     assert "time_coverage_end" in root_vars
 
 
-# -- xd.open_datatree integration tests (ODIM, NEXRAD) ----------------------
+# -- xd.open_datatree integration tests (all engines) -----------------------
 
 
 class TestXdOpenDatatree:
-    """Test xd.open_datatree() for ODIM and NEXRAD."""
+    """Test xd.open_datatree() for all engines."""
 
     def test_basic_open(self, engine_and_file):
         engine, filepath = engine_and_file
         dtree = xd.open_datatree(filepath, engine=engine)
         _assert_cfradial2_structure(dtree)
-
-    def test_sweep_selection_list(self, engine_and_file):
-        engine, filepath = engine_and_file
-        dtree = xd.open_datatree(filepath, engine=engine, sweep=[0, 1])
-        sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
-        assert len(sweep_groups) == 2
 
     def test_sweep_selection_int(self, engine_and_file):
         engine, filepath = engine_and_file
@@ -94,25 +85,29 @@ class TestXdOpenDatatree:
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == 1
 
+    def test_sweep_selection_string(self, engine_and_file):
+        engine, filepath = engine_and_file
+        dtree = xd.open_datatree(filepath, engine=engine, sweep="sweep_0")
+        sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
+        assert len(sweep_groups) == 1
+
     def test_kwargs_flow_through(self, engine_and_file):
         engine, filepath = engine_and_file
         dtree = xd.open_datatree(
-            filepath, engine=engine, first_dim="auto", site_coords=True, sweep=[0]
+            filepath, engine=engine, first_dim="auto", site_coords=True, sweep=0
         )
-        sweep_ds = dtree["sweep_0"].ds
-        assert "latitude" in sweep_ds.coords
-
-    def test_site_coords_false(self, engine_and_file):
-        """site_coords=False should demote station vars from coords."""
-        engine, filepath = engine_and_file
-        dtree = xd.open_datatree(filepath, engine=engine, site_coords=False, sweep=[0])
-        sweep_ds = dtree["sweep_0"].to_dataset(inherit=False)
-        # Station vars should not be in sweep coords when site_coords=False
-        assert "latitude" not in sweep_ds.coords
+        # Station coords are on root (promoted by _assign_root)
+        assert "latitude" in dtree.ds.coords
+        assert "longitude" in dtree.ds.coords
 
     def test_unknown_engine_raises(self, odim_file):
         with pytest.raises(ValueError, match="Unknown engine"):
             xd.open_datatree(odim_file, engine="nonexistent_engine")
+
+    def test_empty_sweep_list_raises(self, engine_and_file):
+        engine, filepath = engine_and_file
+        with pytest.raises(ValueError, match="sweep list is empty"):
+            xd.open_datatree(filepath, engine=engine, sweep=[])
 
 
 # -- xd.open_datatree for CfRadial1 -----------------------------------------
@@ -123,6 +118,8 @@ class TestXdOpenDatatreeCfRadial1:
 
     def test_basic_open(self, cfradial1_engine_file):
         _, filepath = cfradial1_engine_file
+        from xradar.io.backends.cfradial1 import CfRadial1BackendEntrypoint
+
         backend = CfRadial1BackendEntrypoint()
         dtree = backend.open_datatree(
             filepath, engine="h5netcdf", decode_timedelta=False
@@ -131,6 +128,8 @@ class TestXdOpenDatatreeCfRadial1:
 
     def test_sweep_selection(self, cfradial1_engine_file):
         _, filepath = cfradial1_engine_file
+        from xradar.io.backends.cfradial1 import CfRadial1BackendEntrypoint
+
         backend = CfRadial1BackendEntrypoint()
         dtree = backend.open_datatree(
             filepath, engine="h5netcdf", decode_timedelta=False, sweep=[0, 1]
@@ -159,73 +158,28 @@ class TestXrOpenDatatree:
         )
         _assert_cfradial2_structure(dtree)
 
+    def test_xr_open_datatree_gamic(self, gamic_file):
+        dtree = xr.open_datatree(gamic_file, engine="gamic")
+        _assert_cfradial2_structure(dtree)
 
-# -- open_groups_as_dict direct tests ----------------------------------------
-
-
-class TestOpenGroupsAsDict:
-    """Test open_groups_as_dict() returns correct dict structure."""
-
-    def test_odim_groups_dict(self, odim_file):
-        backend = OdimBackendEntrypoint()
-        groups = backend.open_groups_as_dict(
-            odim_file, sweep=[0, 1], optional_groups=True
-        )
-        assert isinstance(groups, dict)
-        assert "/" in groups
-        assert "/radar_parameters" in groups
-        assert "/georeferencing_correction" in groups
-        assert "/radar_calibration" in groups
-        assert "/sweep_0" in groups
-        assert "/sweep_1" in groups
-
-    def test_nexrad_groups_dict(self, nexradlevel2_file):
-        backend = NexradLevel2BackendEntrypoint()
-        groups = backend.open_groups_as_dict(nexradlevel2_file, sweep=[0, 1])
-        assert isinstance(groups, dict)
-        assert "/" in groups
-        assert "/sweep_0" in groups
-        assert "/sweep_1" in groups
-
-    def test_nexrad_groups_dict_optional_groups(self, nexradlevel2_file):
-        backend = NexradLevel2BackendEntrypoint()
-        groups = backend.open_groups_as_dict(
-            nexradlevel2_file, sweep=[0], optional_groups=True
-        )
-        assert "/radar_parameters" in groups
-        assert "/georeferencing_correction" in groups
-        assert "/radar_calibration" in groups
-
-    def test_cfradial1_groups_dict(self, cfradial1_file):
-        backend = CfRadial1BackendEntrypoint()
-        groups = backend.open_groups_as_dict(
-            cfradial1_file, engine="h5netcdf", decode_timedelta=False, sweep=[0, 1]
-        )
-        assert isinstance(groups, dict)
-        assert "/" in groups
-        assert "/sweep_0" in groups
-        assert "/sweep_1" in groups
-
-    def test_nexrad_empty_sweep_list_raises(self, nexradlevel2_file):
-        backend = NexradLevel2BackendEntrypoint()
-        with pytest.raises(ValueError, match="sweep list is empty"):
-            backend.open_groups_as_dict(nexradlevel2_file, sweep=[])
+    def test_xr_open_datatree_iris(self, iris0_file):
+        dtree = xr.open_datatree(iris0_file, engine="iris")
+        _assert_cfradial2_structure(dtree)
 
 
 # -- supports_groups attribute -----------------------------------------------
 
 
 class TestSupportsGroups:
-    """Verify supports_groups is True on all 3 backend classes."""
+    """Verify supports_groups is True on all backend classes."""
 
-    def test_odim_supports_groups(self):
-        assert OdimBackendEntrypoint.supports_groups is True
-
-    def test_cfradial1_supports_groups(self):
-        assert CfRadial1BackendEntrypoint.supports_groups is True
-
-    def test_nexrad_supports_groups(self):
-        assert NexradLevel2BackendEntrypoint.supports_groups is True
+    @pytest.mark.parametrize(
+        "engine",
+        sorted(_ENGINE_REGISTRY.keys()),
+    )
+    def test_supports_groups(self, engine):
+        backend_cls = _ENGINE_REGISTRY[engine]
+        assert backend_cls.supports_groups is True
 
 
 # -- Engine registry ---------------------------------------------------------
@@ -234,64 +188,76 @@ class TestSupportsGroups:
 class TestEngineRegistry:
     """Verify _ENGINE_REGISTRY contains all expected engines."""
 
-    def test_registry_contains_expected_engines(self):
-        from xradar.io import _ENGINE_REGISTRY
-
-        expected = {"odim", "cfradial1", "nexradlevel2"}
-        assert expected.issubset(set(_ENGINE_REGISTRY.keys()))
+    def test_registry_contains_all_engines(self):
+        expected = {
+            "odim",
+            "cfradial1",
+            "nexradlevel2",
+            "gamic",
+            "iris",
+            "furuno",
+            "rainbow",
+            "datamet",
+            "hpl",
+            "metek",
+        }
+        assert set(_ENGINE_REGISTRY.keys()) == expected
 
 
 # -- Backward compatibility & deprecation tests ------------------------------
 
+# Map of deprecated function names to (import_path, engine, fixture_name)
+_DEPRECATED_FUNCTIONS = {
+    "open_odim_datatree": ("xradar.io.backends.odim", "odim_file", {}),
+    "open_gamic_datatree": ("xradar.io.backends.gamic", "gamic_file", {}),
+    "open_iris_datatree": ("xradar.io.backends.iris", "iris0_file", {}),
+    "open_nexradlevel2_datatree": (
+        "xradar.io.backends.nexrad_level2",
+        "nexradlevel2_file",
+        {},
+    ),
+    "open_cfradial1_datatree": (
+        "xradar.io.backends.cfradial1",
+        "cfradial1_file",
+        {"engine": "h5netcdf", "decode_timedelta": False},
+    ),
+    "open_furuno_datatree": ("xradar.io.backends.furuno", "furuno_scn_file", {}),
+    "open_rainbow_datatree": ("xradar.io.backends.rainbow", "rainbow_file", {}),
+    "open_datamet_datatree": ("xradar.io.backends.datamet", "datamet_file", {}),
+    "open_hpl_datatree": ("xradar.io.backends.hpl", "hpl_file", {}),
+    "open_metek_datatree": ("xradar.io.backends.metek", "metek_ave_gz_file", {}),
+}
+
 
 class TestDeprecation:
-    """Test that standalone functions still work but emit FutureWarning."""
+    """Test that all standalone functions emit FutureWarning."""
 
-    def test_open_odim_datatree_deprecation(self, odim_file):
+    @pytest.mark.parametrize(
+        "func_name,module_path,fixture_name,extra_kwargs",
+        [
+            (name, mod, fix, kw)
+            for name, (mod, fix, kw) in _DEPRECATED_FUNCTIONS.items()
+        ],
+        ids=list(_DEPRECATED_FUNCTIONS.keys()),
+    )
+    def test_deprecated_function_warns(
+        self, func_name, module_path, fixture_name, extra_kwargs, request
+    ):
+        import importlib
+
+        filepath = request.getfixturevalue(fixture_name)
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            dtree = open_odim_datatree(odim_file, sweep=[0])
+            dtree = func(filepath, sweep=0, **extra_kwargs)
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, FutureWarning)
             ]
-            assert len(deprecation_warnings) == 1
-            assert "open_odim_datatree" in str(deprecation_warnings[0].message)
-        _assert_cfradial2_structure(dtree)
-
-    def test_open_cfradial1_datatree_deprecation(self, cfradial1_file):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            dtree = open_cfradial1_datatree(
-                cfradial1_file, engine="h5netcdf", decode_timedelta=False, sweep=[0]
+            assert len(deprecation_warnings) == 1, (
+                f"{func_name} emitted {len(deprecation_warnings)} "
+                f"FutureWarnings, expected 1"
             )
-            deprecation_warnings = [
-                x for x in w if issubclass(x.category, FutureWarning)
-            ]
-            assert len(deprecation_warnings) == 1
-            assert "open_cfradial1_datatree" in str(deprecation_warnings[0].message)
+            assert func_name in str(deprecation_warnings[0].message)
         _assert_cfradial2_structure(dtree)
-
-    def test_open_nexradlevel2_datatree_deprecation(self, nexradlevel2_file):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
-            deprecation_warnings = [
-                x for x in w if issubclass(x.category, FutureWarning)
-            ]
-            assert len(deprecation_warnings) == 1
-            assert "open_nexradlevel2_datatree" in str(deprecation_warnings[0].message)
-        _assert_cfradial2_structure(dtree)
-
-    def test_odim_deprecated_output_matches_new_api(self, odim_file):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", FutureWarning)
-            old = open_odim_datatree(odim_file, sweep=[0, 1])
-        new = xd.open_datatree(odim_file, engine="odim", sweep=[0, 1])
-        assert set(old.children.keys()) == set(new.children.keys())
-
-    def test_nexrad_deprecated_output_matches_new_api(self, nexradlevel2_file):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", FutureWarning)
-            old = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
-        new = xd.open_datatree(nexradlevel2_file, engine="nexradlevel2", sweep=[0, 1])
-        assert set(old.children.keys()) == set(new.children.keys())

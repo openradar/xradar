@@ -416,7 +416,8 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
             ls_ds, radar_calibration_subgroup
         )
     for i, ds in enumerate(ls_ds):
-        groups_dict[f"/sweep_{i}"] = ds.drop_attrs(deep=False)
+        sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
+        groups_dict[f"/sweep_{i}"] = sw
     return groups_dict
 
 
@@ -427,8 +428,38 @@ def _deprecation_warning(old_name, engine):
         f'`xd.open_datatree(file, engine="{engine}")` or '
         f'`xr.open_datatree(file, engine="{engine}")` instead.',
         FutureWarning,
-        stacklevel=3,
+        stacklevel=4,
     )
+
+
+def _resolve_sweeps(sweep, discover_fn):
+    """Normalise the sweep parameter into a list of sweep group names.
+
+    Parameters
+    ----------
+    sweep : int, str, list, or None
+        User-supplied sweep selection.
+    discover_fn : callable
+        Zero-arg function returning all sweep group names for the file.
+
+    Returns
+    -------
+    list[str]
+        List of sweep group name strings.
+    """
+    if isinstance(sweep, str):
+        return [sweep]
+    if isinstance(sweep, int):
+        return [f"sweep_{sweep}"]
+    if isinstance(sweep, list):
+        if not sweep:
+            raise ValueError("sweep list is empty.")
+        if isinstance(sweep[0], int):
+            return [f"sweep_{i}" for i in sweep]
+        return list(sweep)
+    if sweep is None:
+        return discover_fn()
+    raise TypeError(f"Unsupported sweep type: {type(sweep)}")
 
 
 # IRIS Data Types and corresponding python struct format characters

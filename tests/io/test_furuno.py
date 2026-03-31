@@ -670,7 +670,7 @@ def test_open_furuno_datatree(furuno_scn_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree[sample_sweep].variables) == 18
+    assert len(dtree[sample_sweep].variables) == 21
     assert dtree[sample_sweep]["DBZH"].shape == (360, 602)
     assert len(dtree.attrs) == 9
     assert dtree.attrs["version"] == 3

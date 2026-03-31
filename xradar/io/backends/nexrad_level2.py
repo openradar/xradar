@@ -60,6 +60,7 @@ from xradar.io.backends.common import (
     _deprecation_warning,
     _get_radar_calibration,
     _get_subgroup,
+    _resolve_sweeps,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -2005,24 +2006,17 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             act_sweeps = len(nex.msg_31_data_header)
             incomplete = nex.incomplete_sweeps
 
+        # Normalise NodePath strings before resolving sweeps
         if isinstance(sweep, str):
             sweep = NodePath(sweep).name
-            sweeps = [sweep]
-        elif isinstance(sweep, int):
-            sweeps = [f"sweep_{sweep}"]
-        elif isinstance(sweep, list):
-            if not sweep:
-                raise ValueError("sweep list is empty.")
-            if isinstance(sweep[0], int):
-                sweeps = [f"sweep_{i}" for i in sweep]
-            elif isinstance(sweep[0], str):
-                sweeps = [NodePath(i).name for i in sweep]
-            else:
-                raise ValueError(
-                    "Invalid type in 'sweep' list. Expected integers "
-                    "(e.g., [0, 1, 2]) or strings "
-                    "(e.g. [/sweep_0, sweep_1])."
-                )
+        elif isinstance(sweep, list) and sweep and isinstance(sweep[0], str):
+            sweep = [NodePath(i).name for i in sweep]
+
+        if sweep is not None:
+            sweeps = _resolve_sweeps(
+                sweep,
+                lambda: [f"sweep_{i}" for i in range(act_sweeps)],
+            )
         else:
             if incomplete_sweep == "drop":
                 sweeps = [
