@@ -614,9 +614,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         transition_threshold_azi=0.05,
         transition_threshold_el=0.001,
     ):
-        sweeps = _resolve_sweeps(
-            sweep, lambda: _get_hpl_group_names(filename_or_obj)
-        )
+        sweeps = _resolve_sweeps(sweep, lambda: _get_hpl_group_names(filename_or_obj))
 
         ds_kwargs = dict(
             mask_and_scale=mask_and_scale,
@@ -640,8 +638,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         )
 
         ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs)
-            for swp in sweeps
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
         ]
         groups_dict = _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups

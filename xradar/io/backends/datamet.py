@@ -466,10 +466,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
     ):
         def _discover():
             dmet = DataMetFile(filename_or_obj)
-            return [
-                f"sweep_{i}"
-                for i in range(dmet.scan_metadata["elevation_number"])
-            ]
+            return [f"sweep_{i}" for i in range(dmet.scan_metadata["elevation_number"])]
 
         sweeps = _resolve_sweeps(sweep, _discover)
 
@@ -487,8 +484,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
         )
 
         ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs)
-            for swp in sweeps
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
         ]
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups

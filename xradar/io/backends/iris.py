@@ -4085,9 +4085,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         optional=True,
         optional_groups=False,
     ):
-        sweeps = _resolve_sweeps(
-            sweep, lambda: _get_iris_group_names(filename_or_obj)
-        )
+        sweeps = _resolve_sweeps(sweep, lambda: _get_iris_group_names(filename_or_obj))
 
         ds_kwargs = dict(
             mask_and_scale=mask_and_scale,
@@ -4105,8 +4103,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         )
 
         ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs)
-            for swp in sweeps
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
         ]
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
