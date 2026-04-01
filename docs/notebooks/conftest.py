@@ -41,9 +41,6 @@ class NotebookItem(pytest.Item):
 
             if self.parent.path.suffix == ".md":
                 nb = jupytext.read(self.parent.path)
-            else:
-                with self.parent.path.open(encoding="utf-8") as f:
-                    nb = nbformat.read(f, as_version=4)
 
             if not isinstance(nb, nbformat.NotebookNode):
                 nb = nbformat.from_dict(nb)
