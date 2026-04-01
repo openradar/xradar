@@ -29,9 +29,3 @@ repos:
     hooks:
       - id: black
       - id: black-jupyter
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.9.0
-    hooks:
-      - id: nbstripout
-        args: ['--extra-keys', 'metadata.kernelspec metadata.language_info.pygments_lexer
-  metadata.language_info.version cell.metadata.pycharm cell.metadata.tags']
