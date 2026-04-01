@@ -116,6 +116,29 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                 ("clutter_map_group_number", 1),
                 ("doppler_velocity_resolution", 2),
                 ("pulse_width", 2),
+                ("vcp_sequencing", 0),
+                ("vcp_supplemental", 0),
+                (
+                    "vcp_sequencing_decoded",
+                    {
+                        "num_elevations": 0,
+                        "max_sails_cuts": 0,
+                        "sequence_active": False,
+                        "truncated_vcp": False,
+                    },
+                ),
+                (
+                    "vcp_supplemental_decoded",
+                    {
+                        "sails_vcp": False,
+                        "num_sails_cuts": 0,
+                        "mrle_vcp": False,
+                        "num_mrle_cuts": 0,
+                        "mpda_vcp": False,
+                        "base_tilt_vcp": False,
+                        "num_base_tilts": 0,
+                    },
+                ),
                 (
                     "elevation_data",
                     [
@@ -137,12 +160,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 0),
                                 ("dop_prf_num_1", 0),
                                 ("dop_prf_pulse_count_1", 0),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 0),
                                 ("dop_prf_num_2", 0),
                                 ("dop_prf_pulse_count_2", 0),
                                 ("edge_angle_3", 0),
                                 ("dop_prf_num_3", 0),
                                 ("dop_prf_pulse_count_3", 0),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -163,12 +198,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 4),
                                 ("dop_prf_pulse_count_1", 75),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 4),
                                 ("dop_prf_pulse_count_2", 75),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 4),
                                 ("dop_prf_pulse_count_3", 75),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -189,12 +236,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 0),
                                 ("dop_prf_num_1", 0),
                                 ("dop_prf_pulse_count_1", 0),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 0),
                                 ("dop_prf_num_2", 0),
                                 ("dop_prf_pulse_count_2", 0),
                                 ("edge_angle_3", 0),
                                 ("dop_prf_num_3", 0),
                                 ("dop_prf_pulse_count_3", 0),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -215,12 +274,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 4),
                                 ("dop_prf_pulse_count_1", 75),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 4),
                                 ("dop_prf_pulse_count_2", 75),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 4),
                                 ("dop_prf_pulse_count_3", 75),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -241,12 +312,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 4),
                                 ("dop_prf_pulse_count_1", 59),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 4),
                                 ("dop_prf_pulse_count_2", 59),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 4),
                                 ("dop_prf_pulse_count_3", 59),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -267,12 +350,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 4),
                                 ("dop_prf_pulse_count_1", 59),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 4),
                                 ("dop_prf_pulse_count_2", 59),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 4),
                                 ("dop_prf_pulse_count_3", 59),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -293,12 +388,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 4),
                                 ("dop_prf_pulse_count_1", 59),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 4),
                                 ("dop_prf_pulse_count_2", 59),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 4),
                                 ("dop_prf_pulse_count_3", 59),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -319,12 +426,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 4),
                                 ("dop_prf_pulse_count_1", 59),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 4),
                                 ("dop_prf_pulse_count_2", 59),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 4),
                                 ("dop_prf_pulse_count_3", 59),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -345,12 +464,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 7),
                                 ("dop_prf_pulse_count_1", 82),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 7),
                                 ("dop_prf_pulse_count_2", 82),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 7),
                                 ("dop_prf_pulse_count_3", 82),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -371,12 +502,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 7),
                                 ("dop_prf_pulse_count_1", 82),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 7),
                                 ("dop_prf_pulse_count_2", 82),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 7),
                                 ("dop_prf_pulse_count_3", 82),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                         OrderedDict(
@@ -397,12 +540,24 @@ def test_open_nexradlevel2_file(nexradlevel2_files):
                                 ("edge_angle_1", 5464),
                                 ("dop_prf_num_1", 7),
                                 ("dop_prf_pulse_count_1", 82),
+                                ("supplemental_data", 0),
                                 ("edge_angle_2", 38232),
                                 ("dop_prf_num_2", 7),
                                 ("dop_prf_pulse_count_2", 82),
                                 ("edge_angle_3", 60984),
                                 ("dop_prf_num_3", 7),
                                 ("dop_prf_pulse_count_3", 82),
+                                (
+                                    "supplemental_data_decoded",
+                                    {
+                                        "sails_cut": False,
+                                        "sails_sequence_number": 0,
+                                        "mrle_cut": False,
+                                        "mrle_sequence_number": 0,
+                                        "mpda_cut": False,
+                                        "base_tilt_cut": False,
+                                    },
+                                ),
                             ]
                         ),
                     ],
@@ -503,6 +658,29 @@ def test_open_nexradlevel2_msg1_file(nexradlevel2_msg1_file):
                 ("clutter_map_group_number", 0),
                 ("doppler_velocity_resolution", 0),
                 ("pulse_width", 0),
+                ("vcp_sequencing", 0),
+                ("vcp_supplemental", 0),
+                (
+                    "vcp_sequencing_decoded",
+                    {
+                        "num_elevations": 0,
+                        "max_sails_cuts": 0,
+                        "sequence_active": False,
+                        "truncated_vcp": False,
+                    },
+                ),
+                (
+                    "vcp_supplemental_decoded",
+                    {
+                        "sails_vcp": False,
+                        "num_sails_cuts": 0,
+                        "mrle_vcp": False,
+                        "num_mrle_cuts": 0,
+                        "mpda_vcp": False,
+                        "base_tilt_vcp": False,
+                        "num_base_tilts": 0,
+                    },
+                ),
                 ("elevation_data", []),
             ]
         )
@@ -592,9 +770,30 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree.attrs) == 10
+    required_attrs = {
+        "instrument_name",
+        "scan_name",
+        "dynamic_scan_type",
+        "avset_enabled",
+        "base_tilt_vcp",
+        "mpda_vcp",
+        "vcp_truncated",
+        "doppler_velocity_resolution",
+        "vcp_pulse_width",
+        "ebc_enabled",
+        "super_res_status",
+        "rda_build_number",
+        "actual_elevation_cuts",
+    }
+    assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KATX"
     assert dtree.attrs["scan_name"] == "VCP-11"
+    assert dtree.attrs["dynamic_scan_type"] == "standard"
+    assert dtree.attrs["avset_enabled"] is False
+    assert dtree.attrs["base_tilt_vcp"] is False
+    # actual_elevation_cuts reflects sweeps in the file, not user selection
+    assert dtree.attrs["actual_elevation_cuts"] == dtree.attrs["number_elevation_cuts"]
+    assert dtree.attrs["mpda_vcp"] is False
 
 
 def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
@@ -643,7 +842,22 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
-    assert len(dtree.attrs) == 10
+    required_attrs = {
+        "instrument_name",
+        "scan_name",
+        "dynamic_scan_type",
+        "avset_enabled",
+        "base_tilt_vcp",
+        "mpda_vcp",
+        "vcp_truncated",
+        "doppler_velocity_resolution",
+        "vcp_pulse_width",
+        "ebc_enabled",
+        "super_res_status",
+        "rda_build_number",
+        "actual_elevation_cuts",
+    }
+    assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KLIX"
     assert dtree.attrs["scan_name"] == "VCP-0"
 
@@ -787,6 +1001,7 @@ def test_nexradlevel2_missing_msg2_metadata():
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._meta_header = defaultdict(list)
             # Simulate missing msg_2 by only having other message types
             self._meta_header["msg_15"] = [{"record_number": 0}]
@@ -859,7 +1074,18 @@ def test_nexradlevel2_msg5_elevation_validation(
 
     # Create mock MSG_5 data with specified parameters
     mock_msg5_data = struct.pack(
-        ">HHHHHBB10s", 0, 0, pattern_number, elevation_cuts, 0, 0, 0, b"\x00" * 10
+        ">HHHHHBB4sHH2s",
+        0,
+        0,
+        pattern_number,
+        elevation_cuts,
+        0,
+        0,
+        0,
+        b"\x00" * 4,
+        0,
+        0,
+        b"\x00" * 2,
     )
 
     # Mock the file reading components
@@ -906,6 +1132,7 @@ def test_nexradlevel2_missing_msg5():
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._meta_header = defaultdict(list)  # Empty - no msg_5
             self._msg_5_data = None
             self._rawdata = False
@@ -937,13 +1164,27 @@ def test_nexradlevel2_msg5_struct_error_handling():
             self.read_count += 1
             if self.read_count == 1:
                 # First read - return valid MSG_5 header with 3 elevation cuts
-                return struct.pack(">HHHHHBB10s", 0, 0, 11, 3, 0, 0, 0, b"\x00" * 10)
+                return struct.pack(
+                    ">HHHHHBB4sHH2s",
+                    0,
+                    0,
+                    11,
+                    3,
+                    0,
+                    0,
+                    0,
+                    b"\x00" * 4,
+                    0,
+                    0,
+                    b"\x00" * 2,
+                )
             else:
                 # Subsequent reads - return insufficient data to trigger struct.error
                 return b"\x00" * 10  # Too small for MSG_5_ELEV structure
 
     class MockNEXRADFile(NEXRADLevel2File):
         def __init__(self):
+            self._fp = None
             self._meta_header = defaultdict(list)
             self._meta_header["msg_5"] = [{"record_number": 0}]
             self._msg_5_data = None
@@ -1940,3 +2181,277 @@ class TestListInputWithIncompleteSweep:
         assert list(dtree_direct.match("sweep_*").keys()) == list(
             dtree_tuple.match("sweep_*").keys()
         )
+
+
+class TestRealChunkFiles:
+    """Integration tests using real NEXRAD chunk files from open-radar-data."""
+
+    def test_full_volume_from_chunks(self, nexrad_chunks_klot):
+        """All chunks produce a complete volume with sweeps and data."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot]
+        dtree = open_nexradlevel2_datatree(chunk_bytes, reindex_angle=False)
+
+        sweep_keys = list(dtree.match("sweep_*").keys())
+        assert len(sweep_keys) > 0
+        assert "DBZH" in dtree["sweep_0"].data_vars
+        assert dtree.attrs["scan_name"].startswith("VCP-")
+
+    def test_partial_chunks_drop_mode(self, nexrad_chunks_klot):
+        """Partial chunks with drop mode have fewer sweeps than full volume."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
+        dtree = open_nexradlevel2_datatree(
+            chunk_bytes, reindex_angle=False, incomplete_sweep="drop"
+        )
+
+        all_bytes = [f.read_bytes() for f in nexrad_chunks_klot]
+        dtree_full = open_nexradlevel2_datatree(all_bytes, reindex_angle=False)
+        assert len(dtree.match("sweep_*")) <= len(dtree_full.match("sweep_*"))
+
+    def test_partial_chunks_pad_mode(self, nexrad_chunks_klot):
+        """Partial chunks with pad mode produce full azimuth grid with NaN."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
+        dtree = open_nexradlevel2_datatree(
+            chunk_bytes, reindex_angle=False, incomplete_sweep="pad"
+        )
+
+        sweep_keys = list(dtree.match("sweep_*").keys())
+        assert len(sweep_keys) > 0
+        ds = dtree["sweep_0"].to_dataset()
+        assert ds.sizes["azimuth"] in (360, 720)
+
+    def test_early_stream_few_chunks(self, nexrad_chunks_klot):
+        """Only 5 chunks with pad mode still produce data."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:5]]
+        dtree = open_nexradlevel2_datatree(
+            chunk_bytes, reindex_angle=False, incomplete_sweep="pad"
+        )
+
+        assert len(dtree.match("sweep_*")) > 0
+
+    def test_chunk_file_paths_input(self, nexrad_chunks_klot):
+        """List of file paths (not bytes) works as input."""
+        dtree = open_nexradlevel2_datatree(nexrad_chunks_klot, reindex_angle=False)
+
+        assert len(dtree.match("sweep_*")) > 0
+        assert "DBZH" in dtree["sweep_0"].data_vars
+
+
+# --- Bit decoder unit tests ---
+
+
+def test_decode_vcp_sequencing():
+    from xradar.io.backends.nexrad_level2 import decode_vcp_sequencing
+
+    # All zeros
+    result = decode_vcp_sequencing(0)
+    assert result == {
+        "num_elevations": 0,
+        "max_sails_cuts": 0,
+        "sequence_active": False,
+        "truncated_vcp": False,
+    }
+    # 5 elevations, 2 max SAILS cuts, sequence active
+    assert decode_vcp_sequencing(0x2045) == {
+        "num_elevations": 5,
+        "max_sails_cuts": 2,
+        "sequence_active": True,
+        "truncated_vcp": False,
+    }
+    # Truncated VCP only
+    assert decode_vcp_sequencing(0x4000) == {
+        "num_elevations": 0,
+        "max_sails_cuts": 0,
+        "sequence_active": False,
+        "truncated_vcp": True,
+    }
+
+
+def test_decode_vcp_supplemental():
+    from xradar.io.backends.nexrad_level2 import decode_vcp_supplemental
+
+    # All zeros
+    result = decode_vcp_supplemental(0)
+    assert result["sails_vcp"] is False
+    assert result["num_sails_cuts"] == 0
+    assert result["mrle_vcp"] is False
+    assert result["num_mrle_cuts"] == 0
+    assert result["mpda_vcp"] is False
+    assert result["base_tilt_vcp"] is False
+    assert result["num_base_tilts"] == 0
+    # SAILS VCP with 2 cuts
+    assert decode_vcp_supplemental(0x0005) == {
+        "sails_vcp": True,
+        "num_sails_cuts": 2,
+        "mrle_vcp": False,
+        "num_mrle_cuts": 0,
+        "mpda_vcp": False,
+        "base_tilt_vcp": False,
+        "num_base_tilts": 0,
+    }
+    # MRLE VCP with 3 cuts
+    assert decode_vcp_supplemental(0x0070) == {
+        "sails_vcp": False,
+        "num_sails_cuts": 0,
+        "mrle_vcp": True,
+        "num_mrle_cuts": 3,
+        "mpda_vcp": False,
+        "base_tilt_vcp": False,
+        "num_base_tilts": 0,
+    }
+    # MPDA VCP
+    assert decode_vcp_supplemental(0x0800)["mpda_vcp"] is True
+    # BASE TILT VCP with 1 base tilt
+    assert decode_vcp_supplemental(0x3000)["base_tilt_vcp"] is True
+    assert decode_vcp_supplemental(0x3000)["num_base_tilts"] == 1
+
+
+def test_decode_elevation_supplemental():
+    from xradar.io.backends.nexrad_level2 import decode_elevation_supplemental
+
+    # All zeros
+    result = decode_elevation_supplemental(0)
+    assert result["sails_cut"] is False
+    assert result["sails_sequence_number"] == 0
+    assert result["mrle_cut"] is False
+    assert result["mrle_sequence_number"] == 0
+    assert result["mpda_cut"] is False
+    assert result["base_tilt_cut"] is False
+    # SAILS cut, sequence 1
+    assert decode_elevation_supplemental(0x0003) == {
+        "sails_cut": True,
+        "sails_sequence_number": 1,
+        "mrle_cut": False,
+        "mrle_sequence_number": 0,
+        "mpda_cut": False,
+        "base_tilt_cut": False,
+    }
+    # MRLE cut, sequence 2
+    assert decode_elevation_supplemental(0x0050) == {
+        "sails_cut": False,
+        "sails_sequence_number": 0,
+        "mrle_cut": True,
+        "mrle_sequence_number": 2,
+        "mpda_cut": False,
+        "base_tilt_cut": False,
+    }
+    # MPDA cut
+    assert decode_elevation_supplemental(0x0200)["mpda_cut"] is True
+    # BASE TILT cut
+    assert decode_elevation_supplemental(0x0400)["base_tilt_cut"] is True
+
+
+def test_decode_rda_scan_data_flags():
+    from xradar.io.backends.nexrad_level2 import decode_rda_scan_data_flags
+
+    # All zeros
+    result = decode_rda_scan_data_flags(0)
+    assert result["avset_enabled"] is False
+    assert result["avset_disabled"] is False
+    assert result["ebc_enabled"] is False
+    assert result["rda_log_data_enabled"] is False
+    assert result["time_series_recording"] is False
+    # AVSET enabled
+    result = decode_rda_scan_data_flags(0x0002)
+    assert result["avset_enabled"] is True
+    assert result["avset_disabled"] is False
+    # AVSET disabled
+    result = decode_rda_scan_data_flags(0x0004)
+    assert result["avset_enabled"] is False
+    assert result["avset_disabled"] is True
+    # EBC enabled + RDA log enabled
+    result = decode_rda_scan_data_flags(0x0018)
+    assert result["ebc_enabled"] is True
+    assert result["rda_log_data_enabled"] is True
+
+
+# --- MSG_2 integration tests ---
+
+
+def test_nexradlevel2_msg2_data(nexradlevel2_file):
+    with NEXRADLevel2File(nexradlevel2_file, loaddata=False) as nex:
+        msg_2 = nex.msg_2
+        assert msg_2 is not False
+        assert "rda_status" in msg_2
+        assert "rda_scan_data_flags" in msg_2
+        assert "rda_scan_data_flags_decoded" in msg_2
+        decoded = msg_2["rda_scan_data_flags_decoded"]
+        assert isinstance(decoded["avset_enabled"], bool)
+        assert isinstance(decoded["avset_disabled"], bool)
+        assert isinstance(decoded["ebc_enabled"], bool)
+
+
+def test_nexradlevel2_missing_msg2_returns_false():
+    """Test that msg_2 returns False when MSG_2 metadata is missing."""
+
+    class MockNEXRADFile(NEXRADLevel2File):
+        def __init__(self):
+            self._fp = None
+            self._msg_2_data = None
+            self._meta_header = {"msg_2": []}
+
+        @property
+        def meta_header(self):
+            return self._meta_header
+
+    mock = MockNEXRADFile()
+    assert mock.msg_2 is False
+
+
+def test_root_attrs_from_real_file(nexradlevel2_file):
+    """Root attrs include all expected ICD scan metadata fields."""
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
+    attrs = dtree.attrs
+
+    # MSG_5 attrs
+    assert attrs["scan_name"].startswith("VCP-")
+    assert (
+        attrs["dynamic_scan_type"] in ("standard", "SAILS", "MRLE")
+        or "x" in attrs["dynamic_scan_type"]
+    )
+    assert isinstance(attrs["mpda_vcp"], bool)
+    assert isinstance(attrs["base_tilt_vcp"], bool)
+    assert isinstance(attrs["num_base_tilts"], int)
+    assert isinstance(attrs["vcp_truncated"], bool)
+    assert isinstance(attrs["vcp_sequence_active"], bool)
+    assert attrs["number_elevation_cuts"] > 0
+    assert attrs["doppler_velocity_resolution"] in (0.5, 1.0)
+    assert attrs["vcp_pulse_width"] in ("short", "long")
+
+    # MSG_2 attrs
+    assert isinstance(attrs["avset_enabled"], bool)
+    assert isinstance(attrs["ebc_enabled"], bool)
+    assert isinstance(attrs["super_res_status"], int)
+    assert isinstance(attrs["rda_build_number"], int)
+    assert isinstance(attrs["operational_mode"], int)
+
+
+def test_sweep_attrs_from_real_file(nexradlevel2_file):
+    """Per-sweep attrs include waveform and supplemental data from MSG_5_ELEV."""
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
+    attrs = dtree["sweep_0"].ds.attrs
+
+    # Known values for KATX VCP-11 sweep_0
+    assert attrs["waveform_type"] == "contiguous_surveillance"
+    assert attrs["channel_config"] == "constant_phase"
+    assert isinstance(attrs["super_resolution"], int)
+    # Standard VCP-11: no dynamic scan cuts on sweep_0
+    assert attrs["sails_cut"] is False
+    assert attrs["mrle_cut"] is False
+    assert attrs["mpda_cut"] is False
+    assert attrs["base_tilt_cut"] is False
+    assert attrs["sails_sequence_number"] == 0
+    assert attrs["mrle_sequence_number"] == 0
+
+
+def test_get_dynamic_scan_type():
+    """Test _get_dynamic_scan_type helper for all cases."""
+    from xradar.io.backends.nexrad_level2 import _get_dynamic_scan_type
+
+    assert _get_dynamic_scan_type({}) == "standard"
+    assert (
+        _get_dynamic_scan_type({"sails_vcp": True, "num_sails_cuts": 3}) == "SAILS x 3"
+    )
+    assert _get_dynamic_scan_type({"mrle_vcp": True, "num_mrle_cuts": 4}) == "MRLE x 4"
+    assert _get_dynamic_scan_type({"sails_vcp": True, "num_sails_cuts": 0}) == "SAILS"
+    assert _get_dynamic_scan_type({"mrle_vcp": True, "num_mrle_cuts": 0}) == "MRLE"
+    assert _get_dynamic_scan_type({"sails_vcp": False, "mrle_vcp": False}) == "standard"
