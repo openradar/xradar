@@ -4,6 +4,7 @@
 ## Development
 
 * FIX: Preserve CfRadial metadata groups during CfRadial1/CfRadial2 transforms, allow ``to_cfradial2`` to reopen root-only ``engine="cfradial1"`` datasets, and normalize sweep metadata after ``map_over_sweeps`` operations so filtered volumes can be exported to CfRadial1 again ({issue}`254`, {issue}`322`) by [@syedhamidali](https://github.com/syedhamidali)
+* ADD: ``open_cfradial2_datatree`` reader with grouped CfRadial2 compatibility normalization for common FM301/CfRadial2 naming differences ({issue}`93`, {issue}`287`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Move station coordinates (``latitude``, ``longitude``, ``altitude``) to root node as coordinates for DataTree coordinate inheritance ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
 * ENH: Add ``optional_groups`` parameter (default ``False``) to all ``open_*_datatree()`` functions to control inclusion of ``/radar_parameters``, ``/georeferencing_correction``, and ``/radar_calibration`` subgroups ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
 * ENH: Skip redundant station coordinate reads for subsequent sweeps in DataTree by passing ``site_as_coords=False`` and extracting shared ``_apply_site_as_coords`` helper ({issue}`334`, {pull}`337`) by [@aladinor](https://github.com/aladinor)
@@ -11,9 +12,12 @@
 * ADD: ``incomplete_sweep`` parameter (``"drop"``/``"pad"``) to ``open_nexradlevel2_datatree`` for handling incomplete sweeps in partial volume data ({pull}`332`) by [@aladinor](https://github.com/aladinor)
 * ADD: Notebook example for streaming NEXRAD Level 2 chunks from S3 (``nexrad_read_chunks.ipynb``) ({pull}`332`) by [@aladinor](https://github.com/aladinor)
 * ADD: Comprehensive test suite for chunk list-input and incomplete sweep handling ({pull}`332`) by [@aladinor](https://github.com/aladinor)
+* ENH: Expose NEXRAD ICD scan metadata (AVSET/SAILS/MRLE/MPDA/BASE TILT flags, VCP sequencing, per-sweep waveform data) as FM301-compliant user-defined attributes ({issue}`338`, {pull}`339`) by [@aladinor](https://github.com/aladinor)
+* FIX: Set indexes and wrap variables in CopyOnWriteArray for ODIM and GAMIC backends, fixes pickle error for `BufferedReader` ({issue}`189`) by [@Ockenfuss](https://github.com/Ockenfuss), ({pull}`345`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: Allow passing ``inherit`` parameter to ``apply_to_sweeps`` / ``map_over_sweeps`` to control coordinate inheritance from root node ({issue}`343`, {pull}`344`) by [@aladinor](https://github.com/aladinor)
 * FIX: Use ``open-radar-data`` fixture as fallback for ``nexrad_read_chunks.ipynb`` notebook, replacing dependency on ephemeral S3 chunk data ({issue}`351`, {pull}`352`) by [@aladinor](https://github.com/aladinor)
 * MNT: Pin ``open-radar-data>=0.6.0`` for NEXRAD chunk test data ({pull}`352`) by [@aladinor](https://github.com/aladinor)
+* DOC: Link WMO Manual on Codes in README.md ({issue}`308`, {pull}`353` ) [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.11.1 (2026-02-03)
 

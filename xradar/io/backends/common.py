@@ -363,6 +363,23 @@ def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset
         return xr.Dataset()
 
 
+def _prepare_backend_ds(ds):
+    """wrap variables in CopyOnWriteArray and create indexes
+
+    Needed for hdf5-based `odim` and `gamic` backends to work with
+    file-like objects (see https://github.com/openradar/xradar/issues/189),
+    as the wrapping in standard xarray pipeline happens after returning the
+    dataset.
+    """
+    for name, variable in ds.variables.items():
+        if name not in ds._indexes:
+            data = xr.core.indexing.CopyOnWriteArray(variable._data)
+            variable.data = data
+    # create indexes
+    ds = ds.set_index({dim: dim for dim in ds.dims})
+    return ds
+
+
 # IRIS Data Types and corresponding python struct format characters
 # 4.2 Scalar Definitions, Page 23
 # https://docs.python.org/3/library/struct.html#format-characters

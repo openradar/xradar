@@ -4,8 +4,6 @@
 
 """Tests for `io` module."""
 
-import io
-
 import fsspec
 import h5py
 import numpy as np
@@ -225,8 +223,7 @@ def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
 
 def test_open_odim_dataset_stream(odim_file):
     with open(odim_file, mode="rb") as fhandle:
-        contents = io.BytesIO(fhandle.read())
-        with xr.open_dataset(contents, group="sweep_0", engine="odim") as ds:
+        with xr.open_dataset(fhandle, group="sweep_0", engine="odim") as ds:
             assert isinstance(ds, xr.Dataset)
 
 
@@ -405,8 +402,7 @@ def test_open_gamic_dataset(gamic_file, first_dim, fix_second_angle):
 
 def test_open_gamic_dataset_stream(gamic_file):
     with open(gamic_file, mode="rb") as fhandle:
-        contents = io.BytesIO(fhandle.read())
-        with xr.open_dataset(contents, group="sweep_9", engine="gamic") as ds:
+        with xr.open_dataset(fhandle, group="sweep_9", engine="gamic") as ds:
             assert isinstance(ds, xr.Dataset)
             print(ds)
 

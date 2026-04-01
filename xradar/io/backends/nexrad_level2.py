@@ -538,6 +538,7 @@ class NEXRADLevel2File(NEXRADRecordFile):
         self._msg_5_data = None
         # message 2
         # RDA Status Data
+        self._msg_2_data = None
 
         # message 31 headers
         # Digital Radar Data Generic Format
@@ -592,6 +593,13 @@ class NEXRADLevel2File(NEXRADRecordFile):
         if self._msg_5_data is None:
             self._msg_5_data = self.get_msg_5_data()
         return self._msg_5_data
+
+    @property
+    def msg_2(self):
+        """Retrieve MSG2 (RDA Status) data."""
+        if self._msg_2_data is None:
+            self._msg_2_data = self.get_msg_2_data()
+        return self._msg_2_data
 
     @property
     def data(self):
@@ -685,6 +693,12 @@ class NEXRADLevel2File(NEXRADRecordFile):
             self._rawdata,
             byte_order=">",
         )
+        msg_5["vcp_sequencing_decoded"] = decode_vcp_sequencing(
+            msg_5.get("vcp_sequencing", 0)
+        )
+        msg_5["vcp_supplemental_decoded"] = decode_vcp_supplemental(
+            msg_5.get("vcp_supplemental", 0)
+        )
         msg_5["elevation_data"] = []
 
         # Validate number_elevation_cuts is reasonable
@@ -704,11 +718,33 @@ class NEXRADLevel2File(NEXRADRecordFile):
                     self._rawdata,
                     byte_order=">",
                 )
+                msg_5_elev["supplemental_data_decoded"] = decode_elevation_supplemental(
+                    msg_5_elev.get("supplemental_data", 0)
+                )
                 msg_5["elevation_data"].append(msg_5_elev)
         except (struct.error, EOFError):
             pass
 
         return msg_5
+
+    def get_msg_2_data(self):
+        """Get MSG2 (RDA Status) data."""
+        if self.meta_header["msg_2"]:
+            recnum = self.meta_header["msg_2"][0]["record_number"]
+        else:
+            return False
+        self.init_record(recnum)
+        self.rh.pos += LEN_MSG_HEADER + 12
+        msg_2 = _unpack_dictionary(
+            self._rh.read(LEN_MSG_2, width=1),
+            MSG_2,
+            self._rawdata,
+            byte_order=">",
+        )
+        msg_2["rda_scan_data_flags_decoded"] = decode_rda_scan_data_flags(
+            msg_2.get("rda_scan_data_flags", 0)
+        )
+        return msg_2
 
     def get_message_header(self):
         """Read and unpack message header."""
@@ -1062,7 +1098,10 @@ MSG_5 = OrderedDict(
         ("clutter_map_group_number", UINT2),
         ("doppler_velocity_resolution", CODE1),  # 2: 0.5 degrees, 4: 1.0 degrees
         ("pulse_width", CODE1),  # 2: short, 4: long
-        ("spare", {"fmt": "10s"}),  # halfwords 7-11 (10 bytes, 5 halfwords)
+        ("spare_7_8", {"fmt": "4s"}),  # HW 7-8: Reserved
+        ("vcp_sequencing", CODE2),  # HW 9: VCP sequencing values (ICD Note 15)
+        ("vcp_supplemental", CODE2),  # HW 10: SAILS/MRLE/MPDA flags (ICD Note 16)
+        ("spare_11", {"fmt": "2s"}),  # HW 11: Reserved
     ]
 )
 LEN_MSG_5 = struct.calcsize(_get_fmt_string(MSG_5, byte_order=">"))
@@ -1085,7 +1124,7 @@ MSG_5_ELEV = OrderedDict(
         ("edge_angle_1", CODE2),
         ("dop_prf_num_1", UINT2),
         ("dop_prf_pulse_count_1", UINT2),
-        ("spare_1", {"fmt": "2s"}),
+        ("supplemental_data", CODE2),  # E15: SAILS/MRLE/MPDA per-cut flags
         ("edge_angle_2", CODE2),
         ("dop_prf_num_2", UINT2),
         ("dop_prf_pulse_count_2", UINT2),
@@ -1097,6 +1136,139 @@ MSG_5_ELEV = OrderedDict(
     ]
 )
 LEN_MSG_5_ELEV = struct.calcsize(_get_fmt_string(MSG_5_ELEV, byte_order=">"))
+
+
+_WAVEFORM_TYPES = {
+    0: "not_applicable",
+    1: "contiguous_surveillance",
+    2: "contiguous_doppler",
+    3: "batch",
+    4: "staggered_pulse_pair",
+}
+
+_CHANNEL_CONFIGS = {
+    0: "constant_phase",
+    1: "random_phase",
+    2: "sz2_phase_coding",
+}
+
+
+def _assign_sweep_attrs(dtree, elev_data):
+    """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes.
+
+    The elev_data list index aligns with sweep_{i} naming because both
+    are ordered by elevation cut index in the VCP definition.
+    """
+    if not elev_data:
+        return
+    for i, elev in enumerate(elev_data):
+        sweep_key = f"sweep_{i}"
+        if sweep_key not in dtree.children:
+            continue
+        wf = elev.get("waveform_type", 0)
+        ch = elev.get("channel_config", 0)
+        sup = elev.get("supplemental_data_decoded", {})
+        dtree[sweep_key].ds.attrs.update(
+            {
+                "waveform_type": _WAVEFORM_TYPES.get(wf, str(wf)),
+                "channel_config": _CHANNEL_CONFIGS.get(ch, str(ch)),
+                "super_resolution": elev.get("super_resolution", 0),
+                "sails_cut": sup.get("sails_cut", False),
+                "sails_sequence_number": sup.get("sails_sequence_number", 0),
+                "mrle_cut": sup.get("mrle_cut", False),
+                "mrle_sequence_number": sup.get("mrle_sequence_number", 0),
+                "mpda_cut": sup.get("mpda_cut", False),
+                "base_tilt_cut": sup.get("base_tilt_cut", False),
+            }
+        )
+
+
+def _get_dynamic_scan_type(supplemental):
+    """Derive dynamic scan type string from VCP supplemental decoded dict.
+
+    SAILS and MRLE are mutually exclusive per ICD Note 16.
+    """
+    if supplemental.get("sails_vcp"):
+        n = supplemental.get("num_sails_cuts", 0)
+        return f"SAILS x {n}" if n else "SAILS"
+    elif supplemental.get("mrle_vcp"):
+        n = supplemental.get("num_mrle_cuts", 0)
+        return f"MRLE x {n}" if n else "MRLE"
+    return "standard"
+
+
+def decode_vcp_sequencing(value):
+    """Decode VCP Sequencing Values (MSG_5 HW 9, ICD 2620002AA Note 15)."""
+    return {
+        "num_elevations": value & 0x1F,  # Bits 0-4
+        "max_sails_cuts": (value >> 5) & 0x03,  # Bits 5-6
+        "sequence_active": bool(value & 0x2000),  # Bit 13
+        "truncated_vcp": bool(value & 0x4000),  # Bit 14
+    }
+
+
+def decode_vcp_supplemental(value):
+    """Decode VCP Supplemental Data (MSG_5 HW 10, ICD 2620002AA Note 16)."""
+    return {
+        "sails_vcp": bool(value & 0x0001),  # Bit 0
+        "num_sails_cuts": (value >> 1) & 0x07,  # Bits 1-3
+        "mrle_vcp": bool(value & 0x0010),  # Bit 4
+        "num_mrle_cuts": (value >> 5) & 0x07,  # Bits 5-7
+        # Bits 8-10: Spares per ICD
+        "mpda_vcp": bool(value & 0x0800),  # Bit 11
+        "base_tilt_vcp": bool(value & 0x1000),  # Bit 12
+        "num_base_tilts": (value >> 13) & 0x07,  # Bits 13-15
+    }
+
+
+def decode_elevation_supplemental(value):
+    """Decode per-elevation supplemental data (MSG_5_ELEV E15, ICD Note 17)."""
+    return {
+        "sails_cut": bool(value & 0x0001),  # Bit 0
+        "sails_sequence_number": (value >> 1) & 0x07,  # Bits 1-3
+        "mrle_cut": bool(value & 0x0010),  # Bit 4
+        "mrle_sequence_number": (value >> 5) & 0x07,  # Bits 5-7
+        # Bit 8: Spare
+        "mpda_cut": bool(value & 0x0200),  # Bit 9
+        "base_tilt_cut": bool(value & 0x0400),  # Bit 10
+    }
+
+
+def decode_rda_scan_data_flags(value):
+    """Decode RDA Scan and Data Flags (MSG_2 HW 14, ICD 2620002AA Note 10).
+
+    Bits 1 and 2 are mutually exclusive and represent AVSET status.
+    """
+    return {
+        "avset_enabled": bool(value & 0x0002),  # Bit 1
+        "avset_disabled": bool(value & 0x0004),  # Bit 2
+        "ebc_enabled": bool(value & 0x0008),  # Bit 3
+        "rda_log_data_enabled": bool(value & 0x0010),  # Bit 4
+        "time_series_recording": bool(value & 0x0020),  # Bit 5
+    }
+
+
+# Table IV RDA Status Data (Message Type 2)
+# pages 3-12 to 3-16
+MSG_2 = OrderedDict(
+    [
+        ("rda_status", CODE2),  # HW 1
+        ("operability_status", CODE2),  # HW 2
+        ("control_status", CODE2),  # HW 3
+        ("aux_power_gen_state", CODE2),  # HW 4
+        ("avg_xmtr_power", UINT2),  # HW 5
+        ("horiz_ref_calib_corr", SINT2),  # HW 6
+        ("data_xmission_enabled", CODE2),  # HW 7
+        ("vcp_number", SINT2),  # HW 8
+        ("rda_control_auth", CODE2),  # HW 9
+        ("rda_build_number", UINT2),  # HW 10
+        ("operational_mode", CODE2),  # HW 11
+        ("super_res_status", CODE2),  # HW 12
+        ("cmd_status", CODE2),  # HW 13
+        ("rda_scan_data_flags", CODE2),  # HW 14: AVSET/EBC bits
+    ]
+)
+LEN_MSG_2 = struct.calcsize(_get_fmt_string(MSG_2, byte_order=">"))
 
 MSG_18 = OrderedDict(
     [
@@ -1666,21 +1838,52 @@ class NexradLevel2Store(AbstractDataStore):
         )
 
     def get_attrs(self):
-        _attributes = []
+        attrs = {}
 
-        if self.root.volume_header is not None:
-            _attributes.append(
-                ("instrument_name", self.root.volume_header["icao"].decode())
-            )
-        else:
-            _attributes.append(("instrument_name", "UNKNOWN"))
+        vh = self.root.volume_header
+        attrs["instrument_name"] = vh["icao"].decode() if vh else "UNKNOWN"
 
         if self.root.msg_5:
-            _attributes.append(
-                ("scan_name", f"VCP-{self.root.msg_5['pattern_number']}")
-            )
+            attrs.update(self._attrs_from_msg_5(self.root.msg_5))
 
-        return FrozenDict(_attributes)
+        msg_2 = self.root.msg_2
+        if msg_2:
+            attrs.update(self._attrs_from_msg_2(msg_2))
+
+        return FrozenDict(attrs)
+
+    @staticmethod
+    def _attrs_from_msg_5(msg_5):
+        """Extract root attributes from MSG_5 (VCP definition)."""
+        supplemental = msg_5.get("vcp_supplemental_decoded", {})
+        sequencing = msg_5.get("vcp_sequencing_decoded", {})
+        vel_res = msg_5.get("doppler_velocity_resolution", 0)
+        pw = msg_5.get("pulse_width", 0)
+        return {
+            "scan_name": f"VCP-{msg_5['pattern_number']}",
+            "dynamic_scan_type": _get_dynamic_scan_type(supplemental),
+            "mpda_vcp": supplemental.get("mpda_vcp", False),
+            "base_tilt_vcp": supplemental.get("base_tilt_vcp", False),
+            "num_base_tilts": supplemental.get("num_base_tilts", 0),
+            "vcp_truncated": sequencing.get("truncated_vcp", False),
+            "vcp_sequence_active": sequencing.get("sequence_active", False),
+            "number_elevation_cuts": msg_5.get("number_elevation_cuts", 0),
+            "doppler_velocity_resolution": 0.5 if vel_res == 2 else 1.0,
+            # ICD MSG_5 HW6: 2=short, 4=long
+            "vcp_pulse_width": "short" if pw == 2 else "long" if pw == 4 else str(pw),
+        }
+
+    @staticmethod
+    def _attrs_from_msg_2(msg_2):
+        """Extract root attributes from MSG_2 (RDA Status)."""
+        flags = msg_2.get("rda_scan_data_flags_decoded", {})
+        return {
+            "avset_enabled": flags.get("avset_enabled", False),
+            "ebc_enabled": flags.get("ebc_enabled", False),
+            "super_res_status": msg_2.get("super_res_status", 0),
+            "rda_build_number": msg_2.get("rda_build_number", 0),
+            "operational_mode": msg_2.get("operational_mode", 0),
+        }
 
 
 class NexradLevel2BackendEntrypoint(BackendEntrypoint):
@@ -1886,7 +2089,16 @@ def open_nexradlevel2_datatree(
                 "cannot be decoded without it."
             )
 
-    incomplete = set()
+    # Single metadata read for sweep count, completeness, and elevation data
+    with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+        act_sweeps = len(nex.msg_31_data_header)
+        incomplete = nex.incomplete_sweeps
+        if nex.msg_5:
+            exp_sweeps = nex.msg_5["number_elevation_cuts"]
+            elev_data = nex.msg_5.get("elevation_data", [])
+        else:
+            exp_sweeps = 0
+            elev_data = []
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -1903,23 +2115,9 @@ def open_nexradlevel2_datatree(
                 "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
             )
     else:
-        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            # Expected number of elevation cuts from the VCP definition
-            if nex.msg_5:
-                exp_sweeps = nex.msg_5["number_elevation_cuts"]
-            else:
-                exp_sweeps = 0
-            # Actual number of sweeps recorded in the file
-            act_sweeps = len(nex.msg_31_data_header)
-            # Check for AVSET mode: If AVSET was active, the actual number of sweeps (act_sweeps)
-            # will be fewer than the expected number (exp_sweeps), as higher elevations were skipped.
-            # More info https://www.test.roc.noaa.gov/radar-techniques/avset.php
-            # https://www.test.roc.noaa.gov/public-documents/engineering-branch/new-technology/misc/avset/AVSET_AMS_RADAR_CONF_Final.pdf
-            if exp_sweeps > act_sweeps:
-                # Adjust nsweeps to the actual number of recorded sweeps
-                exp_sweeps = act_sweeps
-
-            incomplete = nex.incomplete_sweeps
+        # Check for AVSET mode: actual sweeps may be fewer than VCP definition
+        if exp_sweeps > act_sweeps:
+            exp_sweeps = act_sweeps
 
         if incomplete_sweep == "drop":
             sweeps = [f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete]
@@ -1945,11 +2143,6 @@ def open_nexradlevel2_datatree(
                 f"Invalid incomplete_sweep={incomplete_sweep!r}. "
                 "Expected 'drop' or 'pad'."
             )
-
-    # For pad mode with user-specified sweeps, read incomplete set
-    if incomplete_sweep == "pad" and not incomplete:
-        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-            incomplete = nex.incomplete_sweeps
 
     sweep_dict = open_sweeps_as_dict(
         filename_or_obj=filename_or_obj,
@@ -1983,7 +2176,15 @@ def open_nexradlevel2_datatree(
         )
     # Build from ls_ds (station vars already stripped by _assign_root).
     dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
-    return DataTree.from_dict(dtree)
+    result = DataTree.from_dict(dtree)
+
+    # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI)
+    _assign_sweep_attrs(result, elev_data)
+
+    # Actual sweeps recorded in the file (from MSG_31 headers, not user selection)
+    result.ds.attrs["actual_elevation_cuts"] = act_sweeps
+
+    return result
 
 
 def open_sweeps_as_dict(
