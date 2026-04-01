@@ -9,8 +9,8 @@
 
 Xradar includes all the tools to get your weather radar into the xarray data model.
 
-* Free software: MIT license
-* Documentation: [https://docs.openradarscience.org/projects/xradar](https://xradar.readthedocs.io)
+* Code: [MIT license](LICENSE)
+* Documentation: [CC-BY-SA-4.0](LICENSE-CC-BY-SA-4.0) [https://docs.openradarscience.org/projects/xradar](https://xradar.readthedocs.io)
 
 ## How to cite Xradar
 
