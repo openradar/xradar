@@ -67,6 +67,12 @@ jobs:
               python=${{matrix.python-version}}
               numpy=${{matrix.numpy-version}}
               conda
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: rust
     - name: Install xarray dev
       run: |
         python -m pip install --no-deps --no-cache-dir \
@@ -74,9 +80,17 @@ jobs:
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
+    - name: Build Rust NEXRAD extension
+      run: |
+        python -m pip install maturin
+        maturin develop --manifest-path rust/Cargo.toml --release
+    - name: Run Rust unit tests
+      run: |
+        cd rust && cargo test
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"
+        python -c "from _nexrad_rust import NexradRustFile; print('Rust NEXRAD extension: OK')"
     - name: Test with pytest
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
