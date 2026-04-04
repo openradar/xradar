@@ -83,6 +83,13 @@ from .iris import (
     string_dict,
 )
 
+try:
+    from _nexrad_rust import NexradRustFile
+
+    _HAS_RUST = True
+except ImportError:
+    _HAS_RUST = False
+
 NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
@@ -1625,6 +1632,233 @@ DATA_BLOCK_TYPE_IDENTIFIER = OrderedDict(
 )
 
 
+class RustNexradLevel2ArrayWrapper(BackendArray):
+    """Wraps array of NEXRAD data from Rust parser."""
+
+    def __init__(self, rust_file, sweep_idx, name, nrays, ngates, word_size):
+        width = {8: 1, 16: 2}.get(word_size, 2)
+        self.dtype = np.dtype(f">u{width}")
+        self.shape = (nrays, ngates)
+        # Load data eagerly to avoid holding a reference to the Rust object
+        # (PyO3 objects can't be pickled, which xarray needs for sortby)
+        raw = rust_file.get_moment_data(sweep_idx, name)
+        if name == "PHI":
+            raw = raw & np.uint16(0x3FF)
+        elif name == "ZDR":
+            raw = raw & np.uint16(0x7FF)
+        # Pad if moment has fewer gates than max
+        if raw.shape[1] < ngates:
+            raw = np.pad(
+                raw,
+                ((0, 0), (0, ngates - raw.shape[1])),
+                mode="constant",
+                constant_values=0,
+            )
+        self._data = raw
+
+    def _getitem(self, key):
+        return self._data[key]
+
+    def __getitem__(self, key):
+        return indexing.explicit_indexing_adapter(
+            key,
+            self.shape,
+            indexing.IndexingSupport.BASIC,
+            self._getitem,
+        )
+
+
+class RustNexradLevel2Store(AbstractDataStore):
+    """xarray DataStore backed by the Rust NEXRAD parser."""
+
+    def __init__(self, rust_file, group, filename, lock=NEXRADL2_LOCK):
+        self._rust_file = rust_file
+        self._group = int(group[6:])
+        self._filename = filename
+        self.lock = ensure_lock(lock)
+
+    @classmethod
+    def open(cls, filename, mode="r", group=None, lock=None, **kwargs):
+        if lock is None:
+            lock = NEXRADL2_LOCK
+        # Read file into bytes
+        if isinstance(filename, (bytes, bytearray)):
+            data = bytes(filename)
+        elif hasattr(filename, "read"):
+            data = filename.read()
+        elif isinstance(filename, (str, os.PathLike)):
+            with open(filename, "rb") as f:
+                data = f.read()
+        else:
+            raise TypeError(f"Unsupported input type: {type(filename)}")
+        rust_file = NexradRustFile(data, loaddata=kwargs.get("loaddata", True))
+        fname = filename if isinstance(filename, str) else str(filename)
+        return cls(rust_file, group=group, filename=fname, lock=lock)
+
+    @classmethod
+    def open_groups(cls, filename, groups, mode="r", lock=None, **kwargs):
+        if lock is None:
+            lock = NEXRADL2_LOCK
+        # Read file once, share the Rust parser across groups
+        if isinstance(filename, (bytes, bytearray)):
+            data = bytes(filename)
+        elif hasattr(filename, "read"):
+            data = filename.read()
+        elif isinstance(filename, (str, os.PathLike)):
+            with open(filename, "rb") as f:
+                data = f.read()
+        else:
+            raise TypeError(f"Unsupported input type: {type(filename)}")
+        rust_file = NexradRustFile(data, loaddata=True)
+        fname = filename if isinstance(filename, str) else str(filename)
+        return {
+            group: cls(rust_file, group=group, filename=fname, lock=lock)
+            for group in groups
+        }
+
+    @property
+    def filename(self):
+        return self._filename
+
+    def close(self):
+        pass
+
+    def get_variables(self):
+        return FrozenDict(
+            {**self._get_moment_variables(), **self._get_coordinates()}
+        )
+
+    def get_attrs(self):
+        attrs = {}
+        vh = self._rust_file.volume_header
+        attrs["instrument_name"] = bytes(vh["icao"]).decode() if vh else "UNKNOWN"
+        msg_5 = self._rust_file.msg_5
+        if msg_5:
+            attrs.update(NexradLevel2Store._attrs_from_msg_5(msg_5))
+        msg_2 = self._rust_file.msg_2
+        if msg_2:
+            attrs.update(NexradLevel2Store._attrs_from_msg_2(msg_2))
+        return FrozenDict(attrs)
+
+    def _get_moment_variables(self):
+        sweep = self._group
+        moments = self._rust_file.get_moment_names(sweep)
+        nrays = self._rust_file.get_num_radials(sweep)
+
+        # Find max ngates across all moments
+        max_ngates = 0
+        moment_info = {}
+        for name in moments:
+            fg, gs, ng = self._rust_file.get_range_params(sweep, name)
+            scale, offset = self._rust_file.get_scale_offset(sweep, name)
+            moment_info[name] = {
+                "first_gate": fg,
+                "gate_spacing": gs,
+                "ngates": ng,
+                "scale": scale,
+                "offset": offset,
+            }
+            if ng > max_ngates:
+                max_ngates = ng
+
+        variables = {}
+        dim = "azimuth"
+        encoding = {"group": self._group, "source": self._filename}
+
+        for name, info in moment_info.items():
+            wrapper = RustNexradLevel2ArrayWrapper(
+                self._rust_file, sweep, name, nrays, max_ngates, 16
+            )
+            data = indexing.LazilyOuterIndexedArray(wrapper)
+
+            mname = nexrad_mapping.get(name, name)
+            mapping = sweep_vars_mapping.get(mname, {})
+            attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
+            attrs["scale_factor"] = 1.0 / info["scale"]
+            attrs["add_offset"] = -info["offset"] / info["scale"]
+            attrs["coordinates"] = (
+                "elevation azimuth range latitude longitude altitude time"
+            )
+            variables[mname] = Variable((dim, "range"), data, attrs, encoding)
+
+        return variables
+
+    def _get_coordinates(self):
+        sweep = self._group
+        is_legacy = self._rust_file.is_legacy
+        angle_scale = 180 / (4096 * 8.0) if is_legacy else 1.0
+
+        azimuth = self._rust_file.get_azimuth(sweep) * angle_scale
+        elevation = self._rust_file.get_elevation(sweep) * angle_scale
+
+        # Time: date is 1-based
+        dates, ms = self._rust_file.get_time_components(sweep)
+        rtime = (dates.astype("float64") - 1) * 86400e3 + ms.astype("float64")
+        rtime_attrs = get_time_attrs(date_unit="milliseconds")
+
+        # Site coords from volume data block
+        vol = self._rust_file.get_volume_data(sweep)
+        if vol:
+            lat = vol["latitude"]
+            lon = vol["longitude"]
+            alt = vol["site_height"] + vol["feedhorn_height"]
+        else:
+            lat, lon, alt = 0.0, 0.0, 0.0
+
+        # Range from first moment
+        moments = self._rust_file.get_moment_names(sweep)
+        if moments:
+            # Use the moment with the most gates for range
+            max_ng = 0
+            first_gate, gate_spacing = 0, 250
+            for m in moments:
+                fg, gs, ng = self._rust_file.get_range_params(sweep, m)
+                if ng > max_ng:
+                    max_ng = ng
+                    first_gate = fg
+                    gate_spacing = gs
+            last_gate = first_gate + gate_spacing * (max_ng - 0.5)
+            rng = np.arange(first_gate, last_gate, gate_spacing, "float32")
+        else:
+            rng = np.array([], dtype="float32")
+        range_attrs = get_range_attrs(rng)
+
+        encoding = {"group": self._group}
+        dim = "azimuth"
+        sweep_mode = "azimuth_surveillance"
+        sweep_number = self._group
+
+        # Fixed angle from MSG 5 elevation data
+        msg_5 = self._rust_file.msg_5
+        if msg_5 and msg_5.get("elevation_data"):
+            elev_data = msg_5["elevation_data"]
+            if self._group < len(elev_data):
+                fixed_angle = elev_data[self._group]["elevation_angle"]
+            else:
+                fixed_angle = float(elevation[0]) if len(elevation) > 0 else 0.0
+        else:
+            fixed_angle = float(elevation[0]) if len(elevation) > 0 else 0.0
+        fixed_angle *= angle_scale
+
+        coords = {
+            "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(), encoding),
+            "elevation": Variable(
+                (dim,), elevation, get_elevation_attrs(), encoding
+            ),
+            "time": Variable((dim,), rtime, rtime_attrs, encoding),
+            "range": Variable(("range",), rng, range_attrs),
+            "longitude": Variable((), lon, get_longitude_attrs()),
+            "latitude": Variable((), lat, get_latitude_attrs()),
+            "altitude": Variable((), alt, get_altitude_attrs()),
+            "sweep_mode": Variable((), sweep_mode),
+            "sweep_number": Variable((), sweep_number),
+            "prt_mode": Variable((), "not_set"),
+            "follow_mode": Variable((), "not_set"),
+            "sweep_fixed_angle": Variable((), fixed_angle),
+        }
+        return coords
+
+
 class NexradLevel2ArrayWrapper(BackendArray):
     """Wraps array of NexradLevel2 data."""
 
@@ -1913,12 +2147,19 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         site_as_coords=True,
         optional=True,
     ):
-        store = NexradLevel2Store.open(
-            filename_or_obj,
-            group=group,
-            lock=lock,
-            loaddata=False,
-        )
+        if _HAS_RUST:
+            store = RustNexradLevel2Store.open(
+                filename_or_obj,
+                group=group,
+                lock=lock,
+            )
+        else:
+            store = NexradLevel2Store.open(
+                filename_or_obj,
+                group=group,
+                lock=lock,
+                loaddata=False,
+            )
 
         store_entrypoint = StoreBackendEntrypoint()
 
@@ -2090,15 +2331,53 @@ def open_nexradlevel2_datatree(
             )
 
     # Single metadata read for sweep count, completeness, and elevation data
-    with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-        act_sweeps = len(nex.msg_31_data_header)
-        incomplete = nex.incomplete_sweeps
-        if nex.msg_5:
-            exp_sweeps = nex.msg_5["number_elevation_cuts"]
-            elev_data = nex.msg_5.get("elevation_data", [])
+    if _HAS_RUST:
+        # Read file data for Rust parser
+        if isinstance(filename_or_obj, (bytes, bytearray)):
+            _rust_data = bytes(filename_or_obj)
+        elif hasattr(filename_or_obj, "read"):
+            _rust_data = filename_or_obj.read()
+            if hasattr(filename_or_obj, "seek"):
+                filename_or_obj.seek(0)
+        elif isinstance(filename_or_obj, (str, os.PathLike)):
+            with open(filename_or_obj, "rb") as _f:
+                _rust_data = _f.read()
         else:
-            exp_sweeps = 0
-            elev_data = []
+            _rust_data = None
+
+        if _rust_data is not None:
+            _rust_nex = NexradRustFile(_rust_data, loaddata=True)
+            act_sweeps = _rust_nex.num_sweeps
+            incomplete = _rust_nex.incomplete_sweeps
+            msg_5 = _rust_nex.msg_5
+            if msg_5:
+                exp_sweeps = msg_5["number_elevation_cuts"]
+                elev_data = msg_5.get("elevation_data", [])
+            else:
+                exp_sweeps = 0
+                elev_data = []
+        else:
+            # Fallback for unsupported input types
+            _HAS_RUST_local = False
+            with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+                act_sweeps = len(nex.msg_31_data_header)
+                incomplete = nex.incomplete_sweeps
+                if nex.msg_5:
+                    exp_sweeps = nex.msg_5["number_elevation_cuts"]
+                    elev_data = nex.msg_5.get("elevation_data", [])
+                else:
+                    exp_sweeps = 0
+                    elev_data = []
+    else:
+        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+            act_sweeps = len(nex.msg_31_data_header)
+            incomplete = nex.incomplete_sweeps
+            if nex.msg_5:
+                exp_sweeps = nex.msg_5["number_elevation_cuts"]
+                elev_data = nex.msg_5.get("elevation_data", [])
+            else:
+                exp_sweeps = 0
+                elev_data = []
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -2209,11 +2488,18 @@ def open_sweeps_as_dict(
     if incomplete_sweeps is None:
         incomplete_sweeps = set()
 
-    stores = NexradLevel2Store.open_groups(
-        filename=filename_or_obj,
-        lock=lock,
-        groups=sweeps,
-    )
+    if _HAS_RUST:
+        stores = RustNexradLevel2Store.open_groups(
+            filename=filename_or_obj,
+            lock=lock,
+            groups=sweeps,
+        )
+    else:
+        stores = NexradLevel2Store.open_groups(
+            filename=filename_or_obj,
+            lock=lock,
+            groups=sweeps,
+        )
     groups_dict = {}
     for path_group, store in stores.items():
         # Extract sweep index from group name (e.g. "sweep_3" -> 3)
