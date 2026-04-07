@@ -132,11 +132,11 @@ jobs:
         python -c "import xradar; print(xradar.version.version)"
     - name: Test with pytest
       run: |
-        pytest -n auto --dist loadscope --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs examples/notebooks
+        pytest -n auto --dist loadscope --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs docs/notebooks
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24  # v5.4.3
       with:
-        file: ./coverage_notebook.xml
+        files: ./coverage_notebook.xml
         flags: notebooktests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
@@ -230,20 +230,18 @@ jobs:
           toml set --toml-path pyproject.toml tool.setuptools_scm.local_scheme "no-local-version"
           git update-index --assume-unchanged pyproject.toml
           python -m build
-          cp dist/xradar*.gz dist/xradar1.gz
+          cp dist/xradar*.gz xradar1.gz
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: xradar-1-${{github.event.number}}
-          path: dist/xradar1.gz
-      - name: Upload to TestPyPI
+          path: xradar1.gz
+      - name: Upload to TestPyPI (Trusted Publisher)
         if: ${{ github.event_name == 'push' }}
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TESTPYPI_API_TOKEN }}
-        run: |
-          rm -f dist/xradar1.gz
-          twine upload --repository testpypi dist/*
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
 
   test_build_distribution_pypi:
     name: test build distribution
