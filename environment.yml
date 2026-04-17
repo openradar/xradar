@@ -19,7 +19,7 @@ dependencies:
   - open-radar-data>=0.6.0
   - pyproj
   - pip:
-    - xarray @ git+https://github.com/pydata/xarray.git@main
+    - xarray >= 2026.4.0
   - xmltodict
   - cartopy
   - cmweather
