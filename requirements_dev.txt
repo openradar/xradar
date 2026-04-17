@@ -20,8 +20,8 @@ pytest-xdist
 pytest-cov
 pre-commit
 diff-cover
-myst-parser
+myst-nb
 sphinx-copybutton
 sphinx-favicon
-nbsphinx
 pydata-sphinx-theme
+linkify-it-py

@@ -63,14 +63,20 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
     "sphinx.ext.todo",
-    "myst_parser",
+    "myst_nb",
     "sphinx_copybutton",
     "sphinx_favicon",
-    "nbsphinx",
 ]
 
 myst_enable_extensions = [
     "substitution",
+    "dollarmath",
+    "amsmath",
+    "colon_fence",
+    "deflist",
+    "html_image",
+    "linkify",
+    "tasklist",
 ]
 
 
@@ -96,14 +102,19 @@ templates_path = ["_templates"]
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
-source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".ipynb": "myst-nb",
+    ".myst": "myst-nb",
+    ".md": "myst-nb",
+}
 
 # The master toctree document.
 master_doc = "index"
 
 # General information about the project.
 project = "xradar"
-copyright = "2022-2023, Open Radar Community"
+copyright = "2022-2026, Open Radar Community"
 author = "Open Radar Community"
 
 
@@ -123,19 +134,17 @@ for k, v in xradar.__dict__.items():
             file.close()
 
 # create API/Library reference rst-file
-reference = """
-Library Reference
-=================
+reference = """# Library Reference
 
-.. toctree::
-   :maxdepth: 4
+```{toctree}
+:maxdepth: 4
 """
 
-file = open("reference.rst", mode="w")
-file.write(f"{reference}\n")
-for mod in sorted(modules):
-    file.write(f"   {mod}\n")
-file.close()
+with open("reference.md", mode="w") as f:
+    f.write(f"{reference}\n")
+    for mod in sorted(modules):
+        f.write(f"{mod}\n")
+    f.write("```")
 
 # get all rst files, do it manually
 rst_files = glob.glob("*.rst")
@@ -201,10 +210,12 @@ todo_include_todos = False
 copybutton_prompt_text = r">>> |\.\.\. |\$ |In \[\d*\]: | {2,5}\.\.\.: | {5,8}: "
 copybutton_prompt_is_regexp = True
 
-# -- nbsphinx specifics --
-# always execute notebooks while building docs
-nbsphinx_execute = "always"
-subprocess.check_call(["cp", "-rp", "../examples/notebooks", "."])
+
+# -- myst_nb specifics --
+nb_execution_mode = "auto"
+nb_execution_kernel_name = "python3"
+nb_execution_in_temp = True
+nb_execution_timeout = 300
 
 # -- Options for HTML output -------------------------------------------
 
@@ -258,9 +269,8 @@ html_context = {
     "github_repo": "xradar",
     "github_version": "main",
     "doc_path": "docs",
-    "edit_page_url_template": "{{ xradar_custom_edit_url(github_user, github_repo, github_version, doc_path, file_name, default_edit_page_url_template) }}",
+    "edit_page_url_template": "{{ _custom_edit_url(github_user, github_repo, github_version, doc_path, file_name, default_edit_page_url_template) }}",
     "default_edit_page_url_template": "https://github.com/{github_user}/{github_repo}/edit/{github_version}/{docpath}/{filename}",
-    "xradar_custom_edit_url": _custom_edit_url,
 }
 
 
@@ -453,6 +463,11 @@ def on_doctree_resolved(app, doctree, docname):
 
 
 def setup(app):
+    # Add a template global so Jinja templates can call _custom_edit_url
+    def add_to_context(app, pagename, templatename, context, doctree):
+        context["_custom_edit_url"] = _custom_edit_url
+
+    app.connect("html-page-context", add_to_context)
     app.connect("source-read", on_source_read)
     app.connect("doctree-resolved", on_doctree_resolved)
 
