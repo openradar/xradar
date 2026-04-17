@@ -143,8 +143,70 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     - Verify all checks are passing
     - Mark your pull request as ready for review
 
+## Roles and Responsibilities
+
+We want contribution to xradar to have a clear path from first contribution to
+shared project stewardship. The project aims to keep responsibility distributed,
+make participation transparent, and create an approachable way for contributors
+to become more involved over time.
+
+### Contributors
+
+Contributors improve xradar through code, documentation, bug reports, testing,
+examples, and discussion. This is the starting point for everyone.
+
+Typical ways contributors help include:
+
+* opening focused issues with reproducible examples
+* submitting pull requests
+* improving documentation, examples, or tests
+* helping with design discussions and user support
+
+### Team Members
+
+Team members are contributors who want to become more involved in the day-to-day
+work of the project. In addition to regular contributions, they may help with:
+
+* issue triage and labeling
+* reproducing bug reports
+* answering questions and guiding new contributors
+* identifying pull requests that need review or follow-up
+
+This role is a good way to get familiar with the project workflow and where help
+is most useful.
+
+### Maintainers
+
+Maintainers are active, trusted contributors with broader responsibility for the
+health of the project. Maintainers are expected to:
+
+* review pull requests constructively and in a timely manner
+* help guide technical discussions and decisions
+* merge contributions when appropriate
+* support contributors and encourage sustainable project practices
+* help maintain release and documentation quality
+
+Maintainer status reflects sustained engagement and judgment, not just the
+number of contributions.
+
+## Pathway to Greater Involvement
+
+There is no strict checklist for moving between roles, but the general pathway is:
+
+1. Start as a contributor by opening issues or pull requests.
+2. Become a regular contributor by showing sustained involvement, reliability,
+   or expertise in parts of the project.
+3. Take on more community-facing work such as triaging issues, reviewing pull
+   requests, or helping guide discussions.
+4. Be invited to join the maintainer group based on continued engagement and
+   project trust.
+
+If you contribute regularly and would like to get more involved, reach out in an
+issue, pull request, or discussion. We want the process to be welcoming and
+transparent.
+
 ## Deploying
 
-A reminder for the maintainers on how to deploy.
+A reminder for maintainers on how to deploy.
 Make sure all your changes are committed (including an entry in [history.md](https://github.com/openradar/xradar/blob/main/docs/history.md)).
 Then just create a release in the GitHub workflow. GHA will then deploy to PyPI if tests pass.
