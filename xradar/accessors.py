@@ -73,7 +73,7 @@ class XradarDataArrayAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, target_crs=None
     ) -> xr.DataArray:
         """
         Parameters
@@ -83,6 +83,9 @@ class XradarDataArrayAccessor(XradarAccessor):
             WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
+        target_crs: pyproj.CRS or int or str, optional
+            Coordinate reference system to reproject x, y to (e.g. ``4326`` for
+            geographic lon/lat). If not provided, radar-native AEQD is used.
         Returns
         -------
         da = xr.DataArray
@@ -94,6 +97,7 @@ class XradarDataArrayAccessor(XradarAccessor):
             get_x_y_z,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            target_crs=target_crs,
         )
 
     def add_crs(self) -> xr.DataArray:
@@ -123,7 +127,7 @@ class XradarDataSetAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.Dataset objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, target_crs=None
     ) -> xr.Dataset:
         """
         Add georeference information to an xarray dataset
@@ -134,6 +138,9 @@ class XradarDataSetAccessor(XradarAccessor):
             WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
+        target_crs: pyproj.CRS or int or str, optional
+            Coordinate reference system to reproject x, y to (e.g. ``4326`` for
+            geographic lon/lat). If not provided, radar-native AEQD is used.
         Returns
         -------
         da = xarray.Dataset
@@ -144,6 +151,7 @@ class XradarDataSetAccessor(XradarAccessor):
             get_x_y_z,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            target_crs=target_crs,
         )
 
     def add_crs(self) -> xr.DataSet:
@@ -185,7 +193,7 @@ class XradarDataTreeAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataTree objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, target_crs=None
     ) -> xr.DataTree:
         """
         Add georeference information to an xradar datatree object
@@ -196,6 +204,9 @@ class XradarDataTreeAccessor(XradarAccessor):
             WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
+        target_crs: pyproj.CRS or int or str, optional
+            Coordinate reference system to reproject x, y to (e.g. ``4326`` for
+            geographic lon/lat). If not provided, radar-native AEQD is used.
         Returns
         -------
         da = xarray.DataTree
@@ -206,6 +217,7 @@ class XradarDataTreeAccessor(XradarAccessor):
             get_x_y_z_tree,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            target_crs=target_crs,
         )
 
     def add_crs(self) -> xr.DataTree:

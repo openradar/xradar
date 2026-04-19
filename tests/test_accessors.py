@@ -51,6 +51,27 @@ def test_georeference_datatree():
     )
 
 
+def test_georeference_target_crs_dataset():
+    radar = xd.model.create_sweep_dataset()
+    geo = radar.xradar.georeference(target_crs=4326)
+    crs = geo.xradar.get_crs()
+    assert crs.is_geographic
+    assert geo.x.attrs["standard_name"] == "longitude"
+    assert geo.y.attrs["standard_name"] == "latitude"
+    assert_almost_equal(geo.x.values[0, 0], radar.longitude.values, decimal=3)
+    assert_almost_equal(geo.y.values[0, 0], radar.latitude.values, decimal=3)
+
+
+def test_georeference_target_crs_datatree():
+    radar = xd.model.create_sweep_dataset()
+    tree = xr.DataTree.from_dict({"sweep_0": radar})
+    geo = tree.xradar.georeference(target_crs=4326)["sweep_0"]
+    assert geo["x"].attrs["standard_name"] == "longitude"
+    assert geo["y"].attrs["standard_name"] == "latitude"
+    assert_almost_equal(geo["x"].values[0, 0], radar.longitude.values, decimal=3)
+    assert_almost_equal(geo["y"].values[0, 0], radar.latitude.values, decimal=3)
+
+
 def test_crs_dataarray():
     """Test the add_crs and get_crs methods on a DataArray."""
     # Create a sample DataArray with radar data
