@@ -3,7 +3,7 @@
 
 ## Development
 
-* DOC: Add AI Usage Policy (``docs/ai_policy.md``) adapted from xarray's policy, with xradar-specific guidance for CI, packaging, and dependency changes ({pull}`NNN`) by [@aladinor](https://github.com/aladinor)
+* DOC: Add AI Usage Policy (``docs/ai_policy.md``) adapted from xarray's policy, with xradar-specific guidance for CI, packaging, and dependency changes ({pull}`363`) by [@aladinor](https://github.com/aladinor)
 * MNT: Clarify contributor, team-member, and maintainer roles in the contributing guide, including the pathway to greater project involvement ({issue}`341`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`354`) by [@syedhamidali](https://github.com/syedhamidali)
 * ADD: ``open_cfradial2_datatree`` reader with grouped CfRadial2 compatibility normalization for common FM301/CfRadial2 naming differences ({issue}`93`, {issue}`287`), ({pull}`349`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Move station coordinates (``latitude``, ``longitude``, ``altitude``) to root node as coordinates for DataTree coordinate inheritance ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
