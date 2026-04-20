@@ -1955,6 +1955,114 @@ class TestIncompleteSweepParameter:
             call_kwargs = mock_open_sweeps.call_args[1]
             assert call_kwargs["incomplete_sweeps"] == {1}
 
+    # Regression cases for openradar/xradar#361. When upstream drops
+    # an interior cut, nex.data retains surviving sweeps under their
+    # original indices (sparse keys). The sweep-name list must follow
+    # those keys, not range(len(...)).
+    @pytest.mark.parametrize(
+        "present_keys,incomplete,mode,expected",
+        [
+            # Single interior gap (the #361 case, reduced)
+            (
+                [0, 1, 2, 4],
+                set(),
+                "drop",
+                ["sweep_0", "sweep_1", "sweep_2", "sweep_4"],
+            ),
+            (
+                [0, 1, 2, 4],
+                set(),
+                "pad",
+                ["sweep_0", "sweep_1", "sweep_2", "sweep_4"],
+            ),
+            # Gap + incomplete: drop removes both, pad removes only gap
+            (
+                [0, 1, 2, 4],
+                {2},
+                "drop",
+                ["sweep_0", "sweep_1", "sweep_4"],
+            ),
+            (
+                [0, 1, 2, 4],
+                {2},
+                "pad",
+                ["sweep_0", "sweep_1", "sweep_2", "sweep_4"],
+            ),
+            # Multiple interior gaps
+            (
+                [0, 1, 3, 4, 7],
+                set(),
+                "drop",
+                ["sweep_0", "sweep_1", "sweep_3", "sweep_4", "sweep_7"],
+            ),
+            # Trailing gap (MSG_5 declared 4 cuts, parser got 3)
+            (
+                [0, 1, 2],
+                set(),
+                "drop",
+                ["sweep_0", "sweep_1", "sweep_2"],
+            ),
+            # Sparse keys from unsorted dict iteration order
+            (
+                [4, 0, 2, 1],
+                set(),
+                "drop",
+                ["sweep_0", "sweep_1", "sweep_2", "sweep_4"],
+            ),
+        ],
+        ids=[
+            "single-gap-drop",
+            "single-gap-pad",
+            "gap-and-incomplete-drop",
+            "gap-and-incomplete-pad",
+            "multiple-gaps-drop",
+            "trailing-gap-drop",
+            "unsorted-keys-drop",
+        ],
+    )
+    def test_interior_sweep_gap_uses_actual_keys(
+        self, present_keys, incomplete, mode, expected
+    ):
+        mock_nex = MagicMock()
+        mock_nex.msg_5 = {"number_elevation_cuts": max(present_keys) + 2}
+        mock_nex.data = {k: None for k in present_keys}
+        mock_nex.incomplete_sweeps = incomplete
+        mock_nex.__enter__ = MagicMock(return_value=mock_nex)
+        mock_nex.__exit__ = MagicMock(return_value=False)
+
+        dummy_ds = xarray.Dataset(
+            {
+                "time": (
+                    "azimuth",
+                    np.array(
+                        ["2024-01-01T00:00:00", "2024-01-01T00:01:00"],
+                        dtype="datetime64[ns]",
+                    ),
+                ),
+                "latitude": 35.0,
+                "longitude": -97.0,
+                "altitude": 300.0,
+            },
+        )
+        mock_sweep_dict = OrderedDict([("sweep_0", dummy_ds), ("sweep_1", dummy_ds)])
+
+        with (
+            patch(
+                "xradar.io.backends.nexrad_level2.NEXRADLevel2File",
+                return_value=mock_nex,
+            ),
+            patch(
+                "xradar.io.backends.nexrad_level2.open_sweeps_as_dict",
+                return_value=mock_sweep_dict,
+            ) as mock_open_sweeps,
+        ):
+            open_nexradlevel2_datatree(
+                b"\x00" * 100,
+                reindex_angle=False,
+                incomplete_sweep=mode,
+            )
+            assert mock_open_sweeps.call_args[1]["sweeps"] == expected
+
 
 class TestPadModeReindexing:
     """Tests for the pad-mode reindex pipeline using real NEXRAD data.

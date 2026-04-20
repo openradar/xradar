@@ -2091,8 +2091,14 @@ def open_nexradlevel2_datatree(
 
     # Single metadata read for sweep count, completeness, and elevation data
     with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-        act_sweeps = len(nex.msg_31_data_header)
+        # Reading incomplete_sweeps also triggers data_header parsing,
+        # populating nex.data. Must run before sorted(nex.data) below.
         incomplete = nex.incomplete_sweeps
+        # Use the sweep indices actually present, not range(len(...)):
+        # upstream-dropped interior sweeps leave sparse keys (e.g.
+        # [0..9, 11]) that would otherwise KeyError downstream. See #361.
+        present_keys = sorted(nex.data)
+        act_sweeps = len(present_keys)
         if nex.msg_5:
             exp_sweeps = nex.msg_5["number_elevation_cuts"]
             elev_data = nex.msg_5.get("elevation_data", [])
@@ -2120,7 +2126,7 @@ def open_nexradlevel2_datatree(
             exp_sweeps = act_sweeps
 
         if incomplete_sweep == "drop":
-            sweeps = [f"sweep_{i}" for i in range(act_sweeps) if i not in incomplete]
+            sweeps = [f"sweep_{i}" for i in present_keys if i not in incomplete]
             if incomplete:
                 warnings.warn(
                     f"Dropped {len(incomplete)} incomplete sweep(s): "
@@ -2137,7 +2143,7 @@ def open_nexradlevel2_datatree(
                 )
                 return DataTree()
         elif incomplete_sweep == "pad":
-            sweeps = [f"sweep_{i}" for i in range(act_sweeps)]
+            sweeps = [f"sweep_{i}" for i in present_keys]
         else:
             raise ValueError(
                 f"Invalid incomplete_sweep={incomplete_sweep!r}. "
