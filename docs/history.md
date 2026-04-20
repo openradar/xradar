@@ -4,7 +4,7 @@
 ## Development
 
 
-## 0.12.0 (2026-04-16)
+## 0.12.0 (2026-04-20)
 
 * MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)
 * MNT: Clarify contributor, team-member, and maintainer roles in the contributing guide, including the pathway to greater project involvement ({issue}`341`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`354`) by [@syedhamidali](https://github.com/syedhamidali)
