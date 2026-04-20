@@ -68,22 +68,31 @@ figure out what the code does and why.
 > I pointed an agent at the issue and it generated a first draft. I reviewed
 > the changes thoroughly and understand the implementation well.
 
-### Large AI-Assisted Contributions
+### Prefer Small PRs and Open an Issue First
 
-Generating code with agents is fast and easy. Reviewing it is not. Making a PR
-with a large diff shifts the burden from the contributor to the reviewer. To
-guard against this asymmetry:
+Generating code with agents is fast and easy. Reviewing it is not. Any PR —
+hundreds of lines or just tens — that is hard to review shifts the burden from
+the contributor to the reviewer. Line count is not the only criterion; what
+matters is how confidently a reviewer can follow the change end-to-end.
 
-If you are planning a large AI-assisted contribution (e.g., a significant
-refactor, a framework migration, or a new subsystem), **open an issue first** to
-discuss the scope and approach with maintainers. This helps us decide if the
-change is worthwhile, how it should be structured, and any other important
-decisions.
+**Prefer small, focused PRs over one large one.** A series of small,
+independently reviewable PRs — each tied to a clear issue — is almost always
+easier to review, merge, and revert than a single larger change. If an
+AI-assisted contribution can be decomposed into smaller pieces, please do so.
+
+**Strongly encouraged: open an issue first** for any non-trivial AI-assisted
+contribution (for example, a refactor, a framework migration, a new subsystem,
+or any change whose review burden is non-obvious at a glance). The issue
+should describe the motivation, the proposed approach, and the expected
+scope. Maintainers will use it to confirm the work is a good fit for the
+project, surface concerns early, and agree on how the change should be
+structured **before any code is written**. This prevents the common AI-era
+pattern of a surprise diff that nobody asked for and nobody wants to review.
 
 Maintainers reserve the right to close PRs where the scope makes meaningful
 review impractical, or when they suspect this policy has been violated.
-Similarly they may request that large changes be broken into smaller, reviewable
-pieces.
+Similarly they may request that large changes be broken into smaller,
+reviewable pieces.
 
 ### CI, Packaging, and Dependency Changes
 
