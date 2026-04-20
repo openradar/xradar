@@ -42,6 +42,15 @@ If you are proposing a feature:
 * Remember that this is a volunteer-driven project, and that contributions
   are welcome :)
 
+## AI Usage Policy
+
+xradar contributors may use AI tools as part of their workflow. Please read the
+[AI Usage Policy](https://github.com/openradar/xradar/blob/main/docs/ai_policy.md)
+before submitting an AI-assisted contribution. In short: you are responsible
+for every line of code in your PR, PR descriptions and review replies must be
+your own words, and large AI-assisted changes — as well as CI, packaging, and
+dependency changes — should start with an issue rather than a surprise diff.
+
 ## Get Started!
 
 Ready to contribute? Here's how to set up `xradar` for local development.
