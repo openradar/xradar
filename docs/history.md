@@ -1,9 +1,10 @@
 # History
 
+## 0.12.0 (2026-04-21)
 
-## Development
-
+* MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)
 * MNT: Clarify contributor, team-member, and maintainer roles in the contributing guide, including the pathway to greater project involvement ({issue}`341`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`354`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: ``open_nexradlevel2_datatree`` keeps sweeps with interior sweep-index gaps — derive sweep names from actual indices in ``nex.data`` instead of ``range(len(...))`` so upstream-dropped interior cuts (e.g. ``[0..9, 11]``) no longer raise ``KeyError`` ({issue}`361`, {pull}`362`) by [@aladinor](https://github.com/aladinor)
 * ADD: ``open_cfradial2_datatree`` reader with grouped CfRadial2 compatibility normalization for common FM301/CfRadial2 naming differences ({issue}`93`, {issue}`287`), ({pull}`349`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Move station coordinates (``latitude``, ``longitude``, ``altitude``) to root node as coordinates for DataTree coordinate inheritance ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
 * ENH: Add ``optional_groups`` parameter (default ``False``) to all ``open_*_datatree()`` functions to control inclusion of ``/radar_parameters``, ``/georeferencing_correction``, and ``/radar_calibration`` subgroups ({issue}`331`, {pull}`333`) by [@aladinor](https://github.com/aladinor)
