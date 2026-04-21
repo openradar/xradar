@@ -1,9 +1,5 @@
 # History
 
-
-## Development
-
-
 ## 0.12.0 (2026-04-21)
 
 * MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)
