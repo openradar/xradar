@@ -45,19 +45,20 @@ Xradar is considered stable for the implemented readers and writers which have b
 ## Features
 
 ### Import/Export Capabilities
-* CfRadial1 and CfRadial2
-* ODIM_H5 format
+* CfRadial1 and CfRadial2 — CF/Radial convention for radar data
+* ODIM_H5 — OPERA Data Information Model (HDF5)
 
 ### Import-Only Capabilities
-* DataMet
-* Furuno
-* Gamic
-* HPL
-* Iris
-* MRR
-* NexradLevel2
-* Rainbow
-* UF
+* DataMet — DataMet weather radar
+* Furuno — Furuno weather radar
+* Gamic — GAMIC HDF5
+* HPL — Halo Photonics Lidar
+* IMD — India Meteorological Department
+* Iris — Vaisala IRIS/Sigmet
+* MRR — Micro Rain Radar (METEK)
+* NexradLevel2 — NEXRAD WSR-88D Level 2
+* Rainbow — LEONARDO (formerly Selex/Gematronik) Rainbow
+* UF — Universal Format
 
 ### Data Transformation and Alignment
 * Georeferencing (AEQD projection)
