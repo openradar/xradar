@@ -238,38 +238,17 @@ def hpl_file():
     return DATASETS.fetch("User1_100_20240714_122137.hpl")
 
 
-# IMD sample files are not in the open_radar_data registry yet; fetch directly
-# from the pyscancf_examples repo via pooch.
-_IMD_REMOTE = "https://github.com/syedhamidali/pyscancf_examples/raw/main/data/goa_c"
-
-
-def _imd_fetch(fname, tmp_path_factory):
-    """Download a single IMD sample file with pooch (returns local path)."""
-    pytest.importorskip("pooch")
-    import pooch
-
-    base = tmp_path_factory.getbasetemp() / "imd_data"
-    base.mkdir(exist_ok=True)
-    return pooch.retrieve(
-        url=f"{_IMD_REMOTE}/{fname}",
-        known_hash=None,
-        fname=fname,
-        path=str(base),
-    )
+@pytest.fixture(scope="session")
+def imd_file():
+    return DATASETS.fetch("IMD/JPR220822135253-IMD-B.nc")
 
 
 @pytest.fixture(scope="session")
-def imd_file(tmp_path_factory):
-    return _imd_fetch("GOA210515003646-IMD-C.nc", tmp_path_factory)
-
-
-@pytest.fixture(scope="session")
-def imd_volume_files(tmp_path_factory):
-    names = [
-        "GOA210515003646-IMD-C.nc",
-        "GOA210515003646-IMD-C.nc.1",
+def imd_volume_files():
+    return [
+        DATASETS.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
+        for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
     ]
-    return [_imd_fetch(n, tmp_path_factory) for n in names]
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2024-2025, openradar developers.
+# Copyright (c) 2024-2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """
@@ -172,7 +172,9 @@ def _conform_imd_sweep(ds, first_dim="auto", site_as_coords=True):
         ds = ds.drop_dims("sweep", errors="ignore")
 
     # Dimension renames
-    rename_dims = {k: v for k, v in {"radial": "azimuth", "bin": "range"}.items() if k in ds.dims}
+    rename_dims = {
+        k: v for k, v in {"radial": "azimuth", "bin": "range"}.items() if k in ds.dims
+    }
     if rename_dims:
         ds = ds.rename_dims(rename_dims)
 
@@ -181,9 +183,7 @@ def _conform_imd_sweep(ds, first_dim="auto", site_as_coords=True):
         {k: v for k, v in _imd_var_mapping.items() if k in ds.variables}
     )
     # Moment renames
-    ds = ds.rename_vars(
-        {k: v for k, v in imd_mapping.items() if k in ds.variables}
-    )
+    ds = ds.rename_vars({k: v for k, v in imd_mapping.items() if k in ds.variables})
     # Normalize moment attributes. The file carries `units` / `long_name`
     # but no `standard_name`, and `valid_range` / `below_threshold` describe
     # the packed int8 -- stale after mask_and_scale. Drop the stale bits,
@@ -242,9 +242,7 @@ def _conform_imd_sweep(ds, first_dim="auto", site_as_coords=True):
         )
 
     # Scan type / sweep_mode
-    scan_code = (
-        int(_as_scalar(ds["scanType"])) if "scanType" in ds.variables else 4
-    )
+    scan_code = int(_as_scalar(ds["scanType"])) if "scanType" in ds.variables else 4
     sweep_mode, scan_type_name = _scan_type_lookup.get(
         scan_code, ("unknown", "unknown")
     )
@@ -259,12 +257,8 @@ def _conform_imd_sweep(ds, first_dim="auto", site_as_coords=True):
     # The ray dim at this point is still "azimuth"; it gets swapped to "time"
     # further down and these vars follow along.
     n_rays = ds.sizes.get("azimuth", 0)
-    high_prf = (
-        float(_as_scalar(ds["highPRF"])) if "highPRF" in ds.variables else 0.0
-    )
-    low_prf = (
-        float(_as_scalar(ds["lowPRF"])) if "lowPRF" in ds.variables else 0.0
-    )
+    high_prf = float(_as_scalar(ds["highPRF"])) if "highPRF" in ds.variables else 0.0
+    low_prf = float(_as_scalar(ds["lowPRF"])) if "lowPRF" in ds.variables else 0.0
     if high_prf > 0 and n_rays > 0:
         ds["prt"] = xr.DataArray(
             np.full(n_rays, 1.0 / high_prf, dtype="float32"),
@@ -301,9 +295,7 @@ def _conform_imd_sweep(ds, first_dim="auto", site_as_coords=True):
         ds["n_samples"] = xr.DataArray(
             np.full(n_rays, int(_as_scalar(ds["sampleNum"])), dtype="int32"),
             dims=("azimuth",),
-            attrs={
-                "long_name": "Maximum number of samples used to compute moments"
-            },
+            attrs={"long_name": "Maximum number of samples used to compute moments"},
         )
         ds = ds.drop_vars("sampleNum")
 
@@ -374,7 +366,11 @@ def _conform_imd_sweep(ds, first_dim="auto", site_as_coords=True):
         ds.attrs["time_coverage_end"] = tce
 
     # First-dim handling: CfRadial2 default is time; auto swaps to azimuth/elevation
-    dim0 = "elevation" if sweep_mode == "elevation_surveillance" or sweep_mode == "manual_rhi" else "azimuth"
+    dim0 = (
+        "elevation"
+        if sweep_mode == "elevation_surveillance" or sweep_mode == "manual_rhi"
+        else "azimuth"
+    )
     if "azimuth" in ds.dims and "time" in ds.variables and "time" not in ds.dims:
         ds = ds.swap_dims({"azimuth": "time"})
     if first_dim == "auto":
@@ -421,7 +417,9 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         Dataset coordinates.
     """
 
-    description = "Open India Meteorological Department (IMD) radar NetCDF files in Xarray"
+    description = (
+        "Open India Meteorological Department (IMD) radar NetCDF files in Xarray"
+    )
     url = "https://xradar.rtfd.io/en/latest/io.html#imd"
 
     def open_dataset(
@@ -453,9 +451,7 @@ class IMDBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
         )
-        ds = _conform_imd_sweep(
-            ds, first_dim=first_dim, site_as_coords=site_as_coords
-        )
+        ds = _conform_imd_sweep(ds, first_dim=first_dim, site_as_coords=site_as_coords)
 
         if decode_coords and reindex_angle is not False:
             ds = ds.pipe(util.remove_duplicate_rays)
@@ -510,9 +506,11 @@ def _build_imd_root(sweeps):
         root = root.set_coords(list(promote))
 
     fixed_angles = [
-        float(_as_scalar(sw["sweep_fixed_angle"]))
-        if "sweep_fixed_angle" in sw.variables
-        else float("nan")
+        (
+            float(_as_scalar(sw["sweep_fixed_angle"]))
+            if "sweep_fixed_angle" in sw.variables
+            else float("nan")
+        )
         for sw in sweeps
     ]
     root["sweep_fixed_angle"] = xr.DataArray(
@@ -561,7 +559,9 @@ def _open_single_imd_datatree(
 
     dtree: dict = {"/": root}
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup([sweep_ds], radar_parameters_subgroup)
+        dtree["/radar_parameters"] = _get_subgroup(
+            [sweep_ds], radar_parameters_subgroup
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             [sweep_ds], georeferencing_correction_subgroup
         )
@@ -783,6 +783,4 @@ def group_imd_files(paths):
         idx = int(m.group("idx")) if m.group("idx") is not None else 0
         groups.setdefault(stem, []).append((idx, path))
 
-    return [
-        [path for _, path in sorted(groups[stem])] for stem in sorted(groups)
-    ]
+    return [[path for _, path in sorted(groups[stem])] for stem in sorted(groups)]

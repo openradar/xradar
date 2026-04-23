@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2024-2025, openradar developers.
+# Copyright (c) 2024-2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
 """Tests for `io.backends.imd` module."""
@@ -12,23 +12,6 @@ from xarray import DataTree, open_dataset
 
 from xradar.io.backends import group_imd_files, open_imd_datatree, open_imd_volumes
 from xradar.io.backends.imd import _conform_imd_sweep, imd_mapping
-
-
-def _requests_available():
-    try:
-        import urllib.request
-
-        urllib.request.urlopen(
-            "https://github.com/syedhamidali/pyscancf_examples", timeout=10
-        )
-        return True
-    except Exception:
-        return False
-
-
-needs_network = pytest.mark.skipif(
-    not _requests_available(), reason="network access required for IMD sample data"
-)
 
 
 def test_imd_mapping_is_cfradial2():
@@ -44,14 +27,19 @@ def test_imd_mapping_is_cfradial2():
     assert imd_mapping["HCLASS"] == "HCLASS"
 
 
-@needs_network
 def test_open_dataset_imd(imd_file):
     ds = open_dataset(imd_file, engine="imd")
     # CfRadial2 sweep-level scalars are present
     assert "sweep_number" in ds.variables
     assert "sweep_mode" in ds.variables
     assert "scan_type" in ds.variables
-    assert str(ds["scan_type"].values) in {"ppi", "rhi", "ppi_sector", "rhi_sector", "unknown"}
+    assert str(ds["scan_type"].values) in {
+        "ppi",
+        "rhi",
+        "ppi_sector",
+        "rhi_sector",
+        "unknown",
+    }
     assert "sweep_fixed_angle" in ds.variables
     # at least one moment renamed to CfRadial2
     assert set(ds.data_vars) & {"DBZH", "VRADH", "DBTH", "WRADH"}
@@ -67,13 +55,11 @@ def test_open_dataset_imd(imd_file):
     ds.close()
 
 
-@needs_network
 def test_open_dataset_imd_first_dim_time(imd_file):
     ds = open_dataset(imd_file, engine="imd", first_dim="time")
     assert "time" in ds.dims
 
 
-@needs_network
 def test_open_imd_datatree_single_file(imd_file):
     dtree = open_imd_datatree(imd_file)
     assert isinstance(dtree, DataTree)
@@ -91,7 +77,6 @@ def test_open_imd_datatree_single_file(imd_file):
     assert set(sw0.data_vars) & {"DBZH", "VRADH", "DBTH", "WRADH"}
 
 
-@needs_network
 def test_open_imd_datatree_volume(imd_volume_files):
     dtree = open_imd_datatree(imd_volume_files)
     assert isinstance(dtree, DataTree)
@@ -105,7 +90,6 @@ def test_open_imd_datatree_volume(imd_volume_files):
         assert int(dtree[sw].ds["sweep_number"].values) == i
 
 
-@needs_network
 def test_open_imd_datatree_angle_filter(imd_volume_files):
     """min_angle/max_angle forwarded to util.create_volume."""
     # Load first to learn the actual angles, then filter to just the lowest.
@@ -119,25 +103,22 @@ def test_open_imd_datatree_angle_filter(imd_volume_files):
     assert filtered_angles[0] <= cutoff
 
 
-@needs_network
 def test_open_imd_datatree_single_file_kwargs_reject_cv_kwargs(imd_file):
     """create_volume kwargs are only valid for multi-file input."""
     with pytest.raises(TypeError):
         open_imd_datatree(imd_file, min_angle=0.0)
 
 
-@needs_network
 def test_open_imd_volumes_single_volume(imd_volume_files):
     """Passing one volume's worth of files yields a single vcp_NN child."""
     tree = open_imd_volumes(imd_volume_files)
     assert list(tree.children) == ["vcp_00"]
     assert "sweep_0" in tree["vcp_00"].children
-    assert "sweep_1" in tree["vcp_00"].children
+    assert len(tree["vcp_00"].children) == len(imd_volume_files)
     # parent root has IMD metadata
     assert tree.attrs.get("institution") == "India Meteorological Department"
 
 
-@needs_network
 def test_open_imd_volumes_multi_volume(imd_volume_files, tmp_path):
     """Two volumes with different stems -> vcp_00 and vcp_01."""
     import shutil
@@ -146,8 +127,7 @@ def test_open_imd_volumes_multi_volume(imd_volume_files, tmp_path):
     vol2 = []
     for src in imd_volume_files:
         base = os.path.basename(src)
-        # replace the timestamp portion to make a distinct stem
-        new_base = base.replace("GOA210515003646", "GOA210515004646")
+        new_base = base.replace("JPR220822135253", "JPR220822145253")
         dst = tmp_path / new_base
         shutil.copyfile(src, dst)
         vol2.append(str(dst))
@@ -156,7 +136,6 @@ def test_open_imd_volumes_multi_volume(imd_volume_files, tmp_path):
     assert list(tree.children) == ["vcp_00", "vcp_01"]
     for vcp in ("vcp_00", "vcp_01"):
         assert "sweep_0" in tree[vcp].children
-        assert "sweep_1" in tree[vcp].children
 
 
 def test_open_imd_volumes_empty_raises(tmp_path):
@@ -220,7 +199,6 @@ def test_group_imd_files_from_glob(tmp_path):
     assert len(groups[0]) == 2
 
 
-@needs_network
 def test_open_imd_datatree_optional_groups(imd_file):
     dtree = open_imd_datatree(imd_file, optional_groups=True)
     assert "radar_parameters" in dtree.children
@@ -243,12 +221,11 @@ def test_open_imd_datatree_optional_groups(imd_file):
     # pulse_width now lives on the sweep per FM 301 Table 8a, not in cal.
     rc = dtree["radar_calibration"].ds
     expected_cal = {"calibConst", "radarConst", "calNoise"}
-    assert expected_cal.issubset(rc.data_vars), (
-        f"expected {expected_cal} in /radar_calibration, got {set(rc.data_vars)}"
-    )
+    assert expected_cal.issubset(
+        rc.data_vars
+    ), f"expected {expected_cal} in /radar_calibration, got {set(rc.data_vars)}"
 
 
-@needs_network
 def test_open_dataset_imd_reindex_angle(imd_file):
     """reindex_angle should produce a uniformly-spaced azimuth grid."""
     ds = open_dataset(
@@ -267,7 +244,6 @@ def test_open_dataset_imd_reindex_angle(imd_file):
     ds.close()
 
 
-@needs_network
 def test_open_imd_datatree_has_cfradial2_required_vars(imd_file):
     """FM 301 Table 7a: prt_mode and follow_mode are required on each sweep."""
     dtree = open_imd_datatree(imd_file)
@@ -278,7 +254,6 @@ def test_open_imd_datatree_has_cfradial2_required_vars(imd_file):
     assert str(sw["follow_mode"].values) == "not_set"
 
 
-@needs_network
 def test_open_dataset_imd_fm301_sweep_metadata(imd_file):
     """FM 301 Tables 7b and 8a: PRT, scan_rate, n_samples on (time,) dim."""
     ds = open_dataset(imd_file, engine="imd")
@@ -313,7 +288,6 @@ def test_open_dataset_imd_fm301_sweep_metadata(imd_file):
     ds.close()
 
 
-@needs_network
 def test_open_imd_datatree_fm301_root_attrs(imd_file):
     """FM 301 Table 2: mandatory global attributes."""
     dtree = open_imd_datatree(imd_file)
@@ -323,7 +297,6 @@ def test_open_imd_datatree_fm301_root_attrs(imd_file):
     assert dtree.attrs["institution"] == "India Meteorological Department"
 
 
-@needs_network
 def test_open_dataset_imd_moment_attrs(imd_file):
     """Moments should carry canonical CfRadial2 standard_name/long_name/units."""
     ds = open_dataset(imd_file, engine="imd")
@@ -343,7 +316,6 @@ def test_open_dataset_imd_moment_attrs(imd_file):
     ds.close()
 
 
-@needs_network
 def test_conform_imd_sweep_directly(imd_file):
     """_conform_imd_sweep should accept a raw IMD Dataset and produce CfRadial2 layout."""
     import xarray as xr
