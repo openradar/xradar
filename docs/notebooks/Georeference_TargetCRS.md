@@ -11,7 +11,7 @@ kernelspec:
   name: python3
 ---
 
-# Reproject Radar Coordinates via the Accessor
+# Reproject Radar Coordinates
 
 This notebook demonstrates the ``target_crs`` option now exposed on
 ``.xradar.georeference()`` for ``xarray.Dataset`` and ``xarray.DataTree``.
@@ -185,28 +185,42 @@ fig.tight_layout()
 
 +++
 
-## 6. Multiple sweeps on a cartopy map
+## 6. Radar data on different map projections
 
-Plot several elevation sweeps together on a geographic map.
+The same georeferenced radar data rendered on four different cartopy map
+projections — coastlines and gridlines make the projection distortion visible.
 
 ```{code-cell}
+import cartopy.feature as cfeature
+
 radar_geo = radar.xradar.georeference(target_crs=4326)
-sweep_keys = [k for k in radar_geo.match("sweep_*")][:4]
+lon0 = float(radar_geo.ds.coords["longitude"].values)
+lat0 = float(radar_geo.ds.coords["latitude"].values)
 
-fig, axes = plt.subplots(2, 2, figsize=(14, 12),
-                         subplot_kw=dict(projection=ccrs.PlateCarree()))
+projections = [
+    ("PlateCarree", ccrs.PlateCarree()),
+    ("Lambert Conformal", ccrs.LambertConformal(
+        central_longitude=lon0, central_latitude=lat0,
+    )),
+    ("Orthographic (globe)", ccrs.Orthographic(
+        central_longitude=lon0, central_latitude=lat0,
+    )),
+    ("Mercator", ccrs.Mercator(central_longitude=lon0)),
+]
 
-for ax, key in zip(axes.flat, sweep_keys):
-    sw = radar_geo[key]
-    elev = float(sw.ds["sweep_fixed_angle"].values)
-    sw["DBZ"].plot(
+fig = plt.figure(figsize=(14, 12))
+
+for i, (name, proj) in enumerate(projections, 1):
+    ax = fig.add_subplot(2, 2, i, projection=proj)
+    radar_geo["sweep_0"]["DBZ"].plot(
         x="x", y="y", cmap="ChaseSpectral",
         transform=ccrs.PlateCarree(), ax=ax,
-        cbar_kwargs=dict(pad=0.08, shrink=0.7),
+        add_colorbar=False,
     )
     ax.coastlines()
-    ax.gridlines(draw_labels=True)
-    ax.set_title(f"{key} — elevation {elev:.1f}°")
+    ax.add_feature(cfeature.BORDERS, linewidth=0.5)
+    ax.gridlines(draw_labels=isinstance(proj, (ccrs.PlateCarree, ccrs.Mercator)))
+    ax.set_title(name)
 
 fig.tight_layout()
 ```
