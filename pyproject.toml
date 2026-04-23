@@ -46,6 +46,7 @@ nexradlevel2 = "xradar.io.backends:NexradLevel2BackendEntrypoint"
 datamet = "xradar.io.backends:DataMetBackendEntrypoint"
 metek = "xradar.io.backends:MRRBackendEntrypoint"
 uf = "xradar.io.backends:UFBackendEntrypoint"
+imd = "xradar.io.backends:IMDBackendEntrypoint"
 
 [build-system]
 requires = [

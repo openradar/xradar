@@ -256,6 +256,58 @@ With {func}`~xradar.io.backends.metek.open_metek_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
+## India Meteorological Department (IMD)
+
+### IMDBackendEntrypoint
+
+The xarray backend {class}`~xradar.io.backends.imd.IMDBackendEntrypoint` reads a
+single IMD NetCDF radar file and returns a CfRadial2-compatible
+{py:class}`xarray:xarray.Dataset` containing one sweep. IMD files use a
+NetCDF4 container with an IRIS-inspired variable layout (``radialAzim``,
+``radialElev``, single-letter moment codes ``T``, ``Z``, ``V``, ``W``, etc.).
+The backend renames dimensions/variables to the CfRadial2 convention and
+maps moments to ``DBTH``, ``DBZH``, ``VRADH``, ``WRADH``.
+
+### open_imd_datatree
+
+IMD stores **one sweep per file**. A complete volume is assembled from
+multiple files: typically 2-3 files for long-range PPI and 9-10 files for
+short-range, high-resolution PPI. Pass a single file path to
+{func}`~xradar.io.backends.imd.open_imd_datatree` to get a single-sweep
+DataTree, or a list of file paths (one per sweep) to assemble a volume:
+
+```python
+import xradar as xd
+
+# single sweep
+dtree = xd.io.open_imd_datatree("GOA210515003646-IMD-C.nc")
+
+# multi-sweep volume (stacked via xradar.util.create_volume)
+files = sorted(glob.glob("GOA210515003646-IMD-C.nc*"))
+dtree = xd.io.open_imd_datatree(files)
+```
+
+### group_imd_files and open_imd_volumes
+
+A single directory usually holds many volumes back-to-back. Use
+{func}`~xradar.io.backends.imd.group_imd_files` to split a directory
+(or glob, or list) into per-volume file lists by filename stem, or
+{func}`~xradar.io.backends.imd.open_imd_volumes` to load everything at
+once into a nested DataTree with ``vcp_NN`` child nodes (VCP = *volume
+coverage pattern*):
+
+```python
+import xradar as xd
+
+# Iterate one volume at a time
+for files in xd.io.group_imd_files("/data/imd"):
+    dtree = xd.io.open_imd_datatree(files)
+
+# Or load all volumes into a single tree
+tree = xd.io.open_imd_volumes("/data/imd")
+tree["vcp_00/sweep_0"].ds["DBZH"]
+```
+
 ## Universal Format (UF))
 
 ### UFBackendEntryPoint

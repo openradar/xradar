@@ -7,6 +7,7 @@
 
 ## 0.12.0 (2026-04-21)
 
+* ADD: India Meteorological Department (IMD) radar NetCDF reader (``IMDBackendEntrypoint``, ``open_imd_datatree``). IMD stores one sweep per file; ``open_imd_datatree`` accepts a single file or a list of files to assemble a multi-sweep volume by [@syedhamidali](https://github.com/syedhamidali)
 * MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)
 * MNT: Clarify contributor, team-member, and maintainer roles in the contributing guide, including the pathway to greater project involvement ({issue}`341`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`354`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``open_nexradlevel2_datatree`` keeps sweeps with interior sweep-index gaps — derive sweep names from actual indices in ``nex.data`` instead of ``range(len(...))`` so upstream-dropped interior cuts (e.g. ``[0..9, 11]``) no longer raise ``KeyError`` ({issue}`361`, {pull}`362`) by [@aladinor](https://github.com/aladinor)
