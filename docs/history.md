@@ -1,5 +1,9 @@
 # History
 
+## Development
+
+* ENH: Expose ``target_crs`` on ``.xradar.georeference()`` accessor for DataArray, Dataset and DataTree, enabling reprojection via e.g. ``radar.xradar.georeference(target_crs=4326)`` ({issue}`243`) by [@syedhamidali](https://github.com/syedhamidali)
+
 ## 0.12.0 (2026-04-21)
 
 * MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)

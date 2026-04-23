@@ -44,6 +44,7 @@ notebooks/UF
 :caption: Examples
 
 notebooks/Assign_GeoCoords
+notebooks/Georeference_TargetCRS
 notebooks/CfRadial1_Export
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
