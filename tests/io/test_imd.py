@@ -344,6 +344,29 @@ def test_read_imd_sweep_reindex_angle(imd_file):
     np.testing.assert_allclose(spacing, 1.0, atol=1e-6)
 
 
+def test_conform_imd_sweep_prt_mode_fixed(imd_file):
+    """When highPRF == lowPRF, prt_mode should be 'fixed'."""
+    import xarray as xr
+
+    raw = xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False)
+    if "lowPRF" in raw.variables:
+        raw["lowPRF"] = raw["highPRF"]
+    ds = _conform_imd_sweep(raw, first_dim="auto", site_as_coords=True)
+    assert str(ds["prt_mode"].values) == "fixed"
+    raw.close()
+
+
+def test_conform_imd_sweep_prt_mode_not_set(imd_file):
+    """When highPRF is missing or zero, prt_mode should be 'not_set'."""
+    import xarray as xr
+
+    raw = xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False)
+    raw = raw.drop_vars([v for v in ("highPRF", "lowPRF") if v in raw.variables])
+    ds = _conform_imd_sweep(raw, first_dim="auto", site_as_coords=True)
+    assert str(ds["prt_mode"].values) == "not_set"
+    raw.close()
+
+
 def test_conform_imd_sweep_directly(imd_file):
     """_conform_imd_sweep should accept a raw IMD Dataset and produce CfRadial2 layout."""
     import xarray as xr

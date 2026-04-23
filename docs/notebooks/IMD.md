@@ -33,7 +33,7 @@ Fetching IMD radar data files from [open-radar-data](https://github.com/openrada
 filename_sweep_0 = DATASETS.fetch("IMD/JPR220822135253-IMD-B.nc")
 filename_sweep_1 = DATASETS.fetch("IMD/JPR220822135253-IMD-B.nc.1")
 volume_files = [
-    DATASETS.fetch(f"JPR220822135253-IMD-B.nc{s}")
+    DATASETS.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
     for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
 ]
 ```
