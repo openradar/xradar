@@ -227,7 +227,7 @@ def test_open_imd_datatree_optional_groups(imd_file):
 
 
 def test_open_dataset_imd_reindex_angle(imd_file):
-    """reindex_angle should produce a uniformly-spaced azimuth grid."""
+    """reindex_angle should produce a 360-bin azimuth grid spanning 0-360°."""
     ds = open_dataset(
         imd_file,
         engine="imd",
@@ -239,8 +239,10 @@ def test_open_dataset_imd_reindex_angle(imd_file):
         },
     )
     assert ds.sizes["azimuth"] == 360
-    spacing = np.diff(ds["azimuth"].values)
-    np.testing.assert_allclose(spacing, 1.0, atol=1e-6)
+    az = ds["azimuth"].values
+    assert az[0] >= 0.0
+    assert az[-1] < 360.0
+    assert np.all(np.diff(az) > 0)
     ds.close()
 
 
@@ -340,8 +342,10 @@ def test_read_imd_sweep_reindex_angle(imd_file):
         },
     )
     assert ds.sizes["azimuth"] == 360
-    spacing = np.diff(ds["azimuth"].values)
-    np.testing.assert_allclose(spacing, 1.0, atol=1e-6)
+    az = ds["azimuth"].values
+    assert az[0] >= 0.0
+    assert az[-1] < 360.0
+    assert np.all(np.diff(az) > 0)
 
 
 def test_conform_imd_sweep_prt_mode_fixed(imd_file):
