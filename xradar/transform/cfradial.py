@@ -66,6 +66,7 @@ from ..io.backends.cfradial1 import (
     _get_required_root_dataset,
     _get_subgroup,
     _get_sweep_groups,
+    open_cfradial1_datatree,
 )
 from ..io.backends.common import _attach_sweep_groups
 from ..io.export.cfradial1 import (
@@ -133,24 +134,46 @@ def to_cfradial2(ds, **kwargs):
     kwargs.pop("site_as_coords", True)
     sweep = kwargs.pop("sweep", None)
 
+    # Datasets opened via ``engine="cfradial1"`` without a group only expose the
+    # normalized root metadata view. If the original source path is available,
+    # reopen the full volume and delegate to the standard datatree reader.
+    if "sweep_number" not in ds and "fixed_angle" not in ds:
+        if "sweep_group_name" in ds and "sweep_fixed_angle" in ds:
+            source = ds.encoding.get("source")
+            if source:
+                return open_cfradial1_datatree(
+                    source,
+                    sweep=sweep,
+                    first_dim=first_dim,
+                    optional=optional,
+                    optional_groups=True,
+                )
+            raise ValueError(
+                "to_cfradial2 requires a full CfRadial1 volume dataset containing "
+                "`sweep_number` and `fixed_angle`. "
+                "The provided dataset looks like the normalized root metadata view "
+                'returned by `xarray.open_dataset(..., engine="cfradial1")`, but '
+                "it does not retain a readable `encoding['source']` path to reopen "
+                "the full volume."
+            )
+
     # Create DataTree root node with required data
     root_data = _get_required_root_dataset(ds, optional=optional)
     dtree = DataTree(dataset=root_data, name="root")
 
     # Attach additional root metadata groups as child nodes
     radar_parameters = _get_subgroup(ds, radar_parameters_subgroup)
-    if radar_parameters:
+    if radar_parameters.data_vars:
         dtree["radar_parameters"] = DataTree(radar_parameters, name="radar_parameters")
 
     calib = _get_radar_calibration(ds)
-    if calib:
+    if calib.data_vars:
         dtree["radar_calibration"] = DataTree(calib, name="radar_calibration")
 
     georeferencing = _get_subgroup(ds, georeferencing_correction_subgroup)
-    if georeferencing:
-        dtree["georeferencing_correction"] = DataTree(
-            georeferencing, name="georeferencing_correction"
-        )
+    dtree["georeferencing_correction"] = DataTree(
+        georeferencing, name="georeferencing_correction"
+    )
 
     # Attach sweep child nodes
     sweep_groups = list(
