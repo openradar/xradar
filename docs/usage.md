@@ -37,6 +37,7 @@ notebooks/MRR
 notebooks/NexradLevel2
 notebooks/nexrad_read_chunks
 notebooks/UF
+notebooks/IMD
 ```
 
 ```{toctree}

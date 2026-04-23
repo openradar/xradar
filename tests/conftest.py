@@ -238,6 +238,19 @@ def hpl_file():
     return DATASETS.fetch("User1_100_20240714_122137.hpl")
 
 
+@pytest.fixture(scope="session")
+def imd_file():
+    return DATASETS.fetch("IMD/JPR220822135253-IMD-B.nc")
+
+
+@pytest.fixture(scope="session")
+def imd_volume_files():
+    return [
+        DATASETS.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
+        for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
+    ]
+
+
 @pytest.fixture
 def temp_file(tmp_path):
     rnd = uuid.uuid4().hex[:8]
