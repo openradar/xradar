@@ -29,8 +29,10 @@ radar = radar.xradar.georeference(target_crs=4326)
 ## Imports
 
 ```{code-cell}
+import cartopy.crs as ccrs
 import cmweather  # noqa
 import matplotlib.pyplot as plt
+import pyproj
 from open_radar_data import DATASETS
 
 import xradar as xd
@@ -108,8 +110,6 @@ print("CRS:", crs.name, "| EPSG:", crs.to_epsg())
 ```
 
 ```{code-cell}
-import pyproj
-
 utm_crs = pyproj.CRS("EPSG:32633")  # UTM zone 33N (tweak for your radar site)
 radar_utm = radar.xradar.georeference(target_crs=utm_crs)
 sweep_utm = radar_utm["sweep_0"].to_dataset(inherit="all_coords")
@@ -124,8 +124,6 @@ print("CRS:", crs.name, "| EPSG:", crs.to_epsg())
 Once data is in a known CRS, hand it off to cartopy for map plotting.
 
 ```{code-cell}
-import cartopy.crs as ccrs
-
 radar_geo = radar.xradar.georeference(target_crs=4326)
 
 fig = plt.figure(figsize=(9, 8))
@@ -145,7 +143,77 @@ ax.set_title("Georeferenced PPI on PlateCarree map")
 
 +++
 
-## 5. Works on a single Dataset too
+## 5. Side-by-side comparison of projections
+
+Compare the same sweep in AEQD (meters), geographic (lon/lat), and
+Lambert Conformal Conic — a projection commonly used for mid-latitude
+weather maps.
+
+```{code-cell}
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+# AEQD (default)
+radar_aeqd = radar.xradar.georeference()
+radar_aeqd["sweep_0"]["DBZ"].plot(
+    x="x", y="y", cmap="ChaseSpectral", ax=axes[0], add_colorbar=False,
+)
+axes[0].set_title("AEQD (meters)")
+axes[0].set_aspect("equal")
+
+# EPSG:4326 (lon/lat)
+radar_geo = radar.xradar.georeference(target_crs=4326)
+radar_geo["sweep_0"]["DBZ"].plot(
+    x="x", y="y", cmap="ChaseSpectral", ax=axes[1], add_colorbar=False,
+)
+axes[1].set_title("EPSG:4326 (lon/lat)")
+axes[1].set_xlabel("Longitude")
+axes[1].set_ylabel("Latitude")
+
+# Lambert Conformal Conic
+lcc_crs = pyproj.CRS.from_proj4(
+    "+proj=lcc +lat_1=30 +lat_2=60 +lat_0=39.5 +lon_0=-105 +datum=WGS84"
+)
+radar_lcc = radar.xradar.georeference(target_crs=lcc_crs)
+radar_lcc["sweep_0"]["DBZ"].plot(
+    x="x", y="y", cmap="ChaseSpectral", ax=axes[2], add_colorbar=False,
+)
+axes[2].set_title("Lambert Conformal Conic")
+axes[2].set_aspect("equal")
+
+fig.tight_layout()
+```
+
++++
+
+## 6. Multiple sweeps on a cartopy map
+
+Plot several elevation sweeps together on a geographic map.
+
+```{code-cell}
+radar_geo = radar.xradar.georeference(target_crs=4326)
+sweep_keys = [k for k in radar_geo.match("sweep_*")][:4]
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 12),
+                         subplot_kw=dict(projection=ccrs.PlateCarree()))
+
+for ax, key in zip(axes.flat, sweep_keys):
+    sw = radar_geo[key]
+    elev = float(sw.ds["sweep_fixed_angle"].values)
+    sw["DBZ"].plot(
+        x="x", y="y", cmap="ChaseSpectral",
+        transform=ccrs.PlateCarree(), ax=ax,
+        cbar_kwargs=dict(pad=0.08, shrink=0.7),
+    )
+    ax.coastlines()
+    ax.gridlines(draw_labels=True)
+    ax.set_title(f"{key} — elevation {elev:.1f}°")
+
+fig.tight_layout()
+```
+
++++
+
+## 7. Works on a single Dataset too
 
 The accessor is available on ``Dataset`` and ``DataArray`` as well, not just
 ``DataTree``.
@@ -158,7 +226,7 @@ ds_geo[["DBZ"]]
 
 +++
 
-## Notes
+## Summary
 
 * ``target_crs`` accepts anything ``pyproj.CRS(...)`` accepts: int
   [EPSG codes](https://epsg.io/), ``"EPSG:xxxx"`` strings, WKT, or
