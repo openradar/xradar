@@ -316,6 +316,34 @@ def test_open_dataset_imd_moment_attrs(imd_file):
     ds.close()
 
 
+def test_open_imd_datatree_empty_list_raises():
+    with pytest.raises(ValueError, match="requires at least one file"):
+        open_imd_datatree([])
+
+
+def test_open_imd_datatree_single_element_list(imd_file):
+    dtree = open_imd_datatree([imd_file])
+    assert isinstance(dtree, DataTree)
+    assert "sweep_0" in dtree.children
+
+
+def test_read_imd_sweep_reindex_angle(imd_file):
+    from xradar.io.backends.imd import _read_imd_sweep
+
+    ds = _read_imd_sweep(
+        imd_file,
+        reindex_angle={
+            "start_angle": 0.0,
+            "stop_angle": 360.0,
+            "angle_res": 1.0,
+            "direction": 1,
+        },
+    )
+    assert ds.sizes["azimuth"] == 360
+    spacing = np.diff(ds["azimuth"].values)
+    np.testing.assert_allclose(spacing, 1.0, atol=1e-6)
+
+
 def test_conform_imd_sweep_directly(imd_file):
     """_conform_imd_sweep should accept a raw IMD Dataset and produce CfRadial2 layout."""
     import xarray as xr
