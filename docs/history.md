@@ -2,13 +2,11 @@
 
 ## Development
 
+* FIX: Preserve CfRadial metadata groups during CfRadial1/CfRadial2 transforms, allow ``to_cfradial2`` to reopen root-only ``engine="cfradial1"`` datasets, and normalize sweep metadata after ``map_over_sweeps`` operations so filtered volumes can be exported to CfRadial1 again ({issue}`254`, {issue}`322`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Expose ``target_crs`` on ``.xradar.georeference()`` accessor for DataArray, Dataset and DataTree, enabling reprojection via e.g. ``radar.xradar.georeference(target_crs=4326)`` ({issue}`243`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
-## Development
-
-* FIX: Preserve CfRadial metadata groups during CfRadial1/CfRadial2 transforms, allow ``to_cfradial2`` to reopen root-only ``engine="cfradial1"`` datasets, and normalize sweep metadata after ``map_over_sweeps`` operations so filtered volumes can be exported to CfRadial1 again ({issue}`254`, {issue}`322`) by [@syedhamidali](https://github.com/syedhamidali)
 * MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)
 * MNT: Clarify contributor, team-member, and maintainer roles in the contributing guide, including the pathway to greater project involvement ({issue}`341`) by [@kmuehlbauer](https://github.com/kmuehlbauer), ({pull}`354`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``open_nexradlevel2_datatree`` keeps sweeps with interior sweep-index gaps — derive sweep names from actual indices in ``nex.data`` instead of ``range(len(...))`` so upstream-dropped interior cuts (e.g. ``[0..9, 11]``) no longer raise ``KeyError`` ({issue}`361`, {pull}`362`) by [@aladinor](https://github.com/aladinor)
