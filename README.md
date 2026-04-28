@@ -58,7 +58,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 * [MRR](https://metek.de/product/mrr-pro/) — Micro Rain Radar (METEK)
 * [NexradLevel2](https://www.ncei.noaa.gov/products/radar/next-generation-weather-radar) — NEXRAD WSR-88D Level 2
 * [Rainbow](https://www.leonardo.com/en/products/meteor-family) — LEONARDO (formerly Selex/Gematronik) Rainbow
-* UF — Universal Format
+* [UF](https://journals.ametsoc.org/view/journals/bams/61/11/1520-0477-61_11_1401.xml) — Universal Format
 
 ### Data Transformation and Alignment
 * Georeferencing (AEQD projection)
