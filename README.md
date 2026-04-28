@@ -46,7 +46,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 
 ### Import/Export Capabilities
 * CfRadial1 and CfRadial2 — CF/Radial convention for radar data
-* ODIM_H5 — OPERA Data Information Model (HDF5)
+* ODIM_H5 — EUMETNET OPERA Data Information Model (HDF5)
 
 ### Import-Only Capabilities
 * DataMet — DataMet weather radar
