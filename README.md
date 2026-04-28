@@ -45,19 +45,19 @@ Xradar is considered stable for the implemented readers and writers which have b
 ## Features
 
 ### Import/Export Capabilities
-* CfRadial1 and CfRadial2 — CF/Radial convention for radar data
-* ODIM_H5 — EUMETNET OPERA Data Information Model (HDF5)
+* [CfRadial1 and CfRadial2](https://github.com/NCAR/CfRadial) — CF/Radial convention for radar data
+* [ODIM_H5](https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/) — EUMETNET OPERA Data Information Model (HDF5)
 
 ### Import-Only Capabilities
 * DataMet — DataMet weather radar
-* Furuno — Furuno weather radar
-* Gamic — GAMIC HDF5
-* HPL — Halo Photonics Lidar
-* IMD — India Meteorological Department
-* Iris — Vaisala IRIS/Sigmet
-* MRR — Micro Rain Radar (METEK)
-* NexradLevel2 — NEXRAD WSR-88D Level 2
-* Rainbow — LEONARDO (formerly Selex/Gematronik) Rainbow
+* [Furuno](https://www.furuno.com/en/products/weather-radar/) — Furuno weather radar
+* [Gamic](https://gamic.com/) — GAMIC HDF5
+* [HPL](https://hfreval.com/) — Halo Photonics Lidar
+* [IMD](https://mausam.imd.gov.in/) — India Meteorological Department
+* [Iris](https://www.vaisala.com/en/products/weather-environmental-sensors/thunderstorm-and-weather-radars) — Vaisala IRIS/Sigmet
+* [MRR](https://metek.de/product/mrr-pro/) — Micro Rain Radar (METEK)
+* [NexradLevel2](https://www.ncei.noaa.gov/products/radar/next-generation-weather-radar) — NEXRAD WSR-88D Level 2
+* [Rainbow](https://www.leonardo.com/en/products/meteor-family) — LEONARDO (formerly Selex/Gematronik) Rainbow
 * UF — Universal Format
 
 ### Data Transformation and Alignment
