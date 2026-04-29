@@ -3,6 +3,7 @@
 ## Development
 
 * DOC: Add projection comparison and cartopy map examples to ``Georeference_TargetCRS`` notebook by [@syedhamidali](https://github.com/syedhamidali)
+* DOC: Add full-form descriptions for all supported radar formats in README.md by [@syedhamidali](https://github.com/syedhamidali)
 * ADD: India Meteorological Department (IMD) radar NetCDF reader (``IMDBackendEntrypoint``, ``open_imd_datatree``). IMD stores one sweep per file; ``open_imd_datatree`` accepts a single file or a list of files to assemble a multi-sweep volume ({issue}`368`, {pull}`367`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: Preserve CfRadial metadata groups during CfRadial1/CfRadial2 transforms, allow ``to_cfradial2`` to reopen root-only ``engine="cfradial1"`` datasets, and normalize sweep metadata after ``map_over_sweeps`` operations so filtered volumes can be exported to CfRadial1 again ({issue}`254`, {issue}`322`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Expose ``target_crs`` on ``.xradar.georeference()`` accessor for DataArray, Dataset and DataTree, enabling reprojection via e.g. ``radar.xradar.georeference(target_crs=4326)`` ({issue}`243`) by [@syedhamidali](https://github.com/syedhamidali)
