@@ -209,6 +209,8 @@ jobs:
     name: test build distribution for testpypi
     needs: [lint, build_0]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     defaults:
       run:
         shell: bash -l {0}
