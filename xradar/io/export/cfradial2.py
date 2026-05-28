@@ -76,7 +76,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
                 )
             )
 
-    root = dtree["/"].to_dataset()
+    root = dtree["/"].ds
     # fix Conventions
     root.attrs["Conventions"] = "Cf/Radial"
     root.attrs["version"] = "2.0"
