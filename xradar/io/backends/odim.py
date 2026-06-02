@@ -100,8 +100,6 @@ def _get_azimuth_how(how):
     startaz = how["startazA"]
     stopaz = how.get("stopazA", False)
     if stopaz is False:
-        # stopazA missing
-        # create from startazA
         stopaz = np.roll(startaz, -1)
         stopaz[-1] += 360
     zero_index = np.where(stopaz < startaz)
@@ -114,6 +112,27 @@ def _get_azimuth_how(how):
 def _get_azimuth_where(where):
     res = 360.0 / where["nrays"]
     return np.arange(res / 2.0, 360.0, res, dtype="float32")
+
+
+def _get_azimuth_nominal(nrays, how):
+
+    if nrays not in [180, 360, 450, 720, 900]:
+        warnings.warn(f"xradar: Unexpected number of rays ({nrays})")
+        raise ValueError
+
+    ascale = 360 / nrays
+    try:
+        astart = how["startazA"][0]
+        astart = min(astart, astart - 360, key=abs)
+        astart = np.round(astart / (ascale / 2)) * ascale / 2
+    except (KeyError, TypeError, AttributeError):
+        try:
+            astart = how["astart"]
+        except KeyError:
+            warnings.warn("xradar: No startazA or astart found, using 0 as default.")
+            astart = 0
+    azimuth = np.arange(astart + ascale / 2, 360, ascale)
+    return azimuth
 
 
 def _get_fixed_dim_and_angle(where):
@@ -407,11 +426,18 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         h5netcdf filehandle.
     group : str
         odim group to acquire
+    azimuth_mode : str
+        ``"nominal"`` (default) for uniform sweep from first ``startazA``,
+        ``"per_ray"`` for per-ray midpoint from ``startazA``/``stopazA``.
 
     Returns
     -------
     object : metadata object
     """
+
+    def __init__(self, fileobj, group, azimuth_mode="nominal"):
+        super().__init__(fileobj, group)
+        self._azimuth_mode = azimuth_mode
 
     @property
     def ds_what(self):
@@ -461,10 +487,18 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
 
     @property
     def _azimuth(self):
-        try:
-            azimuth = _get_azimuth_how(self.how)
-        except (AttributeError, KeyError, TypeError):
-            azimuth = _get_azimuth_where(self.where)
+        nrays = self.where["nrays"]
+        if self._azimuth_mode == "nominal":
+            try:
+                azimuth = _get_azimuth_nominal(nrays, self.how)
+            except ValueError:
+                warnings.warn("xradar: Using per ray real azimuth")
+                self._azimuth_mode = "per_ray"
+        if self._azimuth_mode == "per_ray":
+            try:
+                azimuth = _get_azimuth_how(self.how)
+            except (AttributeError, KeyError, TypeError):
+                azimuth = _get_azimuth_where(self.where)
         return Variable((self.dim0,), azimuth, get_azimuth_attrs())
 
     @property
@@ -607,6 +641,7 @@ class OdimSubStore(AbstractDataStore):
         store,
         group=None,
         lock=False,
+        azimuth_mode="nominal",
     ):
         if not isinstance(store, OdimStore):
             raise TypeError(
@@ -619,11 +654,14 @@ class OdimSubStore(AbstractDataStore):
         self._filename = store.filename
         self.is_remote = is_remote_uri(self._filename)
         self.lock = ensure_lock(lock)
+        self._azimuth_mode = azimuth_mode
 
     @property
     def root(self):
         with self._manager.acquire_context(False) as root:
-            return _OdimH5NetCDFMetadata(root, self._group.lstrip("/"))
+            return _OdimH5NetCDFMetadata(
+                root, self._group.lstrip("/"), azimuth_mode=self._azimuth_mode
+            )
 
     def _acquire(self, needs_lock=True):
         with self._manager.acquire_context(needs_lock) as root:
@@ -663,7 +701,7 @@ class OdimSubStore(AbstractDataStore):
 class OdimStore(AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
-    def __init__(self, manager, group=None, lock=False):
+    def __init__(self, manager, group=None, lock=False, azimuth_mode="nominal"):
         if isinstance(manager, (h5netcdf.File, h5netcdf.Group)):
             if group is None:
                 root, group = find_root_and_group(manager)
@@ -683,6 +721,7 @@ class OdimStore(AbstractDataStore):
         self.lock = ensure_lock(lock)
         self._substore = None
         self._need_time_recalc = False
+        self._azimuth_mode = azimuth_mode
 
     @classmethod
     def open(
@@ -695,6 +734,7 @@ class OdimStore(AbstractDataStore):
         invalid_netcdf=None,
         phony_dims=None,
         decode_vlen_strings=True,
+        azimuth_mode="nominal",
     ):
         if isinstance(filename, bytes):
             raise ValueError(
@@ -717,7 +757,7 @@ class OdimStore(AbstractDataStore):
                 lock = False
 
         manager = CachingFileManager(h5netcdf.File, filename, mode=mode, kwargs=kwargs)
-        return cls(manager, group=group, lock=lock)
+        return cls(manager, group=group, lock=lock, azimuth_mode=azimuth_mode)
 
     @property
     def filename(self):
@@ -741,6 +781,7 @@ class OdimStore(AbstractDataStore):
                             self,
                             group=group,
                             lock=self.lock,
+                            azimuth_mode=self._azimuth_mode,
                         )
                         for group in subgroups
                     ]
@@ -786,6 +827,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
+    azimuth_mode : str
+        ``"nominal"`` (default) for uniform sweep from first ``startazA``,
+        ``"per_ray"`` for per-ray midpoint from ``startazA``/``stopazA``.
     kwargs : dict
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
     """
@@ -813,6 +857,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
+        azimuth_mode="nominal",
     ):
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
@@ -824,6 +869,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             invalid_netcdf=invalid_netcdf,
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
+            azimuth_mode=azimuth_mode,
         )
 
         store_entrypoint = StoreBackendEntrypoint()

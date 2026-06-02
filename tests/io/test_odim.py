@@ -57,6 +57,126 @@ def test_get_azimuth_where(nrays):
     assert udiff[0] == 360.0 / nrays
 
 
+def test_odim_azimuth_nominal(odim_file):
+    import xarray as xr
+
+    ds = xr.open_dataset(odim_file, engine="odim", group="sweep_0")
+    azimuth = ds.azimuth.values
+    udiff = np.unique(np.diff(azimuth))
+    assert len(azimuth) == 360
+    assert len(udiff) == 1
+    assert udiff[0] == 1.0
+
+
+def test_odim_azimuth_per_ray(odim_file):
+    import xarray as xr
+
+    ds = xr.open_dataset(
+        odim_file, engine="odim", group="sweep_0", azimuth_mode="per_ray"
+    )
+    azimuth = ds.azimuth.values
+    assert len(azimuth) == 360
+    # per-ray should still give uniform spacing for this file
+    udiff = np.unique(np.diff(azimuth))
+    assert len(udiff) == 1
+    assert udiff[0] == 1.0
+
+
+def test_odim_azimuth_fallback_nonstandard_nrays(tmp_path):
+    import h5netcdf
+
+    nrays = 361
+    ascale = 360.0 / nrays
+
+    startazA = np.arange(0, 360, ascale, dtype=np.float32)
+    stopazA = np.arange(ascale, 360 + ascale, ascale, dtype=np.float32)
+
+    filepath = tmp_path / "test_nonstandard.h5"
+    with h5netcdf.File(filepath, "w") as f:
+        f.attrs["Conventions"] = "ODIM_H5/V2_2"
+        wg = f.create_group("where")
+        wg.attrs["lon"] = 0.0
+        wg.attrs["lat"] = 0.0
+        wg.attrs["height"] = 0.0
+        dg = f.create_group("dataset1")
+        dw = dg.create_group("where")
+        dw.attrs["nrays"] = nrays
+        dw.attrs["nbins"] = 100
+        dw.attrs["rstart"] = 0.0
+        dw.attrs["rscale"] = 100.0
+        dw.attrs["elangle"] = 0.5
+        dw.attrs["a1gate"] = 0
+        dh = dg.create_group("how")
+        dh.attrs["startazA"] = startazA
+        dh.attrs["stopazA"] = stopazA
+        dh.attrs["startazT"] = np.zeros(nrays, dtype=np.float64)
+        dh.attrs["stopazT"] = np.ones(nrays, dtype=np.float64)
+        dwhat = dg.create_group("what")
+        dwhat.attrs["quantity"] = "DBZH"
+        dwhat.attrs["startdate"] = "20000101"
+        dwhat.attrs["starttime"] = "000000"
+        dwhat.attrs["enddate"] = "20000101"
+        dwhat.attrs["endtime"] = "000030"
+        dg.create_group("data1")
+
+    import xarray as xr
+
+    with pytest.warns(UserWarning, match="Unexpected number of rays"):
+        ds = xr.open_dataset(filepath, engine="odim", group="sweep_0")
+    azimuth = ds.azimuth.values
+    assert len(azimuth) == nrays
+    # should match per-ray midpoint
+    wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
+    wanted[wanted >= 360] -= 360
+    np.testing.assert_array_almost_equal(azimuth, wanted, decimal=4)
+
+
+def test_odim_azimuth_fallback_nonstandard_nrays_with_duplicate(tmp_path):
+    import h5netcdf
+
+    nrays = 361
+    startazA = create_startazA(nrays)
+    stopazA = create_stopazA(nrays)
+
+    filepath = tmp_path / "test_nonstandard_dup.h5"
+    with h5netcdf.File(filepath, "w") as f:
+        f.attrs["Conventions"] = "ODIM_H5/V2_2"
+        wg = f.create_group("where")
+        wg.attrs["lon"] = 0.0
+        wg.attrs["lat"] = 0.0
+        wg.attrs["height"] = 0.0
+        dg = f.create_group("dataset1")
+        dw = dg.create_group("where")
+        dw.attrs["nrays"] = nrays
+        dw.attrs["nbins"] = 100
+        dw.attrs["rstart"] = 0.0
+        dw.attrs["rscale"] = 100.0
+        dw.attrs["elangle"] = 0.5
+        dw.attrs["a1gate"] = 0
+        dh = dg.create_group("how")
+        dh.attrs["startazA"] = startazA
+        dh.attrs["stopazA"] = stopazA
+        dh.attrs["startazT"] = np.zeros(nrays, dtype=np.float64)
+        dh.attrs["stopazT"] = np.ones(nrays, dtype=np.float64)
+        dwhat = dg.create_group("what")
+        dwhat.attrs["quantity"] = "DBZH"
+        dwhat.attrs["startdate"] = "20000101"
+        dwhat.attrs["starttime"] = "000000"
+        dwhat.attrs["enddate"] = "20000101"
+        dwhat.attrs["endtime"] = "000030"
+        dg.create_group("data1")
+
+    import xarray as xr
+
+    with pytest.warns(UserWarning, match="Unexpected number of rays"):
+        ds = xr.open_dataset(filepath, engine="odim", group="sweep_0")
+    azimuth = ds.azimuth.values
+    assert len(azimuth) == nrays
+    wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
+    wanted[wanted >= 360] -= 360
+    np.testing.assert_array_almost_equal(azimuth, wanted, decimal=4)
+
+
 @pytest.mark.parametrize(
     "ang",
     [("az_angle", "elevation"), ("az_angle", "elevation"), ("elangle", "azimuth")],
