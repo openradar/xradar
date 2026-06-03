@@ -60,7 +60,10 @@ def test_get_azimuth_where(nrays):
 def test_odim_azimuth_nominal(odim_file):
     import xarray as xr
 
-    ds = xr.open_dataset(odim_file, engine="odim", group="sweep_0")
+    ds = xr.open_dataset(
+        odim_file, engine="odim", angle_spec="nominal", group="sweep_0"
+    )
+
     azimuth = ds.azimuth.values
     udiff = np.unique(np.diff(azimuth))
     assert len(azimuth) == 360
@@ -68,21 +71,48 @@ def test_odim_azimuth_nominal(odim_file):
     assert udiff[0] == 1.0
 
 
-def test_odim_azimuth_per_ray(odim_file):
+def test_odim_azimuth_auto(odim_file):
     import xarray as xr
 
-    ds = xr.open_dataset(
-        odim_file, engine="odim", group="sweep_0", azimuth_mode="per_ray"
-    )
+    ds = xr.open_dataset(odim_file, engine="odim", angle_spec="auto", group="sweep_0")
+
+    azimuth = ds.azimuth.values
+    udiff = np.unique(np.diff(azimuth))
+    assert len(azimuth) == 360
+    assert len(udiff) == 1
+    assert udiff[0] == 1.0
+
+
+def test_odim_azimuth_reindex_deprecation(odim_file):
+    import xarray as xr
+
+    with pytest.warns(
+        DeprecationWarning, match="The 'reindex_angle' kwarg is deprecated"
+    ):
+        ds = xr.open_dataset(
+            odim_file, engine="odim", reindex_angle=False, group="sweep_0"
+        )
+    azimuth = ds.azimuth.values
+    udiff = np.unique(np.diff(azimuth))
+    assert len(azimuth) == 360
+    assert len(udiff) == 1
+    assert udiff[0] == 1.0
+
+
+def test_odim_azimuth_raw(odim_file):
+    import xarray as xr
+
+    ds = xr.open_dataset(odim_file, engine="odim", group="sweep_0", angle_spec="raw")
     azimuth = ds.azimuth.values
     assert len(azimuth) == 360
-    # per-ray should still give uniform spacing for this file
+    # raw should still give uniform spacing for this file
     udiff = np.unique(np.diff(azimuth))
     assert len(udiff) == 1
     assert udiff[0] == 1.0
 
 
-def test_odim_azimuth_fallback_nonstandard_nrays(tmp_path):
+@pytest.mark.parametrize("angle_spec", ["nominal", "auto", "raw"])
+def test_odim_azimuth_nonstandard_nrays(tmp_path, angle_spec):
     import h5netcdf
 
     nrays = 361
@@ -121,17 +151,30 @@ def test_odim_azimuth_fallback_nonstandard_nrays(tmp_path):
 
     import xarray as xr
 
-    with pytest.warns(UserWarning, match="Unexpected number of rays"):
-        ds = xr.open_dataset(filepath, engine="odim", group="sweep_0")
-    azimuth = ds.azimuth.values
-    assert len(azimuth) == nrays
-    # should match per-ray midpoint
-    wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
-    wanted[wanted >= 360] -= 360
-    np.testing.assert_array_almost_equal(azimuth, wanted, decimal=4)
+    if angle_spec == "nominal":
+        context = pytest.raises(ValueError, match="Unexpected number of rays")
+    elif angle_spec == "auto":
+        context = pytest.warns(RuntimeWarning, match="Unexpected number of rays")
+        wanted = np.arange(0.5, 360, 1.0)
+    else:
+        context = nullcontext()
+        # should match per-ray midpoint
+        wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
+        wanted[wanted >= 360] -= 360
+
+    with context:
+        ds = xr.open_dataset(
+            filepath, engine="odim", angle_spec=angle_spec, group="sweep_0"
+        )
+
+    if angle_spec != "nominal":
+        azimuth = ds.azimuth.values
+        assert len(azimuth) == 360 if angle_spec == "auto" else nrays
+        np.testing.assert_array_almost_equal(azimuth, wanted, decimal=4)
 
 
-def test_odim_azimuth_fallback_nonstandard_nrays_with_duplicate(tmp_path):
+@pytest.mark.parametrize("angle_spec", ["nominal", "auto", "raw"])
+def test_odim_azimuth_fallback_nonstandard_nrays_with_duplicate(tmp_path, angle_spec):
     import h5netcdf
 
     nrays = 361
@@ -168,13 +211,30 @@ def test_odim_azimuth_fallback_nonstandard_nrays_with_duplicate(tmp_path):
 
     import xarray as xr
 
-    with pytest.warns(UserWarning, match="Unexpected number of rays"):
-        ds = xr.open_dataset(filepath, engine="odim", group="sweep_0")
-    azimuth = ds.azimuth.values
-    assert len(azimuth) == nrays
-    wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
-    wanted[wanted >= 360] -= 360
-    np.testing.assert_array_almost_equal(azimuth, wanted, decimal=4)
+    if angle_spec == "nominal":
+        context = pytest.raises(ValueError, match="Unexpected number of rays")
+    elif angle_spec == "auto":
+        context = pytest.warns(RuntimeWarning, match="Unexpected number of rays")
+        wanted = np.arange(0.5, 360, 1.0)
+    else:
+        context = nullcontext()
+        # should match per-ray midpoint
+        wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
+        wanted[wanted >= 360] -= 360
+
+    with context:
+        ds = xr.open_dataset(
+            filepath, engine="odim", angle_spec=angle_spec, group="sweep_0"
+        )
+
+    if angle_spec != "nominal":
+        azimuth = ds.azimuth.values
+        assert len(azimuth) == 360 if angle_spec == "auto" else nrays
+        # assert len(azimuth) == nrays
+        # wanted = (startazA + np.where(stopazA < startazA, stopazA + 360, stopazA)) / 2
+        # wanted[wanted >= 360] -= 360
+        print(azimuth)
+        np.testing.assert_array_almost_equal(azimuth, wanted, decimal=4)
 
 
 @pytest.mark.parametrize(

@@ -117,8 +117,7 @@ def _get_azimuth_where(where):
 def _get_azimuth_nominal(nrays, how):
 
     if nrays not in [180, 360, 450, 720, 900]:
-        warnings.warn(f"xradar: Unexpected number of rays ({nrays})")
-        raise ValueError
+        raise ValueError(f"xradar: Unexpected number of rays ({nrays})")
 
     ascale = 360 / nrays
     try:
@@ -426,18 +425,19 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         h5netcdf filehandle.
     group : str
         odim group to acquire
-    azimuth_mode : str
-        ``"nominal"`` (default) for uniform sweep from first ``startazA``,
-        ``"per_ray"`` for per-ray midpoint from ``startazA``/``stopazA``.
+    angle_spec : str
+        ``"nominal"`` for uniform sweep from first ``startazA``,
+        ``"auto"`` try ``nominal`` first, fallback to ``raw``,
+        ``"raw"`` for per-ray midpoint from ``startazA``/``stopazA``.
 
     Returns
     -------
     object : metadata object
     """
 
-    def __init__(self, fileobj, group, azimuth_mode="nominal"):
+    def __init__(self, fileobj, group, angle_spec="nominal"):
         super().__init__(fileobj, group)
-        self._azimuth_mode = azimuth_mode
+        self._angle_spec = angle_spec
 
     @property
     def ds_what(self):
@@ -488,13 +488,20 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
     @property
     def _azimuth(self):
         nrays = self.where["nrays"]
-        if self._azimuth_mode == "nominal":
+        if self._angle_spec in ["nominal", "auto"]:
             try:
                 azimuth = _get_azimuth_nominal(nrays, self.how)
-            except ValueError:
-                warnings.warn("xradar: Using per ray real azimuth")
-                self._azimuth_mode = "per_ray"
-        if self._azimuth_mode == "per_ray":
+            except ValueError as exc:
+                if self._angle_spec == "nominal":
+                    raise
+                warnings.warn(
+                    "xradar: Failed to extract nominal angles. "
+                    f"Original error: {exc}",
+                    category=RuntimeWarning,
+                    stacklevel=2,
+                )
+                self._angle_spec = "raw"
+        if self._angle_spec == "raw":
             try:
                 azimuth = _get_azimuth_how(self.how)
             except (AttributeError, KeyError, TypeError):
@@ -641,7 +648,7 @@ class OdimSubStore(AbstractDataStore):
         store,
         group=None,
         lock=False,
-        azimuth_mode="nominal",
+        angle_spec="nominal",
     ):
         if not isinstance(store, OdimStore):
             raise TypeError(
@@ -654,13 +661,13 @@ class OdimSubStore(AbstractDataStore):
         self._filename = store.filename
         self.is_remote = is_remote_uri(self._filename)
         self.lock = ensure_lock(lock)
-        self._azimuth_mode = azimuth_mode
+        self._angle_spec = angle_spec
 
     @property
     def root(self):
         with self._manager.acquire_context(False) as root:
             return _OdimH5NetCDFMetadata(
-                root, self._group.lstrip("/"), azimuth_mode=self._azimuth_mode
+                root, self._group.lstrip("/"), angle_spec=self._angle_spec
             )
 
     def _acquire(self, needs_lock=True):
@@ -701,7 +708,7 @@ class OdimSubStore(AbstractDataStore):
 class OdimStore(AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
-    def __init__(self, manager, group=None, lock=False, azimuth_mode="nominal"):
+    def __init__(self, manager, group=None, lock=False, angle_spec="nominal"):
         if isinstance(manager, (h5netcdf.File, h5netcdf.Group)):
             if group is None:
                 root, group = find_root_and_group(manager)
@@ -721,7 +728,7 @@ class OdimStore(AbstractDataStore):
         self.lock = ensure_lock(lock)
         self._substore = None
         self._need_time_recalc = False
-        self._azimuth_mode = azimuth_mode
+        self._angle_spec = angle_spec
 
     @classmethod
     def open(
@@ -734,7 +741,7 @@ class OdimStore(AbstractDataStore):
         invalid_netcdf=None,
         phony_dims=None,
         decode_vlen_strings=True,
-        azimuth_mode="nominal",
+        angle_spec="nominal",
     ):
         if isinstance(filename, bytes):
             raise ValueError(
@@ -757,7 +764,7 @@ class OdimStore(AbstractDataStore):
                 lock = False
 
         manager = CachingFileManager(h5netcdf.File, filename, mode=mode, kwargs=kwargs)
-        return cls(manager, group=group, lock=lock, azimuth_mode=azimuth_mode)
+        return cls(manager, group=group, lock=lock, angle_spec=angle_spec)
 
     @property
     def filename(self):
@@ -781,7 +788,7 @@ class OdimStore(AbstractDataStore):
                             self,
                             group=group,
                             lock=self.lock,
-                            azimuth_mode=self._azimuth_mode,
+                            angle_spec=self._angle_spec,
                         )
                         for group in subgroups
                     ]
@@ -821,15 +828,19 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
     reindex_angle : bool or dict
+        Deprecated, Use angle_spec instead. See below.
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
+    angle_spec : "nominal", "auto", "raw" or dict
+        ``"nominal"`` (future default) for uniform sweep from first ``startazA``,
+        ``"auto"`` try ``nominal`` first, fallback to ``raw``, automatic reindexing,
+        ``"raw"`` (deprecated default) for per-ray midpoint from ``startazA``/``stopazA``,
+        ``reindex_dict`` use ``raw`` with reindexing.
+        Only invoked if `decode_coord=True`.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
         Attach radar site-coordinates to Dataset, defaults to ``True``.
-    azimuth_mode : str
-        ``"nominal"`` (default) for uniform sweep from first ``startazA``,
-        ``"per_ray"`` for per-ray midpoint from ``startazA``/``stopazA``.
     kwargs : dict
         Additional kwargs are fed to :py:func:`xarray.open_dataset`.
     """
@@ -854,11 +865,35 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
-        reindex_angle=False,
+        reindex_angle=None,
+        angle_spec=None,
         fix_second_angle=False,
         site_as_coords=True,
-        azimuth_mode="nominal",
     ):
+        # kwarg change deprecation
+        # reindex_angle -> angle_spec
+        # old kwarg requested
+        if reindex_angle is not None and angle_spec is None:
+            warnings.warn(
+                "The 'reindex_angle' kwarg is deprecated and will be removed in a future release. "
+                "Use 'angle_spec' instead: angle_spec=\"raw\" replaces reindex_angle=False, "
+                "'angle_spec=\"nominal\"' returns nominal angles, angle_spec=reindex_dict "
+                "replaces reindex_angle=reindex_dict.",
+                DeprecationWarning,
+            )
+            if reindex_angle is False:
+                angle_spec = "raw"
+            else:
+                angle_spec = reindex_angle
+        if angle_spec is None:
+            warnings.warn(
+                "In a future release nominal angles will be returned by default. "
+                "To silence this warning use: 'angle_spec=\"raw\"' to return raw measured "
+                "angles or 'angle_spec=\"nominal\"' to return nominal angles.",
+                DeprecationWarning,
+            )
+            angle_spec = "raw"
+
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
 
@@ -869,7 +904,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             invalid_netcdf=invalid_netcdf,
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
-            azimuth_mode=azimuth_mode,
+            angle_spec=angle_spec,
         )
 
         store_entrypoint = StoreBackendEntrypoint()
@@ -895,10 +930,15 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "odim"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        if decode_coords:
+            if angle_spec == "auto":
+                angle_spec = util.extract_angle_parameters(ds)
+                allowed_keys = {"start_angle", "stop_angle", "angle_res", "direction"}
+                angle_spec = {k: v for k, v in angle_spec.items() if k in allowed_keys}
+            if isinstance(angle_spec, dict):
+                ds = ds.pipe(util.remove_duplicate_rays)
+                ds = ds.pipe(util.reindex_angle, **angle_spec)
+                ds = ds.pipe(util.ipol_time, **angle_spec)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -944,8 +984,15 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
     reindex_angle : bool or dict
+        Deprecated, Use angle_spec instead. See below.
         Defaults to False, no reindexing. Given dict should contain the kwargs to
         reindex_angle. Only invoked if `decode_coord=True`.
+    angle_spec : "nominal", "auto", "raw" or dict
+        ``"nominal"`` (future default) for uniform sweep from first ``startazA``,
+        ``"auto"`` try ``nominal`` first, fallback to ``raw``, automatic reindexing,
+        ``"raw"`` (deprecated default) for per-ray midpoint from ``startazA``/``stopazA``,
+        ``reindex_dict`` use ``raw`` with reindexing.
+        Only invoked if `decode_coord=True`.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
