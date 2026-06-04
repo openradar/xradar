@@ -210,6 +210,50 @@ def _get_a1gate(where):
     return where["a1gate"]
 
 
+_ODIM_SOURCE_TO_GLOBAL_ATTRS = {
+    "WMO": "wmo__id",
+    "PLC": "site_name",
+    "NOD": "node",  # specific to OPERA
+    "ORG": "wmo__originating_centre",
+    "WIGOS": "wmo__wsi",
+}
+
+
+def _parse_odim_source(source):
+    """Parse ODIM /what/source string like 'K1:V1,K2:V2' into a dict."""
+    if source is None:
+        return {}
+
+    # ensure source is a string, decode if bytes
+    source = _maybe_decode(source)
+    if not isinstance(source, str):
+        source = str(source)
+
+    # Some ODIM source strings contain non asccii characters (e.g; 'ü'), which are encoded as UTF-8 bytes and
+    # then decoded with surrogateescape error handler, resulting in surrogate escape characters in the string.
+    # We need to detect this and recover the original UTF-8 string if possible.
+    # e.g. "Sürgavere" is read as an ASCII string instead of UTF-8 and the invalid bytes (ü = \xc3\xbc) are encoded with
+    # surrogate escape, resulting in "S\udcc3\udcbcrgavere"
+    if any("\udc80" <= ch <= "\udcff" for ch in source):
+        try:
+            source = source.encode("utf-8", "surrogateescape").decode("utf-8")
+        except UnicodeError:
+            pass
+
+    # parse key-value pairs separated by commas, and then keys and values separated by colons
+    parsed = {}
+    for item in source.split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        key, value = item.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+        if key and value:
+            parsed[key] = value
+    return parsed
+
+
 class _H5NetCDFMetadata:
     """Wrapper around OdimH5/Gamic data fileobj for easy access of metadata.
 
@@ -766,7 +810,20 @@ class OdimStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {"Conventions": "ODIM_H5/V2_2"}
+        attributes = {"Conventions": "ODIM_H5/V2_2", "source": "radar"}
+
+        with self._manager.acquire_context(False) as root:
+            # try to extract additional global attributes from /what/source string, if available
+            # see _ODIM_SOURCE_TO_GLOBAL_ATTRS for mapping of ODIM keys to global attribute names
+            if "what" in root:
+                source = _maybe_decode(root["what"].attrs.get("source", None))
+                if source:
+                    parsed = _parse_odim_source(source)
+                    for odim_key, global_attr in _ODIM_SOURCE_TO_GLOBAL_ATTRS.items():
+                        value = parsed.get(odim_key)
+                        if value:
+                            attributes[global_attr] = value
+
         return FrozenDict(attributes)
 
 

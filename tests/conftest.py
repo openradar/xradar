@@ -39,6 +39,21 @@ def odim_file2():
 
 
 @pytest.fixture(scope="session")
+def odim_file3():
+    return DATASETS.fetch("T_PAZA63_C_LFPW_20230420065041.h5")
+
+
+@pytest.fixture(scope="session")
+def odim_file4():
+    return DATASETS.fetch("202506090955_fianj_PVOL.h5")
+
+
+@pytest.fixture(scope="session")
+def odim_file5():
+    return DATASETS.fetch("SUR.202506091000.VOL.h5")
+
+
+@pytest.fixture(scope="session")
 def datamet_file():
     return DATASETS.fetch("H-000-VOL-ILMONTE-201907100700.tar.gz")
 
