@@ -66,6 +66,11 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
                 "xradar: ``netCDF4`` or ``h5netcdf`` needed to perform this operation."
             )
 
+    # all sweep rewrites and root-attribute edits need to happen on a copy instead of the caller’s DataTree object.
+    # otherwise, the caller’s DataTree will be modified in-place, which is not expected behavior for a writer function.
+    # Using a deep copy makes the code future-proof against any in-place modifications that might be added later on.
+    dtree = dtree.copy(deep=True)
+
     # iterate over DataTree and make subgroups cfradial2 compliant
     for grp in dtree.groups:
         if "sweep" in grp:
