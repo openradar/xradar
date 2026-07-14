@@ -15,6 +15,7 @@ import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import odim, open_odim_datatree
+from xradar.io.backends.common import _maybe_recover_surrogate
 
 
 def create_startazA(nrays=360):
@@ -224,6 +225,19 @@ def test_parse_odim_source_surrogate_repair_unicodeerror_fallback():
     assert parsed["WMO"] == "26232"
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Surgavere", "Surgavere"),
+        ("S\udcc3\udcbcrgavere", "Sürgavere"),
+        ("\udc80_station", "\udc80_station"),
+        (123, 123),
+    ],
+)
+def test_maybe_recover_surrogate(value, expected):
+    assert _maybe_recover_surrogate(value) == expected
+
+
 def test_OdimH5NetCDFMetadata(odim_file):
     store = odim.OdimStore.open(odim_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
@@ -266,7 +280,7 @@ def test_odim_source_global_attributes(request, fixture_name):
             parsed = odim._parse_odim_source(source)
             for odim_key, global_attr in odim._ODIM_SOURCE_TO_GLOBAL_ATTRS.items():
                 value = parsed.get(odim_key)
-                if value:
+                if value is not None:
                     expected[global_attr] = value
             print(f"Parsed ODIM source attributes: {expected}")
 
