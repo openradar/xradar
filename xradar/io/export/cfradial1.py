@@ -212,14 +212,8 @@ def _combine_sweeps(dtree, dim0=None):
         combine_attrs="no_conflicts",
     )
 
-    per_sweep_vars = [
-        "sweep_fixed_angle",
-        "sweep_number",
-        "sweep_mode",
-        "prt_mode",
-        "follow_mode",
-    ]
-    combined = combined.drop_vars(per_sweep_vars, errors="ignore")
+    # These are re-added from ``sweep_info`` below with a ``sweep`` dimension.
+    combined = combined.drop_vars(SWEEP_INFO_VARS, errors="ignore")
 
     georef_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
     combined = combined.drop_vars(georef_coords, errors="ignore")
