@@ -205,6 +205,53 @@ dtree = xd.io.open_nexradlevel2_datatree(
 
 See the {doc}`notebooks/nexrad_read_chunks` notebook for a full walkthrough.
 
+## NexradLevel3
+
+### NexradLevel3BackendEntrypoint
+
+The xarray backend
+{class}`~xradar.io.backends.nexrad_level3.NexradLevel3BackendEntrypoint` reads
+a single NEXRAD Level 3 (NIDS) radial product file and returns a
+CfRadial2-compatible {py:class}`xarray:xarray.Dataset` containing one sweep
+with one moment. Supported are the radial packet formats: digital radial data
+arrays (packet code 16), run-length encoded radials (packet code AF1F) and
+generic data packets (packet code 28). Raw data levels are decoded to
+physical values using the product thresholds; legacy velocity products are
+converted from knots to m/s and precipitation products from inches to mm so
+moments are uniformly ``DBZH``, ``VRADH``, ``WRADH``, ``SRMV``, ``ZDR``,
+``RHOHV``, ``KDP``, ``HCLASS``, ``ACCUM`` and ``RATE``.
+
+Level 3 files are small and available in real time and back to ~2020 on AWS:
+
+```python
+import fsspec
+import xarray as xr
+
+fs = fsspec.filesystem("s3", anon=True)
+f = fs.open("unidata-nexrad-level3/LOT_N0B_2026_07_17_19_30_15")
+ds = xr.open_dataset(f, engine="nexradlevel3")
+```
+
+### open_nexradlevel3_datatree
+
+Each Level 3 file holds one product on one elevation cut. Pass a single file
+to {func}`~xradar.io.backends.nexrad_level3.open_nexradlevel3_datatree` for a
+single-sweep DataTree, or a list of files of the *same product* at different
+cuts (e.g. N0B/N1B/N2B/N3B super-resolution reflectivity) to assemble a
+multi-tilt volume ordered by fixed angle:
+
+```python
+import xradar as xd
+
+dtree = xd.io.open_nexradlevel3_datatree(
+    ["LOT_N0B_...", "LOT_N1B_...", "LOT_N2B_...", "LOT_N3B_..."]
+)
+```
+
+Different products cannot be combined into one volume because their
+azimuth/range grids differ (e.g. 720x1840 super-resolution reflectivity vs
+360x1200 dual-pol); open each product as its own DataTree instead.
+
 ## Datamet
 
 ### DataMetBackendEntrypoint

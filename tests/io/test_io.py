@@ -437,7 +437,7 @@ def test_open_furuno_scn_dataset(furuno_scn_file):
         assert dict(ds.sizes) == {"time": 1376, "range": 602}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
-        ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+        ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP", "RATE"}
         for key, value in ds.data_vars.items():
             if key in [
                 "RATE",
@@ -473,7 +473,7 @@ def test_open_furuno_scnx_dataset(furuno_scnx_file):
         assert dict(ds.sizes) == {"time": 722, "range": 936}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
-        ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP"}
+        ) == {"KDP", "VRADH", "ZDR", "DBZH", "WRADH", "RHOHV", "PHIDP", "RATE"}
 
         for key, value in ds.data_vars.items():
             if key in [
@@ -954,7 +954,7 @@ def test_cfradial_n_points_file(cfradial1n_file):
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(241.0))
 
     # iterate over subgroups and check some values
-    moments = ["ZDR", "RHOHV", "KDP", "DBZ", "VEL", "PHIDP"]
+    moments = ["ZDR", "RHOHV", "KDP", "DBZ", "VEL", "PHIDP", "HCLASS"]
     elevations = [0.7, 1.3, 3.0, 5.0, 7.0, 10.0, 15.0, 25.0]
     azimuths = [360] * 8
     ranges = [416] * 5 + [383, 257, 157]

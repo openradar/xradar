@@ -35,6 +35,7 @@ notebooks/Iris
 notebooks/HaloPhotonics
 notebooks/MRR
 notebooks/NexradLevel2
+notebooks/NexradLevel3
 notebooks/nexrad_read_chunks
 notebooks/UF
 notebooks/IMD
