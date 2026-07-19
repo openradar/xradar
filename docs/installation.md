@@ -23,6 +23,22 @@ To install xradar into your conda environment, run this command:
 
 You might also use the `conda` drop-in `mamba`. Of course you can omit `-c conda-forge` if you are already on that channel.
 
+## With uv
+
+If you use [uv](https://docs.astral.sh/uv/), you can install xradar into a
+project or a standalone environment:
+
+```bash
+$ uv add xradar          # add to the current uv project
+$ uv pip install xradar  # install into the active environment
+```
+
+To run xradar in a throwaway environment without installing it permanently:
+
+```bash
+$ uv run --with xradar python -c "import xradar; print(xradar.__version__)"
+```
+
 ## From sources
 
 The sources for xradar can be downloaded from the [Github repo](https://github.com/openradar/xradar).
