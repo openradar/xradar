@@ -1807,7 +1807,9 @@ class NexradLevel2Store(AbstractDataStore):
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self):
-        msg_31_header = self.root.msg_31_header[self._group]
+        # msg_31_header is compacted past interior gaps; translate label -> position.
+        header_idx = sorted(self.root.data).index(self._group)
+        msg_31_header = self.root.msg_31_header[header_idx]
         msg_31_data_header = self.root.msg_31_data_header[self._group]
         # check message type
         msg_type = msg_31_data_header["msg_type"]
@@ -1860,7 +1862,7 @@ class NexradLevel2Store(AbstractDataStore):
                 "elevation_angle"
             ]
         else:
-            fixed_angle = self.root.msg_31_header[self._group][0]["elevation_angle"]
+            fixed_angle = self.root.msg_31_header[header_idx][0]["elevation_angle"]
         fixed_angle *= angle_scale
 
         coords = {

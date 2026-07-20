@@ -2385,6 +2385,83 @@ class TestListInputWithIncompleteSweep:
         )
 
 
+class TestInteriorGapCoordinates:
+    """Regression for openradar/xradar#366: open_store_coordinates must
+    translate sweep label -> compact index when iterating msg_31_header,
+    which is shorter than the declared cut count after an interior gap.
+    """
+
+    # KLOT 2021-11-04 17:42 shape: 12 declared cuts, label 10 dropped.
+    PRESENT_KEYS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11)
+
+    @staticmethod
+    def _make_store(present_keys, group_label, msg_5_has_elev_data=True):
+        from types import SimpleNamespace
+
+        from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+        # Distinct per-position elevation so the test fails (not just on
+        # IndexError) if label->position translation regresses to wrong index.
+        msg_31_header = [
+            [
+                {
+                    "azimuth_angle": 0,
+                    "elevation_angle": pos,
+                    "collect_date": 1,
+                    "collect_ms": 0,
+                }
+            ]
+            for pos in range(len(present_keys))
+        ]
+        declared = max(present_keys) + 1
+        elev_data = [{"elevation_angle": 0.5 * i} for i in range(declared)]
+        sweep_ds = {
+            "sweep_constant_data": {
+                "VOL": {
+                    "lon": -97.0,
+                    "lat": 35.0,
+                    "height": 300.0,
+                    "feedhorn_height": 1.0,
+                }
+            },
+            "sweep_data": {
+                "REF": {"first_gate": 0.0, "gate_spacing": 250.0, "ngates": 4}
+            },
+        }
+        data = {k: sweep_ds for k in present_keys}
+        root = SimpleNamespace(
+            data=data,
+            msg_31_header=msg_31_header,
+            msg_31_data_header=[{"msg_type": 31} for _ in range(declared)],
+            msg_5={"elevation_data": elev_data} if msg_5_has_elev_data else {},
+        )
+
+        # Subclass to avoid mutating NexradLevel2Store class-level descriptors.
+        class _SyntheticStore(NexradLevel2Store):
+            root = property(lambda self: root)
+            ds = property(lambda self: data[self._group])
+
+        store = _SyntheticStore.__new__(_SyntheticStore)
+        store._group = group_label
+        store._filename = "<synthetic>"
+        return store
+
+    @pytest.mark.parametrize("group_label", PRESENT_KEYS)
+    @pytest.mark.parametrize("msg_5_has_elev_data", [True, False])
+    def test_each_kept_sweep_round_trips(self, group_label, msg_5_has_elev_data):
+        store = self._make_store(
+            self.PRESENT_KEYS,
+            group_label=group_label,
+            msg_5_has_elev_data=msg_5_has_elev_data,
+        )
+        coords = store.open_store_coordinates()
+        assert coords["sweep_number"].item() == group_label
+        # Per-position elevation in the synthetic header confirms the
+        # label->compact-index translation (not just absence of IndexError).
+        expected_position = sorted(self.PRESENT_KEYS).index(group_label)
+        assert coords["elevation"].values[0] == expected_position
+
+
 class TestRealChunkFiles:
     """Integration tests using real NEXRAD chunk files from open-radar-data."""
 
