@@ -3,6 +3,7 @@
 ## Development
 
 * ENH: When importing ODIM files, extract the global attributes "wmo__id", "node", "wmo__originating_centre" and "wmo__wsi" from the ODIM /what/source attribute
+* DOC: Fixed the roundtrip example in CfRadial1_Model_Transformation.md by setting first_dim="time" and optional=False when creating dtree3, so the CfRadial1-to-CfRadial2 roundtrip assertion is meaningful and passes.
 * FIX: Preserve the original DataTree when executing `to_cfradial2`.
 * FIX: Correct global attribute assignement in `to_cfradial2`.
 * FIX: ``open_nexradlevel2_datatree`` decodes volumes with interior sweep-index gaps end-to-end — translate sweep label → compact position in ``NexradLevel2Store.open_store_coordinates`` so the per-sweep entrypoint stops positionally indexing the compacted ``msg_31_header`` (follow-up to {pull}`362`) ({issue}`366`, {pull}`374`) by [@aladinor](https://github.com/aladinor)
