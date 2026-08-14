@@ -77,27 +77,35 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     conda activate xradar-dev
     ```
 
-  - Install with uv (Linux):
+  - Install with [uv](https://docs.astral.sh/uv/):
+
+    [Install uv](https://docs.astral.sh/uv/getting-started/installation/) if you
+    don't have it, then create the development environment from the committed
+    `uv.lock` for a reproducible set of pinned dependencies:
 
     ```bash
-    sudo apt install build-essential ffmpeg libhdf5-dev libnetcdf-dev pandoc
-    sudo snap install astral-uv --classic
-    uv python install 3.13
-    uv venv --python 3.13
-    source .venv/bin/activate
-    uv pip install -e .[dev] --no-binary=netcdf4 --no-binary=h5py
+    uv sync --extra dev
     ```
 
-  - Install with uv (Windows):
+    This creates a `.venv/` with xradar installed as an editable package plus the
+    full development toolchain. Prefix commands with `uv run` to use it without
+    activating (e.g. `uv run pytest`), or activate it directly:
 
-    ```powershell
-    winget install ffmpeg
-    winget install uv
-    uv python install 3.13
-    uv venv --python 3.13
-    .venv\Scripts\Activate.ps1
-    uv pip install -e .[dev]
+    ```bash
+    source .venv/bin/activate         # Linux / macOS
+    .venv\Scripts\Activate.ps1        # Windows (PowerShell)
     ```
+
+    `netCDF4` and `h5py` install from wheels by default. If you hit a binary
+    incompatibility, build them against your system HDF5/netCDF libraries:
+
+    ```bash
+    # Linux: apt install build-essential libhdf5-dev libnetcdf-dev
+    uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py
+    ```
+
+    After changing dependencies in `requirements.txt` / `requirements_dev.txt`,
+    refresh the lockfile with `uv lock` and commit the updated `uv.lock`.
 
 4. Create a branch for local development.
 
