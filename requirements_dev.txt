@@ -15,7 +15,7 @@ open_radar_data>=0.7.0
 boto3
 cartopy
 s3fs
-zarr>=2,<3
+zarr>=3
 pytest-xdist
 pytest-cov
 pre-commit

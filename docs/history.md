@@ -3,6 +3,7 @@
 ## Development
 
 * ENH: When importing ODIM files, extract the global attributes "wmo__id", "node", "wmo__originating_centre" and "wmo__wsi" from the ODIM /what/source attribute
+* FIX: Require ``zarr>=3`` so ``DataTree.to_zarr()`` works with current xarray (which forwards a ``zarr_format`` argument that ``zarr<3``'s ``open_group()`` rejects), and fill masked moments (e.g. IRIS ``VRADH``) in the ``multiple-sweeps-into-volume-scan`` notebook before writing, since zarr v3 codecs cannot serialize numpy ``MaskedArray`` ({issue}`398`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``open_nexradlevel2_datatree`` decodes volumes with interior sweep-index gaps end-to-end — translate sweep label → compact position in ``NexradLevel2Store.open_store_coordinates`` so the per-sweep entrypoint stops positionally indexing the compacted ``msg_31_header`` (follow-up to {pull}`362`) ({issue}`366`, {pull}`374`) by [@aladinor](https://github.com/aladinor)
 * FIX: ensure `to_cfradial2` correctly selects the default storage engine when none is provided, ({pull}`378`) by [@chfer](https://github.com/chfer)
 * MNT: Add ``cfradial1_sgp_file`` session fixture and refactor 8 tests in ``test_util.py``/``test_accessors.py`` to share it instead of inlining ``DATASETS.fetch("sample_sgp_data.nc")``. Fixture returns the filename so each test opens its own DataTree, avoiding cross-test mutation ({issue}`346`, {pull}`347`) by [@aladinor](https://github.com/aladinor)
