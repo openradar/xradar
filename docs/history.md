@@ -33,7 +33,7 @@
 * FIX: IRIS/Sigmet 8-bit types without decoding function (``DB_HCLASS``, ``DB_ORAIN``, ``DB_ALBEDO8``) are unpacked to one ``uint8`` value per range bin; they were returned as packed ``int16`` words holding two bins each. ``DB_HCLASS``/``DB_HCLASS2`` get CF ``flag_masks``/``flag_values``/``flag_meanings`` for the HydroClass bit segments, from the classifiers stored in ``task_end_info`` (IRIS Programming Guide 4.4.14) ({issue}`390`, {pull}`444`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: CfRadial1 export writes string variables (``time_coverage_start``, ``instrument_type``, ``prt_mode``, ...) as char arrays instead of NC_STRING, which Py-ART could not read, and no longer writes ``"None"`` placeholder global attributes or a ``"None: ..."`` history ({issue}`417`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: CfRadial1 export writes boolean attributes (e.g. NEXRAD ``mpda_vcp``, ``avset_enabled``) as ``"true"``/``"false"`` instead of failing, as netCDF attributes can't be bool ({issue}`418`) by [@syedhamidali](https://github.com/syedhamidali)
-
+* ENH: Allow users to explicitly add or override global attributes for the output CfRadial2 file with ``global_attrs`` in ``to_cfradial2`` ({pull}`XXX`) by [@chfer](https://github.com/chfer)
 ## 0.12.0 (2026-04-21)
 
 * MNT: Unpin xarray, require ``xarray >= 2026.4.0`` in ``requirements.txt``, ``environment.yml``, ``ci/unittests.yml``, and ``ci/notebooktests.yml`` by [@aladinor](https://github.com/aladinor)
