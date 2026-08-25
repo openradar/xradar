@@ -198,6 +198,29 @@ def test_to_cfradial2_global_attrs(temp_file, minimal_dtree):
     )
 
 
+def test_to_cfradial2_global_attrs_override(temp_file, minimal_dtree):
+    # global_attrs should overwrite attrs set by to_cfradial2 itself (Conventions)
+    # as well as add attrs not present at all beforehand (title)
+    global_attrs = {
+        "Conventions": "CF-1.8, WMO CF-1.0, ACDD-1.3",
+        "title": "Python xradar test cfradial2 file.",
+    }
+
+    outfile = temp_file.with_suffix(".nc")
+    export_cf2.to_cfradial2(
+        minimal_dtree.copy(), outfile, engine="netcdf4", global_attrs=global_attrs
+    )
+
+    with xr.open_dataset(outfile, group="/", engine="netcdf4") as exported_root:
+        exported_global_attrs = exported_root.attrs
+
+    assert exported_global_attrs["Conventions"] == global_attrs["Conventions"]
+    assert exported_global_attrs["title"] == global_attrs["title"]
+    # version and history should still be set as usual, unaffected by global_attrs
+    assert exported_global_attrs["version"] == "2.0"
+    assert "CfRadial2 export" in exported_global_attrs["history"]
+
+
 def test_to_cfradial2_preserves_input_dtree(odim_file, temp_file):
     with xd.io.open_odim_datatree(odim_file) as dtree:
         dtree_original = dtree.copy(deep=True)

@@ -5,6 +5,7 @@
 """Tests for `xradar` model package."""
 
 import numpy as np
+import pytest
 
 from xradar import model
 
@@ -125,3 +126,23 @@ def test_get_sweep_dataarray():
     assert attrs["long_name"] == "Equivalent reflectivity factor H"
     assert attrs["short_name"] == "DBZH"
     assert attrs["units"] == "dBZ"
+
+
+def test_validate_global_attrs_valid_and_invalid_cases():
+    # both calls should pass without exceptions
+    model.validate_global_attrs({"platform_is_mobile": "true"})
+    model.validate_global_attrs({"wmo__data_policy": "recommended"})
+
+    # test whether you get a warning for an unknown global attribute
+    with pytest.warns(
+        UserWarning, match="is not a recognized CfRadial2/FM301 global attribute name"
+    ):
+        model.validate_global_attrs({"unknown_attr": "value"})
+
+    # test invalid case for a type mismatch
+    with pytest.raises(TypeError, match="should be of type 'str'"):
+        model.validate_global_attrs({"platform_is_mobile": True})
+
+    # test invalid case for a value mismatch
+    with pytest.raises(ValueError, match="allowed values are"):
+        model.validate_global_attrs({"platform_is_mobile": "maybe"})
