@@ -2,7 +2,12 @@
 
 ## Development
 
+* Removed the ‘ReadOnly’ attribute for the global attribute schema in model.py as it is not supported in python 3.11 and redundant for this specific use case.
+* ENH: Add support for manually setting global attributes when converting to CfRadial2
 * ENH: When importing ODIM files, extract the global attributes "wmo__id", "node", "wmo__originating_centre" and "wmo__wsi" from the ODIM /what/source attribute
+* DOC: Fixed the roundtrip example in CfRadial1_Model_Transformation.md by setting first_dim="time" and optional=False when creating dtree3, so the CfRadial1-to-CfRadial2 roundtrip assertion is meaningful and passes.
+* FIX: Preserve the original DataTree when executing `to_cfradial2`.
+* FIX: Correct global attribute assignement in `to_cfradial2`.
 * FIX: ``open_nexradlevel2_datatree`` decodes volumes with interior sweep-index gaps end-to-end — translate sweep label → compact position in ``NexradLevel2Store.open_store_coordinates`` so the per-sweep entrypoint stops positionally indexing the compacted ``msg_31_header`` (follow-up to {pull}`362`) ({issue}`366`, {pull}`374`) by [@aladinor](https://github.com/aladinor)
 * FIX: ensure `to_cfradial2` correctly selects the default storage engine when none is provided, ({pull}`378`) by [@chfer](https://github.com/chfer)
 * MNT: Add ``cfradial1_sgp_file`` session fixture and refactor 8 tests in ``test_util.py``/``test_accessors.py`` to share it instead of inlining ``DATASETS.fetch("sample_sgp_data.nc")``. Fixture returns the filename so each test opens its own DataTree, avoiding cross-test mutation ({issue}`346`, {pull}`347`) by [@aladinor](https://github.com/aladinor)

@@ -55,71 +55,143 @@ __all__ = [
     "non_standard_sweep_dataset_vars",
     "determine_cfradial2_sweep_variables",
     "conform_cfradial2_sweep_group",
+    "validate_global_attrs",
 ]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+import warnings
+from types import MappingProxyType
+from typing import NotRequired, TypedDict
+
 import numpy as np
 from xarray import DataArray, Dataset, decode_cf
 
-# This is a temporary setup, since CfRadial2.1 and FM301 are not yet finalized.
-# Todo: adhere to standards when they are published
+
+# dictionaries for global attributes should be immutable
+# So, we use types.MappingProxyType here.
+# TODO: should be replaced with frozendict (PEP 814) in the future when the minimum Python version requirement for xradar is 3.15
+class GlobalAttrSpec(TypedDict):
+    """Schema entry for a validated root-group global attribute."""
+
+    description: str
+    type: type
+    allowed_values: NotRequired[tuple[str, ...]]
+
+
+GlobalAttrSchema = MappingProxyType[str, GlobalAttrSpec]
 
 #: required global attributes (root-group)
-required_global_attrs = dict(
-    [
-        ("Conventions", "Cf/Radial"),
-        ("version", "Cf/Radial version number"),
-        ("title", "short description of file contents"),
-        ("instrument_name", "name of radar or lidar"),
-        ("institution", "where the original data were produced"),
-        (
-            "references",
-            "references that describe the data or the methods used to produce it",
-        ),
-        ("source", "method of production of the original data"),
-        ("history", "list of modifications to the original data"),
-        ("comment", "miscellaneous information"),
-        ("platform_is_mobile", "'true' or 'false', assumed 'false' if missing"),
-        (
-            "wmo__id",
-            "the traditional WMO identifier for the observing station/platform",
-        ),
-        ("node", "node identifier of the radar site"),
-        (
-            "wmo__originating_centre",
-            "the originator of the data according to Common Code Table C–11",
-        ),
-        (
-            "wmo__wsi",
-            "the WIGOS station identifier (WSI) for the observing station/platform",
-        ),
-    ]
+required_global_attrs: GlobalAttrSchema = MappingProxyType(
+    {
+        "Conventions": {"description": "Cf/Radial", "type": str},
+        "version": {"description": "Cf/Radial version number", "type": str},
+        "title": {"description": "short description of file contents", "type": str},
+        "instrument_name": {"description": "name of radar or lidar", "type": str},
+        "institution": {
+            "description": "where the original data were produced",
+            "type": str,
+        },
+        "references": {
+            "description": "references that describe the data or the methods used to produce it",
+            "type": str,
+        },
+        "source": {
+            "description": "method of production of the original data",
+            "type": str,
+        },
+        "history": {
+            "description": "list of modifications to the original data",
+            "type": str,
+        },
+        "comment": {"description": "miscellaneous information", "type": str},
+        "platform_is_mobile": {
+            "description": "'true' or 'false', assumed 'false' if missing",
+            "type": str,
+            "allowed_values": ("true", "false"),
+        },
+        "wmo__cf_profile": {
+            "description": "WMO CF profile, e.g. 'FM 301-2022'",
+            "type": str,
+            "allowed_values": ("FM 301-2022",),
+        },
+        "wmo__data_category": {"description": "WMO data category", "type": str},
+        "wmo__data_policy": {
+            "description": "data policy, 'core' or 'recommended'",
+            "type": str,
+            "allowed_values": ("core", "recommended"),
+        },
+        "publisher_institution": {
+            "description": "institution publishing the data",
+            "type": str,
+        },
+    }
 )
 
 
 #: optional global attributes (root-group)
-optional_root_attrs = dict(
-    [
-        ("site_name", "name of site where data were gathered"),
-        ("scan_name", "name of scan strategy used, if applicable"),
-        ("scan_id", "scan strategy id, if applicable. assumed 0 if missing"),
-        (
-            "ray_times_increase",
-            (
+optional_root_attrs: GlobalAttrSchema = MappingProxyType(
+    {
+        "site_name": {
+            "description": "name of site where data were gathered",
+            "type": str,
+        },
+        "scan_name": {
+            "description": "name of scan strategy used, if applicable",
+            "type": str,
+        },
+        "scan_id": {
+            "description": "scan strategy id, if applicable. assumed 0 if missing",
+            "type": int,
+        },
+        "ray_times_increase": {
+            "description": (
                 "'true' or 'false', assumed 'true' if missing. "
                 "This is set to true if ray times increase monotonically "
                 "throughout all of the sweeps in the volume."
             ),
-        ),
-        (
-            "simulated",
-            (
+            "type": str,
+            "allowed_values": ("true", "false"),
+        },
+        "simulated": {
+            "description": (
                 "'true' or 'false', assumed 'false' if missing. "
                 "data in this file are simulated"
             ),
-        ),
-    ]
+            "type": str,
+            "allowed_values": ("true", "false"),
+        },
+        "featureType": {"description": "CF feature type", "type": str},
+        "wmo__originating_sub_centre": {
+            "description": "originating sub-centre of the data",
+            "type": str,
+        },
+        "wmo__update_sequence_number": {
+            "description": "update sequence number of the data",
+            "type": str,
+        },
+        "wmo_publishing_centre": {
+            "description": "centre publishing the data",
+            "type": str,
+        },
+        "license": {
+            "description": "URL to license, 'Freely Distributed', 'None', or restrictions description",
+            "type": str,
+        },
+        "wmo__id": {
+            "description": "the traditional WMO identifier for the observing station/platform",
+            "type": str,
+        },
+        "node": {"description": "node identifier of the radar site", "type": str},
+        "wmo__originating_centre": {
+            "description": "the originator of the data according to Common Code Table C–11",
+            "type": str,
+        },
+        "wmo__wsi": {
+            "description": "the WIGOS station identifier (WSI) for the observing station/platform",
+            "type": str,
+        },
+    }
 )
 
 #: required global variables (root-group)
@@ -1024,6 +1096,45 @@ def create_sweep_dataset(**kwargs):
     )
 
     return decode_cf(ds)
+
+
+def validate_global_attrs(global_attrs: dict[str, object]) -> None:
+    """Validate user-supplied root-group global attributes against the data model.
+
+    Parameters
+    ----------
+    global_attrs : dict
+        Dictionary of global attribute name/value pairs to validate.
+
+    Raises
+    ------
+    TypeError
+        If a known attribute's value does not match the expected type.
+    ValueError
+        If a known attribute's value is not one of its allowed values.
+    """
+    schema = {**required_global_attrs, **optional_root_attrs}
+    for key, value in global_attrs.items():
+        spec = schema.get(key)
+        if spec is None:
+            warnings.warn(
+                f"'{key}' is not a recognized CfRadial2/FM301 global attribute name",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+        expected_type = spec.get("type")
+        if expected_type is not None and not isinstance(value, expected_type):
+            raise TypeError(
+                f"Global attribute '{key}' should be of type "
+                f"{expected_type.__name__!r}, got {type(value).__name__!r}"
+            )
+        allowed_values = spec.get("allowed_values")
+        if allowed_values is not None and value not in allowed_values:
+            raise ValueError(
+                f"Global attribute '{key}' has invalid value {value!r}; "
+                f"allowed values are {allowed_values}"
+            )
 
 
 def determine_cfradial2_sweep_variables(obj, optional, dim0):

@@ -2,6 +2,8 @@
 # Copyright (c) 2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
+from importlib.metadata import version
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -64,6 +66,14 @@ def _make_selection_tree():
             "sweep_0002": xr.Dataset(),
             "sweep_10": xr.Dataset(),
         }
+    )
+
+
+@pytest.fixture
+def minimal_dtree():
+    # Minimal root-level history is needed because cfradial2 export appends to it.
+    return xr.DataTree.from_dict(
+        {"/": xr.Dataset(attrs={"history": "created for test"})}
     )
 
 
@@ -147,11 +157,8 @@ def test_open_cfradial2_invalid_path():
     ],
 )
 def test_to_cfradial2_selects_default_engine(
-    monkeypatch, tmp_path, available, expected_engine
+    monkeypatch, tmp_path, available, expected_engine, minimal_dtree
 ):
-    # build a tiny DataTree with the minimum structure needed for export, and a root history attribute since export appends to it
-    dtree = xr.DataTree.from_dict({"/": xr.Dataset(attrs={"history": ""})})
-
     # monkeypatch has_import to simulate different available engines, and ensure that the expected one is selected when engine=None
     monkeypatch.setattr(export_cf2, "has_import", lambda name: name == available)
 
@@ -164,10 +171,64 @@ def test_to_cfradial2_selects_default_engine(
     monkeypatch.setattr(xr.DataTree, "to_netcdf", _capture_to_netcdf, raising=True)
 
     # call to_cfradial2 with engine=None, which should trigger the default engine selection logic
-    export_cf2.to_cfradial2(dtree, tmp_path / "out.nc", engine=None)
+    export_cf2.to_cfradial2(minimal_dtree.copy(), tmp_path / "out.nc", engine=None)
 
     # does the intercepted call to to_netcdf have the expected engine ?
     assert seen["engine"] == expected_engine
+
+
+def test_to_cfradial2_global_attrs(temp_file, minimal_dtree):
+    # Export a minimal DataTree to a CfRadial2 file
+    outfile = temp_file.with_suffix(".nc")
+    export_cf2.to_cfradial2(minimal_dtree.copy(), outfile, engine="netcdf4")
+
+    # Open the exported file with xarray and extract global attributes
+    with xr.open_dataset(outfile, group="/", engine="netcdf4") as exported_root:
+        exported_global_attrs = exported_root.attrs
+
+    # Get the xradar version for comparison
+    xradar_version = version("xradar")
+
+    # Assert the global attributes are as expected
+    assert exported_global_attrs["Conventions"] == "Cf/Radial"
+    assert exported_global_attrs["version"] == "2.0"
+    assert (
+        exported_global_attrs["history"]
+        == f"created for test: xradar v{xradar_version} CfRadial2 export"
+    )
+
+
+def test_to_cfradial2_global_attrs_override(temp_file, minimal_dtree):
+    # global_attrs should overwrite attrs set by to_cfradial2 itself (Conventions)
+    # as well as add attrs not present at all beforehand (title)
+    global_attrs = {
+        "Conventions": "CF-1.8, WMO CF-1.0, ACDD-1.3",
+        "title": "Python xradar test cfradial2 file.",
+    }
+
+    outfile = temp_file.with_suffix(".nc")
+    export_cf2.to_cfradial2(
+        minimal_dtree.copy(), outfile, engine="netcdf4", global_attrs=global_attrs
+    )
+
+    with xr.open_dataset(outfile, group="/", engine="netcdf4") as exported_root:
+        exported_global_attrs = exported_root.attrs
+
+    assert exported_global_attrs["Conventions"] == global_attrs["Conventions"]
+    assert exported_global_attrs["title"] == global_attrs["title"]
+    # version and history should still be set as usual, unaffected by global_attrs
+    assert exported_global_attrs["version"] == "2.0"
+    assert "CfRadial2 export" in exported_global_attrs["history"]
+
+
+def test_to_cfradial2_preserves_input_dtree(odim_file, temp_file):
+    with xd.io.open_odim_datatree(odim_file) as dtree:
+        dtree_original = dtree.copy(deep=True)
+
+        outfile = temp_file.with_suffix(".nc")
+        export_cf2.to_cfradial2(dtree, outfile, engine="netcdf4")
+
+        xr.testing.assert_identical(dtree, dtree_original)
 
 
 @pytest.mark.parametrize(
