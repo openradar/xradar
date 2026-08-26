@@ -2,6 +2,7 @@
 
 ## Development
 
+* Removed the ‘ReadOnly’ attribute for the global attribute schema in model.py as it is not supported in python 3.11 and redundant for this specific use case.
 * ENH: Add support for manually setting global attributes when converting to CfRadial2
 * ENH: When importing ODIM files, extract the global attributes "wmo__id", "node", "wmo__originating_centre" and "wmo__wsi" from the ODIM /what/source attribute
 * DOC: Fixed the roundtrip example in CfRadial1_Model_Transformation.md by setting first_dim="time" and optional=False when creating dtree3, so the CfRadial1-to-CfRadial2 roundtrip assertion is meaningful and passes.

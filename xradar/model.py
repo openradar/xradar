@@ -62,7 +62,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import warnings
 from types import MappingProxyType
-from typing import NotRequired, ReadOnly, TypedDict
+from typing import NotRequired, TypedDict
 
 import numpy as np
 from xarray import DataArray, Dataset, decode_cf
@@ -74,9 +74,9 @@ from xarray import DataArray, Dataset, decode_cf
 class GlobalAttrSpec(TypedDict):
     """Schema entry for a validated root-group global attribute."""
 
-    description: ReadOnly[str]
-    type: ReadOnly[type]
-    allowed_values: NotRequired[ReadOnly[tuple[str, ...]]]
+    description: str
+    type: type
+    allowed_values: NotRequired[tuple[str, ...]]
 
 
 GlobalAttrSchema = MappingProxyType[str, GlobalAttrSpec]
