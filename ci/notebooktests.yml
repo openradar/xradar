@@ -34,4 +34,4 @@ dependencies:
   - boto3
   - arm_pyart
   - ffmpeg
-  - zarr<3
+  - zarr>=3

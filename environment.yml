@@ -29,7 +29,7 @@ dependencies:
   - boto3
   - arm_pyart
   - ffmpeg
-  - zarr<3
+  - zarr>=3
   - pytest-xdist
   - pytest-cov
   - pre-commit
