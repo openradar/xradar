@@ -4,6 +4,7 @@
 
 
 import numpy as np
+import pytest
 import xarray as xr
 from open_radar_data import DATASETS
 
@@ -120,7 +121,7 @@ def test_cfradial1_export_helper_metadata_and_indices():
 
 def test_cfradial1_export_helper_empty_sweep_info_and_time_fallback():
     empty = xr.DataTree.from_dict({"/": xr.Dataset()})
-    sweep_info = cf1_export._sweep_info_mapper(empty)
+    sweep_info = cf1_export._collect_sweep_metadata(empty)
     assert "sweep_number" in sweep_info
     assert np.isnan(sweep_info["sweep_number"].values[0])
 
@@ -142,6 +143,43 @@ def test_cfradial1_export_helper_empty_sweep_info_and_time_fallback():
         },
     )
     dtree = xr.DataTree.from_dict({"/": xr.Dataset(), "/sweep_0": sweep})
-    mapped = cf1_export._variable_mapper(dtree)
+    mapped = cf1_export._combine_sweeps(dtree)
     assert "DBZ" in mapped
     assert mapped["DBZ"].dims == ("time", "range")
+
+
+def test_cfradial1_export_auto_filename(tmp_path, monkeypatch):
+    filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    dtree = xd.io.open_cfradial1_datatree(filename)
+
+    # filename=None derives the name from instrument_name + first timestamp
+    monkeypatch.chdir(tmp_path)
+    xd.io.to_cfradial1(dtree.copy(), filename=None, calibs=True)
+
+    written = list(tmp_path.glob("cfrad1_*.nc"))
+    assert len(written) == 1
+    assert written[0].name.startswith("cfrad1_")
+
+
+def test_cfradial1_export_requires_dtree():
+    with pytest.raises(ValueError, match="must be a radar"):
+        xd.io.to_cfradial1(None)
+
+
+def test_cfradial1_export_sweep_indices_missing_elevation():
+    dtree = xr.DataTree.from_dict(
+        {
+            "/": xr.Dataset(),
+            "/sweep_0": xr.Dataset(
+                coords={"elevation": ("azimuth", np.array([0.5, 0.5], dtype="float32"))}
+            ),
+            "/sweep_1": xr.Dataset(),  # no elevation coordinate -> skipped with warning
+        }
+    )
+
+    with pytest.warns(UserWarning, match="no 'elevation'"):
+        out = cf1_export.calculate_sweep_indices(dtree)
+
+    # only the valid sweep contributes a ray-index entry
+    assert out["sweep_start_ray_index"].size == 1
+    assert out["sweep_end_ray_index"].size == 1
