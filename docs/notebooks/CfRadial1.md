@@ -84,12 +84,11 @@ display(ds)
 The same works analoguous with the datatree loader. But additionally we can provide a sweep number or list.
 
 ```{code-cell}
-?xd.io.open_cfradial1_datatree
+?xd.open_datatree
 ```
 
 ```{code-cell}
-dtree = xd.io.open_cfradial1_datatree(
-    filename,
+dtree = xd.open_datatree(filename, engine="cfradial1",
     first_dim="time",
     optional=False,
 )
@@ -109,11 +108,11 @@ dtree["sweep_0"].ds.DBZ.sortby("azimuth").plot(y="azimuth")
 ```
 
 ```{code-cell}
-dtree = xd.io.open_cfradial1_datatree(filename, sweep=[0, 1, 8])
+dtree = xd.open_datatree(filename, engine="cfradial1", sweep=[0, 1, 8])
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_cfradial1_datatree(filename, sweep=["sweep_0", "sweep_4", "sweep_8"])
+dtree = xd.open_datatree(filename, engine="cfradial1", sweep=["sweep_0", "sweep_4", "sweep_8"])
 display(dtree)
 ```

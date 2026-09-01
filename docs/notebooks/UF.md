@@ -105,11 +105,11 @@ display(ds)
 The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list.
 
 ```{code-cell}
-help(xd.io.open_uf_datatree)
+help(xd.open_datatree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_uf_datatree(fname, sweep=4)
+dtree = xd.open_datatree(fname, engine="uf", sweep=4)
 display(dtree)
 ```
 
@@ -126,12 +126,12 @@ dtree["sweep_4"].ds.DBZH.plot(cmap="HomeyerRainbow")
 ```
 
 ```{code-cell}
-dtree = xd.io.open_uf_datatree(fname, sweep="sweep_8")
+dtree = xd.open_datatree(fname, engine="uf", sweep="sweep_8")
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_uf_datatree(fname, sweep=[0, 1, 8])
+dtree = xd.open_datatree(fname, engine="uf", sweep=[0, 1, 8])
 display(dtree)
 ```
 
@@ -144,7 +144,7 @@ dtree["sweep_8"]["sweep_fixed_angle"].values
 ```
 
 ```{code-cell}
-dtree = xd.io.open_uf_datatree(fname)
+dtree = xd.open_datatree(fname, engine="uf")
 display(dtree)
 ```
 

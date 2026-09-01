@@ -889,6 +889,27 @@ def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file):
     assert "altitude" in ds.coords
 
 
+def test_open_nexradlevel2_datatree_legacy_site_coords_kwarg(nexradlevel2_file):
+    """Legacy `site_coords=` kwarg must reach the coord assignment in open_nexradlevel2_datatree."""
+    dtree = open_nexradlevel2_datatree(
+        nexradlevel2_file, sweep=[0], reindex_angle=False, site_coords=True
+    )
+    root_coords = dtree.ds.coords
+    assert "latitude" in root_coords
+    assert "longitude" in root_coords
+    assert "altitude" in root_coords
+
+
+def test_actual_elevation_cuts_invariant_under_sweep_selection(nexradlevel2_file):
+    """`actual_elevation_cuts` reflects file contents, not user `sweep=` selection."""
+    dtree_all = open_nexradlevel2_datatree(nexradlevel2_file)
+    dtree_subset = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
+    assert (
+        dtree_all.attrs["actual_elevation_cuts"]
+        == dtree_subset.attrs["actual_elevation_cuts"]
+    )
+
+
 @pytest.mark.parametrize(
     "sweeps_input, expected_sweeps, should_raise",
     [

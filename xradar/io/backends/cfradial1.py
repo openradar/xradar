@@ -51,8 +51,11 @@ from ...model import (
 )
 from .common import (
     _STATION_VARS,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
     _apply_site_as_coords,
-    _attach_sweep_groups,
+    _compose_docstring,
+    _deprecation_warning,
     _maybe_decode,
 )
 
@@ -337,6 +340,10 @@ def _get_radar_calibration(ds):
 def open_cfradial1_datatree(filename_or_obj, **kwargs):
     """Open CfRadial1 dataset as :py:class:`xarray.DataTree`.
 
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="cfradial1")`` or
+        ``xr.open_datatree(file, engine="cfradial1")`` instead.
+
     Parameters
     ----------
     filename_or_obj : str, Path, file-like or xarray.DataStore
@@ -369,47 +376,27 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     dtree: xarray.DataTree
         DataTree with CfRadial2 groups.
     """
+    _deprecation_warning("open_cfradial1_datatree", "cfradial1")
 
-    # handle kwargs, extract first_dim
+    # Bridge old kwargs to direct kwargs
     first_dim = kwargs.pop("first_dim", "auto")
     optional = kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
-    kwargs.pop("site_as_coords", None)
+    site_coords = kwargs.pop("site_as_coords", True)
     sweep = kwargs.pop("sweep", None)
     engine = kwargs.pop("engine", "netcdf4")
-    # needed for new xarray literal timedelta decoding
-    kwargs.update(decode_timedelta=kwargs.pop("decode_timedelta", False))
+    kwargs.setdefault("decode_timedelta", False)
 
-    # open root group, cfradial1 only has one group
-    # open_cfradial1_datatree only opens the file once using netcdf4
-    # and retrieves the different groups from the loaded object
-    ds = open_dataset(filename_or_obj, engine=engine, **kwargs)
-
-    # create datatree root node additional root metadata groups
-    dtree: dict = {
-        "/": _get_required_root_dataset(ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(ds)
-
-    # radar_calibration (connected with calib-dimension)
-    dtree = _attach_sweep_groups(
-        dtree,
-        list(
-            _get_sweep_groups(
-                ds,
-                sweep=sweep,
-                first_dim=first_dim,
-                optional=optional,
-                site_as_coords=False,
-            ).values()
-        ),
+    return CfRadial1BackendEntrypoint().open_datatree(
+        filename_or_obj,
+        first_dim=first_dim,
+        optional=optional,
+        optional_groups=optional_groups,
+        site_coords=site_coords,
+        sweep=sweep,
+        engine=engine,
+        **kwargs,
     )
-    return DataTree.from_dict(dtree)
 
 
 class CfRadial1BackendEntrypoint(BackendEntrypoint):
@@ -434,6 +421,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
 
     description = "Open CfRadial1 (.nc, .nc4) using netCDF4 in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#cfradial1"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -492,3 +480,91 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         ds._close = store.close
 
         return ds
+
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=False,
+        first_dim="auto",
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        optional=True,
+        optional_groups=False,
+        sweep=None,
+        engine="netcdf4",
+    ):
+        # CfRadial1 opens the entire file once
+        ds = open_dataset(
+            filename_or_obj,
+            engine=engine,
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+        )
+
+        groups_dict = {
+            "/": _get_required_root_dataset(ds, optional=optional),
+        }
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                ds, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                ds, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(ds)
+
+        sweep_datasets = list(
+            _get_sweep_groups(
+                ds,
+                sweep=sweep,
+                first_dim=first_dim,
+                optional=optional,
+                site_as_coords=site_coords,
+            ).values()
+        )
+
+        for i, sw_ds in enumerate(sweep_datasets):
+            # Drop station coords from per-sweep datasets — they live on root.
+            sw = sw_ds.drop_vars(_STATION_VARS, errors="ignore")
+            groups_dict[f"/sweep_{i}"] = sw.drop_attrs(deep=False)
+
+        return groups_dict
+
+    def open_datatree(
+        self,
+        filename_or_obj,
+        **kwargs,
+    ):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
+
+_CFRADIAL1_PARAMS_DOC = """
+    engine : {"netcdf4", "h5netcdf"}, optional
+        Underlying NetCDF engine used by ``xr.open_dataset`` to read the
+        CfRadial1 file. Defaults to ``"netcdf4"``.
+"""
+
+CfRadial1BackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a CfRadial1 file as a CfRadial2-shaped dict of group datasets.",
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _CFRADIAL1_PARAMS_DOC,
+)
+CfRadial1BackendEntrypoint.open_datatree.__doc__ = (
+    "Open a CfRadial1 file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)

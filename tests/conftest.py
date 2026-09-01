@@ -24,6 +24,17 @@ def cfradial1_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
+def cfradial2_file(cfradial1_file, tmp_path_factory):
+    """Round-trip a cfradial1 file through to_cfradial2 to get a real CfRadial2 file."""
+    import xradar as xd
+
+    outfile = tmp_path_factory.mktemp("cfradial2") / "sample_cfradial2.nc"
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
+    xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+    return str(outfile)
+
+
+@pytest.fixture(scope="session")
 def cfradial1n_file(tmp_path_factory):
     return DATASETS.fetch("DES_VOL_RAW_20240522_1600.nc")
 
