@@ -99,6 +99,17 @@ def nexradlevel2_file():
 
 
 @pytest.fixture(scope="session")
+def nexradlevel2_ldm_stride_file():
+    """KILX volume with an over-120-message LDM (#376 regression fixture).
+
+    LDM 49 of this file contains 120 MSG_31 + 2 MSG_2 = 122 messages.
+    Pre-fix, xradar's mod-120 stride dropped the trailing 2 MSG_31s,
+    yielding sweep_10 = 358 (on-wire is 360).
+    """
+    return DATASETS.fetch("KILX20230629_154426_V06")
+
+
+@pytest.fixture(scope="session")
 def nexrad_chunks_klot(tmp_path_factory):
     import tarfile
 

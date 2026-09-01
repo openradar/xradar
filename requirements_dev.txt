@@ -11,7 +11,7 @@ fsspec
 ruff
 nbconvert
 notebook
-open_radar_data>=0.7.0
+open_radar_data>=0.8.0
 boto3
 cartopy
 s3fs
