@@ -39,6 +39,21 @@ def odim_file2():
 
 
 @pytest.fixture(scope="session")
+def odim_file3():
+    return DATASETS.fetch("T_PAZA63_C_LFPW_20230420065041.h5")
+
+
+@pytest.fixture(scope="session")
+def odim_file4():
+    return DATASETS.fetch("202506090955_fianj_PVOL.h5")
+
+
+@pytest.fixture(scope="session")
+def odim_file5():
+    return DATASETS.fetch("SUR.202506091000.VOL.h5")
+
+
+@pytest.fixture(scope="session")
 def datamet_file():
     return DATASETS.fetch("H-000-VOL-ILMONTE-201907100700.tar.gz")
 
@@ -81,6 +96,17 @@ def iris1_file():
 @pytest.fixture(scope="session")
 def nexradlevel2_file():
     return DATASETS.fetch("KATX20130717_195021_V06")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_ldm_stride_file():
+    """KILX volume with an over-120-message LDM (#376 regression fixture).
+
+    LDM 49 of this file contains 120 MSG_31 + 2 MSG_2 = 122 messages.
+    Pre-fix, xradar's mod-120 stride dropped the trailing 2 MSG_31s,
+    yielding sweep_10 = 358 (on-wire is 360).
+    """
+    return DATASETS.fetch("KILX20230629_154426_V06")
 
 
 @pytest.fixture(scope="session")
