@@ -40,6 +40,20 @@ def _maybe_decode(attr):
         return attr
 
 
+def _maybe_recover_surrogate(txt):
+    """Recover text that was decoded with surrogate escapes."""
+    if not isinstance(txt, str):
+        return txt
+
+    if any("\udc80" <= ch <= "\udcff" for ch in txt):
+        try:
+            return txt.encode("utf-8", "surrogateescape").decode("utf-8")
+        except UnicodeError:
+            pass
+
+    return txt
+
+
 def _calculate_angle_res(dim):
     # need to sort dim first
     angle_diff = np.diff(sorted(dim))
