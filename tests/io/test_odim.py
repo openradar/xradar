@@ -9,11 +9,13 @@ ported from wradlib
 
 from contextlib import nullcontext
 
+import h5netcdf
 import numpy as np
 import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import odim, open_odim_datatree
+from xradar.io.backends.common import _maybe_recover_surrogate
 
 
 def create_startazA(nrays=360):
@@ -152,6 +154,90 @@ def test_get_a1gate():
     assert odim._get_a1gate(where) == 20
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (None, {}),
+        ("", {}),
+        ("WMO:26232", {"WMO": "26232"}),
+        (
+            " WIGOS:0-233-2-26232 , WMO:26232 , NOD:eesur ",
+            {"WIGOS": "0-233-2-26232", "WMO": "26232", "NOD": "eesur"},
+        ),
+        (
+            "wmo:26232,plc:Surgavere",
+            {"WMO": "26232", "PLC": "Surgavere"},
+        ),
+        (
+            b"WIGOS:0-233-2-26232,WMO:26232,NOD:eesur",
+            {"WIGOS": "0-233-2-26232", "WMO": "26232", "NOD": "eesur"},
+        ),
+        (
+            "RAD:EE41:SUBSYSTEM",
+            {"RAD": "EE41:SUBSYSTEM"},
+        ),
+        (
+            "WMO:26232,invalid,missing_colon,PLC:Surgavere",
+            {"WMO": "26232", "PLC": "Surgavere"},
+        ),
+        (
+            "WMO:26232,PLC:,NOD:eesur, :ignored",
+            {"WMO": "26232", "NOD": "eesur"},
+        ),
+        (
+            "WMO:11111,WMO:26232",
+            {"WMO": "26232"},
+        ),
+        (
+            "WIGOS:0-233-2-26232,WMO:26232,RAD:EE41,PLC:S\udcc3\udcbcrgavere,NOD:eesur",
+            {
+                "WIGOS": "0-233-2-26232",
+                "WMO": "26232",
+                "RAD": "EE41",
+                "PLC": "Sürgavere",
+                "NOD": "eesur",
+            },
+        ),
+    ],
+)
+def test_parse_odim_source_extensive(source, expected):
+    assert odim._parse_odim_source(source) == expected
+
+
+def test_parse_odim_source_handles_non_string_input():
+    class DummySource:
+        def __str__(self):
+            return "WMO:26232,NOD:eesur"
+
+    parsed = odim._parse_odim_source(DummySource())
+    assert parsed == {"WMO": "26232", "NOD": "eesur"}
+
+
+def test_parse_odim_source_surrogate_repair_unicodeerror_fallback():
+    # U+DC80 maps to raw byte 0x80 with surrogateescape, which is invalid
+    # as standalone UTF-8 and forces the repair decode to raise UnicodeError.
+    source = "PLC:\udc80_station,WMO:26232"
+
+    parsed = odim._parse_odim_source(source)
+
+    # Parser should not crash and should keep original value when repair fails.
+    assert parsed["PLC"] == "\udc80_station"
+    assert parsed["WMO"] == "26232"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Surgavere", "Surgavere"),
+        ("S\udcc3\udcbcrgavere", "Sürgavere"),
+        ("\udc80_station", "\udc80_station"),
+        (123, 123),
+    ],
+)
+def test_maybe_recover_surrogate(value, expected):
+    assert _maybe_recover_surrogate(value) == expected
+
+
 def test_OdimH5NetCDFMetadata(odim_file):
     store = odim.OdimStore.open(odim_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
@@ -175,6 +261,33 @@ def test_odim_dataset_has_close(odim_file):
     ds = open_dataset(odim_file, engine="odim", group="sweep_0")
     assert callable(getattr(ds, "_close", None))
     ds.close()
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    ["odim_file", "odim_file2", "odim_file3", "odim_file4", "odim_file5"],
+)
+def test_odim_source_global_attributes(request, fixture_name):
+    filename = request.getfixturevalue(fixture_name)
+    print(f"Testing file: {filename}")
+
+    # Build expected global attrs from raw /what/source.
+    expected = {}
+    with h5netcdf.File(filename, mode="r") as root:
+        if "what" in root:
+            source = root["what"].attrs.get("source", None)
+            print(f"Raw ODIM source attribute: {source}")
+            parsed = odim._parse_odim_source(source)
+            for odim_key, global_attr in odim._ODIM_SOURCE_TO_GLOBAL_ATTRS.items():
+                value = parsed.get(odim_key)
+                if value is not None:
+                    expected[global_attr] = value
+            print(f"Parsed ODIM source attributes: {expected}")
+
+    with open_dataset(filename, engine="odim", group="sweep_0") as ds:
+        print(f"Dataset global attributes: {ds.attrs}")
+        for global_attr, value in expected.items():
+            assert ds.attrs.get(global_attr) == value
 
 
 def test_open_odim_datatree(odim_file):
@@ -222,7 +335,7 @@ def test_open_odim_datatree(odim_file):
     assert "latitude" not in dtree.ds.data_vars
 
     # Validate attributes
-    assert len(dtree.attrs) == 9
+    assert len(dtree.attrs) == 10
     assert (
         dtree.attrs["Conventions"] == "ODIM_H5/V2_2"
     ), "Instrument name should match expected value"

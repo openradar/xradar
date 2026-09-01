@@ -8,7 +8,7 @@ import io
 import os
 import warnings
 from collections import OrderedDict
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
 import pytest
@@ -1001,6 +1001,100 @@ def test_bz2_compressed_buffer_path_real(nexradlevel2_bzfile):
         assert 1 in fh._ldm
         assert isinstance(fh._ldm[1], np.ndarray)
         assert fh._ldm[1].dtype == np.uint8
+
+        # Cold entry at recnum=134 must transition cleanly into a sequential
+        # walk — pins the byte-walker against future regressions in the
+        # cross-LDM-stride logic (#376).
+        assert fh.init_next_record()
+        assert fh.record_number == 135
+
+
+def test_init_record_cold_compressed_non_134_raises(nexradlevel2_bzfile):
+    """Cold init_record into compressed data must start at recnum=134 (#376)."""
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+    with NEXRADLevel2File(file_bytes) as fh:
+        assert fh.is_compressed
+        with pytest.raises(ValueError, match="recnum=134"):
+            fh.init_record(200)
+
+
+def test_init_record_non_sequential_uncached_raises(nexradlevel2_bzfile):
+    """init_record(N) past a sequential walk, with N uncached, must raise (#376)."""
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+    with NEXRADLevel2File(file_bytes) as fh:
+        fh.init_record(134)
+        fh.init_next_record()  # populates cache for 135
+        with pytest.raises(ValueError, match="non-sequential"):
+            fh.init_record(9999)  # never visited, not in cache
+
+
+def test_init_record_past_last_ldm_returns_false(nexradlevel2_bzfile):
+    """init_record past the last LDM returns False (EOF semantics) (#376)."""
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+    with NEXRADLevel2File(file_bytes) as fh:
+        # Walk to the very end so subsequent advances run out of LDMs.
+        rec = 134
+        while fh.init_record(rec):
+            rec += 1
+        # Next sequential advance must report EOF, not raise.
+        assert fh.init_record(rec) is False
+
+
+def test_load_ldm_past_end_returns_false(nexradlevel2_bzfile):
+    """_load_ldm reports EOF when the requested LDM index is past the last (#376)."""
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+    with NEXRADLevel2File(file_bytes) as fh:
+        assert fh._load_ldm(len(fh.bz2_record_indices)) is False
+
+
+def test_init_record_metadata_propagates_ldm_load_failure(nexradlevel2_bzfile):
+    """Branch A propagates _load_ldm failure when no LDM is available (#376)."""
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+    with NEXRADLevel2File(file_bytes) as fh:
+        # Empty the LDM index so even LDM 0 fails to load.
+        with patch.object(
+            type(fh),
+            "bz2_record_indices",
+            new_callable=PropertyMock,
+            return_value=np.array([], dtype=int),
+        ):
+            assert fh.init_record(0) is False
+
+
+def test_first_compressed_call_with_metadata_only_returns_false(nexradlevel2_bzfile):
+    """First compressed init_record returns False when no data LDM exists (#376)."""
+    with open(nexradlevel2_bzfile, "rb") as f:
+        file_bytes = f.read()
+    with NEXRADLevel2File(file_bytes) as fh:
+        # Truncate the LDM list to just the metadata LDM (index 0).
+        only_meta = fh.bz2_record_indices[:1]
+        with patch.object(
+            type(fh),
+            "bz2_record_indices",
+            new_callable=PropertyMock,
+            return_value=only_meta,
+        ):
+            assert fh.init_record(134) is False
+
+
+def test_ldm_stride_decodes_all_msg31(nexradlevel2_ldm_stride_file):
+    """KILX file regression for #376.
+
+    LDM 49 has 122 messages (120 MSG_31 + 2 MSG_2). Pre-fix, xradar's
+    mod-120 stride dropped the trailing 2 MSG_31s; sweep_10 reported 358
+    instead of the on-wire-correct 360. This pins the fix end-to-end.
+    """
+    with NEXRADLevel2File(nexradlevel2_ldm_stride_file, loaddata=False) as nex:
+        per_sweep = [len(s) for s in nex.msg_31_header]
+
+    # 13 sweeps total: 6 super-res (720 rays) + 7 standard (360 rays).
+    # Pre-fix, sweep_10 was 358 — the list-equality diff pinpoints the regression.
+    assert per_sweep == [720] * 6 + [360] * 7
 
 
 def test_nexradlevel2_missing_msg2_metadata():
@@ -2310,6 +2404,83 @@ class TestListInputWithIncompleteSweep:
         assert list(dtree_direct.match("sweep_*").keys()) == list(
             dtree_tuple.match("sweep_*").keys()
         )
+
+
+class TestInteriorGapCoordinates:
+    """Regression for openradar/xradar#366: open_store_coordinates must
+    translate sweep label -> compact index when iterating msg_31_header,
+    which is shorter than the declared cut count after an interior gap.
+    """
+
+    # KLOT 2021-11-04 17:42 shape: 12 declared cuts, label 10 dropped.
+    PRESENT_KEYS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11)
+
+    @staticmethod
+    def _make_store(present_keys, group_label, msg_5_has_elev_data=True):
+        from types import SimpleNamespace
+
+        from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+        # Distinct per-position elevation so the test fails (not just on
+        # IndexError) if label->position translation regresses to wrong index.
+        msg_31_header = [
+            [
+                {
+                    "azimuth_angle": 0,
+                    "elevation_angle": pos,
+                    "collect_date": 1,
+                    "collect_ms": 0,
+                }
+            ]
+            for pos in range(len(present_keys))
+        ]
+        declared = max(present_keys) + 1
+        elev_data = [{"elevation_angle": 0.5 * i} for i in range(declared)]
+        sweep_ds = {
+            "sweep_constant_data": {
+                "VOL": {
+                    "lon": -97.0,
+                    "lat": 35.0,
+                    "height": 300.0,
+                    "feedhorn_height": 1.0,
+                }
+            },
+            "sweep_data": {
+                "REF": {"first_gate": 0.0, "gate_spacing": 250.0, "ngates": 4}
+            },
+        }
+        data = {k: sweep_ds for k in present_keys}
+        root = SimpleNamespace(
+            data=data,
+            msg_31_header=msg_31_header,
+            msg_31_data_header=[{"msg_type": 31} for _ in range(declared)],
+            msg_5={"elevation_data": elev_data} if msg_5_has_elev_data else {},
+        )
+
+        # Subclass to avoid mutating NexradLevel2Store class-level descriptors.
+        class _SyntheticStore(NexradLevel2Store):
+            root = property(lambda self: root)
+            ds = property(lambda self: data[self._group])
+
+        store = _SyntheticStore.__new__(_SyntheticStore)
+        store._group = group_label
+        store._filename = "<synthetic>"
+        return store
+
+    @pytest.mark.parametrize("group_label", PRESENT_KEYS)
+    @pytest.mark.parametrize("msg_5_has_elev_data", [True, False])
+    def test_each_kept_sweep_round_trips(self, group_label, msg_5_has_elev_data):
+        store = self._make_store(
+            self.PRESENT_KEYS,
+            group_label=group_label,
+            msg_5_has_elev_data=msg_5_has_elev_data,
+        )
+        coords = store.open_store_coordinates()
+        assert coords["sweep_number"].item() == group_label
+        # Per-position elevation in the synthetic header confirms the
+        # label->compact-index translation (not just absence of IndexError).
+        expected_position = sorted(self.PRESENT_KEYS).index(group_label)
+        assert coords["elevation"].values[0] == expected_position
 
 
 class TestRealChunkFiles:
