@@ -71,7 +71,7 @@ required_global_attrs = dict(
         ("Conventions", "Cf/Radial"),
         ("version", "Cf/Radial version number"),
         ("title", "short description of file contents"),
-        ("instrument_name", "nameThe  of radar or lidar"),
+        ("instrument_name", "name of radar or lidar"),
         ("institution", "where the original data were produced"),
         (
             "references",
@@ -81,6 +81,19 @@ required_global_attrs = dict(
         ("history", "list of modifications to the original data"),
         ("comment", "miscellaneous information"),
         ("platform_is_mobile", "'true' or 'false', assumed 'false' if missing"),
+        (
+            "wmo__id",
+            "the traditional WMO identifier for the observing station/platform",
+        ),
+        ("node", "node identifier of the radar site"),
+        (
+            "wmo__originating_centre",
+            "the originator of the data according to Common Code Table C–11",
+        ),
+        (
+            "wmo__wsi",
+            "the WIGOS station identifier (WSI) for the observing station/platform",
+        ),
     ]
 )
 
