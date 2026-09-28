@@ -2,6 +2,7 @@
 
 ## Development
 
+* FIX: The open_odim_datatree method returned a xradar datatree with the range attribute `"spacing_is_constant"` set to `False`. This was because when the range between gates was compared in `float32`, the machine precision caused this to evaluate to `False` always. This is fixed now.
 * MNT: Refactor the CfRadial1 writer for code quality ahead of v1.0 — descriptive helper names (``_main_info_mapper`` → ``_extract_root_dataset``, ``_variable_mapper`` → ``_combine_sweeps``, ``_calib_mapper`` → ``_map_radar_calibration``, ``_sweep_info_mapper`` → ``_collect_sweep_metadata``), clearer locals, fix the ``calibs`` bool/variable name collision, robust ``history`` attribute and missing-``elevation`` handling, and a shared ``_build_cfradial1_dataset`` reused by ``xradar.transform.to_cfradial1`` to remove duplication ({issue}`379`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: When importing ODIM files, extract the global attributes "wmo__id", "node", "wmo__originating_centre" and "wmo__wsi" from the ODIM /what/source attribute
 * FIX: Require ``zarr>=3`` so ``DataTree.to_zarr()`` works with current xarray (which forwards a ``zarr_format`` argument that ``zarr<3``'s ``open_group()`` rejects), and fill masked moments (e.g. IRIS ``VRADH``) in the ``multiple-sweeps-into-volume-scan`` notebook before writing, since zarr v3 codecs cannot serialize numpy ``MaskedArray`` ({issue}`398`) by [@syedhamidali](https://github.com/syedhamidali)
