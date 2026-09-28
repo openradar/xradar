@@ -658,7 +658,7 @@ def get_range_attrs(rng=None):
     }
     if rng is not None:
         diff = np.diff(rng)
-        # Check if difference between spacing is less than machine epsilon for the dtype of rng
+        # Check if difference between spacing is less than machine epsilon for the dtype of rng (see #401)
         evenly_spaced = np.all(np.diff(diff) <= np.finfo(rng.dtype).eps * rng[2:])
         if evenly_spaced:
             spacing = "true"
