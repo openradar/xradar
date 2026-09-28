@@ -659,7 +659,10 @@ def get_range_attrs(rng=None):
     if rng is not None:
         diff = np.diff(rng)
         # Check if difference between spacing is less than machine epsilon for the dtype of rng (see #401)
-        evenly_spaced = np.all(np.diff(diff) <= 2 * np.finfo(rng.dtype).eps * rng[2:])
+        eps = 0
+        if np.issubdtype(rng.dtype, np.floating):
+            eps = np.finfo(rng.dtype).eps
+        evenly_spaced = np.all(np.diff(diff) <= 2 * eps * rng[2:])
         if evenly_spaced:
             spacing = "true"
             range_attrs["meters_between_gates"] = diff[0]
