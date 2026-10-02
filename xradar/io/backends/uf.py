@@ -885,7 +885,6 @@ def open_uf_datatree(
         Nested dict with optional keys ``angle`` and ``range`` holding the kwargs for
         :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
         Only used if `decode_coords=True`. Default is None (no reindexing).
-
     reindex_angle : dict, optional
         Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
 

@@ -50,18 +50,21 @@ def _get_reindex_coord(reindex_coord=None, reindex_angle=False):
     reindex_coord : dict or None
     """
     if reindex_angle is not False and reindex_angle is not None:
-        warnings.warn(
-            "`reindex_angle` is deprecated and will be removed in a future "
-            "version, use `reindex_coord=dict(angle=...)` instead.",
-            FutureWarning,
-            stacklevel=3,
-        )
         if reindex_coord is not None:
-            raise ValueError(
-                "Use either `reindex_coord` or the deprecated `reindex_angle`, "
-                "not both."
+            warnings.warn(
+                "Both `reindex_coord` and the deprecated `reindex_angle` are "
+                "given, `reindex_coord` is used. Please drop `reindex_angle`.",
+                UserWarning,
+                stacklevel=3,
             )
-        reindex_coord = {"angle": reindex_angle}
+        else:
+            warnings.warn(
+                "`reindex_angle` is deprecated and will be removed in a future "
+                "version, use `reindex_coord=dict(angle=...)` instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
+            reindex_coord = {"angle": reindex_angle}
 
     if reindex_coord is None:
         return None

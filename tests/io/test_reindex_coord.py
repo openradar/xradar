@@ -29,8 +29,9 @@ def test_get_reindex_coord_deprecated_reindex_angle():
 
 
 def test_get_reindex_coord_both_given():
-    with pytest.warns(FutureWarning), pytest.raises(ValueError, match="either"):
-        _get_reindex_coord({"angle": ANGLE}, ANGLE)
+    coord = {"angle": ANGLE, "range": {"range_res": 100.0}}
+    with pytest.warns(UserWarning, match="drop `reindex_angle`"):
+        assert _get_reindex_coord(coord, {"angle_res": 2.0}) is coord
 
 
 @pytest.mark.parametrize("value", [True, ANGLE["start_angle"], "angle"])
