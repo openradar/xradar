@@ -14,18 +14,89 @@ Currently, all private and not part of the public API.
 
 import io
 import struct
+import warnings
 from collections import OrderedDict
 
 import h5netcdf
 import numpy as np
 import xarray as xr
 
+from ... import util
 from ...model import (
     optional_root_attrs,
     optional_root_vars,
     required_global_attrs,
     required_root_vars,
 )
+
+#: coordinates which can be reindexed via ``reindex_coord``
+_REINDEX_COORDS = ("angle", "range")
+
+
+def _get_reindex_coord(reindex_coord=None, reindex_angle=False):
+    """Validate ``reindex_coord`` and map deprecated ``reindex_angle`` onto it.
+
+    Parameters
+    ----------
+    reindex_coord : dict or None
+        Nested dict with optional keys ``angle`` and ``range``, each holding
+        the kwargs for :func:`xradar.util.reindex_angle` and
+        :func:`xradar.util.reindex_range`.
+    reindex_angle : dict or False
+        Deprecated, kwargs for :func:`xradar.util.reindex_angle`.
+
+    Returns
+    -------
+    reindex_coord : dict or None
+    """
+    if reindex_angle is not False and reindex_angle is not None:
+        warnings.warn(
+            "`reindex_angle` is deprecated and will be removed in a future "
+            "version, use `reindex_coord=dict(angle=...)` instead.",
+            FutureWarning,
+            stacklevel=3,
+        )
+        if reindex_coord is not None:
+            raise ValueError(
+                "Use either `reindex_coord` or the deprecated `reindex_angle`, "
+                "not both."
+            )
+        reindex_coord = {"angle": reindex_angle}
+
+    if reindex_coord is None:
+        return None
+    if not isinstance(reindex_coord, dict):
+        raise TypeError(
+            "`reindex_coord` must be a dict, e.g. "
+            "`dict(angle=dict(...), range=dict(...))`, "
+            f"got {type(reindex_coord).__name__}."
+        )
+    unknown = set(reindex_coord) - set(_REINDEX_COORDS)
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) {sorted(unknown)} in `reindex_coord`, "
+            f"expected any of {list(_REINDEX_COORDS)}."
+        )
+    for key, kwargs in reindex_coord.items():
+        if not isinstance(kwargs, dict):
+            raise TypeError(
+                f"`reindex_coord[{key!r}]` must be a dict of kwargs, "
+                f"got {type(kwargs).__name__}."
+            )
+    return reindex_coord
+
+
+def _apply_reindex_coord(ds, reindex_coord):
+    """Reindex angle and/or range as given by ``reindex_coord``."""
+    if not reindex_coord:
+        return ds
+    if (angle := reindex_coord.get("angle")) is not None:
+        ds = ds.pipe(util.remove_duplicate_rays)
+        ds = ds.pipe(util.reindex_angle, **angle)
+        ds = ds.pipe(util.ipol_time, **angle)
+    if (rng := reindex_coord.get("range")) is not None:
+        ds = ds.pipe(util.reindex_range, **rng)
+    return ds
 
 
 def _maybe_decode(attr):

@@ -726,11 +726,13 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     kwargs = {
         "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
@@ -801,11 +803,13 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     kwargs = {
         "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,

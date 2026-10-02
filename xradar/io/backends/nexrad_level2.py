@@ -55,9 +55,11 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _assign_root,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_subgroup,
 )
 from xradar.model import (
@@ -1965,6 +1967,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -1998,10 +2001,9 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "nexradlevel2"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -2033,6 +2035,7 @@ def open_nexradlevel2_datatree(
     decode_timedelta=None,
     sweep=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -2096,9 +2099,13 @@ def open_nexradlevel2_datatree(
         first dimension. If "auto," determines the first dimension based on the sweep
         type (azimuth or elevation). Default is "auto."
 
-    reindex_angle : bool or dict, optional
-        Controls angle reindexing. If True or a dictionary, applies reindexing with
-        specified settings (if given). Only used if `decode_coords=True`. Default is False.
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+        Only used if `decode_coords=True`. Default is None (no reindexing).
+
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
 
     fix_second_angle : bool, optional
         If True, corrects errors in the second angle data, such as misaligned
@@ -2218,7 +2225,7 @@ def open_nexradlevel2_datatree(
         decode_timedelta=decode_timedelta,
         sweeps=sweeps,
         first_dim=first_dim,
-        reindex_angle=reindex_angle,
+        reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
         fix_second_angle=fix_second_angle,
         site_as_coords=False,
         optional=optional,
@@ -2261,6 +2268,7 @@ def open_sweeps_as_dict(
     decode_timedelta=None,
     sweeps=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -2271,6 +2279,7 @@ def open_sweeps_as_dict(
 ):
     if incomplete_sweeps is None:
         incomplete_sweeps = set()
+    reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
 
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
@@ -2303,7 +2312,7 @@ def open_sweeps_as_dict(
 
             # handle duplicates and reindex
             # For incomplete sweeps in pad mode, auto-detect angle parameters
-            # and force reindex even when reindex_angle=False
+            # and force angle reindex even without reindex_coord["angle"]
             if decode_coords and sweep_idx in incomplete_sweeps:
                 group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 angle_params = util.extract_angle_parameters(group_ds)
@@ -2315,10 +2324,12 @@ def open_sweeps_as_dict(
                 }
                 group_ds = group_ds.pipe(util.reindex_angle, **reindex_kwargs)
                 group_ds = group_ds.pipe(util.ipol_time, **reindex_kwargs)
-            elif decode_coords and reindex_angle is not False:
-                group_ds = group_ds.pipe(util.remove_duplicate_rays)
-                group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
-                group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
+                if reindex_coord and "range" in reindex_coord:
+                    group_ds = _apply_reindex_coord(
+                        group_ds, {"range": reindex_coord["range"]}
+                    )
+            elif decode_coords and reindex_coord:
+                group_ds = _apply_reindex_coord(group_ds, reindex_coord)
 
             # handling first dimension
             dim0 = "elevation" if group_ds.sweep_mode.load() == "rhi" else "azimuth"
