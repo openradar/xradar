@@ -2,6 +2,7 @@
 
 ## Development
 
+* FIX: CfRadial1 export of files with a variable number of gates no longer writes the ragged-layout index variables ``ray_n_gates``/``ray_start_index`` (and sets ``n_gates_vary`` to ``false``); the data are written padded to ``(time, range)``, and the leftover variables made the file unreadable for xradar and field-less for Py-ART ({issue}`416`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``open_odim_datatree``, ``open_rainbow_datatree``, ``open_hpl_datatree`` and ``open_metek_datatree`` mapped a list of integer sweeps with an offset of one (``sweep=[0]`` opened the second sweep, or failed for single-sweep files); integer lists now select the same sweeps as single integers and ``sweep_N`` names, as in all other backends ({issue}`412`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: Fix spacing_is_constant being incorrectly set to false for float32 ranges due to floating-point precision when comparing gate spacing. ({pull}`402` ) by [@mats-knmi](https://github.com/mats-knmi)
 * DOC: Fix the ``Multi-Volume-Concatenation`` notebook for xarray 2026.9 — determine the rotation direction from the time-ordered azimuth differences instead of ``diff("time")`` on a sweep whose dimension is ``azimuth`` (older xarray silently ignored the missing dimension, newer raises) ({pull}`406` ) by [@syedhamidali](https://github.com/syedhamidali)
