@@ -203,6 +203,17 @@ def test_cfradial2_helper_selection_error():
         cf2._iter_selected_sweeps(tree, 1.5)
 
 
+def test_cfradial2_helper_sweep_group_name_missing_group():
+    root = xr.Dataset(
+        {"sweep_group_name": ("sweep", np.array(["Sweep_7-1", "Sweep_7-2"]))}
+    )
+    tree = xr.DataTree.from_dict({"/": root, "Sweep_7-1": xr.Dataset()})
+
+    with pytest.warns(UserWarning, match=r"missing: \['Sweep_7-2'\]"):
+        available = cf2._available_sweeps(tree)
+    assert list(available.values()) == ["Sweep_7-1"]
+
+
 def test_cfradial2_helper_root_and_subgroup_normalization():
     root = xr.Dataset(
         data_vars={
