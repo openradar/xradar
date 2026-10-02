@@ -2,7 +2,8 @@
 
 ## Development
 
-* FIX: The open_odim_datatree method returned a xradar datatree with the range attribute `"spacing_is_constant"` set to `False`. This was because when the range between gates was compared in `float32`, the machine precision caused this to evaluate to `False` always. This is fixed now.
+* FIX: Fix open_odim_datatree incorrectly setting the range attribute spacing_is_constant to False for float32 data due to machine-precision rounding errors when comparing gate spacing.  ({pull}`402` ) by [@mats-knmi](https://github.com/mats-knmi)
+* FIX: CfRadial1 reader handles a variable number of gates per ray within a sweep — each ray is unpacked by its own ``ray_n_gates`` and shorter rays are padded with NaN, instead of assuming the first ray's gate count for the whole sweep. Also restore RHI detection (``elevation`` as first dimension), which broke in {pull}`320`, and decode ``sweep_mode`` after computing so dask-backed inputs keep the full string ({issue}`322`) by [@syedhamidali](https://github.com/syedhamidali)
 * MNT: Refactor the CfRadial1 writer for code quality ahead of v1.0 — descriptive helper names (``_main_info_mapper`` → ``_extract_root_dataset``, ``_variable_mapper`` → ``_combine_sweeps``, ``_calib_mapper`` → ``_map_radar_calibration``, ``_sweep_info_mapper`` → ``_collect_sweep_metadata``), clearer locals, fix the ``calibs`` bool/variable name collision, robust ``history`` attribute and missing-``elevation`` handling, and a shared ``_build_cfradial1_dataset`` reused by ``xradar.transform.to_cfradial1`` to remove duplication ({issue}`379`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: When importing ODIM files, extract the global attributes "wmo__id", "node", "wmo__originating_centre" and "wmo__wsi" from the ODIM /what/source attribute
 * FIX: Require ``zarr>=3`` so ``DataTree.to_zarr()`` works with current xarray (which forwards a ``zarr_format`` argument that ``zarr<3``'s ``open_group()`` rejects), and fill masked moments (e.g. IRIS ``VRADH``) in the ``multiple-sweeps-into-volume-scan`` notebook before writing, since zarr v3 codecs cannot serialize numpy ``MaskedArray`` ({issue}`398`) by [@syedhamidali](https://github.com/syedhamidali)
@@ -18,6 +19,7 @@
 * FIX: Preserve CfRadial metadata groups during CfRadial1/CfRadial2 transforms, allow ``to_cfradial2`` to reopen root-only ``engine="cfradial1"`` datasets, and normalize sweep metadata after ``map_over_sweeps`` operations so filtered volumes can be exported to CfRadial1 again ({issue}`254`, {issue}`322`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Expose ``target_crs`` on ``.xradar.georeference()`` accessor for DataArray, Dataset and DataTree, enabling reprojection via e.g. ``radar.xradar.georeference(target_crs=4326)`` ({issue}`243`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: set ``id-token: write`` in CI testpypi publisher for trusted publishing ({issue}`364`) by [@aladinor](https://github.com/aladinor), ({pull}`372` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* MNT: use xarray from PyPI, update pin to xarray=2026.9.0 (last xarray version with Python 3.11) ({pull}`404` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.12.0 (2026-04-21)
 
