@@ -334,3 +334,64 @@ def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file):
 
     with pytest.raises(ValueError, match="missing from file"):
         xd.io.open_cfradial2_datatree(outfile, engine="netcdf4", sweep="sweep_9")
+
+
+def _write_vendor_cfradial2(cfradial1_file, path, sweep_mode="rhi"):
+    # CfRadial2 file with group names from `sweep_group_name` that are not
+    # `sweep_<n>` (e.g. Vaisala WindCube "Sweep_<id>-<n>"), sweep_mode as
+    # variable and fixed angles only in the root group
+    import h5py
+
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_file)
+    xd.io.to_cfradial2(dtree, path, engine="h5netcdf")
+    nsweeps = len([k for k in dtree.children if k.startswith("sweep_")])
+    names = [f"Sweep_7-{i + 1}" for i in range(nsweeps)]
+    with h5py.File(path, "a") as f:
+        for i, name in enumerate(names):
+            f.move(f"sweep_{i}", name)
+            grp = f[name]
+            for var in ("sweep_fixed_angle", "fixed_angle"):
+                if var in grp:
+                    del grp[var]
+            if "sweep_mode" in grp:
+                del grp["sweep_mode"]
+            grp.attrs.pop("sweep_mode", None)
+            grp.create_dataset("sweep_mode", data=np.bytes_(sweep_mode))
+        del f["sweep_group_name"]
+        f.create_dataset(
+            "sweep_group_name",
+            data=np.array(names, dtype="S"),
+        )
+        f["sweep_group_name"].dims[0].attach_scale(f["sweep"])
+    return names
+
+
+def test_open_cfradial2_sweep_group_name(cfradial1_file, tmp_path):
+    # sweeps are found via the root `sweep_group_name` (CfRadial 2.1)
+    path = tmp_path / "vendor_cf2.nc"
+    _write_vendor_cfradial2(cfradial1_file, path)
+    root_fixed = xr.open_dataset(path, engine="h5netcdf").sweep_fixed_angle.values
+
+    with pytest.warns(UserWarning, match="renumbered"):
+        dtree = xd.io.open_cfradial2_datatree(path, engine="h5netcdf", first_dim="auto")
+    sweeps = [k for k in dtree.children if k.startswith("sweep_")]
+    assert sweeps == [f"sweep_{i}" for i in range(len(root_fixed))]
+    for i, sweep in enumerate(sweeps):
+        ds = dtree[sweep].ds
+        # sweep_mode read from the variable -> elevation is the first dimension
+        assert "elevation" in ds.dims
+        assert str(ds.sweep_mode.values) == "rhi"
+        # fixed angle taken from the root group
+        assert float(ds.sweep_fixed_angle) == pytest.approx(root_fixed[i])
+
+    # integer selection by position for non `sweep_<n>` group names
+    with pytest.warns(UserWarning, match="renumbered"):
+        one = xd.io.open_cfradial2_datatree(path, engine="h5netcdf", sweep=1)
+    assert float(one["sweep_0"].ds.sweep_fixed_angle) == pytest.approx(root_fixed[1])
+
+
+def test_open_cfradial2_no_sweeps(tmp_path):
+    path = tmp_path / "no_sweeps.nc"
+    xr.Dataset({"latitude": 1.0}).to_netcdf(path, engine="h5netcdf")
+    with pytest.raises(ValueError, match="No sweep groups found"):
+        xd.io.open_cfradial2_datatree(path, engine="h5netcdf")
