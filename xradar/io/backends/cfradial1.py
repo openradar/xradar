@@ -33,8 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import numpy as np
-import pandas as pd
-from xarray import Coordinates, Dataset, DataTree, open_dataset
+from xarray import Dataset, DataTree, open_dataset
 from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
@@ -196,11 +195,14 @@ def _get_sweep_groups(
                 np.cumsum(current_ray_n_gates) - current_ray_n_gates,
                 current_ray_n_gates,
             )
-            points = Coordinates.from_pandas_multiindex(
-                pd.MultiIndex.from_arrays([ray_idx, gate_idx], names=["time", "range"]),
-                "n_points",
+            ds_vars = (
+                ds_vars.assign_coords(
+                    time=("n_points", ray_idx),
+                    range=("n_points", gate_idx),
+                )
+                .set_index(n_points=["time", "range"])
+                .unstack("n_points")
             )
-            ds_vars = ds_vars.assign_coords(points).unstack("n_points")
             # reindex to full grid in case of rays without any gates
             ds_vars = ds_vars.reindex(
                 time=np.arange(nrays), range=np.arange(rslice.stop)
