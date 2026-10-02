@@ -28,10 +28,10 @@ dependencies:
   - pytest-xdist
   - scipy
   - setuptools
-  - pip:
-    - xarray >= 2026.4.0
   - xmltodict
   - boto3
   - arm_pyart
   - ffmpeg
   - zarr>=3
+  - pip:
+    - xarray >= 2026.9.0
