@@ -147,6 +147,11 @@ def test_open_windcube_engine(windcube_file):
         assert ds.sizes["azimuth"] == 12
         assert ds.encoding["engine"] == "windcube"
         assert "latitude" in ds.coords
+    with xr.open_dataset(
+        windcube_file, engine="windcube", group="sweep_3", drop_variables="cnr"
+    ) as ds:
+        assert "cnr" not in ds
+        assert "radial_wind_speed" in ds
     with pytest.raises(ValueError, match="missing"):
         xr.open_dataset(windcube_file, engine="windcube", group="sweep_9")
 
@@ -166,6 +171,22 @@ def test_windcube_guess_can_open(windcube_file, tmp_path):
     other = tmp_path / "other.nc"
     xr.Dataset({"a": 1}).to_netcdf(other, engine="h5netcdf")
     assert not entrypoint.guess_can_open(other)
+    text = tmp_path / "other.txt"
+    text.write_text("no netcdf")
+    assert not entrypoint.guess_can_open(text)
+
+
+def test_windcube_unfold_rhi_one_sided():
+    from xradar.io.backends.windcube import _unfold_rhi
+
+    # RHI that doesn't go over the top keeps its elevations
+    ds = xr.Dataset(
+        {
+            "azimuth": ("time", np.full(4, 90.0)),
+            "elevation": ("time", np.array([0.0, 30.0, 60.0, 90.0])),
+        }
+    )
+    xr.testing.assert_identical(_unfold_rhi(ds, 90.0), ds)
 
 
 @pytest.mark.parametrize(
@@ -197,13 +218,18 @@ def test_open_windcube_no_sweeps(tmp_path):
     path = tmp_path / "empty.nc"
     with h5netcdf.File(path, "w") as f:
         f.attrs["title"] = "WindCube data"
-        f.dimensions["sweep"] = 1
+        f.dimensions["sweep"] = 2
         f.create_variable(
             "sweep_group_name",
             ("sweep",),
-            data=np.array(["Sweep_1-1"], dtype=object),
+            data=np.array(["Sweep_1-1", "Sweep_1-2"], dtype=object),
             dtype=h5py.string_dtype(),
         )
-        f.create_variable("sweep_fixed_angle", ("sweep",), data=[0.0])
+        f.create_variable("sweep_fixed_angle", ("sweep",), data=[0.0, 0.0])
+        # interrupted scan: group present, but without rays;
+        # Sweep_1-2 is listed, but missing
+        grp = f.create_group("Sweep_1-1")
+        grp.dimensions["time"] = 0
+        grp.create_variable("time", ("time",), dtype="f8")
     with pytest.raises(ValueError, match="No WindCube sweeps"):
         xd.io.open_windcube_datatree(path)
