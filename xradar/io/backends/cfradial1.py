@@ -33,7 +33,8 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import numpy as np
-from xarray import Dataset, DataTree, merge, open_dataset
+import pandas as pd
+from xarray import Coordinates, Dataset, DataTree, open_dataset
 from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
@@ -176,47 +177,38 @@ def _get_sweep_groups(
 
         # check and extract for variable number of gates
         if ray_n_gates is not False:
-            current_ray_n_gates = ray_n_gates.isel(time=tslice)
-            current_rays_sum = current_ray_n_gates.sum().values.astype(int)
-            nslice = slice(
-                ray_start_index[start_idx[i]].values.astype(int),
-                ray_start_index[start_idx[i]].values.astype(int) + current_rays_sum,
-            )
-            rslice = slice(0, current_ray_n_gates[0].values.astype(int))
+            # gates per ray may vary within a sweep (#322), so unpack each ray
+            # by its own gate count and pad shorter rays with NaN
+            current_ray_n_gates = ray_n_gates.values[tslice].astype(int)
+            nrays = current_ray_n_gates.size
+            first_point = int(ray_start_index.values[start_idx[i]])
+            nslice = slice(first_point, first_point + current_ray_n_gates.sum())
+            rslice = slice(0, current_ray_n_gates.max())
             ds = ds.isel(range=rslice)
             ds = ds.isel(n_points=nslice)
-            ds_vars = ds[data_vars]
+            ragged_vars = [k for k in data_vars if "n_points" in ds[k].dims]
+            ds_vars = ds[ragged_vars].reset_coords(drop=True)
 
-            # always work over time dimension here assuming each ray has a different time
-            ds_vars = merge([ds_vars, ds[["time", "range"]]], compat="no_conflicts")
+            # (ray, gate) position of every point, by ray index, so duplicate
+            # times do not matter
+            ray_idx = np.repeat(np.arange(nrays), current_ray_n_gates)
+            gate_idx = np.arange(ray_idx.size) - np.repeat(
+                np.cumsum(current_ray_n_gates) - current_ray_n_gates,
+                current_ray_n_gates,
+            )
+            points = Coordinates.from_pandas_multiindex(
+                pd.MultiIndex.from_arrays([ray_idx, gate_idx], names=["time", "range"]),
+                "n_points",
+            )
+            ds_vars = ds_vars.assign_coords(points).unstack("n_points")
+            # reindex to full grid in case of rays without any gates
+            ds_vars = ds_vars.reindex(
+                time=np.arange(nrays), range=np.arange(rslice.stop)
+            )
+            ds_vars = ds_vars.drop_vars(["time", "range"])
 
-            # in case of duplicates in time coordinate
-            #  1. reset index
-            #  2. create fake time coordinate with unique values
-            has_duplicate_times = ds_vars.time.to_index().has_duplicates
-            if has_duplicate_times:
-                ds_vars = ds_vars.reset_index("time")
-                ds_vars = ds_vars.assign_coords(
-                    time=("time", np.arange(ds_vars.time.size))
-                )
-
-            # drop first and second dim coordinates
-            # this prevents unstacking into 2 dims
-            coords_to_drop = {"azimuth", "elevation"} & set(ds_vars.coords)
-            ds_vars = ds_vars.reset_coords(coords_to_drop, drop=True)
-
-            # stack/unstack to extract variables into 2 dimensions
-            ds_vars = ds_vars.stack(n_points=["time", "range"])
-            ds_vars = ds_vars.unstack("n_points")
-
-            ds = ds.drop_vars(ds_vars.data_vars)
-
-            # reset fake time-coord/index and re-assign proper
-            if has_duplicate_times:
-                ds_vars = ds_vars.reset_index("time", drop=True)
-                ds_vars = ds_vars.assign_coords(time=ds.time)
-
-            ds = merge([ds, ds_vars], compat="no_conflicts")
+            ds = ds.drop_vars(ragged_vars)
+            ds = ds.assign(ds_vars.data_vars)
 
         # Always assign station vars (conform_cfradial2_sweep_group strips them).
         # _apply_site_as_coords promotes to coords or keeps as data vars.
