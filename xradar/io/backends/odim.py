@@ -688,17 +688,32 @@ class OdimSubStore(AbstractDataStore):
         return self.root.coordinates
 
     def get_variables(self):
-        return FrozenDict(
-            (k1, v1)
-            for k1, v1 in {
-                **dict(
-                    [
-                        self.open_store_variable(k, v)
-                        for k, v in self.ds.variables.items()
-                    ]
-                ),
-            }.items()
-        )
+        variables = {}
+        legend = None
+        for k, v in self.ds.variables.items():
+            # compound-dtype legend table (code, class) of classification
+            # quality groups (ODIM_H5 2.4), not ray data (#395)
+            if k == "legend" and v.dtype.names is not None:
+                legend = v[...]
+                continue
+            name, var = self.open_store_variable(k, v)
+            variables[name] = var
+        if legend is not None:
+            _add_legend_flag_attrs(variables, legend)
+        return FrozenDict(variables)
+
+
+def _add_legend_flag_attrs(variables, legend):
+    """Add ODIM legend table as CF flag attributes to the group's data variable."""
+    codes, classes = (legend[field] for field in legend.dtype.names[:2])
+    meanings = [
+        (c.decode() if isinstance(c, bytes) else str(c)).replace(" ", "_")
+        for c in classes
+    ]
+    for var in variables.values():
+        if var.ndim == 2:
+            var.attrs["flag_values"] = np.asarray(codes)
+            var.attrs["flag_meanings"] = " ".join(meanings)
 
 
 class OdimStore(AbstractDataStore):
