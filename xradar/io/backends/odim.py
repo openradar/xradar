@@ -494,6 +494,9 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
         )
+        # producer-specific legend string (e.g. "64:NONMET,72:..."), kept as is
+        if "legend" in what:
+            attrs["legend"] = _maybe_decode(what["legend"])
         return attrs
 
     @property

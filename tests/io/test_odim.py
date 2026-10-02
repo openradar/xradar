@@ -383,6 +383,7 @@ def test_open_odim_quality_legend(odim_file, tmp_path, layout):
             offset=0.0,
             nodata=255.0,
             undetect=0.0,
+            legend=np.bytes_("72:NONMET.CLUTTER.CCOR,60:NONMET.BIOL.INSECT,246:NOISE"),
         )
         qual.create_dataset("data", data=np.full(shape, 72, dtype="uint8"))
         qual.create_dataset("legend", data=legend)
@@ -396,6 +397,10 @@ def test_open_odim_quality_legend(odim_file, tmp_path, layout):
     assert flag_values.dtype == np.dtype("int64")
     assert ds.ECHO_CLASS.attrs["flag_meanings"] == (
         "NONMET.BIOL.INSECT NONMET.CLUTTER.CCOR NOISE"
+    )
+    # the producer's what/legend string is kept as is
+    assert ds.ECHO_CLASS.attrs["legend"] == (
+        "72:NONMET.CLUTTER.CCOR,60:NONMET.BIOL.INSECT,246:NOISE"
     )
     assert "flag_values" not in ds.DBZH.attrs
     assert "flag_values" not in ds.CLASS.attrs
