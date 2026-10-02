@@ -91,3 +91,47 @@ def test_reindex_coord_hpl(hpl_file):
             assert ds.range.attrs["spacing_is_constant"] == "true"
             assert ds.range.attrs["meters_between_gates"] == 60.0
             assert ds.range[0] == ds0.range[0]
+
+
+def test_apply_reindex_coord_noop(gamic_file):
+    from xradar.io.backends.common import _apply_reindex_coord
+
+    with xr.open_dataset(gamic_file, group="sweep_0", engine="gamic") as ds:
+        assert _apply_reindex_coord(ds, None) is ds
+        assert _apply_reindex_coord(ds, {}) is ds
+
+
+@pytest.mark.parametrize(
+    "fixture, engine",
+    [
+        ("cfradial1_file", "cfradial1"),
+        ("rainbow_file", "rainbow"),
+        ("nexradlevel2_file", "nexradlevel2"),
+        ("uf_file_1", "uf"),
+    ],
+)
+def test_reindex_coord_open_dataset(request, fixture, engine):
+    filename = request.getfixturevalue(fixture)
+    with xr.open_dataset(
+        filename, group="sweep_0", engine=engine, reindex_coord={"angle": ANGLE}
+    ) as ds:
+        assert ds.sizes["azimuth"] == 360
+        np.testing.assert_allclose(ds.azimuth, np.arange(0.5, 360, 1.0))
+
+
+def test_reindex_coord_nexrad_incomplete_pad_range(nexradlevel2_file):
+    # incomplete sweeps get an auto-detected angle grid, range is reindexed too
+    from xradar.io.backends.nexrad_level2 import open_sweeps_as_dict
+
+    sweeps = open_sweeps_as_dict(nexradlevel2_file, sweeps=["sweep_0"])
+    rng = sweeps["sweep_0"].range
+    res = rng.diff("range").median().item()
+    reindex_coord = {"range": dict(stop_range=rng[-1].item() + 4 * res)}
+    padded = open_sweeps_as_dict(
+        nexradlevel2_file,
+        sweeps=["sweep_0"],
+        incomplete_sweeps={0},
+        reindex_coord=reindex_coord,
+    )["sweep_0"]
+    assert padded.sizes["range"] == rng.size + 4
+    assert padded.range.attrs["spacing_is_constant"] == "true"
