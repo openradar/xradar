@@ -37,6 +37,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import bz2
+import gzip
 import os
 import struct
 import warnings
@@ -87,6 +88,14 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _maybe_gunzip(data):
+    """Decompress gzip-wrapped data, return other data unchanged."""
+    if bytes(data[:2]) == _GZIP_MAGIC:
+        return gzip.decompress(data)
+    return data
 
 
 def _concatenate_chunks(file_list):
@@ -225,13 +234,21 @@ class NEXRADFile:
         self._has_volume_header = has_volume_header
 
         if isinstance(filename, (bytes, bytearray)):
-            self._fh = np.frombuffer(filename, dtype=np.uint8)
+            self._fh = np.frombuffer(_maybe_gunzip(filename), dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
-            file_bytes = filename.read()
+            # rewind, the same file-like is read again for every sweep
+            if getattr(filename, "seekable", lambda: False)():
+                filename.seek(0)
+            file_bytes = _maybe_gunzip(filename.read())
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
             self._fp = open(filename, "rb")
-            self._fh = np.memmap(self._fp.name, mode=mode)
+            if self._fp.read(2) == _GZIP_MAGIC:
+                # gzip-wrapped archive (e.g. *.gz in unidata-nexrad-level2, #382)
+                self._fp.seek(0)
+                self._fh = np.frombuffer(_maybe_gunzip(self._fp.read()), np.uint8)
+            else:
+                self._fh = np.memmap(self._fp.name, mode=mode)
         else:
             raise TypeError(f"Unsupported input type: {type(filename)}")
         self.volume_header = self._read_volume_header()
@@ -530,6 +547,15 @@ class NEXRADRecordFile(NEXRADFile):
         chk : bool
             True, if record is truncated.
         """
+        if self.record_number is None:
+            source = (
+                f" in {os.fspath(self.filename)!r}"
+                if isinstance(self.filename, (str, os.PathLike))
+                else ""
+            )
+            raise ValueError(
+                f"Not a NEXRAD Level II archive: no records found{source}."
+            )
         return self.init_record(self.record_number + 1)
 
     def array_from_record(self, words, width, dtype):
