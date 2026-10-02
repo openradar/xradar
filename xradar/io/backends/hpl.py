@@ -657,7 +657,7 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
         sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
         if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i + 1}" for i in sweep]
+            sweeps = [f"sweep_{i}" for i in sweep]
         else:
             sweeps.extend(sweep)
     else:

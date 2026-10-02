@@ -1284,3 +1284,21 @@ class TestStationCoordsOnRoot:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
+
+
+@pytest.mark.parametrize(
+    "fixture, opener",
+    [
+        ("odim_file", "open_odim_datatree"),
+        ("rainbow_file", "open_rainbow_datatree"),
+        ("hpl_file", "open_hpl_datatree"),
+    ],
+)
+def test_sweep_list_matches_sweep_int(request, fixture, opener):
+    # sweep=[0] must select the same sweep as sweep=0 and "sweep_0" (#412)
+    filename = request.getfixturevalue(fixture)
+    open_datatree = getattr(xradar.io, opener)
+    expected = open_datatree(filename, sweep=0)["sweep_0"].ds
+    for sweep in ([0], ["sweep_0"]):
+        dtree = open_datatree(filename, sweep=sweep)
+        xr.testing.assert_identical(dtree["sweep_0"].ds, expected)
