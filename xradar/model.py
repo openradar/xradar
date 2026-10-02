@@ -660,13 +660,8 @@ def get_range_attrs(rng=None):
         diff = np.diff(rng)
         if np.issubdtype(rng.dtype, np.floating):
             # Allow small floating-point rounding errors when comparing spacing.
-            eps = np.finfo(rng.dtype).eps
-            evenly_spaced = np.allclose(
-                diff,
-                diff[0],
-                rtol=2 * eps,
-                atol=0,
-            )
+            tolerance = 2 * np.max(np.spacing(rng))
+            evenly_spaced = np.all(np.abs(diff - diff[0]) <= tolerance)
         else:
             evenly_spaced = np.all(diff == diff[0])
         if evenly_spaced:
