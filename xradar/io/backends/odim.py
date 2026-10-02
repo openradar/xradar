@@ -704,15 +704,29 @@ class OdimSubStore(AbstractDataStore):
 
 
 def _add_legend_flag_attrs(variables, legend):
-    """Add ODIM legend table as CF flag attributes to the group's data variable."""
-    codes, classes = (legend[field] for field in legend.dtype.names[:2])
-    meanings = [
-        (c.decode() if isinstance(c, bytes) else str(c)).replace(" ", "_")
-        for c in classes
-    ]
+    """Add ODIM legend table as CF flag attributes to the group's data variable.
+
+    ODIM_H5 2.3/2.4 (Section 6.2) define the legend as compound dataset
+    ``{char[64] key; char[32] value}`` with ``key`` the class name and
+    ``value`` the data value as string. Some producers (e.g. FMI) write
+    ``{int code; string class}`` instead; both layouts are handled.
+    """
+
+    def _str(x):
+        return x.decode() if isinstance(x, bytes) else str(x)
+
+    names = legend.dtype.names
+    if {"key", "value"} <= set(names):
+        codes, classes = legend["value"], legend["key"]
+    else:
+        codes, classes = (legend[field] for field in names[:2])
+    codes = np.array([float(_str(c)) for c in codes])
+    if np.all(codes == np.round(codes)):
+        codes = codes.astype("int64")
+    meanings = [_str(c).strip().replace(" ", "_") for c in classes]
     for var in variables.values():
         if var.ndim == 2:
-            var.attrs["flag_values"] = np.asarray(codes)
+            var.attrs["flag_values"] = codes
             var.attrs["flag_meanings"] = " ".join(meanings)
 
 
