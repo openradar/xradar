@@ -93,6 +93,23 @@ def _sweep_group_names(dtree):
     return [name for name in dtree.groups if "sweep" in name]
 
 
+#: CfRadial2.1 names (as read by xradar) mapped back to CfRadial1 names on
+#: export, for radar_calibration (without ``r_calib_`` prefix), radar_parameters
+#: and georeferencing_correction (#419)
+CFRADIAL1_CALIBRATION_NAMES = {
+    "base_1km_hc": "base_dbz_1km_hc",
+    "base_1km_vc": "base_dbz_1km_vc",
+    "base_1km_hx": "base_dbz_1km_hx",
+    "base_1km_vx": "base_dbz_1km_vx",
+}
+CFRADIAL1_METADATA_NAMES = {
+    "radar_receiver_bandwidth": "radar_rx_bandwidth",
+    "radar_altitude_correction": "altitude_correction",
+    "eastward_ground_speed_correction": "eastward_velocity_correction",
+    "northward_ground_speed_correction": "northward_velocity_correction",
+}
+
+
 def _map_radar_calibration(calib_ds):
     """
     Map calibration parameters to the CfRadial1 ``r_calib_*`` layout.
@@ -111,7 +128,10 @@ def _map_radar_calibration(calib_ds):
     renamed_vars = {}
     for name in calib_ds.data_vars:
         data_array = calib_ds[name]
-        renamed_vars["r_calib_" + name] = xr.DataArray(
+        cf1_name = CFRADIAL1_CALIBRATION_NAMES.get(name, name)
+        if not cf1_name.startswith("r_calib_"):
+            cf1_name = "r_calib_" + cf1_name
+        renamed_vars[cf1_name] = xr.DataArray(
             data=data_array.data[np.newaxis, ...],
             dims=["r_calib"] + list(data_array.dims),
             coords={"r_calib": [0]},
@@ -119,6 +139,13 @@ def _map_radar_calibration(calib_ds):
         )
     radar_calib = xr.Dataset(renamed_vars)
     return radar_calib.drop_vars("r_calib", errors="ignore")
+
+
+def _to_cfradial1_names(ds):
+    """Rename CfRadial2.1 metadata variables back to their CfRadial1 names."""
+    return ds.rename_vars(
+        {k: v for k, v in CFRADIAL1_METADATA_NAMES.items() if k in ds.data_vars}
+    )
 
 
 def _extract_root_dataset(dtree):
@@ -352,11 +379,11 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
         radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
-        cfradial1_ds.update(radar_params)
+        cfradial1_ds.update(_to_cfradial1_names(radar_params))
 
     if "georeferencing_correction" in dtree:
         radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
-        cfradial1_ds.update(radar_georef)
+        cfradial1_ds.update(_to_cfradial1_names(radar_georef))
 
     # Ensure that the data type of sweep_mode and similar variables matches
     if "sweep_mode" in cfradial1_ds.variables:
