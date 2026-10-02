@@ -239,6 +239,42 @@ With {func}`~xradar.io.backends.hpl.open_hpl_datatree`
 all groups (eg. ``1``) are extracted. From that the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
+## Vaisala WindCube Lidar
+
+Vaisala (formerly Leosphere) WindCube scanning Doppler lidars write NetCDF-4
+files declaring ``Conventions = "CF/Radial 2.0 , CF-1.7"``. The sweep groups
+(e.g. ``Sweep_152468-1``) are listed in the root ``sweep_group_name``, the fixed
+angles in the root ``sweep_fixed_angle`` (azimuth for RHI, elevation otherwise).
+Variables are documented in the files through ``long_name``, ``units`` and
+``comments``; measurements include ``radial_wind_speed`` with confidence index
+and status, ``cnr``, ``relative_beta`` and ``doppler_spectrum_width``.
+
+The reader normalizes these files to the xradar data model:
+
+- vendor sweep modes are mapped to CfRadial 2.1 sweep modes (``ppi``/``volume``/``vad``
+  to ``azimuth_surveillance`` or ``sector``, ``fixed`` to ``vertical_pointing`` or
+  ``pointing``, ``dbs`` to ``doppler_beam_swinging``, ``segment`` to
+  ``complex_trajectory``); the original mode is kept in the
+  ``windcube_sweep_mode`` attribute,
+- DBS/VAD sweeps with ``range(time, gate_index)`` are split into one sweep per
+  gate geometry (e.g. vertical and inclined beams),
+- over-the-top RHIs are unfolded to elevations from 0 to 180 degrees,
+- rays without valid angles are dropped, ``time`` is the end of each ray.
+
+References: [CfRadial 2.1 format](https://github.com/NCAR/CfRadial/blob/master/docs/CfRadialDoc-v2.1-20190901.pdf),
+[Vaisala WindCube Scan](https://vaisala.com/products/weather-environmental-sensors/windcube-scan-general-info), [WindCube Scan product spotlight](https://www.vaisala.com/sites/default/files/documents/WEA-MET-WindCube-Scan-Lidar-Product-Spotlight-B212058EN-A.pdf).
+
+### WindCubeBackendEntrypoint
+
+The xarray backend {class}`~xradar.io.backends.windcube.WindCubeBackendEntrypoint`
+returns the wanted sweep (eg. ``sweep_0``) as {py:class}`xarray:xarray.Dataset`.
+
+### open_windcube_datatree
+
+With {func}`~xradar.io.backends.windcube.open_windcube_datatree`
+all sweeps are extracted and the ``root`` group is processed.
+Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
+
 ## Metek MRR2
 
 ### MRRBackendEntrypoint
