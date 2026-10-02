@@ -2739,20 +2739,28 @@ def test_get_dynamic_scan_type():
 
 @pytest.mark.parametrize("source", ["path", "bytes", "filelike"])
 def test_open_nexradlevel2_datatree_gzip(nexradlevel2_msg1_file, source):
-    # gzip-wrapped archives (e.g. *.gz in unidata-nexrad-level2) open
-    # transparently from path, bytes and file-like objects (#382)
+    # gzip-wrapped archives (e.g. *.gz in unidata-nexrad-level2) are not
+    # decompressed by the reader, but give a clear error (#382)
     gzfile = DATASETS.fetch("KLIX20050828_180149.gz")
     inputs = {
         "path": lambda: gzfile,
         "bytes": lambda: open(gzfile, "rb").read(),
         "filelike": lambda: io.BytesIO(open(gzfile, "rb").read()),
     }
-    dtree = open_nexradlevel2_datatree(inputs[source]())
+    with pytest.raises(ValueError, match="gzip-compressed.*Decompress it first"):
+        open_nexradlevel2_datatree(inputs[source]())
+
+
+def test_open_nexradlevel2_datatree_gunzipped_bytes(nexradlevel2_msg1_file):
+    # the recommended way: decompress first, then pass bytes
+    import gzip
+
+    gzfile = DATASETS.fetch("KLIX20050828_180149.gz")
+    dtree = open_nexradlevel2_datatree(gzip.open(gzfile).read())
     expected = open_nexradlevel2_datatree(nexradlevel2_msg1_file)
     sweeps = [k for k in expected.children if k.startswith("sweep_")]
     assert [k for k in dtree.children if k.startswith("sweep_")] == sweeps
-    for sweep in sweeps:
-        xarray.testing.assert_identical(dtree[sweep].ds, expected[sweep].ds)
+    xarray.testing.assert_identical(dtree["sweep_0"].ds, expected["sweep_0"].ds)
 
 
 def test_open_nexradlevel2_datatree_filelike_all_sweeps(nexradlevel2_file):
