@@ -103,8 +103,6 @@ def _encode_string_variables(ds):
             data = np.char.encode(np.asarray(var.values, dtype=str), "utf-8")
             ds[name] = var.copy(data=data)
             ds[name].encoding.pop("dtype", None)
-        elif name == "sweep_mode" and var.dtype.kind != "S":
-            ds[name] = var.astype("S")
     return ds
 
 
