@@ -68,6 +68,8 @@ from .common import (
     _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _input_kind,
+    _read_head,
 )
 
 #: mapping of rainbow moment names to CfRadial2/ODIM names
@@ -799,6 +801,13 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
 
     description = "Open Rainbow5 files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#rainbow-data-i-o"
+
+    def guess_can_open(self, filename_or_obj):
+        """Rainbow5 file (XML header starting with ``<volume``)."""
+        if _input_kind(filename_or_obj) not in ("path",):
+            return False
+        head = _read_head(filename_or_obj, 64)
+        return head is not None and head.lstrip().startswith(b"<volume")
 
     def open_dataset(
         self,

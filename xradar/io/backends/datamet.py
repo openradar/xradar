@@ -24,6 +24,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import gzip
 import io
+import os
 import tarfile
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -383,6 +384,17 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
 
     description = "Open DataMet files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#datamet-data-i-o"
+
+    def guess_can_open(self, filename_or_obj):
+        """DataMet volume (tar archive with ``navigation.txt``)."""
+        if not isinstance(filename_or_obj, (str, os.PathLike)):
+            return False
+        try:
+            with tarfile.open(filename_or_obj) as tar:
+                names = {os.path.normpath(name) for name in tar.getnames()}
+        except Exception:
+            return False
+        return "navigation.txt" in names
 
     def open_dataset(
         self,

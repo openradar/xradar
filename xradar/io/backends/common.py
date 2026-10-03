@@ -12,7 +12,9 @@ Currently, all private and not part of the public API.
 
 """
 
+import gzip
 import io
+import os
 import struct
 from collections import OrderedDict
 
@@ -26,6 +28,114 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
+
+
+def _read_head(filename_or_obj, size=512, decompress=False):
+    """Read the first bytes of a file without consuming file-like objects.
+
+    Used by the backends' ``guess_can_open``. Returns ``None`` if the input
+    can't be read.
+
+    Parameters
+    ----------
+    filename_or_obj : str, os.PathLike, bytes or file-like
+    size : int
+        Number of bytes to read.
+    decompress : bool
+        Read gzip-compressed files decompressed.
+    """
+    try:
+        if isinstance(filename_or_obj, (bytes, bytearray)):
+            head = bytes(filename_or_obj[:size])
+        elif isinstance(filename_or_obj, (list, tuple)):
+            # e.g. NEXRAD Level II chunks
+            first = filename_or_obj[0] if filename_or_obj else b""
+            head = bytes(first[:size]) if isinstance(first, (bytes, bytearray)) else b""
+        elif isinstance(filename_or_obj, (str, os.PathLike)):
+            with open(filename_or_obj, "rb") as fh:
+                head = fh.read(size)
+        elif hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+            pos = filename_or_obj.tell()
+            filename_or_obj.seek(0)
+            head = filename_or_obj.read(size)
+            filename_or_obj.seek(pos)
+        else:
+            return None
+        if isinstance(head, str):
+            head = head.encode(errors="replace")
+        if decompress and head[:2] == b"\x1f\x8b":
+            head = _gunzip_head(filename_or_obj, size)
+        return head
+    except Exception:
+        return None
+
+
+def _input_kind(filename_or_obj):
+    """Kind of input given to a backend, used by ``guess_can_open``.
+
+    Returns one of ``"path"``, ``"bytes"``, ``"chunks"`` (list of bytes),
+    ``"text"`` (text file-like), ``"file"`` (binary file-like) or ``None``.
+    """
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        return "path"
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return "bytes"
+    if isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (bytes, bytearray)) for item in filename_or_obj
+    ):
+        return "chunks"
+    if isinstance(filename_or_obj, io.TextIOBase):
+        return "text"
+    if hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+        return "file"
+    return None
+
+
+def _gunzip_head(filename_or_obj, size):
+    """Read the first ``size`` decompressed bytes of a gzip-compressed input."""
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        with gzip.open(filename_or_obj) as fh:
+            return fh.read(size)
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return gzip.GzipFile(fileobj=io.BytesIO(filename_or_obj)).read(size)
+    pos = filename_or_obj.tell()
+    try:
+        filename_or_obj.seek(0)
+        return gzip.GzipFile(fileobj=filename_or_obj).read(size)
+    finally:
+        filename_or_obj.seek(pos)
+
+
+def _is_hdf5(head):
+    return head is not None and head[:8] == b"\x89HDF\r\n\x1a\n"
+
+
+def _read_nc_header(filename_or_obj):
+    """Get root attributes, variable and group names of a netCDF/HDF5 file.
+
+    Returns ``(attrs, variables, groups)`` or ``None`` if the input isn't a
+    readable netCDF/HDF5 file. The position of file-like objects is restored.
+    """
+    head = _read_head(filename_or_obj, 8)
+    if head is None or not (_is_hdf5(head) or head[:3] == b"CDF"):
+        return None
+    source = filename_or_obj
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+    pos = source.tell() if _input_kind(source) == "file" else None
+    try:
+        if _is_hdf5(head):
+            with h5netcdf.File(source, "r", phony_dims="access") as fh:
+                attrs = {k: _maybe_decode(v) for k, v in fh.attrs.items()}
+                return attrs, set(fh.variables), set(fh.groups)
+        # netCDF3 classic
+        with xr.open_dataset(source, engine="scipy", decode_cf=False) as ds:
+            return dict(ds.attrs), set(ds.variables), set()
+    except Exception:
+        return None
+    finally:
+        if pos is not None:
+            source.seek(pos)
 
 
 def _maybe_decode(attr):

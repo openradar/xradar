@@ -49,6 +49,8 @@ from xradar.io.backends.common import (
     _assign_root,
     _get_radar_calibration,
     _get_subgroup,
+    _input_kind,
+    _read_head,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -741,6 +743,13 @@ class UFBackendEntrypoint(BackendEntrypoint):
 
     description = "Open Universal Format (UF) files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#uf-data-i-o"
+
+    def guess_can_open(self, filename_or_obj):
+        """Universal Format, ``UF`` at the start of the first record."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        head = _read_head(filename_or_obj, 8)
+        return head is not None and b"UF" in (head[0:2], head[4:6])
 
     def open_dataset(
         self,

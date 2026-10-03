@@ -83,6 +83,8 @@ from .common import (
     _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _input_kind,
+    _read_head,
     _unpack_dictionary,
 )
 
@@ -707,6 +709,16 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
     description = "Open FURUNO (.scn, .scnx) in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#furuno-binary-data"
+
+    def guess_can_open(self, filename_or_obj):
+        """Furuno SCN/SCNX, also gzip-compressed (header size and version)."""
+        if _input_kind(filename_or_obj) not in ("path",):
+            return False
+        head = _read_head(filename_or_obj, 4, decompress=True)
+        if head is None or len(head) < 4:
+            return False
+        size, version = struct.unpack("<HH", head[:4])
+        return (size, version) in [(80, 3), (80, 103), (156, 10)]
 
     def open_dataset(
         self,

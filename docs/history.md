@@ -2,6 +2,7 @@
 
 ## Development
 
+* ENH: Implement ``guess_can_open`` for all backends (format signatures and the input types each backend reads) and add ``xradar.io.discover_engine`` / ``xradar.io.list_xradar_engines``; formats unknown to xarray (NEXRAD Level II, IRIS, Rainbow, UF, ...) can now be opened with ``xr.open_dataset`` without ``engine`` ({issue}`225`, {issue}`380`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ODIM reader no longer fails on quality groups carrying a compound-dtype ``legend`` table (ODIM_H5 2.4, e.g. the FMI open archive since 2026-06); the table is attached to the group's classification variable as CF ``flag_values`` / ``flag_meanings`` (ODIM 2.3/2.4 Section 6.2 ``key``/``value`` and FMI ``code``/``class`` layouts) instead of being merged as ray data, and a ``what/legend`` string attribute is kept as ``legend`` ({issue}`395`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``open_odim_datatree``, ``open_rainbow_datatree``, ``open_hpl_datatree`` and ``open_metek_datatree`` mapped a list of integer sweeps with an offset of one (``sweep=[0]`` opened the second sweep, or failed for single-sweep files); integer lists now select the same sweeps as single integers and ``sweep_N`` names, as in all other backends ({issue}`412`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: Fix spacing_is_constant being incorrectly set to false for float32 ranges due to floating-point precision when comparing gate spacing. ({pull}`402` ) by [@mats-knmi](https://github.com/mats-knmi)
