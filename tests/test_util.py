@@ -610,3 +610,52 @@ def test_create_volume():
     )
     assert volume.ds.time_coverage_start == "2023-04-20T06:50:01Z"
     assert volume.ds.time_coverage_end == "2023-04-20T06:59:46Z"
+
+
+@pytest.mark.parametrize("first_dim", ["auto", "time"])
+def test_is_sweep_backends(odim_file, cfradial1_file, first_dim):
+    dtree = io.open_odim_datatree(odim_file, first_dim=first_dim, optional_groups=True)
+    # the root and the metadata groups are no sweeps
+    assert not util.is_sweep(dtree)
+    assert not util.is_sweep(dtree["radar_parameters"])
+    for node in ["sweep_0", "sweep_5"]:
+        assert util.is_sweep(dtree[node])
+        assert util.is_sweep(dtree[node].to_dataset(), strict=True)
+        assert dtree[node].to_dataset().xradar.is_sweep()
+    # still a sweep after georeferencing (2D x, y, z coordinates)
+    assert util.is_sweep(dtree.xradar.georeference()["sweep_0"])
+
+    dtree = io.open_cfradial1_datatree(cfradial1_file, first_dim=first_dim)
+    assert util.is_sweep(dtree["sweep_0"], strict=True)
+
+
+def test_is_sweep_structure():
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
+    assert util.is_sweep(ds)
+    # mandatory sweep metadata is missing
+    assert not util.is_sweep(ds, strict=True)
+    ds_meta = ds.assign(
+        sweep_number=0,
+        sweep_mode="azimuth_surveillance",
+        follow_mode="none",
+        prt_mode="fixed",
+        sweep_fixed_angle=1.0,
+    )
+    assert util.is_sweep(ds_meta, strict=True)
+    assert ds_meta.xradar.is_sweep(strict=True)
+
+    # no range dimension
+    assert not util.is_sweep(ds.isel(range=0))
+    # no data variable along (ray, range)
+    assert not util.is_sweep(ds.drop_vars("DBZH"))
+    # angles missing or not along the ray dimension
+    assert not util.is_sweep(ds.drop_vars("elevation"))
+    assert not util.is_sweep(ds.assign(azimuth=("range", np.arange(10.0))))
+    # two candidate ray dimensions
+    assert not util.is_sweep(
+        ds.assign(extra=(("azimuth", "elevation"), np.ones((2, 3))))
+    )
+    # no Dataset
+    assert not util.is_sweep(ds.DBZH)
+    assert not util.is_sweep(None)
