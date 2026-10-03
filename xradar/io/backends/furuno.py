@@ -41,6 +41,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import datetime as dt
 import gzip
 import io
+import os
 import struct
 from collections import OrderedDict
 
@@ -305,6 +306,8 @@ class FurunoFile:
         self._loaddata = kwargs.get("loaddata", True)
         self._obsmode = kwargs.get("obsmode", None)
         self._fp = None
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             if filename.endswith(".gz"):
@@ -702,6 +705,26 @@ class FurunoStore(AbstractDataStore):
         return FrozenDict(calibration)
 
 
+def _get_radar_parameters(header):
+    """Get radar_parameters from the SCNX header.
+
+    The half-power beam widths are stored in 1/100 degree (e.g. 275 for the
+    2.7 degree beam of the WR2120).
+    """
+    params = {}
+    for pol in ["h", "v"]:
+        value = header.get(f"half_power_beam_width_{pol}")
+        if value is not None:
+            params[f"radar_beam_width_{pol}"] = xr.DataArray(
+                value / 100.0,
+                attrs=dict(
+                    units="degrees",
+                    long_name=f"half-power beam width, {pol.upper()} polarization",
+                ),
+            )
+    return xr.Dataset(params)
+
+
 class FurunoBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Furuno data."""
 
@@ -825,7 +848,11 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        with FurunoFile(filename_or_obj, loaddata=False) as fh:
+            params = _get_radar_parameters(fh.header)
+        dtree["/radar_parameters"] = xr.merge(
+            [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
