@@ -468,6 +468,15 @@ class TestParser:
         with pytest.raises(ValueError, match="Truncated"):
             NEXRADLevel3File(io.BytesIO(buf[:length]))
 
+    def test_text_only_product_raises(self):
+        # dry-period accumulations only carry a text packet (code 1:
+        # length, i/j start, text)
+        text = b"No precipitation detected since 1200Z"
+        packet = struct.pack(">4h", 1, 4 + len(text), 0, 0) + text
+        buf = build_level3_file(msg_code=170, packet=packet)
+        with pytest.raises(ValueError, match="No precipitation detected"):
+            NEXRADLevel3File(io.BytesIO(buf))
+
     def test_zero_radials_raises(self):
         packet = struct.pack(">7h", 16, 0, 8, 256, 280, 1000, 0)
         buf = build_level3_file(packet=packet)

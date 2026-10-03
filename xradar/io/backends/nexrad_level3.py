@@ -526,6 +526,14 @@ class NEXRADLevel3File:
                 "the first packet."
             )
         (packet_code,) = struct.unpack_from(">h", buf2, 16)
+        if packet_code == 1:
+            # text-only product, e.g. accumulations without precipitation
+            (length,) = struct.unpack_from(">h", buf2, 18)
+            text = buf2[24 : 20 + length].decode("ascii", errors="replace").strip()
+            raise ValueError(
+                f"NEXRAD Level 3 product {code} contains no radial data, only "
+                f"a text message: {text!r}."
+            )
         if packet_code not in SUPPORTED_PACKET_CODES:
             raise NotImplementedError(
                 f"Unsupported symbology packet code {packet_code}."
