@@ -599,7 +599,10 @@ class NEXRADLevel3File:
         try:
             if packet_code == 16:
                 (nbytes0,) = struct.unpack_from(">h", buf2, 30)
-                if nbytes0 != nbins:
+                if nbytes0 == nbins + 1 and nbins % 2:
+                    # odd number of bins, radials padded to full halfwords
+                    pass
+                elif nbytes0 != nbins:
                     # occasionally the header nbins disagrees with the
                     # per-radial byte count; the byte count wins
                     nbins = nbytes0
@@ -612,19 +615,22 @@ class NEXRADLevel3File:
             raise ValueError("Truncated or corrupt radial packet data.") from err
 
     def _read_packet16(self, buf2, nradials, nbins):
+        # radials are padded to full halfwords (ICD), i.e. an odd number of
+        # bins carries one padding byte
+        row_bytes = nbins + nbins % 2
         radial_dtype = np.dtype(
             [
                 ("nbytes", ">i2"),
                 ("angle_start", ">i2"),
                 ("angle_delta", ">i2"),
-                ("data", "u1", (nbins,)),
+                ("data", "u1", (row_bytes,)),
             ]
         )
         end = 30 + nradials * radial_dtype.itemsize
         if len(buf2) >= end:
             radials = np.frombuffer(buf2, radial_dtype, count=nradials, offset=30)
-            if (radials["nbytes"] == nbins).all():
-                self.raw_data = radials["data"].copy()
+            if (radials["nbytes"] == row_bytes).all():
+                self.raw_data = radials["data"][:, :nbins].copy()
                 self._angle_start = radials["angle_start"] * 0.1
                 self._angle_delta = radials["angle_delta"] * 0.1
                 return
@@ -633,14 +639,24 @@ class NEXRADLevel3File:
         angle_start = np.empty(nradials)
         angle_delta = np.empty(nradials)
         pos = 30
+        truncated = []
         for i in range(nradials):
             nbytes, start, delta = struct.unpack_from(">3h", buf2, pos)
             pos += 6
             count = min(nbytes, nbins)
+            if nbytes > row_bytes:
+                truncated.append(i)
             raw[i, :count] = np.frombuffer(buf2, "u1", count=count, offset=pos)
             pos += nbytes
             angle_start[i] = start * 0.1
             angle_delta[i] = delta * 0.1
+        if truncated:
+            warnings.warn(
+                f"{len(truncated)} radial(s) carry more than {nbins} bins and "
+                f"are truncated to {nbins} bins (first: radial {truncated[0]}).",
+                UserWarning,
+                stacklevel=4,
+            )
         self.raw_data = raw
         self._angle_start = angle_start
         self._angle_delta = angle_delta

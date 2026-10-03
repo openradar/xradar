@@ -716,6 +716,25 @@ class TestMalformedAndEdges:
         np.testing.assert_array_equal(f.raw_data[1], [0, 1, 2, 3, 4, 5, 0, 0])
         assert f.get_azimuth()[1] == pytest.approx(90.0)
 
+    def test_packet16_odd_nbins_padding(self):
+        # 5 bins per radial, padded to 6 bytes (full halfwords)
+        packet = struct.pack(">7h", 16, 0, 5, 256, 280, 1000, 2)
+        packet += struct.pack(">3h", 6, 0, 5) + bytes([1, 2, 3, 4, 5, 0])
+        packet += struct.pack(">3h", 6, 900, 5) + bytes([6, 7, 8, 9, 10, 0])
+        f = NEXRADLevel3File(io.BytesIO(build_level3_file(packet=packet)))
+        assert f.raw_data.shape == (2, 5)
+        np.testing.assert_array_equal(f.raw_data[1], [6, 7, 8, 9, 10])
+        assert f.get_range().shape == (5,)
+
+    def test_packet16_wider_radial_warns(self):
+        # radial 1 is wider than radial 0, its last bins are dropped
+        packet = struct.pack(">7h", 16, 0, 8, 256, 280, 1000, 2)
+        packet += struct.pack(">3h", 8, 0, 5) + bytes(range(8))
+        packet += struct.pack(">3h", 10, 900, 5) + bytes(range(10))
+        with pytest.warns(UserWarning, match="truncated to 8 bins"):
+            f = NEXRADLevel3File(io.BytesIO(build_level3_file(packet=packet)))
+        assert f.raw_data.shape == (2, 8)
+
     def test_af1f_bad_run_sum_raises(self):
         rle = [bytes([0x11, 0x11])] * 2  # expands to 2 bins, header says 6
         buf = build_level3_file(msg_code=19, packet=_radial_packet_af1f(2, 6, rle))
