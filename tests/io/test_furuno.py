@@ -683,3 +683,15 @@ def test_open_furuno_datatree_optional_groups(furuno_scn_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+def test_open_furuno_datatree_radar_parameters(furuno_scn_file, furuno_scnx_file):
+    # SCNX: half-power beam widths in 1/100 degree
+    dtree = open_furuno_datatree(furuno_scnx_file, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 2.75)
+    np.testing.assert_allclose(params.radar_beam_width_v, 2.76)
+    assert params.radar_beam_width_h.attrs["units"] == "degrees"
+    # SCN (format version 3) has no beam widths in the header
+    dtree = open_furuno_datatree(furuno_scn_file, optional_groups=True)
+    assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
