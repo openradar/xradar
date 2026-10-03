@@ -493,10 +493,11 @@ def test_get_radar_calibration():
     ls_ds = [xr.open_dataset(filename, engine="gamic", group=sweep) for sweep in sweeps]
     subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
     assert len(subgroup.variables) == 6
-    assert subgroup["noise_power_h"] == "-3.8298"
-    assert subgroup["rx_loss_h"] == "3"
-    assert subgroup["ant_gain_v"] == "43"
-    assert subgroup["ant_gain_h"] == "43"
+    # GAMIC names mapped to the model, numeric values
+    assert subgroup["noise_source_power_h"] == -3.8298
+    assert subgroup["receiver_mismatch_loss_h"] == 3.0
+    assert subgroup["antenna_gain_v"] == 43.0
+    assert subgroup["antenna_gain_h"] == 43.0
 
 
 def test_get_subgroup():

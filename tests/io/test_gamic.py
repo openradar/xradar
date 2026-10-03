@@ -184,3 +184,67 @@ def test_open_gamic_datatree_optional_groups(gamic_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+def test_open_gamic_datatree_how_metadata(gamic_file):
+    dtree = open_gamic_datatree(gamic_file, optional_groups=True)
+    # /how azimuth_beam, elevation_beam
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 1.0)
+    np.testing.assert_allclose(params.radar_beam_width_v, 1.0)
+    assert params.radar_beam_width_h.attrs["units"] == "degrees"
+    # scan how, stored as strings, renamed according to the model
+    calib = dtree["radar_calibration"].ds
+    assert set(calib.data_vars) == {
+        "antenna_gain_h",
+        "antenna_gain_v",
+        "noise_source_power_h",
+        "noise_source_power_v",
+        "receiver_mismatch_loss_h",
+        "receiver_mismatch_loss_v",
+    }
+    for var in calib.data_vars.values():
+        assert var.dtype == np.float64
+        assert var.attrs["units"] == "dB"
+    np.testing.assert_allclose(calib.antenna_gain_h, 43.0)
+    np.testing.assert_allclose(calib.noise_source_power_h, -3.8298)
+    # the same values on the sweep datasets
+    ds = open_dataset(gamic_file, engine="gamic", group="sweep_0")
+    assert ds.attrs["antenna_gain_h"] == 43.0
+
+
+def test_open_gamic_datatree_how_metadata_variants(gamic_file, tmp_path):
+    import io
+    import shutil
+
+    import h5py
+
+    path = tmp_path / "gamic_how.h5"
+    shutil.copy(gamic_file, path)
+    with h5py.File(path, "a") as f:
+        # no beam widths, bytes value without unit, non-numeric value
+        del f["how"].attrs["azimuth_beam"]
+        del f["how"].attrs["elevation_beam"]
+        how = f["scan0/how"].attrs
+        how["ant_gain_h"] = np.bytes_("44.5")
+        del how["ant_gain_h__unit"]
+        how["rx_loss_h"] = "n/a"
+        f["scan1/how"].attrs["ant_gain_h"] = "45"
+
+    dtree = open_gamic_datatree(path, optional_groups=True)
+    assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
+    calib = dtree["radar_calibration"].ds
+    np.testing.assert_allclose(calib.antenna_gain_h, 44.5)
+    assert "units" not in calib.antenna_gain_h.attrs
+    assert "receiver_mismatch_loss_h" not in calib
+    np.testing.assert_allclose(calib.receiver_mismatch_loss_v, 3.0)
+
+    # calibration is taken from the first selected sweep
+    dtree = open_gamic_datatree(path, optional_groups=True, sweep=[1])
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, 45.0)
+
+    # file-like objects
+    with open(path, "rb") as fh:
+        buf = io.BytesIO(fh.read())
+    dtree = open_gamic_datatree(buf, optional_groups=True)
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, 44.5)
