@@ -382,6 +382,25 @@ def test_open_iris_datatree_optional_groups(iris0_file):
     assert "radar_calibration" in dtree.children
 
 
+def test_open_iris_datatree_task_metadata(iris0_file):
+    # task_misc_info / task_calib_info (IRIS Programming Guide 4.3.57, 4.3.50)
+    dtree = open_iris_datatree(iris0_file, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 0.95, rtol=1e-6)
+    np.testing.assert_allclose(params.radar_beam_width_v, 0.95, rtol=1e-6)
+    # kHz -> Hz
+    np.testing.assert_allclose(params.radar_receiver_bandwidth, 1.048e6)
+    calib = dtree["radar_calibration"].ds
+    # 1/100 dB and 1/100 dBm
+    np.testing.assert_allclose(calib.radar_constant_h, 67.1)
+    np.testing.assert_allclose(calib.radar_constant_v, 70.1)
+    np.testing.assert_allclose(calib.noise_hc, -81.4)
+    np.testing.assert_allclose(calib.noise_vc, -81.78)
+    np.testing.assert_allclose(calib.i0_dbm_hc, -108.66)
+    np.testing.assert_allclose(calib.i0_dbm_vc, -108.99)
+    assert calib.noise_hc.attrs["units"] == "dBm"
+
+
 def test_first_loaded_moment_aligned_with_others(iris0_file):
     """Regression for openradar/xradar#357.
 
