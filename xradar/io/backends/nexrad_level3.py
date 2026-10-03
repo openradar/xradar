@@ -270,7 +270,13 @@ OPERATIONAL_MODES = {0: "maintenance", 1: "clear-air", 2: "precipitation"}
 def _unpack_from_buf(buf, pos, structure):
     """Unpack a big-endian structure from a buffer at the given position."""
     fmt = ">" + "".join([f for _, f in structure])
-    values = struct.unpack_from(fmt, buf, pos)
+    try:
+        values = struct.unpack_from(fmt, buf, pos)
+    except struct.error as err:
+        raise ValueError(
+            "Truncated NEXRAD Level 3 file: header ends before the expected "
+            f"{struct.calcsize(fmt)} bytes at position {pos}."
+        ) from err
     return dict(zip([name for name, _ in structure], values))
 
 
@@ -496,7 +502,8 @@ class NEXRADLevel3File:
         if buf[bpos : bpos + 2] == b"BZ":
             try:
                 buf2 = bz2.decompress(buf[bpos:])
-            except OSError as err:
+            except (OSError, ValueError, EOFError) as err:
+                # corrupt streams raise OSError, truncated ones ValueError
                 raise ValueError(
                     "Failed to decompress the symbology block; file is "
                     "corrupt or truncated."
@@ -513,6 +520,11 @@ class NEXRADLevel3File:
                 stacklevel=2,
             )
 
+        if len(buf2) < 18:
+            raise ValueError(
+                "Truncated NEXRAD Level 3 file: symbology block ends before "
+                "the first packet."
+            )
         (packet_code,) = struct.unpack_from(">h", buf2, 16)
         if packet_code not in SUPPORTED_PACKET_CODES:
             raise NotImplementedError(

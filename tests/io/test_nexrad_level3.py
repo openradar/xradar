@@ -447,6 +447,27 @@ class TestParser:
         with pytest.raises(ValueError, match="decompress"):
             NEXRADLevel3File(io.BytesIO(bytes(buf)))
 
+    def test_truncated_bz2_raises(self):
+        # truncation raises ValueError in bz2 (corrupt data OSError)
+        buf = build_level3_file(compress=True)
+        with pytest.raises(ValueError, match="decompress"):
+            NEXRADLevel3File(io.BytesIO(buf[:-20]))
+
+    @pytest.mark.parametrize(
+        "length",
+        [
+            40,  # inside the message header
+            100,  # inside the product description block
+            155,  # inside the symbology block header
+            167,  # before the packet code
+        ],
+    )
+    def test_truncated_headers_raise(self, length):
+        buf = build_level3_file()
+        assert buf[:4] == b"SDUS"  # header offsets below assume no padding
+        with pytest.raises(ValueError, match="Truncated"):
+            NEXRADLevel3File(io.BytesIO(buf[:length]))
+
     def test_zero_radials_raises(self):
         packet = struct.pack(">7h", 16, 0, 8, 256, 280, 1000, 0)
         buf = build_level3_file(packet=packet)
