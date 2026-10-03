@@ -9,11 +9,13 @@ ported from wradlib
 
 from contextlib import nullcontext
 
+import h5netcdf
 import numpy as np
 import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import odim, open_odim_datatree
+from xradar.io.backends.common import _maybe_recover_surrogate
 
 
 def create_startazA(nrays=360):
@@ -152,6 +154,90 @@ def test_get_a1gate():
     assert odim._get_a1gate(where) == 20
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (None, {}),
+        ("", {}),
+        ("WMO:26232", {"WMO": "26232"}),
+        (
+            " WIGOS:0-233-2-26232 , WMO:26232 , NOD:eesur ",
+            {"WIGOS": "0-233-2-26232", "WMO": "26232", "NOD": "eesur"},
+        ),
+        (
+            "wmo:26232,plc:Surgavere",
+            {"WMO": "26232", "PLC": "Surgavere"},
+        ),
+        (
+            b"WIGOS:0-233-2-26232,WMO:26232,NOD:eesur",
+            {"WIGOS": "0-233-2-26232", "WMO": "26232", "NOD": "eesur"},
+        ),
+        (
+            "RAD:EE41:SUBSYSTEM",
+            {"RAD": "EE41:SUBSYSTEM"},
+        ),
+        (
+            "WMO:26232,invalid,missing_colon,PLC:Surgavere",
+            {"WMO": "26232", "PLC": "Surgavere"},
+        ),
+        (
+            "WMO:26232,PLC:,NOD:eesur, :ignored",
+            {"WMO": "26232", "NOD": "eesur"},
+        ),
+        (
+            "WMO:11111,WMO:26232",
+            {"WMO": "26232"},
+        ),
+        (
+            "WIGOS:0-233-2-26232,WMO:26232,RAD:EE41,PLC:S\udcc3\udcbcrgavere,NOD:eesur",
+            {
+                "WIGOS": "0-233-2-26232",
+                "WMO": "26232",
+                "RAD": "EE41",
+                "PLC": "Sürgavere",
+                "NOD": "eesur",
+            },
+        ),
+    ],
+)
+def test_parse_odim_source_extensive(source, expected):
+    assert odim._parse_odim_source(source) == expected
+
+
+def test_parse_odim_source_handles_non_string_input():
+    class DummySource:
+        def __str__(self):
+            return "WMO:26232,NOD:eesur"
+
+    parsed = odim._parse_odim_source(DummySource())
+    assert parsed == {"WMO": "26232", "NOD": "eesur"}
+
+
+def test_parse_odim_source_surrogate_repair_unicodeerror_fallback():
+    # U+DC80 maps to raw byte 0x80 with surrogateescape, which is invalid
+    # as standalone UTF-8 and forces the repair decode to raise UnicodeError.
+    source = "PLC:\udc80_station,WMO:26232"
+
+    parsed = odim._parse_odim_source(source)
+
+    # Parser should not crash and should keep original value when repair fails.
+    assert parsed["PLC"] == "\udc80_station"
+    assert parsed["WMO"] == "26232"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Surgavere", "Surgavere"),
+        ("S\udcc3\udcbcrgavere", "Sürgavere"),
+        ("\udc80_station", "\udc80_station"),
+        (123, 123),
+    ],
+)
+def test_maybe_recover_surrogate(value, expected):
+    assert _maybe_recover_surrogate(value) == expected
+
+
 def test_OdimH5NetCDFMetadata(odim_file):
     store = odim.OdimStore.open(odim_file, group="sweep_0")
     with pytest.warns(DeprecationWarning):
@@ -175,6 +261,33 @@ def test_odim_dataset_has_close(odim_file):
     ds = open_dataset(odim_file, engine="odim", group="sweep_0")
     assert callable(getattr(ds, "_close", None))
     ds.close()
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    ["odim_file", "odim_file2", "odim_file3", "odim_file4", "odim_file5"],
+)
+def test_odim_source_global_attributes(request, fixture_name):
+    filename = request.getfixturevalue(fixture_name)
+    print(f"Testing file: {filename}")
+
+    # Build expected global attrs from raw /what/source.
+    expected = {}
+    with h5netcdf.File(filename, mode="r") as root:
+        if "what" in root:
+            source = root["what"].attrs.get("source", None)
+            print(f"Raw ODIM source attribute: {source}")
+            parsed = odim._parse_odim_source(source)
+            for odim_key, global_attr in odim._ODIM_SOURCE_TO_GLOBAL_ATTRS.items():
+                value = parsed.get(odim_key)
+                if value is not None:
+                    expected[global_attr] = value
+            print(f"Parsed ODIM source attributes: {expected}")
+
+    with open_dataset(filename, engine="odim", group="sweep_0") as ds:
+        print(f"Dataset global attributes: {ds.attrs}")
+        for global_attr, value in expected.items():
+            assert ds.attrs.get(global_attr) == value
 
 
 def test_open_odim_datatree(odim_file):
@@ -222,7 +335,7 @@ def test_open_odim_datatree(odim_file):
     assert "latitude" not in dtree.ds.data_vars
 
     # Validate attributes
-    assert len(dtree.attrs) == 9
+    assert len(dtree.attrs) == 10
     assert (
         dtree.attrs["Conventions"] == "ODIM_H5/V2_2"
     ), "Instrument name should match expected value"
@@ -234,3 +347,60 @@ def test_open_odim_datatree_optional_groups(odim_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize("layout", ["fmi", "odim"])
+def test_open_odim_quality_legend(odim_file, tmp_path, layout):
+    # quality groups with compound-dtype legend tables must not be merged as
+    # ray data (#395). "odim": ODIM_H5 2.3/2.4 Section 6.2
+    # {char[64] key; char[32] value}, "fmi": {int64 code; string class}
+    import shutil
+
+    import h5py
+
+    path = tmp_path / "odim_quality_legend.h5"
+    shutil.copy(odim_file, path)
+    entries = [(60, "NONMET.BIOL.INSECT"), (72, "NONMET.CLUTTER.CCOR"), (246, "NOISE")]
+    if layout == "fmi":
+        legend_dtype = np.dtype([("code", ">i8"), ("class", h5py.string_dtype())])
+        legend = np.array(entries, dtype=legend_dtype)
+    else:
+        legend_dtype = np.dtype([("key", "S64"), ("value", "S32")])
+        legend = np.array(
+            [(name.encode(), str(code).encode()) for code, name in entries],
+            dtype=legend_dtype,
+        )
+    with h5py.File(path, "a") as f:
+        shape = f["dataset1/data1/data"].shape
+        n = 1
+        while f"quality{n}" in f["dataset1"]:
+            n += 1
+        qual = f.create_group(f"dataset1/quality{n}")
+        what = qual.create_group("what")
+        what.attrs.update(
+            quantity=np.bytes_("ECHO_CLASS"),
+            gain=1.0,
+            offset=0.0,
+            nodata=255.0,
+            undetect=0.0,
+            legend=np.bytes_("72:NONMET.CLUTTER.CCOR,60:NONMET.BIOL.INSECT,246:NOISE"),
+        )
+        qual.create_dataset("data", data=np.full(shape, 72, dtype="uint8"))
+        qual.create_dataset("legend", data=legend)
+
+    dtree = open_odim_datatree(path, sweep=0)
+    ds = dtree["sweep_0"].ds
+    assert "legend" not in ds.variables
+    assert ds.ECHO_CLASS.dims == ds.DBZH.dims
+    flag_values = ds.ECHO_CLASS.attrs["flag_values"]
+    np.testing.assert_array_equal(flag_values, [60, 72, 246])
+    assert flag_values.dtype == np.dtype("int64")
+    assert ds.ECHO_CLASS.attrs["flag_meanings"] == (
+        "NONMET.BIOL.INSECT NONMET.CLUTTER.CCOR NOISE"
+    )
+    # the producer's what/legend string is kept as is
+    assert ds.ECHO_CLASS.attrs["legend"] == (
+        "72:NONMET.CLUTTER.CCOR,60:NONMET.BIOL.INSECT,246:NOISE"
+    )
+    assert "flag_values" not in ds.DBZH.attrs
+    assert "flag_values" not in ds.CLASS.attrs

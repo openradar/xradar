@@ -26,6 +26,7 @@ import cartopy.crs as ccrs
 import cmweather  # noqa
 import fsspec
 import matplotlib.pyplot as plt
+import numpy as np
 import xarray as xr
 from IPython.display import HTML
 from matplotlib.animation import FuncAnimation
@@ -263,6 +264,25 @@ Tree-like hierarchical data can be stored using ARCO format.
 
 ```{code-cell}
 zarr_store = "./multiple_vcp_test.zarr"
+
+
+def fill_masked(ds):
+    # Zarr v3 codecs cannot serialize numpy MaskedArrays (the IRIS reader
+    # returns masked moments such as ``VRADH``); fill the masked entries so
+    # every variable is a plain ndarray before writing.
+    ds = ds.copy()
+    for name, var in ds.variables.items():
+        if isinstance(var.data, np.ma.MaskedArray):
+            fill = (
+                np.nan
+                if np.issubdtype(var.dtype, np.floating)
+                else var.data.fill_value
+            )
+            ds[name].data = var.data.filled(fill)
+    return ds
+
+
+vcps_dt = vcps_dt.map_over_datasets(fill_masked)
 _ = vcps_dt.to_zarr(zarr_store)
 ```
 

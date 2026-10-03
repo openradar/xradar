@@ -78,6 +78,7 @@ from .common import (
     _get_required_root_dataset,
     _get_subgroup,
     _maybe_decode,
+    _maybe_recover_surrogate,
     _prepare_backend_ds,
 )
 
@@ -208,6 +209,46 @@ def _get_time(what, point="start"):
 
 def _get_a1gate(where):
     return where["a1gate"]
+
+
+_ODIM_SOURCE_TO_GLOBAL_ATTRS = {
+    "WMO": "wmo__id",
+    "PLC": "site_name",
+    "NOD": "node",  # specific to OPERA
+    "ORG": "wmo__originating_centre",
+    "WIGOS": "wmo__wsi",
+}
+
+
+def _parse_odim_source(source):
+    """Parse ODIM /what/source string like 'K1:V1,K2:V2' into a dict."""
+    if source is None:
+        return {}
+
+    # ensure source is a string, decode if bytes
+    source = _maybe_decode(source)
+    if not isinstance(source, str):
+        source = str(source)
+
+    # ODIM-H5 stores scalar attributes as 8-bit ASCII in the file. When the
+    # original text contains UTF-8 bytes, h5netcdf decodes them with surrogate
+    # escapes, so recover the original string here when possible.
+    # e.g. "Sürgavere" is read as an ASCII string instead of UTF-8 and the invalid bytes (ü = \xc3\xbc) are encoded with
+    # surrogate escape, resulting in "S\udcc3\udcbcrgavere". This has to be recovered back to the original string.
+    source = _maybe_recover_surrogate(source)
+
+    # parse key-value pairs separated by commas, and then keys and values separated by colons
+    parsed = {}
+    for item in source.split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        key, value = item.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+        if key and value:
+            parsed[key] = value
+    return parsed
 
 
 class _H5NetCDFMetadata:
@@ -453,6 +494,9 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
         )
+        # producer-specific legend string (e.g. "64:NONMET,72:..."), kept as is
+        if "legend" in what:
+            attrs["legend"] = _maybe_decode(what["legend"])
         return attrs
 
     @property
@@ -647,17 +691,46 @@ class OdimSubStore(AbstractDataStore):
         return self.root.coordinates
 
     def get_variables(self):
-        return FrozenDict(
-            (k1, v1)
-            for k1, v1 in {
-                **dict(
-                    [
-                        self.open_store_variable(k, v)
-                        for k, v in self.ds.variables.items()
-                    ]
-                ),
-            }.items()
-        )
+        variables = {}
+        legend = None
+        for k, v in self.ds.variables.items():
+            # compound-dtype legend table (code, class) of classification
+            # quality groups (ODIM_H5 2.4), not ray data (#395)
+            if k == "legend" and v.dtype.names is not None:
+                legend = v[...]
+                continue
+            name, var = self.open_store_variable(k, v)
+            variables[name] = var
+        if legend is not None:
+            _add_legend_flag_attrs(variables, legend)
+        return FrozenDict(variables)
+
+
+def _add_legend_flag_attrs(variables, legend):
+    """Add ODIM legend table as CF flag attributes to the group's data variable.
+
+    ODIM_H5 2.3/2.4 (Section 6.2) define the legend as compound dataset
+    ``{char[64] key; char[32] value}`` with ``key`` the class name and
+    ``value`` the data value as string. Some producers (e.g. FMI) write
+    ``{int code; string class}`` instead; both layouts are handled.
+    """
+
+    def _str(x):
+        return x.decode() if isinstance(x, bytes) else str(x)
+
+    names = legend.dtype.names
+    if {"key", "value"} <= set(names):
+        codes, classes = legend["value"], legend["key"]
+    else:
+        codes, classes = (legend[field] for field in names[:2])
+    codes = np.array([float(_str(c)) for c in codes])
+    if np.all(codes == np.round(codes)):
+        codes = codes.astype("int64")
+    meanings = [_str(c).strip().replace(" ", "_") for c in classes]
+    for var in variables.values():
+        if var.ndim == 2:
+            var.attrs["flag_values"] = codes
+            var.attrs["flag_meanings"] = " ".join(meanings)
 
 
 class OdimStore(AbstractDataStore):
@@ -766,7 +839,18 @@ class OdimStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {"Conventions": "ODIM_H5/V2_2"}
+        attributes = {"Conventions": "ODIM_H5/V2_2", "source": "radar"}
+
+        with self._manager.acquire_context(False) as root:
+            # try to extract additional global attributes from /what/source string, if available
+            # see _ODIM_SOURCE_TO_GLOBAL_ATTRS for mapping of ODIM keys to global attribute names
+            if "what" in root:
+                parsed = _parse_odim_source(root["what"].attrs.get("source"))
+                for odim_key, global_attr in _ODIM_SOURCE_TO_GLOBAL_ATTRS.items():
+                    value = parsed.get(odim_key)
+                    if value is not None:
+                        attributes[global_attr] = value
+
         return FrozenDict(attributes)
 
 
@@ -926,7 +1010,7 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         sweeps = [f"sweep_{sweep}"]
     elif isinstance(sweep, list):
         if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i+1}" for i in sweep]
+            sweeps = [f"sweep_{i}" for i in sweep]
         else:
             sweeps.extend(sweep)
     else:

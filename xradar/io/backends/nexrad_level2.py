@@ -340,6 +340,13 @@ class NEXRADRecordFile(NEXRADFile):
         self._rc = None
         self._ldm = dict()
         self._record_number = None
+        # Compressed-data byte-walker state (ICD 2620010J §7.3.4).
+        # An LDM block holds 120 MSG_31 + 0..N MSG_2 messages — variable count,
+        # not a fixed 120 stride. Track the active LDM and a recnum->position
+        # cache so sequential walks advance by message size and non-sequential
+        # jumps (e.g. per-moment replay in get_data) restore from cache.
+        self._current_ldm = None
+        self._recnum_pos_cache = {}
 
     @property
     def rh(self):
@@ -387,60 +394,66 @@ class NEXRADRecordFile(NEXRADFile):
             size = size if size >= RECORD_BYTES else RECORD_BYTES
         return size
 
-    def init_record(self, recnum):
-        """Initialize record using given number."""
+    def _load_ldm(self, ldm_idx):
+        """Decompress LDM `ldm_idx` into ``self._ldm`` if not already loaded.
 
-        # map record numbers to ldm compressed records
-        def get_ldm(recnum):
-            if recnum < 134:
-                return 0
-            mod = ((recnum - 134) // 120) + 1
-            return mod
-
-        if self.is_compressed:
-            ldm = get_ldm(recnum)
-            # get uncompressed ldm record
-            if self._ldm.get(ldm, None) is None:
-                # otherwise extract wanted ldm compressed record
-                if ldm >= len(self.bz2_record_indices):
-                    return False
-                start = self.bz2_record_indices[ldm]
-                size = self._fh[start : start + 4].view(dtype=">u4")[0]
-                if self._fp is not None:
-                    self._fp.seek(start + 4)
-                    compressed = self._fp.read(size)
-                else:
-                    compressed = self._fh[start + 4 : start + 4 + size].tobytes()
-                dec = bz2.BZ2Decompressor()
-                self._ldm[ldm] = np.frombuffer(
-                    dec.decompress(compressed), dtype=np.uint8
-                )
-
-        # retrieve wanted record and put into self.rh
-        if recnum < 134:
-            start = recnum * RECORD_BYTES
-            if not self.is_compressed:
-                # Only add volume header offset if header exists
-                if self.volume_header is not None:
-                    start += 24
-            stop = start + RECORD_BYTES
+        Returns ``True`` on success, ``False`` if ``ldm_idx`` is past the last LDM.
+        """
+        if ldm_idx >= len(self.bz2_record_indices):
+            return False
+        if self._ldm.get(ldm_idx) is not None:
+            return True
+        start = self.bz2_record_indices[ldm_idx]
+        size = int(self._fh[start : start + 4].view(dtype=">u4")[0])
+        if self._fp is not None:
+            self._fp.seek(start + 4)
+            compressed = self._fp.read(size)
         else:
-            if self.is_compressed:
-                # get index into current compressed ldm record
-                rnum = (recnum - 134) % 120
-                start = self.record_size + self.filepos if rnum else 0
-                buf = self._ldm[ldm][start + 12 : start + 12 + LEN_MSG_HEADER]
-                size = self.get_end(buf)
-                if not size:
-                    return False
-                stop = start + size
-            else:
-                start = self.record_size + self.filepos
-                buf = self.fh[start + 12 : start + 12 + LEN_MSG_HEADER]
-                size = self.get_end(buf)
-                if not size:
-                    return False
-                stop = start + size
+            compressed = self._fh[start + 4 : start + 4 + size].tobytes()
+        dec = bz2.BZ2Decompressor()
+        self._ldm[ldm_idx] = np.frombuffer(dec.decompress(compressed), dtype=np.uint8)
+        return True
+
+    def init_record(self, recnum):
+        """Initialize record using given number.
+
+        Per ICD 2620010J §7.3.4, an LDM Compressed Record contains a variable
+        number of messages (120 MSG_31 + 0..N MSG_2 RDA Status). Cross-LDM
+        boundaries are detected by reaching the end of the decompressed buffer,
+        not by a fixed message-count stride.
+        """
+        # Branch A: metadata records (always in LDM 0, fixed RECORD_BYTES stride)
+        if recnum < 134:
+            if self.is_compressed and not self._load_ldm(0):
+                return False
+            start = recnum * RECORD_BYTES
+            if not self.is_compressed and self.volume_header is not None:
+                start += 24
+            stop = start + RECORD_BYTES
+            ldm = 0
+
+        # Branch B: uncompressed data records (sequential advance)
+        elif not self.is_compressed:
+            start = self.record_size + self.filepos
+            buf = self.fh[start + 12 : start + 12 + LEN_MSG_HEADER]
+            size = self.get_end(buf)
+            if not size:
+                return False
+            stop = start + size
+
+        # Branch C: compressed data records (byte-walk with recnum-position cache)
+        else:
+            ldm, start = self._resolve_compressed_data_position(recnum)
+            if ldm is None:
+                return False
+            buf = self._ldm[ldm][start + 12 : start + 12 + LEN_MSG_HEADER]
+            size = self.get_end(buf)
+            if not size:
+                return False
+            stop = start + size
+            self._current_ldm = ldm
+            self._recnum_pos_cache[recnum] = (ldm, start)
+
         self.record_number = recnum
         self.record_size = stop - start
         if self.is_compressed:
@@ -449,6 +462,48 @@ class NEXRADRecordFile(NEXRADFile):
             self.rh = IrisRecord(self.fh[start:stop], recnum)
         self.filepos = start
         return self._check_record()
+
+    def _resolve_compressed_data_position(self, recnum):
+        """Return ``(ldm_idx, byte_offset)`` for compressed-data ``recnum >= 134``.
+
+        Returns ``(None, None)`` past the last LDM. Raises if ``recnum`` is
+        non-sequential and not in the cache (current callers don't trigger this).
+        """
+        # Cache hit: non-sequential jump (e.g. get_data per-moment replay).
+        # The cache is only populated after a successful _load_ldm, and the
+        # backend never evicts from self._ldm, so the LDM is already resident.
+        if recnum in self._recnum_pos_cache:
+            return self._recnum_pos_cache[recnum]
+
+        # First compressed call: either cold entry at recnum=134 or sequential
+        # transition from metadata. Either way, start at LDM 1 byte 0.
+        if self._current_ldm is None:
+            if recnum != 134:
+                raise ValueError(
+                    f"first compressed init_record must be recnum=134, got {recnum}"
+                )
+            if not self._load_ldm(1):
+                return (None, None)
+            return (1, 0)
+
+        # Otherwise must be a sequential advance from the prior record.
+        if recnum != self._record_number + 1:
+            raise ValueError(
+                f"non-sequential init_record({recnum}) into uncached recnum"
+            )
+
+        # Continue from the previous in-LDM byte position; advance to next
+        # LDM if the current buffer can no longer hold a message header.
+        ldm = self._current_ldm
+        start = self.filepos + self.record_size
+        while ldm < len(self.bz2_record_indices):
+            if not self._load_ldm(ldm):
+                return (None, None)
+            if start + 12 + LEN_MSG_HEADER <= len(self._ldm[ldm]):
+                return (ldm, start)
+            ldm += 1
+            start = 0
+        return (None, None)
 
     def init_record_by_filepos(self, recnum, filepos):
         """Initialize record using given record number and position."""

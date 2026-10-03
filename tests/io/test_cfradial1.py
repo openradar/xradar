@@ -4,6 +4,7 @@
 
 
 import numpy as np
+import pytest
 import xarray as xr
 from open_radar_data import DATASETS
 
@@ -120,7 +121,7 @@ def test_cfradial1_export_helper_metadata_and_indices():
 
 def test_cfradial1_export_helper_empty_sweep_info_and_time_fallback():
     empty = xr.DataTree.from_dict({"/": xr.Dataset()})
-    sweep_info = cf1_export._sweep_info_mapper(empty)
+    sweep_info = cf1_export._collect_sweep_metadata(empty)
     assert "sweep_number" in sweep_info
     assert np.isnan(sweep_info["sweep_number"].values[0])
 
@@ -142,6 +143,116 @@ def test_cfradial1_export_helper_empty_sweep_info_and_time_fallback():
         },
     )
     dtree = xr.DataTree.from_dict({"/": xr.Dataset(), "/sweep_0": sweep})
-    mapped = cf1_export._variable_mapper(dtree)
+    mapped = cf1_export._combine_sweeps(dtree)
     assert "DBZ" in mapped
     assert mapped["DBZ"].dims == ("time", "range")
+
+
+def test_cfradial1_export_auto_filename(tmp_path, monkeypatch):
+    filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    dtree = xd.io.open_cfradial1_datatree(filename)
+
+    # filename=None derives the name from instrument_name + first timestamp
+    monkeypatch.chdir(tmp_path)
+    xd.io.to_cfradial1(dtree.copy(), filename=None, calibs=True)
+
+    written = list(tmp_path.glob("cfrad1_*.nc"))
+    assert len(written) == 1
+    assert written[0].name.startswith("cfrad1_")
+
+
+def test_cfradial1_export_requires_dtree():
+    with pytest.raises(ValueError, match="must be a radar"):
+        xd.io.to_cfradial1(None)
+
+
+def test_cfradial1_export_sweep_indices_missing_elevation():
+    dtree = xr.DataTree.from_dict(
+        {
+            "/": xr.Dataset(),
+            "/sweep_0": xr.Dataset(
+                coords={"elevation": ("azimuth", np.array([0.5, 0.5], dtype="float32"))}
+            ),
+            "/sweep_1": xr.Dataset(),  # no elevation coordinate -> skipped with warning
+        }
+    )
+
+    with pytest.warns(UserWarning, match="no 'elevation'"):
+        out = cf1_export.calculate_sweep_indices(dtree)
+
+    # only the valid sweep contributes a ray-index entry
+    assert out["sweep_start_ray_index"].size == 1
+    assert out["sweep_end_ray_index"].size == 1
+
+
+def _ragged_cfradial1_dataset():
+    # two sweeps (PPI + RHI) with a variable number of gates per ray,
+    # including short rays inside a sweep (#322)
+    ngates = np.array([3, 5, 5, 4, 5, 2, 4, 4], dtype="int32")
+    nrays = ngates.size
+    start = np.r_[0, np.cumsum(ngates)[:-1]].astype("int32")
+    npoints = int(ngates.sum())
+    dbz = np.arange(npoints, dtype="float32")
+    time = np.datetime64("2022-05-25T02:12:16", "ns") + np.arange(
+        nrays
+    ) * np.timedelta64(1, "s")
+    ds = xr.Dataset(
+        data_vars=dict(
+            DBZ=("n_points", dbz, {"units": "dBZ"}),
+            azimuth=("time", np.array([10.0, 20, 30, 40, 90, 90, 90, 90], "float32")),
+            elevation=("time", np.array([0.5, 0.5, 0.5, 0.5, 1, 2, 3, 4], "float32")),
+            ray_n_gates=("time", ngates),
+            ray_start_index=("time", start),
+            sweep_number=("sweep", np.array([0, 1], "int32")),
+            sweep_mode=("sweep", np.array([b"azimuth_surveillance", b"rhi"])),
+            fixed_angle=("sweep", np.array([0.5, 90.0], "float32")),
+            sweep_start_ray_index=("sweep", np.array([0, 4], "int32")),
+            sweep_end_ray_index=("sweep", np.array([3, 7], "int32")),
+            latitude=0.0,
+            longitude=0.0,
+            altitude=0.0,
+        ),
+        coords=dict(
+            time=("time", time),
+            range=("range", np.arange(5, dtype="float32") * 100 + 50),
+        ),
+        attrs={"Conventions": "CF/Radial"},
+    )
+    return ds, ngates, start
+
+
+@pytest.mark.parametrize("chunks", [None, {}])
+def test_cfradial1_variable_gates_within_sweep(tmp_path, chunks):
+    ds, ngates, start = _ragged_cfradial1_dataset()
+    path = tmp_path / "ragged_cfradial1.nc"
+    ds.to_netcdf(path)
+
+    trees = [xd.io.open_cfradial1_datatree(path, first_dim="time")]
+    with xr.open_dataset(path, chunks=chunks) as src:
+        trees.append(src.xradar.to_cfradial2_datatree())
+
+    for dtree in trees:
+        for sw, (r0, r1) in {"sweep_0": (0, 4), "sweep_1": (4, 8)}.items():
+            swp = dtree[sw].ds
+            if "time" not in swp.dims:
+                swp = swp.swap_dims({swp.DBZ.dims[0]: "time"}).sortby("time")
+            assert swp.DBZ.shape == (r1 - r0, ngates[r0:r1].max())
+            for i, ray in enumerate(range(r0, r1)):
+                n = ngates[ray]
+                np.testing.assert_array_equal(
+                    swp.DBZ.values[i, :n], ds.DBZ.values[start[ray] : start[ray] + n]
+                )
+                assert np.isnan(swp.DBZ.values[i, n:]).all()
+
+
+def test_cfradial1_rhi_sweep_dimension(tmp_path):
+    ds, _, _ = _ragged_cfradial1_dataset()
+    path = tmp_path / "ragged_cfradial1.nc"
+    ds.to_netcdf(path)
+    dtree = xd.io.open_cfradial1_datatree(path)
+    assert "azimuth" in dtree["sweep_0"].ds.dims
+    assert "elevation" in dtree["sweep_1"].ds.dims
+    with xr.open_dataset(path, chunks={}) as src:
+        dtree = src.xradar.to_cfradial2_datatree()
+    assert dtree["sweep_1"].ds.sweep_mode.item() == "rhi"
+    assert "elevation" in dtree["sweep_1"].ds.dims

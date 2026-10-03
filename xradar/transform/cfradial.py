@@ -57,8 +57,6 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
-from importlib.metadata import version
-
 from xarray import DataTree
 
 from ..io.backends.cfradial1 import (
@@ -69,10 +67,7 @@ from ..io.backends.cfradial1 import (
     open_cfradial1_datatree,
 )
 from ..io.backends.common import _attach_sweep_groups
-from ..io.export.cfradial1 import (
-    _calib_mapper,
-    _variable_mapper,
-)
+from ..io.export.cfradial1 import _build_cfradial1_dataset
 from ..model import (
     georeferencing_correction_subgroup,
     radar_parameters_subgroup,
@@ -82,48 +77,21 @@ from ..model import (
 # to_cfradial1 function implementation
 def to_cfradial1(dtree=None, calibs=True):
     """
-    Convert a radar xarray.DataTree to the CFRadial1 format
-    and save it to a file. Ensure that the resulting dataset
-    is well-formed and does not include specified extraneous variables.
+    Convert a radar xarray.DataTree to a CfRadial1 ``xarray.Dataset``.
 
     Parameters
     ----------
     dtree: xarray.DataTree
         Radar xarray.DataTree object.
-    calibs: Bool, optional
+    calibs: bool, optional
         Whether to include calibration parameters.
+
+    Returns
+    -------
+    xarray.Dataset
+        The assembled CfRadial1 dataset.
     """
-    # Generate the initial ds_cf using the existing mapping functions
-    dataset = _variable_mapper(dtree)
-
-    # Handle calibration parameters
-    if calibs:
-        if "radar_calibration" in dtree:
-            calib_params = dtree["radar_calibration"].to_dataset()
-            calibs = _calib_mapper(calib_params)
-            dataset.update(calibs)
-
-    # Add additional parameters if they exist in dtree
-    if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
-        dataset.update(radar_params)
-
-    if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
-        dataset.update(radar_georef)
-
-    # Ensure that the data type of sweep_mode and similar variables matches
-    if "sweep_mode" in dataset.variables:
-        dataset["sweep_mode"] = dataset["sweep_mode"].astype("S")
-
-    # Update global attributes
-    dataset.attrs = dtree.attrs
-    dataset.attrs["Conventions"] = "Cf/Radial"
-    dataset.attrs["version"] = "1.2"
-    xradar_version = version("xradar")
-    dataset.attrs["history"] += f": xradar v{xradar_version} CfRadial1 export"
-
-    return dataset
+    return _build_cfradial1_dataset(dtree, calibs=calibs)
 
 
 # to_cfradial2 function implementation

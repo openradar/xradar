@@ -60,7 +60,8 @@ def fix_angle(ds):
     angle_res = ds.azimuth.diff("azimuth").median()
 
     # Determine whether the radar is spinning clockwise or counterclockwise
-    median_diff = ds.azimuth.diff("time").median()
+    # from the azimuth change between consecutive rays (in time order)
+    median_diff = ds.azimuth.sortby("time").diff("azimuth").median()
     ascending = median_diff > 0
     direction = 1 if ascending else -1
 

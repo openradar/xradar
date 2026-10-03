@@ -18,7 +18,7 @@ dependencies:
   - netCDF4
   - notebook
   - numpy
-  - open-radar-data>=0.7.0
+  - open-radar-data>=0.8.0
   - pip
   - pyproj
   - pytest
@@ -28,10 +28,10 @@ dependencies:
   - pytest-xdist
   - scipy
   - setuptools
-  - pip:
-    - xarray >= 2026.4.0
   - xmltodict
   - boto3
   - arm_pyart
   - ffmpeg
-  - zarr<3
+  - zarr>=3
+  - pip:
+    - xarray >= 2026.9.0

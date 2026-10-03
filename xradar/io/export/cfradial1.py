@@ -27,10 +27,35 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+import warnings
 from importlib.metadata import version
 
 import numpy as np
 import xarray as xr
+
+#: Per-sweep metadata variables that CfRadial1 stores as scalars (one value
+#: per sweep) rather than along a ray dimension.
+SWEEP_METADATA_VARS = (
+    "sweep_number",
+    "sweep_mode",
+    "polarization_mode",
+    "prt_mode",
+    "follow_mode",
+    "sweep_fixed_angle",
+    "sweep_start_ray_index",
+    "sweep_end_ray_index",
+)
+
+#: Subset of :data:`SWEEP_METADATA_VARS` gathered into the ``sweep``-indexed
+#: info dataset; the ray-index variables are computed separately.
+SWEEP_INFO_VARS = (
+    "sweep_number",
+    "sweep_mode",
+    "polarization_mode",
+    "prt_mode",
+    "follow_mode",
+    "sweep_fixed_angle",
+)
 
 
 def _first_valid_scalar(data_array):
@@ -47,64 +72,58 @@ def _first_valid_scalar(data_array):
     return np.nan
 
 
-def _normalize_sweep_metadata(data):
+def _normalize_sweep_metadata(sweep_ds):
     """Restore sweep metadata variables to scalar form before CfRadial1 export."""
-    metadata_vars = [
-        "sweep_number",
-        "sweep_mode",
-        "polarization_mode",
-        "prt_mode",
-        "follow_mode",
-        "sweep_fixed_angle",
-        "sweep_start_ray_index",
-        "sweep_end_ray_index",
-    ]
-
-    data = data.copy()
-    for name in metadata_vars:
-        if name not in data:
+    sweep_ds = sweep_ds.copy()
+    for name in SWEEP_METADATA_VARS:
+        if name not in sweep_ds:
             continue
-        if data[name].ndim == 0:
+        if sweep_ds[name].ndim == 0:
             continue
-        data[name] = xr.DataArray(
-            _first_valid_scalar(data[name]),
-            attrs=data[name].attrs,
+        sweep_ds[name] = xr.DataArray(
+            _first_valid_scalar(sweep_ds[name]),
+            attrs=sweep_ds[name].attrs,
         )
 
-    return data
+    return sweep_ds
 
 
-def _calib_mapper(calib_params):
+def _sweep_group_names(dtree):
+    """Return the names of the sweep groups in a radar ``DataTree``."""
+    return [name for name in dtree.groups if "sweep" in name]
+
+
+def _map_radar_calibration(calib_ds):
     """
-    Map calibration parameters to a new dataset format.
+    Map calibration parameters to the CfRadial1 ``r_calib_*`` layout.
 
     Parameters
     ----------
-    calib_params: xarray.Dataset
+    calib_ds: xarray.Dataset
         Calibration parameters dataset.
 
     Returns
     -------
     xarray.Dataset
-        New dataset with mapped calibration parameters.
+        New dataset with each variable renamed to ``r_calib_<var>`` and a
+        leading ``r_calib`` dimension.
     """
-    new_data_vars = {}
-    for var in calib_params.data_vars:
-        data_array = calib_params[var]
-        new_data_vars["r_calib_" + var] = xr.DataArray(
+    renamed_vars = {}
+    for name in calib_ds.data_vars:
+        data_array = calib_ds[name]
+        renamed_vars["r_calib_" + name] = xr.DataArray(
             data=data_array.data[np.newaxis, ...],
             dims=["r_calib"] + list(data_array.dims),
             coords={"r_calib": [0]},
             attrs=data_array.attrs,
         )
-    radar_calib_renamed = xr.Dataset(new_data_vars)
-    radar_calib_renamed = radar_calib_renamed.drop_vars("r_calib", errors="ignore")
-    return radar_calib_renamed
+    radar_calib = xr.Dataset(renamed_vars)
+    return radar_calib.drop_vars("r_calib", errors="ignore")
 
 
-def _main_info_mapper(dtree):
+def _extract_root_dataset(dtree):
     """
-    Map main radar information from a radar xarray dataset.
+    Extract the root (volume-level) dataset from a radar ``DataTree``.
 
     Parameters
     ----------
@@ -114,77 +133,77 @@ def _main_info_mapper(dtree):
     Returns
     -------
     xarray.Dataset
-        Dataset containing the mapped radar information.
+        The root dataset with ``sweep_group_name`` dropped and
+        ``sweep_fixed_angle`` renamed to ``fixed_angle`` if present.
     """
-    dataset = dtree.root.to_dataset()
-    dataset = dataset.drop_vars("sweep_group_name", errors="ignore")
+    root_ds = dtree.root.to_dataset()
+    root_ds = root_ds.drop_vars("sweep_group_name", errors="ignore")
 
-    # Rename "sweep_fixed_angle" to "fixed_angle" if it exists
-    if "sweep_fixed_angle" in dataset:
-        dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
+    if "sweep_fixed_angle" in root_ds:
+        root_ds = root_ds.rename({"sweep_fixed_angle": "fixed_angle"})
 
-    return dataset
+    return root_ds
 
 
-def _variable_mapper(dtree, dim0=None):
+def _combine_sweeps(dtree, dim0=None):
     """
-    Map radar variables for different sweep groups.
+    Combine all sweep groups into a single ray-indexed CfRadial1 dataset.
 
     Parameters
     ----------
     dtree: xarray.DataTree
         Radar xarray.DataTree.
-    dim0: str
-        Either `azimuth` or `elevation`
+    dim0: str, optional
+        Either ``azimuth`` or ``elevation``. Inferred per sweep from the
+        sweep mode when not provided.
 
     Returns
     -------
     xarray.Dataset
-        Dataset containing mapped radar variables.
+        Dataset with all sweeps concatenated along ``time``, merged with the
+        per-sweep and volume-level metadata.
     """
+    sweep_info = _collect_sweep_metadata(dtree)
+    root_ds = _extract_root_dataset(dtree)
+    if "fixed_angle" in root_ds:
+        root_ds = root_ds.drop_vars("fixed_angle")
 
-    sweep_info = _sweep_info_mapper(dtree)
-    vol_info = _main_info_mapper(dtree)
-    if "fixed_angle" in vol_info:
-        vol_info = vol_info.drop_vars("fixed_angle")
     sweep_datasets = []
-    for grp in dtree.groups:
-        if "sweep" in grp:
-            data = _normalize_sweep_metadata(
-                dtree[grp].to_dataset(inherit="all_coords")
+    for group_name in _sweep_group_names(dtree):
+        sweep_ds = _normalize_sweep_metadata(
+            dtree[group_name].to_dataset(inherit="all_coords")
+        )
+
+        # handling first dimension
+        if dim0 is None:
+            dim0 = (
+                "elevation"
+                if str(sweep_ds.sweep_mode.load().values) == "rhi"
+                else "azimuth"
             )
+            if dim0 not in sweep_ds.dims:
+                dim0 = "time"
+                assert dim0 in sweep_ds.dims
 
-            # handling first dimension
-            if dim0 is None:
-                dim0 = (
-                    "elevation"
-                    if str(data.sweep_mode.load().values) == "rhi"
-                    else "azimuth"
-                )
-                if dim0 not in data.dims:
-                    dim0 = "time"
-                    assert dim0 in data.dims
+        # swap dims, if needed
+        if dim0 != "time" and dim0 in sweep_ds.dims:
+            sweep_ds = sweep_ds.swap_dims({dim0: "time"})
 
-            # swap dims, if needed
-            if dim0 != "time" and dim0 in data.dims:
-                data = data.swap_dims({dim0: "time"})
+        # sort in any case
+        sweep_ds = sweep_ds.sortby("time")
 
-            # sort in any case
-            data = data.sortby("time")
+        sweep_ds = sweep_ds.drop_vars(["x", "y", "z"], errors="ignore")
 
-            data = data.drop_vars(["x", "y", "z"], errors="ignore")
+        # Strip per-sweep attrs that may vary across sweeps (e.g.
+        # NEXRAD ICD waveform_type, super_resolution) to avoid
+        # merge conflicts in combine_by_coords below.
+        sweep_ds.attrs = {}
 
-            # Strip per-sweep attrs that may vary across sweeps (e.g.
-            # NEXRAD ICD waveform_type, super_resolution) to avoid
-            # merge conflicts in combine_by_coords below.
-            data.attrs = {}
-
-            # Convert to a dataset and append to the list
-            sweep_datasets.append(data)
+        sweep_datasets.append(sweep_ds)
 
     # need to use combine_by_coords to correctly test for
     # incompatible attrs on DataArray's
-    result_dataset = xr.combine_by_coords(
+    combined = xr.combine_by_coords(
         sweep_datasets,
         data_vars="all",
         compat="no_conflicts",
@@ -193,29 +212,22 @@ def _variable_mapper(dtree, dim0=None):
         combine_attrs="no_conflicts",
     )
 
-    drop_variables = [
-        "sweep_fixed_angle",
-        "sweep_number",
-        "sweep_mode",
-        "prt_mode",
-        "follow_mode",
-    ]
-    result_dataset = result_dataset.drop_vars(drop_variables, errors="ignore")
+    # These are re-added from ``sweep_info`` below with a ``sweep`` dimension.
+    combined = combined.drop_vars(SWEEP_INFO_VARS, errors="ignore")
 
-    drop_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
-    result_dataset = result_dataset.drop_vars(drop_coords, errors="ignore")
+    georef_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
+    combined = combined.drop_vars(georef_coords, errors="ignore")
 
-    result_dataset.update(sweep_info)
-    sweep_indices = calculate_sweep_indices(dtree, result_dataset)
-    result_dataset.update(sweep_indices)
-    result_dataset = result_dataset.reset_coords(["elevation", "azimuth"])
-    result_dataset.update(vol_info)
-    return result_dataset
+    combined.update(sweep_info)
+    combined.update(calculate_sweep_indices(dtree, combined))
+    combined = combined.reset_coords(["elevation", "azimuth"])
+    combined.update(root_ds)
+    return combined
 
 
-def _sweep_info_mapper(dtree):
+def _collect_sweep_metadata(dtree):
     """
-    Extract specified sweep information variables from a radar xarray.DataTree
+    Collect per-sweep metadata variables into a ``sweep``-indexed dataset.
 
     Parameters
     ----------
@@ -225,53 +237,32 @@ def _sweep_info_mapper(dtree):
     Returns
     -------
     xarray.Dataset
-        Dataset containing the specified sweep information variables.
+        Dataset with one value per sweep for each metadata variable.
     """
-    dataset = xr.Dataset()
+    sweep_info = xr.Dataset()
+    sweep_groups = _sweep_group_names(dtree)
 
-    sweep_vars = [
-        "sweep_number",
-        "sweep_mode",
-        "polarization_mode",
-        "prt_mode",
-        "follow_mode",
-        "sweep_fixed_angle",
-        "sweep_start_ray_index",
-        "sweep_end_ray_index",
-    ]
-
-    for var_name in sweep_vars:
-        var_data_list = [
+    for var_name in SWEEP_INFO_VARS:
+        values = [
             (
-                np.asarray([_first_valid_scalar(dtree[s][var_name])])
-                if var_name in dtree[s]
+                np.asarray([_first_valid_scalar(dtree[group][var_name])])
+                if var_name in dtree[group]
                 else np.array([np.nan])
             )
-            for s in dtree.groups
-            if "sweep" in s
+            for group in sweep_groups
         ]
 
-        var_attrs_list = [
-            dtree[s][var_name].attrs if var_name in dtree[s] else {}
-            for s in dtree.groups
-            if "sweep" in s
-        ]
+        merged_attrs = {}
+        for group in sweep_groups:
+            if var_name in dtree[group]:
+                merged_attrs.update(dtree[group][var_name].attrs)
 
-        if not var_data_list:
-            var_data = np.array([np.nan])
-        else:
-            var_data = np.concatenate(var_data_list)
+        var_data = np.concatenate(values) if values else np.array([np.nan])
+        sweep_info[var_name] = xr.DataArray(
+            var_data, dims=("sweep",), attrs=merged_attrs
+        )
 
-        var_attrs = {}
-        for attrs in var_attrs_list:
-            var_attrs.update(attrs)
-
-        var_data_array = xr.DataArray(var_data, dims=("sweep",), attrs=var_attrs)
-        dataset[var_name] = var_data_array
-
-    dataset = dataset.rename({"sweep_fixed_angle": "fixed_angle"})
-
-    return dataset
+    return sweep_info.rename({"sweep_fixed_angle": "fixed_angle"})
 
 
 def calculate_sweep_indices(dtree, dataset=None):
@@ -296,21 +287,21 @@ def calculate_sweep_indices(dtree, dataset=None):
 
     sweep_start_ray_index = []
     sweep_end_ray_index = []
-
     cumulative_size = 0
 
-    try:
-        for group_name in dtree.groups:
-            if "sweep" in group_name:
-                ele_size = dtree[group_name].elevation.size
-                sweep_start_ray_index.append(cumulative_size)
-                sweep_end_ray_index.append(cumulative_size + ele_size - 1)
-                cumulative_size += ele_size
-
-    except KeyError as e:
-        print(
-            f"Error: The sweep group '{e.args[0]}' was not found in radar datatree. Skipping..."
-        )
+    for group_name in _sweep_group_names(dtree):
+        try:
+            ele_size = dtree[group_name].elevation.size
+        except AttributeError:
+            warnings.warn(
+                f"Sweep group '{group_name}' has no 'elevation' coordinate; "
+                "skipping its ray-index calculation.",
+                stacklevel=2,
+            )
+            continue
+        sweep_start_ray_index.append(cumulative_size)
+        sweep_end_ray_index.append(cumulative_size + ele_size - 1)
+        cumulative_size += ele_size
 
     dataset["sweep_start_ray_index"] = xr.DataArray(
         sweep_start_ray_index,
@@ -327,53 +318,83 @@ def calculate_sweep_indices(dtree, dataset=None):
     return dataset
 
 
+def _build_cfradial1_dataset(dtree, calibs=True):
+    """
+    Build a single CfRadial1 ``Dataset`` from a radar ``DataTree``.
+
+    This assembles the sweep variables, calibration, radar parameters and
+    georeferencing correction, and sets the CfRadial1 global attributes.
+    It is shared by :func:`to_cfradial1` (which writes to a file) and by
+    :func:`xradar.transform.to_cfradial1` (which returns the dataset).
+
+    Parameters
+    ----------
+    dtree: xarray.DataTree
+        Radar xarray.DataTree object.
+    calibs: bool, optional
+        Whether to include calibration parameters.
+
+    Returns
+    -------
+    xarray.Dataset
+        The assembled CfRadial1 dataset.
+    """
+    if dtree is None:
+        raise ValueError("`dtree` must be a radar xarray.DataTree, not None.")
+
+    cfradial1_ds = _combine_sweeps(dtree)
+
+    # Handle calibration parameters
+    if calibs and "radar_calibration" in dtree:
+        calib_ds = _map_radar_calibration(dtree["radar_calibration"].to_dataset())
+        cfradial1_ds.update(calib_ds)
+
+    # Add additional parameters if they exist in dtree
+    if "radar_parameters" in dtree:
+        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
+        cfradial1_ds.update(radar_params)
+
+    if "georeferencing_correction" in dtree:
+        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
+        cfradial1_ds.update(radar_georef)
+
+    # Ensure that the data type of sweep_mode and similar variables matches
+    if "sweep_mode" in cfradial1_ds.variables:
+        cfradial1_ds["sweep_mode"] = cfradial1_ds["sweep_mode"].astype("S")
+
+    # Update global attributes
+    cfradial1_ds.attrs = dict(dtree.attrs)
+    cfradial1_ds.attrs["Conventions"] = "Cf/Radial"
+    cfradial1_ds.attrs["version"] = "1.2"
+    xradar_version = version("xradar")
+    history = cfradial1_ds.attrs.get("history", "")
+    cfradial1_ds.attrs["history"] = (
+        f"{history}: xradar v{xradar_version} CfRadial1 export"
+    )
+
+    return cfradial1_ds
+
+
 def to_cfradial1(dtree=None, filename=None, calibs=True):
     """
-    Convert a radar xarray.DataTree to the CFRadial1 format
+    Convert a radar xarray.DataTree to the CfRadial1 format
     and save it to a file. Ensure that the resulting dataset
     is well-formed and does not include specified extraneous variables.
 
     Parameters
     ----------
     dtree: xarray.DataTree
-        Radar xarary.DataTree object.
+        Radar xarray.DataTree object.
     filename: str, optional
-        The name of the output netCDF file.
-    calibs: Bool, optional
+        The name of the output netCDF file. When omitted, a name is derived
+        from the instrument name and first timestamp.
+    calibs: bool, optional
         Whether to include calibration parameters.
     """
-    # Generate the initial ds_cf using the existing mapping functions
-    dataset = _variable_mapper(dtree)
-
-    # Handle calibration parameters
-    if calibs:
-        if "radar_calibration" in dtree:
-            calib_params = dtree["radar_calibration"].to_dataset()
-            calibs = _calib_mapper(calib_params)
-            dataset.update(calibs)
-
-    # Add additional parameters if they exist in dtree
-    if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
-        dataset.update(radar_params)
-
-    if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
-        dataset.update(radar_georef)
-
-    # Ensure that the data type of sweep_mode and similar variables matches
-    if "sweep_mode" in dataset.variables:
-        dataset["sweep_mode"] = dataset["sweep_mode"].astype("S")
-
-    # Update global attributes
-    dataset.attrs = dtree.attrs
-    dataset.attrs["Conventions"] = "Cf/Radial"
-    dataset.attrs["version"] = "1.2"
-    xradar_version = version("xradar")
-    dataset.attrs["history"] += f": xradar v{xradar_version} CfRadial1 export"
+    cfradial1_ds = _build_cfradial1_dataset(dtree, calibs=calibs)
 
     if filename is None:
-        time = str(dataset.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
-        filename = f"cfrad1_{dataset.instrument_name}_{time}.nc"
+        time = str(cfradial1_ds.time[0].dt.strftime("%Y%m%d_%H%M%S").values)
+        filename = f"cfrad1_{cfradial1_ds.instrument_name}_{time}.nc"
 
-    dataset.to_netcdf(filename, format="netcdf4")
+    cfradial1_ds.to_netcdf(filename, format="netcdf4")
