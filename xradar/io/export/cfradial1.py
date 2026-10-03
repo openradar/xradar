@@ -93,6 +93,86 @@ def _sweep_group_names(dtree):
     return [name for name in dtree.groups if "sweep" in name]
 
 
+#: CfRadial version written by the exporter (#388)
+CFRADIAL1_VERSION = "1.4"
+
+#: instrument_parameters sub-convention variables (CfRadial 1.4, Section 5.1)
+INSTRUMENT_PARAMETERS = {
+    "frequency",
+    "follow_mode",
+    "pulse_width",
+    "prt_mode",
+    "prt",
+    "prt_ratio",
+    "polarization_mode",
+    "nyquist_velocity",
+    "unambiguous_range",
+    "n_samples",
+    "rx_range_resolution",
+    "prt_sequence",
+    "polarization_sequence",
+}
+
+#: geometry_correction sub-convention variables (CfRadial 1.4, Section 5.7),
+#: including the CfRadial2.1 names xradar uses internally
+GEOMETRY_CORRECTION = {
+    "azimuth_correction",
+    "elevation_correction",
+    "range_correction",
+    "longitude_correction",
+    "latitude_correction",
+    "pressure_altitude_correction",
+    "altitude_correction",
+    "radar_altitude_correction",
+    "eastward_velocity_correction",
+    "eastward_ground_speed_correction",
+    "northward_velocity_correction",
+    "northward_ground_speed_correction",
+    "vertical_velocity_correction",
+    "heading_correction",
+    "roll_correction",
+    "pitch_correction",
+    "drift_correction",
+    "rotation_correction",
+    "tilt_correction",
+}
+
+#: sub-conventions in the order they are listed in ``Conventions``
+SUB_CONVENTIONS = [
+    "instrument_parameters",
+    "radar_parameters",
+    "radar_calibration",
+    "geometry_correction",
+]
+
+
+def _meta_group(name):
+    """Return the CfRadial1 sub-convention (``meta_group``) of a variable."""
+    if name in INSTRUMENT_PARAMETERS:
+        return "instrument_parameters"
+    if name in GEOMETRY_CORRECTION:
+        return "geometry_correction"
+    if name.startswith("r_calib_"):
+        return "radar_calibration"
+    if name.startswith("radar_"):
+        return "radar_parameters"
+    return None
+
+
+def _add_meta_groups(ds):
+    """Tag sub-convention variables with ``meta_group``, return the groups used."""
+    groups = set()
+    for name in ds.data_vars:
+        # the specification decides for known variables, otherwise keep a
+        # meta_group from the source (e.g. Radx)
+        group = _meta_group(name) or ds[name].attrs.get("meta_group")
+        if group is not None:
+            ds[name].attrs["meta_group"] = group
+            groups.add(group)
+    known = [group for group in SUB_CONVENTIONS if group in groups]
+    return known + sorted(groups - set(SUB_CONVENTIONS))
+
+
 def _map_radar_calibration(calib_ds):
     """
     Map calibration parameters to the CfRadial1 ``r_calib_*`` layout.
@@ -364,8 +444,11 @@ def _build_cfradial1_dataset(dtree, calibs=True):
 
     # Update global attributes
     cfradial1_ds.attrs = dict(dtree.attrs)
-    cfradial1_ds.attrs["Conventions"] = "Cf/Radial"
-    cfradial1_ds.attrs["version"] = "1.2"
+    # CfRadial 1.4 (Section 4.1): "Cf/Radial" plus the sub-conventions used,
+    # whose variables carry a ``meta_group`` attribute (Section 5) (#388)
+    sub_conventions = _add_meta_groups(cfradial1_ds)
+    cfradial1_ds.attrs["Conventions"] = " ".join(["Cf/Radial", *sub_conventions])
+    cfradial1_ds.attrs["version"] = CFRADIAL1_VERSION
     xradar_version = version("xradar")
     history = cfradial1_ds.attrs.get("history", "")
     cfradial1_ds.attrs["history"] = (

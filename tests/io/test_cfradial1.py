@@ -256,3 +256,30 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path):
         dtree = src.xradar.to_cfradial2_datatree()
     assert dtree["sweep_1"].ds.sweep_mode.item() == "rhi"
     assert "elevation" in dtree["sweep_1"].ds.dims
+
+
+def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
+    # CfRadial 1.4: "Cf/Radial" plus the sub-conventions used, whose variables
+    # carry a meta_group attribute (#388)
+    import netCDF4
+
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True)
+    path = tmp_path / "cf14.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as nc:
+        assert nc.version == "1.4"
+        conventions = nc.Conventions.split()
+        assert conventions[0] == "Cf/Radial"
+        groups = {
+            nc[v].meta_group for v in nc.variables if "meta_group" in nc[v].ncattrs()
+        }
+        assert set(conventions[1:]) == groups
+        assert {
+            "instrument_parameters",
+            "radar_parameters",
+            "radar_calibration",
+            "geometry_correction",
+        } <= groups
+        assert nc["prt_mode"].meta_group == "instrument_parameters"
+        assert nc["r_calib_index"].meta_group == "radar_calibration"
+        assert "meta_group" not in nc["DBZ"].ncattrs()
