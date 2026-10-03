@@ -876,6 +876,24 @@ def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
     assert "latitude" not in dtree.ds.data_vars
 
 
+def test_open_nexradlevel2_datatree_radar_calibration(nexradlevel2_file):
+    # MSG_31 VOL (Table XVII-E) and RAD (Table XVII-H) data blocks
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, optional_groups=True)
+    calib = dtree["radar_calibration"].ds
+    # 177.09 kW / 216.34 kW
+    np.testing.assert_allclose(calib.xmit_power_h, 10 * np.log10(177.08578e6))
+    np.testing.assert_allclose(calib.xmit_power_v, 10 * np.log10(216.34064e6))
+    assert calib.xmit_power_h.attrs["units"] == "dBm"
+    np.testing.assert_allclose(calib.noise_hc, -78.60606, rtol=1e-6)
+    np.testing.assert_allclose(calib.noise_vc, -79.29733, rtol=1e-6)
+    np.testing.assert_allclose(calib.system_phidp, 25.0)
+    # sweep selection doesn't matter for the volume constants
+    dtree = open_nexradlevel2_datatree(
+        nexradlevel2_file, sweep=[1], optional_groups=True
+    )
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.system_phidp, 25.0)
+
+
 def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file):
     """Single-dataset access via open_dataset still has lat/lon/alt with site_as_coords=True."""
     ds = xarray.open_dataset(

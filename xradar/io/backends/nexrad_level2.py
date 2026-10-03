@@ -1208,6 +1208,50 @@ _CHANNEL_CONFIGS = {
 }
 
 
+def _get_radar_calibration_from_constants(nex, sweep_number):
+    """Get radar_calibration from the MSG_31 VOL and RAD data blocks.
+
+    ICD 2620002, Table XVII-E (Volume Data Constant Type) and Table XVII-H
+    (Radial Data Constant Type), mapped to CfRadial 2.1 Section 7.3 names.
+    """
+    nex.get_sweep(sweep_number, moments=["VOL", "RAD"])
+    const = nex.data[sweep_number].get("sweep_constant_data", {})
+    vol = const.get("VOL", {})
+    rad = const.get("RAD", {})
+
+    calib = {}
+    for pol in ["h", "v"]:
+        # transmitter power in kW -> dBm
+        power = vol.get(f"power_{pol}")
+        if power is not None and power > 0:
+            calib[f"xmit_power_{pol}"] = (
+                10 * np.log10(power * 1e6),
+                dict(units="dBm", long_name=f"transmit power, {pol.upper()} channel"),
+            )
+        # measured noise level in dBm
+        noise = rad.get(f"noise_{pol}")
+        if noise is not None:
+            calib[f"noise_{pol}c"] = (
+                noise,
+                dict(
+                    units="dBm",
+                    long_name=f"measured noise level, {pol.upper()} co-pol channel",
+                ),
+            )
+    phase = vol.get("init_phase")
+    if phase is not None:
+        calib["system_phidp"] = (
+            phase,
+            dict(units="degrees", long_name="initial system differential phase"),
+        )
+    return xr.Dataset(
+        {
+            name: xr.DataArray(np.float64(value), attrs=attrs)
+            for name, (value, attrs) in calib.items()
+        }
+    )
+
+
 def _assign_sweep_attrs(dtree, elev_data):
     """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes.
 
@@ -2162,6 +2206,11 @@ def open_nexradlevel2_datatree(
         else:
             exp_sweeps = 0
             elev_data = []
+        calibration = (
+            _get_radar_calibration_from_constants(nex, present_keys[0])
+            if optional_groups and present_keys
+            else xr.Dataset()
+        )
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -2234,8 +2283,8 @@ def open_nexradlevel2_datatree(
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
+        dtree["/radar_calibration"] = xr.merge(
+            [_get_radar_calibration(ls_ds, radar_calibration_subgroup), calibration]
         )
     # Build from ls_ds (station vars already stripped by _assign_root).
     dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
