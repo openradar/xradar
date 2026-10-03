@@ -22,12 +22,14 @@ directly to downstream packages:
 - [Py-ART](https://arm-doe.github.io/pyart/) grids a whole volume into a
   3D ``(z, y, x)`` grid with [``pyart.map.grid_from_radars``](https://arm-doe.github.io/pyart/API/generated/pyart.map.grid_from_radars.html).
 - [wradlib](https://docs.wradlib.org/) grids a whole volume with
-  ``wradlib.vpr.CAPPI`` / ``wradlib.vpr.PseudoCAPPI``, and interpolates single
-  sweeps between polar and Cartesian coordinates with its xarray interpolation
-  API (``.wrl.ipol.interpolate``).
+  ``wradlib.vpr.CAPPI`` / ``wradlib.vpr.PseudoCAPPI``, or sweep by sweep with
+  its xarray interpolation API (``.wrl.ipol.interpolate``) followed by a
+  vertical interpolation between the sweeps.
 
-This notebook grids the same xradar volume with both, onto the same grid:
-0-10 km above the radar and ±100 km around it, with 1 km spacing.
+This notebook grids the same xradar volume with Py-ART and with both wradlib
+approaches onto the same grid, 0-10 km above the radar and ±100 km around it
+with 1 km spacing, and compares the resulting products (CAPPIs, column
+maximum, vertical cross-section).
 
 +++
 
@@ -37,6 +39,7 @@ This notebook grids the same xradar volume with both, onto the same grid:
 import cmweather  # noqa
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pyart
 import wradlib as wrl  # noqa, registers the .wrl accessor
 import xarray as xr
@@ -53,6 +56,9 @@ radar = xd.io.open_odim_datatree(filename)
 radar
 ```
 
+The common target grid: heights above the radar and ``x``/``y`` distances
+from the radar in meters.
+
 ```{code-cell}
 z_levels = np.arange(0, 10_001, 1000.0)
 xy = np.arange(-100_000, 100_001, 1000.0)
@@ -66,7 +72,8 @@ xy = np.arange(-100_000, 100_001, 1000.0)
 wraps the xradar ``DataTree`` as a Py-ART radar object, without copying the
 data into Py-ART's own structure.
 [``pyart.map.grid_from_radars``](https://arm-doe.github.io/pyart/API/generated/pyart.map.grid_from_radars.html)
-then maps all sweeps onto the grid.
+then maps all sweeps onto the grid, by default with a Barnes weighting over a
+radius of influence that grows with distance from the radar.
 
 ```{code-cell}
 pyart_radar = pyart.xradar.Xradar(radar)
@@ -99,8 +106,8 @@ undecoded times, see its docstring.
 
 ## 3D grid with wradlib
 
-``.xradar.georeference()`` adds Cartesian ``x``, ``y``, ``z`` coordinates
-to every radar bin, in the radar-centred azimuthal equidistant projection
+``.xradar.georeference()`` adds Cartesian ``x``, ``y``, ``z`` coordinates to
+every radar bin, in the radar-centred azimuthal equidistant projection
 (``z`` is the altitude above sea level).
 
 ```{code-cell}
@@ -113,9 +120,11 @@ sweeps = [
 altitude = float(sweeps[0].altitude)
 ```
 
+### 3D interpolation with ``wradlib.vpr.CAPPI``
+
 ``wradlib.vpr.CAPPI`` takes the coordinates of all bins of the volume and of
-all grid points as ``(n, 3)`` arrays. We stack the bins of all sweeps into one
-point dimension.
+all grid points as ``(n, 3)`` arrays and interpolates in 3D. We stack the bins
+of all sweeps into one point dimension.
 
 ```{code-cell}
 bins = xr.concat(
@@ -134,9 +143,9 @@ grid_xyz = wrl.util.gridaspoints(z_levels + altitude, xy, xy)
 ```
 
 ``CAPPI`` masks grid points below the lowest and above the highest elevation
-and beyond ``maxrange``. ``ipclass`` selects the interpolator from
-``wradlib.ipol``, here nearest neighbour; ``maxdist`` leaves grid points
-farther than 2 km from any bin empty.
+and beyond ``maxrange`` (``wradlib.vpr.PseudoCAPPI`` fills them instead).
+``ipclass`` selects the interpolator from ``wradlib.ipol``, here nearest
+neighbour; ``maxdist`` leaves grid points farther than 2 km from any bin empty.
 
 ```{code-cell}
 elevations = [float(swp.sweep_fixed_angle) for swp in sweeps]
@@ -149,61 +158,139 @@ gridder = wrl.vpr.CAPPI(
     site=(0.0, 0.0, altitude),
     ipclass=wrl.ipol.Nearest,
 )
-wradlib_grid = xr.DataArray(
+wradlib_cappi = xr.DataArray(
     gridder(bins.values, maxdist=2000).reshape(z_levels.size, xy.size, xy.size),
     dims=("z", "y", "x"),
     coords={"z": z_levels, "y": xy, "x": xy},
     name="DBZH",
     attrs=bins.attrs,
 )
-wradlib_grid
+wradlib_cappi
 ```
 
-## Compare
+### Sweep by sweep with the xarray API (2.5D)
+
+Alternatively, each sweep is interpolated onto the horizontal grid with
+``.wrl.ipol.interpolate``, keeping the beam height of each sweep at each grid
+point. ``method`` selects the interpolator (``"nearest"``,
+``"inverse_distance"``, ...); ``maxdist`` leaves grid points farther than
+1.5 km from any bin of that sweep empty.
 
 ```{code-cell}
-fig, axs = plt.subplots(2, 3, figsize=(17, 10))
-grids = {"Py-ART": pyart_grid.DBZH.isel(time=0), "wradlib CAPPI": wradlib_grid}
-for row, (name, da) in zip(axs, grids.items()):
-    for ax, height in zip(row[:2], [2000, 5000]):
-        da.sel(z=height).plot(ax=ax, cmap="HomeyerRainbow", vmin=-10, vmax=60)
-        ax.set_title(f"{name}, z = {height / 1000:.0f} km")
-        ax.set_aspect("equal")
-    da.sel(y=-50_000).plot(ax=row[2], cmap="HomeyerRainbow", vmin=-10, vmax=60)
-    row[2].set_title(f"{name}, y = -50 km")
-plt.tight_layout()
+trg = xr.Dataset(coords={"x": xy, "y": xy})
+layers = [
+    swp[["DBZH"]]
+    .assign(height=swp.z - altitude)
+    .wrl.ipol.interpolate(trg, method="nearest", maxdist=1500)
+    .expand_dims(elevation=[float(swp.sweep_fixed_angle)])
+    for swp in sweeps
+]
+stack = xr.concat(layers, dim="elevation").sortby("elevation")
+stack
 ```
 
-The differences mainly come from the methods: Py-ART weights all bins within
-a radius of influence that grows with range (``roi_func``,
-``weighting_function``), so it also fills the gaps between the beams and below
-the lowest beam, while the ``CAPPI`` above uses the nearest bin and masks the
-blind areas (use ``wradlib.vpr.PseudoCAPPI`` to fill them).
+Then, at each grid column, the sweeps are interpolated linearly in height to
+the grid levels. Levels below the lowest or above the highest beam stay empty.
+
+```{code-cell}
+def _interp_height(height, values, levels):
+    valid = np.isfinite(height)
+    if valid.sum() < 2:
+        return np.full(levels.shape, np.nan)
+    return np.interp(
+        levels, height[valid], values[valid], left=np.nan, right=np.nan
+    )
+
+
+wradlib_25d = xr.apply_ufunc(
+    _interp_height,
+    stack.height,
+    stack.DBZH,
+    xr.DataArray(z_levels, dims="z"),
+    input_core_dims=[["elevation"], ["elevation"], ["z"]],
+    output_core_dims=[["z"]],
+    vectorize=True,
+)
+wradlib_25d = (
+    wradlib_25d.transpose("z", "y", "x")
+    .assign_coords(z=z_levels)
+    .rename("DBZH")
+    .assign_attrs(bins.attrs)
+)
+wradlib_25d
+```
+
+## Compare the products
+
+```{code-cell}
+grids = {
+    "Py-ART": pyart_grid.DBZH.isel(time=0, drop=True),
+    "wradlib CAPPI": wradlib_cappi,
+    "wradlib 2.5D": wradlib_25d,
+}
+plot_kw = dict(cmap="HomeyerRainbow", vmin=-10, vmax=60, add_colorbar=False)
+
+fig, axs = plt.subplots(3, 4, figsize=(20, 14), layout="constrained")
+for row, (name, da) in zip(axs, grids.items()):
+    # plot in km
+    da = da.assign_coords(x=da.x / 1e3, y=da.y / 1e3, z=da.z / 1e3)
+    da.sel(z=2).plot(ax=row[0], **plot_kw)
+    row[0].set_title(f"{name}: CAPPI 2 km")
+    da.sel(z=5).plot(ax=row[1], **plot_kw)
+    row[1].set_title(f"{name}: CAPPI 5 km")
+    da.max("z").plot(ax=row[2], **plot_kw)
+    row[2].set_title(f"{name}: column maximum")
+    pm = da.sel(y=-50).plot(ax=row[3], **plot_kw)
+    row[3].set_title(f"{name}: y = -50 km")
+    for ax in row[:3]:
+        ax.set_aspect("equal")
+    for ax in row:
+        ax.set_xlabel("x [km]")
+        ax.set_ylabel("y [km]")
+    row[3].set_ylabel("height above radar [km]")
+fig.colorbar(pm, ax=axs, shrink=0.6, label="DBZH [dBZ]")
+```
+
+Where two grids both have values, how close are they to the Py-ART grid?
+
+```{code-cell}
+reference = grids["Py-ART"]
+rows = {}
+for name, da in grids.items():
+    both = reference.notnull() & da.notnull()
+    diff = (da - reference).where(both)
+    rows[name] = {
+        "filled grid points [%]": float(da.notnull().mean()) * 100,
+        "median |difference| [dB]": float(np.abs(diff).median()),
+        "correlation": float(xr.corr(reference.where(both), da.where(both))),
+    }
+pd.DataFrame(rows).T.round(2)
+```
+
+The differences mainly come from the methods:
+
+- Py-ART weights all bins within a radius of influence that grows with range
+  (``roi_func``, ``weighting_function``), so it smooths the field and also
+  fills the gaps between the beams, near the radar and below the lowest beam.
+- ``wradlib.vpr.CAPPI`` with ``Nearest`` takes the value of the nearest bin in
+  3D and leaves blind areas empty, so it keeps the original resolution.
+- the 2.5D approach interpolates linearly between the beams above and below
+  each grid point, so it fills between the beams but not below the lowest or
+  above the highest beam.
 
 +++
 
 ## Single sweep to Cartesian with wradlib
 
-For single sweeps or other 2D fields, wradlib's xarray interpolation API works
+For single sweeps or other 2D fields, the xarray interpolation API works
 directly on the georeferenced sweep. The target is any dataset with ``x``/``y``
 coordinates in the same projection.
 
 ```{code-cell}
 swp = sweeps[0]
-trg = xr.Dataset(coords={"x": xy, "y": xy})
-```
-
-``method`` selects the interpolator, e.g. ``"nearest"`` or
-``"inverse_distance"`` (both based on
-[``scipy.spatial.cKDTree``](https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.cKDTree.html)).
-``distance_upper_bound`` keeps grid points far from any radar bin empty.
-
-```{code-cell}
-nearest = swp.wrl.ipol.interpolate(
-    trg, method="nearest", distance_upper_bound=1500
-)
+nearest = swp.wrl.ipol.interpolate(trg, method="nearest", maxdist=1500)
 idw = swp.wrl.ipol.interpolate(
-    trg, method="inverse_distance", k=4, idw_p=2, distance_upper_bound=1500
+    trg, method="inverse_distance", k=4, idw_p=2, maxdist=1500
 )
 nearest
 ```
