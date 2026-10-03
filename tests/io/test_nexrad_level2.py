@@ -2486,6 +2486,37 @@ class TestRealChunkFiles:
         dtree_full = open_nexradlevel2_datatree(all_bytes, reindex_angle=False)
         assert len(dtree.match("sweep_*")) <= len(dtree_full.match("sweep_*"))
 
+    def test_partial_chunks_pad_nominal_resolution(self, nexrad_chunks_klot):
+        """Padding uses the nominal azimuth spacing from MSG_31 (#396)."""
+        from xradar import util
+
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:10]]
+        extract = util.extract_angle_parameters
+
+        def jittery(ds):
+            # measured spacing of a jittery, truncated super-res sweep
+            params = extract(ds)
+            params["angle_res"] = 0.49
+            return params
+
+        with patch("xradar.util.extract_angle_parameters", jittery):
+            dtree = open_nexradlevel2_datatree(chunk_bytes, incomplete_sweep="pad")
+        # sweep_1 is incomplete, azimuth_resolution 1 (0.5 deg)
+        ds = dtree["sweep_1"].to_dataset()
+        assert ds.sizes["azimuth"] == 720
+        np.testing.assert_allclose(ds.azimuth.diff("azimuth"), 0.5)
+        np.testing.assert_allclose(ds.azimuth[0], 0.25)
+
+    def test_partial_chunks_pad_inferred_resolution(self, nexrad_chunks_klot):
+        """Without nominal resolution, the spacing is inferred."""
+        from xradar.io.backends.nexrad_level2 import open_sweeps_as_dict
+
+        data = b"".join(f.read_bytes() for f in nexrad_chunks_klot[:10])
+        sweeps = open_sweeps_as_dict(
+            data, sweeps=["sweep_1"], incomplete_sweeps={1}, site_as_coords=False
+        )
+        assert sweeps["sweep_1"].sizes["azimuth"] == 720
+
     def test_partial_chunks_pad_mode(self, nexrad_chunks_klot):
         """Partial chunks with pad mode produce full azimuth grid with NaN."""
         chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]

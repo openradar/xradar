@@ -1208,6 +1208,10 @@ _CHANNEL_CONFIGS = {
 }
 
 
+# MSG_31 azimuth_resolution code -> degrees (ICD 2620002, Table XVII-A)
+_AZIMUTH_RESOLUTION = {1: 0.5, 2: 1.0}
+
+
 def _assign_sweep_attrs(dtree, elev_data):
     """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes.
 
@@ -2162,6 +2166,12 @@ def open_nexradlevel2_datatree(
         else:
             exp_sweeps = 0
             elev_data = []
+        # nominal azimuth spacing of the incomplete sweeps, used for padding
+        angle_resolution = {
+            sw: _AZIMUTH_RESOLUTION.get(nex.msg_31_header[sw][0]["azimuth_resolution"])
+            for sw in incomplete
+            if nex.msg_31_header[sw]
+        }
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -2223,6 +2233,7 @@ def open_nexradlevel2_datatree(
         site_as_coords=False,
         optional=optional,
         incomplete_sweeps=incomplete,
+        angle_resolution=angle_resolution,
         lock=lock,
         **kwargs,
     )
@@ -2266,11 +2277,14 @@ def open_sweeps_as_dict(
     site_as_coords=True,
     optional=True,
     incomplete_sweeps=None,
+    angle_resolution=None,
     lock=None,
     **kwargs,
 ):
     if incomplete_sweeps is None:
         incomplete_sweeps = set()
+    if angle_resolution is None:
+        angle_resolution = {}
 
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
@@ -2307,10 +2321,15 @@ def open_sweeps_as_dict(
             if decode_coords and sweep_idx in incomplete_sweeps:
                 group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 angle_params = util.extract_angle_parameters(group_ds)
+                # use the nominal azimuth spacing of the sweep (MSG_31
+                # azimuth_resolution), the measured one is jittery (#396)
+                angle_res = angle_resolution.get(sweep_idx)
+                if angle_res is None:
+                    angle_res = float(angle_params["angle_res"])
                 reindex_kwargs = {
                     "start_angle": angle_params["start_angle"],
                     "stop_angle": angle_params["stop_angle"],
-                    "angle_res": float(angle_params["angle_res"]),
+                    "angle_res": angle_res,
                     "direction": angle_params["direction"],
                 }
                 group_ds = group_ds.pipe(util.reindex_angle, **reindex_kwargs)
