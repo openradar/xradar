@@ -201,14 +201,27 @@ def _combine_sweeps(dtree, dim0=None):
 
         sweep_datasets.append(sweep_ds)
 
-    # need to use combine_by_coords to correctly test for
-    # incompatible attrs on DataArray's
-    combined = xr.combine_by_coords(
+    # CfRadial1 holds one range coordinate for the whole volume, so all sweeps
+    # must share the gate geometry (they may differ in number of gates)
+    longest = max(sweep_datasets, key=lambda ds: ds.sizes["range"]).range.values
+    for sweep_ds in sweep_datasets:
+        rng = sweep_ds.range.values
+        if not np.allclose(rng, longest[: rng.size]):
+            raise xr.MergeError(
+                "CfRadial1 export requires the same range gate geometry "
+                "(first gate and gate spacing) in all sweeps."
+            )
+
+    # concatenate positionally along time in sweep order (matching
+    # sweep_start/end_ray_index), rays with identical timestamps must not be
+    # merged by aligning on time values (#415); range is outer-joined
+    combined = xr.concat(
         sweep_datasets,
+        dim="time",
         data_vars="all",
+        coords="minimal",
         compat="no_conflicts",
         join="outer",
-        coords="minimal",
         combine_attrs="no_conflicts",
     )
 

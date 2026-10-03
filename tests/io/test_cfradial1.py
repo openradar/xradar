@@ -256,3 +256,31 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path):
         dtree = src.xradar.to_cfradial2_datatree()
     assert dtree["sweep_1"].ds.sweep_mode.item() == "rhi"
     assert "elevation" in dtree["sweep_1"].ds.dims
+
+
+def test_cfradial1_export_duplicate_ray_times(cfradial1_file, tmp_path):
+    # rays sharing a timestamp, also across sweeps, must not be merged on
+    # export (#415)
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, sweep=[0, 1])
+    t0 = dtree["sweep_0"].ds.time.values[0]
+    for sweep in ["sweep_0", "sweep_1"]:
+        ds = dtree[sweep].to_dataset()
+        ds = ds.assign_coords(time=ds.time.copy(data=np.full_like(ds.time, t0)))
+        dtree[sweep] = xr.DataTree(ds)
+    nrays = [dtree[sweep].ds.sizes["azimuth"] for sweep in ["sweep_0", "sweep_1"]]
+
+    path = tmp_path / "duplicate_times.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with xr.open_dataset(path, decode_timedelta=False) as out:
+        assert out.sizes["time"] == sum(nrays)
+        np.testing.assert_array_equal(out.sweep_start_ray_index, [0, nrays[0]])
+        np.testing.assert_array_equal(
+            out.sweep_end_ray_index.values[-1], sum(nrays) - 1
+        )
+
+    back = xd.io.open_cfradial1_datatree(path)
+    for sweep in ["sweep_0", "sweep_1"]:
+        np.testing.assert_array_equal(
+            back[sweep].ds.DBZ.values[:, : dtree[sweep].ds.sizes["range"]],
+            dtree[sweep].ds.DBZ.values,
+        )
