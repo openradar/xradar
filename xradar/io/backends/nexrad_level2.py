@@ -87,6 +87,8 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
+#: gzip magic number, gzip-wrapped archives must be decompressed by the user
+_GZIP_MAGIC = b"\x1f\x8b"
 
 
 def _concatenate_chunks(file_list):
@@ -227,6 +229,9 @@ class NEXRADFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the same file-like is read again for every sweep
+            if getattr(filename, "seekable", lambda: False)():
+                filename.seek(0)
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -234,6 +239,14 @@ class NEXRADFile:
             self._fh = np.memmap(self._fp.name, mode=mode)
         else:
             raise TypeError(f"Unsupported input type: {type(filename)}")
+        if bytes(self._fh[:2]) == _GZIP_MAGIC:
+            if self._fp is not None:
+                self._fp.close()
+            raise ValueError(
+                "Not a NEXRAD Level II archive: the input is gzip-compressed "
+                "(e.g. *.gz files in unidata-nexrad-level2). Decompress it "
+                "first, e.g. with `gzip.open(filename).read()`."
+            )
         self.volume_header = self._read_volume_header()
         return
 
@@ -530,6 +543,15 @@ class NEXRADRecordFile(NEXRADFile):
         chk : bool
             True, if record is truncated.
         """
+        if self.record_number is None:
+            source = (
+                f" in {os.fspath(self.filename)!r}"
+                if isinstance(self.filename, (str, os.PathLike))
+                else ""
+            )
+            raise ValueError(
+                f"Not a NEXRAD Level II archive: no records found{source}."
+            )
         return self.init_record(self.record_number + 1)
 
     def array_from_record(self, words, width, dtype):

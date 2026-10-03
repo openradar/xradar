@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import numpy as np
 import pytest
 import xarray
+from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends.nexrad_level2 import (
@@ -2734,3 +2735,49 @@ def test_get_dynamic_scan_type():
     assert _get_dynamic_scan_type({"sails_vcp": True, "num_sails_cuts": 0}) == "SAILS"
     assert _get_dynamic_scan_type({"mrle_vcp": True, "num_mrle_cuts": 0}) == "MRLE"
     assert _get_dynamic_scan_type({"sails_vcp": False, "mrle_vcp": False}) == "standard"
+
+
+@pytest.mark.parametrize("source", ["path", "bytes", "filelike"])
+def test_open_nexradlevel2_datatree_gzip(nexradlevel2_msg1_file, source):
+    # gzip-wrapped archives (e.g. *.gz in unidata-nexrad-level2) are not
+    # decompressed by the reader, but give a clear error (#382)
+    gzfile = DATASETS.fetch("KLIX20050828_180149.gz")
+    inputs = {
+        "path": lambda: gzfile,
+        "bytes": lambda: open(gzfile, "rb").read(),
+        "filelike": lambda: io.BytesIO(open(gzfile, "rb").read()),
+    }
+    with pytest.raises(ValueError, match="gzip-compressed.*Decompress it first"):
+        open_nexradlevel2_datatree(inputs[source]())
+
+
+def test_open_nexradlevel2_datatree_gunzipped_bytes(nexradlevel2_msg1_file):
+    # the recommended way: decompress first, then pass bytes
+    import gzip
+
+    gzfile = DATASETS.fetch("KLIX20050828_180149.gz")
+    dtree = open_nexradlevel2_datatree(gzip.open(gzfile).read())
+    expected = open_nexradlevel2_datatree(nexradlevel2_msg1_file)
+    sweeps = [k for k in expected.children if k.startswith("sweep_")]
+    assert [k for k in dtree.children if k.startswith("sweep_")] == sweeps
+    xarray.testing.assert_identical(dtree["sweep_0"].ds, expected["sweep_0"].ds)
+
+
+def test_open_nexradlevel2_datatree_filelike_all_sweeps(nexradlevel2_file):
+    # the same file-like object is read once per sweep, it has to be rewound
+    with open(nexradlevel2_file, "rb") as f:
+        filelike = io.BytesIO(f.read())
+    dtree = open_nexradlevel2_datatree(filelike)
+    expected = open_nexradlevel2_datatree(nexradlevel2_file)
+    assert len(dtree.children) == len(expected.children)
+    xarray.testing.assert_identical(dtree["sweep_1"].ds, expected["sweep_1"].ds)
+
+
+def test_open_nexradlevel2_not_an_archive(tmp_path):
+    data = np.random.default_rng(42).integers(0, 256, 20000, dtype=np.uint8)
+    path = tmp_path / "not_nexrad.bin"
+    path.write_bytes(data.tobytes())
+    with pytest.raises(ValueError, match="Not a NEXRAD Level II archive"):
+        open_nexradlevel2_datatree(path)
+    with pytest.raises(ValueError, match="Not a NEXRAD Level II archive"):
+        open_nexradlevel2_datatree(data.tobytes())
