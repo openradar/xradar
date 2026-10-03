@@ -924,6 +924,18 @@ class TestMalformedAndEdges:
             assert "_FillValue" not in raw_ds[moment].attrs
             assert decoded.values[0, 0] == 0.0
 
+    def test_mask_and_scale_false_class_product(self, tmp_path):
+        # classification products have no scale: raw 0 is "no data"
+        raw = np.tile(np.array([0, 10, 30], dtype="u1"), (4, 1))
+        path = tmp_path / "hhc_raw"
+        path.write_bytes(
+            build_level3_file(msg_code=165, packet=_radial_packet16(4, 3, raw))
+        )
+        ds = xr.open_dataset(str(path), engine="nexradlevel3", mask_and_scale=False)
+        attrs = ds["HCLASS"].attrs
+        assert attrs["_FillValue"] == 0
+        assert "scale_factor" not in attrs
+
     def test_reindex_angle_synthetic(self, tmp_path):
         path = tmp_path / "reindex_file"
         path.write_bytes(build_level3_file())
