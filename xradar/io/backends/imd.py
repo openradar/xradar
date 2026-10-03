@@ -65,6 +65,8 @@ from .common import (
     _STATION_VARS,
     _apply_site_as_coords,
     _get_subgroup,
+    _input_kind,
+    _read_nc_header,
 )
 
 #: IMD moment codes to CfRadial2 names. IMD's published NetCDF format ships
@@ -421,6 +423,15 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         "Open India Meteorological Department (IMD) radar NetCDF files in Xarray"
     )
     url = "https://xradar.rtfd.io/en/latest/io.html#imd"
+
+    def guess_can_open(self, filename_or_obj):
+        """IMD IRIS-netCDF file (``radialAzim`` and ``elevationAngle``)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return {"radialAzim", "elevationAngle"}.issubset(header[1])
 
     def open_dataset(
         self,

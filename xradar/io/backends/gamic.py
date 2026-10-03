@@ -73,7 +73,9 @@ from .common import (
     _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _input_kind,
     _prepare_backend_ds,
+    _read_nc_header,
 )
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
 
@@ -407,6 +409,15 @@ class GamicBackendEntrypoint(BackendEntrypoint):
 
     description = "Open GAMIC HDF5 (.h5, .hdf5, .mvol) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#gamic-hdf5"
+
+    def guess_can_open(self, filename_or_obj):
+        """GAMIC HDF5 file (``what`` and ``scan0`` groups)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return {"what", "scan0"}.issubset(header[2])
 
     def open_dataset(
         self,

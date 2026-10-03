@@ -53,7 +53,9 @@ from .common import (
     _STATION_VARS,
     _apply_site_as_coords,
     _attach_sweep_groups,
+    _input_kind,
     _maybe_decode,
+    _read_nc_header,
 )
 
 
@@ -428,6 +430,21 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
 
     description = "Open CfRadial1 (.nc, .nc4) using netCDF4 in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#cfradial1"
+
+    def guess_can_open(self, filename_or_obj):
+        """CfRadial1 file (netCDF with ``sweep_start_ray_index`` and a
+        ``Conventions`` or ``version`` mentioning CF/Radial)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        attrs, variables, _ = header
+        convention = " ".join(
+            str(attrs.get(name, ""))
+            for name in ["Conventions", "conventions", "version"]
+        ).lower()
+        return "radial" in convention and "sweep_start_ray_index" in variables
 
     def open_dataset(
         self,

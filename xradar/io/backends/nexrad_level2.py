@@ -59,6 +59,8 @@ from xradar.io.backends.common import (
     _assign_root,
     _get_radar_calibration,
     _get_subgroup,
+    _input_kind,
+    _read_head,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -1950,6 +1952,13 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
 
     description = "Open NEXRAD Level2 files in Xarray"
     url = "tbd"
+
+    def guess_can_open(self, filename_or_obj):
+        """NEXRAD Level II archive (``AR2V`` / ``ARCHIVE2`` volume header)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes", "chunks"):
+            return False
+        head = _read_head(filename_or_obj, 8)
+        return head is not None and head.startswith((b"AR2V", b"ARCHIVE2"))
 
     def open_dataset(
         self,

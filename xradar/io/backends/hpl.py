@@ -60,6 +60,8 @@ from .common import (
     _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _input_kind,
+    _read_head,
 )
 
 variable_attr_dict = {}
@@ -516,6 +518,13 @@ class HPLBackendEntrypoint(BackendEntrypoint):
 
     description = "Backend for reading Halo Photonics Doppler lidar processed data"
     url = "https://xradar.rtfd.io/en/latest/io.html#metek"
+
+    def guess_can_open(self, filename_or_obj):
+        """Halo Photonics ``.hpl`` (text header starting with ``Filename:``)."""
+        if _input_kind(filename_or_obj) not in ("path", "text"):
+            return False
+        head = _read_head(filename_or_obj, 64)
+        return head is not None and head.startswith(b"Filename:")
 
     def open_dataset(
         self,
