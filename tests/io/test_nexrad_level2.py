@@ -2507,6 +2507,16 @@ class TestRealChunkFiles:
         np.testing.assert_allclose(ds.azimuth.diff("azimuth"), 0.5)
         np.testing.assert_allclose(ds.azimuth[0], 0.25)
 
+    def test_partial_chunks_pad_inferred_resolution(self, nexrad_chunks_klot):
+        """Without nominal resolution, the spacing is inferred."""
+        from xradar.io.backends.nexrad_level2 import open_sweeps_as_dict
+
+        data = b"".join(f.read_bytes() for f in nexrad_chunks_klot[:10])
+        sweeps = open_sweeps_as_dict(
+            data, sweeps=["sweep_1"], incomplete_sweeps={1}, site_as_coords=False
+        )
+        assert sweeps["sweep_1"].sizes["azimuth"] == 720
+
     def test_partial_chunks_pad_mode(self, nexrad_chunks_klot):
         """Partial chunks with pad mode produce full azimuth grid with NaN."""
         chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
