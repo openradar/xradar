@@ -868,6 +868,85 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         return ds
 
 
+def _get_float(value, index=0):
+    """Get float from Rainbow header value, which may hold several values."""
+    try:
+        values = str(value).split()
+        return float(values[min(index, len(values) - 1)])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _get_rainbow_metadata_groups(filename, sweep):
+    """Get radar_parameters and radar_calibration from a Rainbow slice.
+
+    Taken from the slice of the given sweep, falling back to ``sensorinfo``
+    for the beam width. Radar constants are given per pulse width, the one
+    of the slice's ``pw_index`` is used.
+    """
+    with RainbowFile(filename, loaddata=False) as fh:
+        slc = fh.slices[int(sweep.split("_")[-1])]
+        sensorinfo = fh.sensorinfo or {}
+        pargroup = fh.pargroup
+
+    def _get(name, index=0):
+        return _get_float(slc.get(name, pargroup.get(name)), index)
+
+    params = {}
+    beamwidth = _get_float(sensorinfo.get("beamwidth"))
+    for pol, name in [("h", "spbhorbeam"), ("v", "spbverbeam")]:
+        value = _get(name)
+        value = beamwidth if value is None else value
+        if value is not None:
+            params[f"radar_beam_width_{pol}"] = (
+                value,
+                dict(
+                    units="degrees", long_name=f"beam width, {pol.upper()} polarization"
+                ),
+            )
+    for pol, name in [("h", "spbantgain"), ("v", "spbdpvantgain")]:
+        value = _get(name)
+        if value is not None:
+            params[f"radar_antenna_gain_{pol}"] = (
+                value,
+                dict(units="dB", long_name=f"antenna gain, {pol.upper()} polarization"),
+            )
+    value = _get("rxbandwidth")
+    if value:
+        params["radar_receiver_bandwidth"] = (
+            value,
+            dict(units="s-1", long_name="bandwidth of radar receiver"),
+        )
+
+    calib = {}
+    pw_index = int(_get("pw_index") or 0)
+    for pol, name in [("h", "rspdphradconst"), ("v", "rspdpvradconst")]:
+        value = _get(name, pw_index)
+        if value is not None:
+            calib[f"radar_constant_{pol}"] = (
+                value,
+                dict(units="dB", long_name=f"radar constant, {pol.upper()} channel"),
+            )
+    for pol in ["h", "v"]:
+        # transmitter power in kW -> dBm
+        value = _get(f"gdrx5txpowkw{pol}")
+        if value:
+            calib[f"xmit_power_{pol}"] = (
+                10 * np.log10(value * 1e6),
+                dict(units="dBm", long_name=f"transmit power, {pol.upper()} channel"),
+            )
+
+    def _to_dataset(items):
+        return xr.Dataset(
+            {
+                name: xr.DataArray(np.float64(value), attrs=attrs)
+                for name, (value, attrs) in items.items()
+            }
+        )
+
+    return _to_dataset(params), _to_dataset(calib)
+
+
 def _get_rainbow_group_names(filename):
     with RainbowFile(filename, loaddata=False) as fh:
         cnt = len(fh.slices)
@@ -937,12 +1016,15 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        params, calib = _get_rainbow_metadata_groups(filename_or_obj, sweeps[0])
+        dtree["/radar_parameters"] = xr.merge(
+            [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
+        dtree["/radar_calibration"] = xr.merge(
+            [_get_radar_calibration(ls_ds, radar_calibration_subgroup), calib]
         )
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)
