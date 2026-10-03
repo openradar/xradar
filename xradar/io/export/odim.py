@@ -37,6 +37,10 @@ import sys
 import h5py
 import numpy as np
 
+from ..backends.odim import ODIM_TO_FM301_NAMES
+
+FM301_TO_ODIM_NAMES = {v: k for k, v in ODIM_TO_FM301_NAMES.items()}
+
 
 def _write_odim(source, destination):
     """Writes ODIM_H5 Attributes.
@@ -98,7 +102,7 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
         add_offset = float(enc.get("add_offset", 0.0))
         _fillvalue = float(enc.get("_FillValue", undetect))
         what = {
-            "quantity": value.name,
+            "quantity": FM301_TO_ODIM_NAMES.get(value.name, value.name),
             "gain": scale_factor,
             "offset": add_offset,
             "nodata": _fillvalue,
