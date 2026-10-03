@@ -617,20 +617,6 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         transition_threshold_azi=0.01,
         transition_threshold_el=0.005,
     ):
-        # For multi-sweep HPL files, `HplFile._data["sweep_0"]` is a junk
-        # lead-in entry (internal `sweep_number == -1`); the real first
-        # sweep lives at `sweep_1`. Shift integer-style selections by +1
-        # so `sweep=0` maps to the real first sweep. Single-sweep files
-        # don't have the junk entry, so no shift is needed.
-        if isinstance(sweep, (int, list)):
-            with HplFile(filename_or_obj) as fh:
-                n_sweeps = len(fh.data["sweep_number"])
-            if n_sweeps > 1:
-                if isinstance(sweep, int):
-                    sweep = sweep + 1
-                elif sweep and isinstance(sweep[0], int):
-                    sweep = [i + 1 for i in sweep]
-
         sweeps = _resolve_sweeps(sweep, lambda: _get_hpl_group_names(filename_or_obj))
 
         ds_kwargs = dict(
