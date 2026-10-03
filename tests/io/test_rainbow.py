@@ -259,3 +259,50 @@ def test_open_rainbow_datatree_optional_groups(rainbow_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+def test_open_rainbow_datatree_slice_metadata(rainbow_file, rainbow_file2):
+    # Rainbow 5.36: beam width from sensorinfo, radar constants per pulse width
+    dtree = open_rainbow_datatree(rainbow_file, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 1.326)
+    np.testing.assert_allclose(params.radar_beam_width_v, 1.326)
+    assert "radar_antenna_gain_h" not in params
+    calib = dtree["radar_calibration"].ds
+    # "77.20 74.09 71.03" with pw_index 1
+    np.testing.assert_allclose(calib.radar_constant_h, 74.09)
+    np.testing.assert_allclose(calib.radar_constant_v, 74.26)
+    assert "xmit_power_h" not in calib
+
+    # Rainbow 5.59: slice values
+    dtree = open_rainbow_datatree(rainbow_file2, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 0.97)
+    np.testing.assert_allclose(params.radar_beam_width_v, 0.96)
+    np.testing.assert_allclose(params.radar_antenna_gain_h, 45.31)
+    np.testing.assert_allclose(params.radar_antenna_gain_v, 45.19)
+    np.testing.assert_allclose(params.radar_receiver_bandwidth, 600e3)
+    assert params.radar_beam_width_h.attrs["units"] == "degrees"
+    calib = dtree["radar_calibration"].ds
+    np.testing.assert_allclose(calib.radar_constant_h, 66.467)
+    np.testing.assert_allclose(calib.radar_constant_v, 66.686)
+    # kW -> dBm
+    np.testing.assert_allclose(calib.xmit_power_h, 10 * np.log10(216.7286e6))
+    np.testing.assert_allclose(calib.xmit_power_v, 10 * np.log10(219.5568e6))
+    assert calib.xmit_power_h.attrs["units"] == "dBm"
+
+
+@pytest.mark.parametrize(
+    ("value", "index", "expected"),
+    [
+        ("66.467", 0, 66.467),
+        ("77.20 74.09 71.03", 2, 71.03),
+        # index beyond the number of values: last one
+        ("66.467", 1, 66.467),
+        (None, 0, None),
+        ("n/a", 0, None),
+        ("", 0, None),
+    ],
+)
+def test_rainbow_get_float(value, index, expected):
+    assert rainbow._get_float(value, index) == expected
