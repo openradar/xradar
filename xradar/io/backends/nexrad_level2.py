@@ -2321,6 +2321,20 @@ def open_sweeps_as_dict(
                     "angle_res": float(angle_params["angle_res"]),
                     "direction": angle_params["direction"],
                 }
+                ignored = (
+                    " The given reindex_coord['angle'] is not used for this sweep."
+                    if reindex_coord and "angle" in reindex_coord
+                    else ""
+                )
+                warnings.warn(
+                    f"{path_group} is incomplete and is padded to a full angle "
+                    f"grid (angle_res={reindex_kwargs['angle_res']}, "
+                    f"start_angle={reindex_kwargs['start_angle']}, "
+                    f"stop_angle={reindex_kwargs['stop_angle']}) with NaN-filled "
+                    f"rays.{ignored}",
+                    UserWarning,
+                    stacklevel=2,
+                )
                 group_ds = group_ds.pipe(util.reindex_angle, **reindex_kwargs)
                 group_ds = group_ds.pipe(util.ipol_time, **reindex_kwargs)
                 if reindex_coord and "range" in reindex_coord:
