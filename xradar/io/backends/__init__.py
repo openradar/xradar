@@ -18,6 +18,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.iris
 .. automodule:: xradar.io.backends.hpl
 .. automodule:: xradar.io.backends.nexrad_level2
+.. automodule:: xradar.io.backends.nexrad_level3
 .. automodule:: xradar.io.backends.datamet
 .. automodule:: xradar.io.backends.metek
 .. automodule:: xradar.io.backends.uf
@@ -34,6 +35,7 @@ from .odim import *  # noqa
 from .rainbow import *  # noqa
 from .hpl import *  # noqa
 from .nexrad_level2 import *  # noqa
+from .nexrad_level3 import *  # noqa
 from .datamet import *  # noqa
 from .metek import *  # noqa
 from .uf import *  # noqa
