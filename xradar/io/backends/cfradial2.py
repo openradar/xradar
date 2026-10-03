@@ -155,26 +155,62 @@ def _normalize_sweep_name(name: str) -> str:
     return name
 
 
+def _decode_name(value) -> str:
+    value = value.decode() if isinstance(value, bytes) else str(value)
+    return value.strip()
+
+
+def _available_sweeps(tree: DataTree) -> dict[str, str]:
+    """Map (normalized) sweep names to the group names in the file.
+
+    CfRadial2 lists the sweep groups in the root ``sweep_group_name`` variable
+    (CfRadial 2.1, Sections 3 and 5); group names need not be ``sweep_<n>``.
+    Without that variable, ``sweep_*`` children are used.
+    """
+    if "sweep_group_name" in tree.ds:
+        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
+        raw_names = [name for name in listed if name in tree.children]
+        missing = [name for name in listed if name not in tree.children]
+        if missing:
+            warnings.warn(
+                f"Sweep group(s) listed in `sweep_group_name` but missing: {missing}",
+                UserWarning,
+                stacklevel=3,
+            )
+    else:
+        raw_names = sorted(
+            (child for child in tree.children if child.startswith("sweep_")),
+            key=lambda x: (
+                int(_normalize_sweep_name(x).split("_", 1)[1])
+                if _normalize_sweep_name(x).split("_", 1)[1].isdigit()
+                else np.inf
+            ),
+        )
+    return {_normalize_sweep_name(name): name for name in raw_names}
+
+
 def _iter_selected_sweeps(tree: DataTree, sweep: Any) -> list[str]:
-    available = sorted(
-        (
-            _normalize_sweep_name(child)
-            for child in tree.children
-            if child.startswith("sweep_")
-        ),
-        key=lambda x: int(x.split("_", 1)[1]),
-    )
+    available = list(_available_sweeps(tree))
+
+    def _by_index(index: int) -> str:
+        # sweep_<n> names are selected by name, other names by position
+        name = f"sweep_{index}"
+        if name not in available and 0 <= index < len(available):
+            if not all(n.startswith("sweep_") for n in available):
+                return available[index]
+        return name
+
     if sweep is None:
         return available
     if isinstance(sweep, str):
         return [_normalize_sweep_name(sweep)]
     if isinstance(sweep, int):
-        return [f"sweep_{sweep}"]
+        return [_by_index(sweep)]
     if isinstance(sweep, Iterable):
         selected: list[str] = []
         for item in sweep:
             if isinstance(item, int):
-                selected.append(f"sweep_{item}")
+                selected.append(_by_index(item))
             else:
                 selected.append(_normalize_sweep_name(item))
         return selected
@@ -273,6 +309,9 @@ def _rename_using_mapping(ds, mapping: dict[str, str | None]):
 
 
 def _infer_sweep_mode(ds):
+    # CfRadial2 stores sweep_mode as variable (e.g. Radx), some files as attribute
+    if "sweep_mode" in ds.variables and ds["sweep_mode"].size == 1:
+        return _decode_name(np.ravel(ds["sweep_mode"].values)[0])
     mode = ds.attrs.get("sweep_mode")
     if mode is not None:
         return str(mode)
@@ -387,8 +426,9 @@ def _normalize_sweep_dataset(ds, sweep_name: str, first_dim: str, optional: bool
 
     if "sweep_number" not in ds:
         ds["sweep_number"] = Variable((), int(sweep_name.split("_", 1)[1]))
-    if "sweep_mode" not in ds:
-        ds["sweep_mode"] = Variable((), mode)
+    # store the decoded mode (files may hold it as bytes/char variable)
+    attrs = ds["sweep_mode"].attrs if "sweep_mode" in ds else {}
+    ds["sweep_mode"] = Variable((), mode, attrs)
     if "follow_mode" not in ds:
         ds["follow_mode"] = Variable((), "none")
     if "prt_mode" not in ds:
@@ -492,12 +532,27 @@ def open_cfradial2_datatree(
     kwargs.update(decode_timedelta=kwargs.pop("decode_timedelta", False))
 
     with open_datatree(filename_or_obj, **kwargs) as tree:
-        raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
+        available = _available_sweeps(tree)
+        if not available:
+            raise ValueError(
+                f"No sweep groups found in `{filename_or_obj}`: expected groups "
+                "listed in the root `sweep_group_name` or named `sweep_<n>`."
+            )
+        raw_sweep_names = list(available.values())
         selected = _iter_selected_sweeps(tree, sweep)
         output_names = [f"sweep_{i}" for i in range(len(selected))]
-        sweep_nodes = {
-            _normalize_sweep_name(name): tree[name] for name in raw_sweep_names
-        }
+        sweep_nodes = {name: tree[raw] for name, raw in available.items()}
+        # fixed angles from the root, indexed like sweep_group_name
+        root_fixed = {}
+        if "sweep_fixed_angle" in tree.ds and "sweep_group_name" in tree.ds:
+            listed = [
+                _decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)
+            ]
+            values = np.ravel(tree.ds["sweep_fixed_angle"].values)
+            root_fixed = {
+                _normalize_sweep_name(n): v
+                for n, v in zip(listed, values, strict=False)
+            }
 
         missing = [name for name in selected if name not in sweep_nodes]
         if missing:
@@ -507,8 +562,15 @@ def open_cfradial2_datatree(
 
         normalized_sweeps = []
         for output_name, source_name in zip(output_names, selected):
+            sweep_ds = sweep_nodes[source_name].to_dataset(inherit=True)
+            if (
+                source_name in root_fixed
+                and "sweep_fixed_angle" not in sweep_ds
+                and "fixed_angle" not in sweep_ds
+            ):
+                sweep_ds["sweep_fixed_angle"] = Variable((), root_fixed[source_name])
             ds = _normalize_sweep_dataset(
-                sweep_nodes[source_name].to_dataset(inherit=True),
+                sweep_ds,
                 output_name,
                 first_dim=first_dim,
                 optional=optional,
