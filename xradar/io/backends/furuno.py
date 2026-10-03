@@ -306,6 +306,8 @@ class FurunoFile:
         self._loaddata = kwargs.get("loaddata", True)
         self._obsmode = kwargs.get("obsmode", None)
         self._fp = None
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             if filename.endswith(".gz"):
@@ -846,10 +848,7 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }
     if optional_groups:
-        filename = filename_or_obj
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
-        with FurunoFile(filename, loaddata=False) as fh:
+        with FurunoFile(filename_or_obj, loaddata=False) as fh:
             params = _get_radar_parameters(fh.header)
         dtree["/radar_parameters"] = xr.merge(
             [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
