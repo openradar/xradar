@@ -3986,6 +3986,70 @@ def _get_iris_group_names(filename):
     return keys
 
 
+def _get_iris_metadata_groups(filename):
+    """Get radar_parameters and radar_calibration from the task configuration.
+
+    IRIS Programming Guide M212927EN, 4.3.50 task_calib_info and
+    4.3.57 task_misc_info, mapped to CfRadial 2.1 Sections 7.1 and 7.3.
+    """
+    sid, opener = _check_iris_file(filename)
+    with opener(filename, loaddata=False) as ds:
+        header = getattr(ds, "ingest_header", None)
+        task = header.get("task_configuration", {}) if header else {}
+    misc = task.get("task_misc_info", {})
+    calib = task.get("task_calib_info", {})
+
+    params = {}
+    for pol, name in [("h", "horizontal"), ("v", "vertical")]:
+        value = misc.get(f"{name}_beam_width")
+        if value:
+            params[f"radar_beam_width_{pol}"] = (
+                value,
+                dict(
+                    units="degrees", long_name=f"beam width, {pol.upper()} polarization"
+                ),
+            )
+    bandwidth = calib.get("receiver_bandwidth")
+    if bandwidth:
+        # kHz
+        params["radar_receiver_bandwidth"] = (
+            bandwidth * 1e3,
+            dict(units="s-1", long_name="bandwidth of radar receiver"),
+        )
+
+    cal = {}
+    for pol, name in [("h", "horizontal"), ("v", "vertical")]:
+        pairs = [
+            # 1/100 dB
+            (f"{name}_radar_constant", f"radar_constant_{pol}", "dB", "radar constant"),
+            # 1/100 dBm
+            (
+                f"{name}_noise_calibration",
+                f"noise_{pol}c",
+                "dBm",
+                "noise at calibration",
+            ),
+            (f"{name}_io_cal_value", f"i0_dbm_{pol}c", "dBm", "I0 calibration value"),
+        ]
+        for iris_name, name_out, units, long_name in pairs:
+            value = calib.get(iris_name)
+            if value:
+                cal[name_out] = (
+                    value / 100.0,
+                    dict(units=units, long_name=f"{long_name}, {pol.upper()} channel"),
+                )
+
+    def _to_dataset(items):
+        return xr.Dataset(
+            {
+                name: xr.DataArray(np.float64(value), attrs=attrs)
+                for name, (value, attrs) in items.items()
+            }
+        )
+
+    return _to_dataset(params), _to_dataset(cal)
+
+
 class IrisBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for IRIS/Sigmet data."""
 
@@ -4131,12 +4195,15 @@ def open_iris_datatree(filename_or_obj, **kwargs):
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        params, calib = _get_iris_metadata_groups(filename_or_obj)
+        dtree["/radar_parameters"] = xr.merge(
+            [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
+        dtree["/radar_calibration"] = xr.merge(
+            [_get_radar_calibration(ls_ds, radar_calibration_subgroup), calib]
         )
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)
