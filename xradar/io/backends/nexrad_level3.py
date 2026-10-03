@@ -1191,6 +1191,30 @@ def open_nexradlevel3_datatree(filename_or_obj, **kwargs):
             "as its own DataTree."
         )
 
+    # all sweeps must come from the same radar and volume scan
+    sites = {
+        tuple(round(float(ds[name].values), 4) for name in ["latitude", "longitude"])
+        for ds in sweeps
+    }
+    if len(sites) > 1:
+        raise ValueError(
+            f"Cannot combine Level 3 files from different radar sites {sorted(sites)} "
+            "into one volume."
+        )
+    volumes = {ds.attrs["time_coverage_start"] for ds in sweeps}
+    if len(volumes) > 1:
+        raise ValueError(
+            f"Cannot combine Level 3 files from different volume scans "
+            f"{sorted(volumes)} into one volume."
+        )
+    angles = [float(ds["sweep_fixed_angle"].values.item()) for ds in sweeps]
+    duplicates = sorted({a for a in angles if angles.count(a) > 1})
+    if duplicates:
+        raise ValueError(
+            f"Duplicate elevation angles {duplicates} in the Level 3 files; each "
+            "file should hold a different tilt of the volume."
+        )
+
     sweeps.sort(key=lambda ds: float(ds["sweep_fixed_angle"].values.item()))
 
     root = _build_l3_root(sweeps)

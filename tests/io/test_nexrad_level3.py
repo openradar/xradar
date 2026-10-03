@@ -152,8 +152,12 @@ def build_level3_file(
     compress=False,
     site="LOT",
     version=0,
+    latitude=None,
+    vol_scan=None,
 ):
     """Assemble a complete synthetic NEXRAD Level 3 file."""
+    latitude = KLOT_LAT if latitude is None else latitude
+    vol_scan = VOL_SCAN if vol_scan is None else vol_scan
     if threshold is None:
         threshold = struct.pack(">2h", -320, 5).ljust(32, b"\x00")
     assert len(threshold) == 32
@@ -177,13 +181,13 @@ def build_level3_file(
     hw47_53 = struct.pack(">4h", 0, 0, 0, 0) + struct.pack(
         ">hI", compression_flag, uncompressed_size
     )
-    vol_days, vol_secs = _mdate_mtime(VOL_SCAN)
+    vol_days, vol_secs = _mdate_mtime(vol_scan)
     prod_days, prod_secs = _mdate_mtime(PRODUCT_TIME)
 
     pdb = struct.pack(
         ">hiihhhhhhhihi4sh2s32s14sBBiii",
         -1,
-        KLOT_LAT,
+        latitude,
         KLOT_LON,
         KLOT_HEIGHT_FT,
         msg_code,
@@ -593,6 +597,37 @@ class TestDatatree:
     def test_empty_list_rejected(self):
         with pytest.raises(ValueError, match="at least one file"):
             open_nexradlevel3_datatree([])
+
+    def test_mixed_sites_rejected(self, tmp_path):
+        # e.g. LOT and MKX tilts globbed together
+        other = tmp_path / "MKX_N1B"
+        other.write_bytes(
+            build_level3_file(elevation_tenths=9, elevation_num=3, latitude=42968)
+        )
+        files = [self._tilt_file(tmp_path, "N0B", 5, 1), str(other)]
+        with pytest.raises(ValueError, match="different radar sites"):
+            open_nexradlevel3_datatree(files)
+
+    def test_mixed_volumes_rejected(self, tmp_path):
+        later = tmp_path / "N1B_later"
+        later.write_bytes(
+            build_level3_file(
+                elevation_tenths=9,
+                elevation_num=3,
+                vol_scan=datetime(2026, 7, 17, 19, 16, 40),
+            )
+        )
+        files = [self._tilt_file(tmp_path, "N0B", 5, 1), str(later)]
+        with pytest.raises(ValueError, match="different volume scans"):
+            open_nexradlevel3_datatree(files)
+
+    def test_duplicate_tilts_rejected(self, tmp_path):
+        files = [
+            self._tilt_file(tmp_path, "N0B", 5, 1),
+            self._tilt_file(tmp_path, "N0B_copy", 5, 1),
+        ]
+        with pytest.raises(ValueError, match="Duplicate elevation angles"):
+            open_nexradlevel3_datatree(files)
 
 
 def _mutate(buf, offset, data):
