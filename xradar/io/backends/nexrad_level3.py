@@ -791,6 +791,17 @@ class NEXRADLevel3File:
             return leading, None
         return leading, max_val - trailing
 
+    def get_flag_values(self):
+        """Return the raw flag levels (leading and trailing) of the
+        float-scaled decode schemes, consistent with :meth:`get_data`."""
+        leading, valid_max = self.get_flag_counts()
+        flags = list(range(leading))
+        if valid_max is not None:
+            threshold = self.prod_descr["threshold_data"]
+            (max_val,) = struct.unpack(">H", threshold[10:12])
+            flags += list(range(valid_max + 1, max_val + 1))
+        return flags
+
     def get_data(self):
         """Return decoded physical values as float32 with NaN for
         below-threshold/missing bins."""
@@ -898,19 +909,24 @@ def _build_l3_sweep(
     else:
         moment_data = fdata.get_data_raw()
         data_attrs = _moment_attributes(spec.moment, mask_and_scale)
-        data_attrs["_FillValue"] = 0
         scale_offset = fdata.get_scale_offset()
-        if scale_offset is not None:
+        if scale_offset is None:
+            data_attrs["_FillValue"] = 0
+        else:
             data_attrs["scale_factor"], data_attrs["add_offset"] = scale_offset
-            if spec.decode != "linear_hw":
-                leading, valid_max = fdata.get_flag_counts()
-            else:
-                leading, valid_max = 2, None
-            # valid_min/max are in packed (raw) units so CF-aware decoders
-            # mask flag levels (below-threshold, range-folded) too
+            # same flag levels as the decoded path (get_data); valid_min/max
+            # in packed (raw) units for CF, and the flag levels as
+            # _FillValue/missing_value, as xarray's decode_cf ignores the
+            # valid range. No leading flags (e.g. DPR): raw 0 is a value.
+            leading, valid_max = fdata.get_flag_counts()
             data_attrs["valid_min"] = leading
             if valid_max is not None:
                 data_attrs["valid_max"] = valid_max
+            flags = fdata.get_flag_values()
+            if flags:
+                data_attrs["_FillValue"] = flags[0]
+            if len(flags) > 1:
+                data_attrs["missing_value"] = np.array(flags, dtype=moment_data.dtype)
         if fdata.get_range_folded() is not None:
             data_attrs["range_folded_raw_value"] = 1
         range_folded = None

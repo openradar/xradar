@@ -785,6 +785,61 @@ class TestMalformedAndEdges:
         assert attrs["valid_max"] == 254
         assert attrs["range_folded_raw_value"] == 1
 
+    @pytest.mark.parametrize(
+        ("msg_code", "moment", "values", "threshold", "packet"),
+        [
+            # DPR: no flag levels, raw 0 is a zero rain rate
+            (
+                176,
+                "RATE",
+                [0, 100, 400],
+                _flag_threshold(1000.0, 0.0, max_val=65535, leading=0),
+                "xdr",
+            ),
+            # linear halfword product with a trailing flag level
+            (
+                153,
+                "DBZH",
+                [0, 1, 130, 254, 255],
+                _flag_threshold(0.5, -33.0, max_val=255, leading=2, trailing=1),
+                "radial",
+            ),
+            # float-scaled product with leading and trailing flags
+            (
+                159,
+                "ZDR",
+                [0, 1, 130, 254, 255],
+                _flag_threshold(16.0, 128.0, max_val=255, leading=2, trailing=1),
+                "radial",
+            ),
+        ],
+    )
+    def test_mask_and_scale_false_decode_cf(
+        self, tmp_path, msg_code, moment, values, threshold, packet
+    ):
+        # raw output decoded with xarray gives the same values as the
+        # decoded path (xarray's decode_cf ignores valid_min/valid_max)
+        nbins = len(values)
+        if packet == "xdr":
+            raw = np.tile(np.array(values, dtype="u2"), (4, 1))
+            packet = _generic_packet28(4, nbins, raw)
+        else:
+            raw = np.tile(np.array(values, dtype="u1"), (4, 1))
+            packet = _radial_packet16(4, nbins, raw)
+        path = tmp_path / f"raw_{msg_code}"
+        path.write_bytes(
+            build_level3_file(msg_code=msg_code, packet=packet, threshold=threshold)
+        )
+        decoded = xr.open_dataset(str(path), engine="nexradlevel3")[moment]
+        raw_ds = xr.open_dataset(str(path), engine="nexradlevel3", mask_and_scale=False)
+        np.testing.assert_allclose(
+            xr.decode_cf(raw_ds)[moment].values, decoded.values, rtol=1e-6
+        )
+        if msg_code == 176:
+            # zero rain rate is not masked
+            assert "_FillValue" not in raw_ds[moment].attrs
+            assert decoded.values[0, 0] == 0.0
+
     def test_reindex_angle_synthetic(self, tmp_path):
         path = tmp_path / "reindex_file"
         path.write_bytes(build_level3_file())
