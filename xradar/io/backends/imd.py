@@ -64,6 +64,7 @@ from ...model import (
 from .common import (
     _STATION_VARS,
     _apply_site_as_coords,
+    _compose_docstring,
     _get_subgroup,
 )
 
@@ -421,6 +422,10 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         "Open India Meteorological Department (IMD) radar NetCDF files in Xarray"
     )
     url = "https://xradar.rtfd.io/en/latest/io.html#imd"
+    # True even though IMD files contain no native groups: enables
+    # `xr.open_datatree(file, engine="imd")` to materialize the synthetic
+    # `/` + `/sweep_0` CfRadial2 layout from the single-sweep file.
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -461,6 +466,71 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         ds._close = store.close
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=False,
+        first_dim="auto",
+        reindex_angle=False,
+        site_as_coords=True,
+        optional_groups=False,
+        **kwargs,
+    ):
+        """Open a single IMD sweep file as a dict of CfRadial2 group datasets.
+
+        Single-file only. For multi-file IMD volumes (one sweep per file),
+        use :func:`open_imd_datatree` with a list of paths.
+        """
+        return _build_single_imd_dtree_dict(
+            filename_or_obj,
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            first_dim=first_dim,
+            reindex_angle=reindex_angle,
+            site_as_coords=site_as_coords,
+            optional_groups=optional_groups,
+            **kwargs,
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
+
+_IMD_PARAMS_DOC = """
+    reindex_angle : bool or dict, optional
+        Resample rays onto a regular angular grid. See
+        :func:`xradar.util.reindex_angle`. Defaults to ``False``.
+    site_as_coords : bool, optional
+        Attach ``latitude``/``longitude``/``altitude`` as coords on the
+        sweep dataset. (Note: IMD uses the legacy ``site_as_coords``
+        spelling rather than ``site_coords`` — kept for backward
+        compatibility.) Defaults to ``True``.
+"""
+
+IMDBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a single IMD (India Meteorological Department) NetCDF file as a\n"
+    "    CfRadial2-shaped dict of group datasets. Single-file only — for\n"
+    "    multi-file IMD volumes use :func:`open_imd_datatree`.",
+    _IMD_PARAMS_DOC,
+)
+IMDBackendEntrypoint.open_datatree.__doc__ = (
+    "Open a single IMD NetCDF file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def _read_imd_sweep(filename, first_dim="auto", reindex_angle=False, **kwargs):
     """Open one IMD file and return a CfRadial2 sweep Dataset.
@@ -468,17 +538,21 @@ def _read_imd_sweep(filename, first_dim="auto", reindex_angle=False, **kwargs):
     Avoids the xarray entrypoint registry so this works even when the
     ``imd`` engine has not been installed via pip entrypoints.
     """
-    ds = xr.open_dataset(
+    raw = xr.open_dataset(
         filename,
         engine="netcdf4",
         decode_timedelta=kwargs.pop("decode_timedelta", False),
         **kwargs,
     )
-    ds = _conform_imd_sweep(ds, first_dim=first_dim, site_as_coords=False)
+    # Preserve the file-handle closer across the rename/assign chain so the
+    # returned dataset can be closed by the caller.
+    close = raw._close
+    ds = _conform_imd_sweep(raw, first_dim=first_dim, site_as_coords=False)
     if reindex_angle is not False:
         ds = ds.pipe(util.remove_duplicate_rays)
         ds = ds.pipe(util.reindex_angle, **reindex_angle)
         ds = ds.pipe(util.ipol_time, **reindex_angle)
+    ds.set_close(close)
     return ds
 
 
@@ -541,7 +615,7 @@ def _build_imd_root(sweeps):
     return root
 
 
-def _open_single_imd_datatree(
+def _build_single_imd_dtree_dict(
     filename,
     first_dim="auto",
     reindex_angle=False,
@@ -549,7 +623,7 @@ def _open_single_imd_datatree(
     optional_groups=False,
     **kwargs,
 ):
-    """Build a single-sweep CfRadial2 DataTree from one IMD NetCDF file."""
+    """Build the dict[str, Dataset] for a single-sweep IMD volume."""
     sweep_ds = _read_imd_sweep(
         filename, first_dim=first_dim, reindex_angle=reindex_angle, **kwargs
     )
@@ -571,7 +645,12 @@ def _open_single_imd_datatree(
     sw = _apply_site_as_coords(sw, site_as_coords)
     sw.attrs = {}
     dtree["/sweep_0"] = sw
-    return DataTree.from_dict(dtree)
+    return dtree
+
+
+def _open_single_imd_datatree(filename, **kwargs):
+    """Build a single-sweep CfRadial2 DataTree from one IMD NetCDF file."""
+    return DataTree.from_dict(_build_single_imd_dtree_dict(filename, **kwargs))
 
 
 def open_imd_datatree(filename_or_obj, **kwargs):
@@ -586,6 +665,15 @@ def open_imd_datatree(filename_or_obj, **kwargs):
       is delegated to :func:`xradar.util.create_volume`, which sorts
       sweeps by time and supports ``time_coverage_start``,
       ``time_coverage_end``, ``min_angle``, ``max_angle`` filtering.
+
+    .. note::
+
+        When opening a single IMD sweep file as a DataTree, prefer
+        ``xd.open_datatree(file, engine="imd")`` (or the xarray-native
+        ``xr.open_datatree(file, engine="imd")``). This function remains
+        the documented API for the multi-file path because IMD volumes
+        span multiple files, which the ``engine="imd"`` registry entry
+        does not support.
 
     To split a directory of mixed-volume files into per-volume groups,
     use :func:`group_imd_files` first::

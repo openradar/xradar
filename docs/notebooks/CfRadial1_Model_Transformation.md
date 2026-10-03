@@ -203,7 +203,7 @@ xradar provides two easy ways to retrieve the CfRadial1 data as CfRadial2 groups
 This is the most complete representation as a DataTree. All groups and subgroups are represented in a tree-like structure. Can be parameterized using kwargs. Easy write to netCDF4.
 
 ```{code-cell}
-dtree = xd.io.open_cfradial1_datatree(filename, optional_groups=True)
+dtree = xd.open_datatree(filename, engine="cfradial1", optional_groups=True)
 with xr.set_options(display_expand_data_vars=True, display_expand_attrs=True):
     display(dtree)
 ```
@@ -247,7 +247,7 @@ for grp in dtree.groups:
 #### Roundtrip with `xradar.io.to_cfradial2`
 
 ```{code-cell}
-dtree3 = xd.io.open_cfradial1_datatree(filename, optional_groups=True)
+dtree3 = xd.open_datatree(filename, engine="cfradial1", optional_groups=True)
 ```
 
 ```{code-cell}

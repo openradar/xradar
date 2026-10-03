@@ -83,11 +83,16 @@ help(xd.io.open_imd_datatree)
 ### Single sweep
 
 ```{code-cell}
-dtree = xd.io.open_imd_datatree(filename_sweep_0)
+dtree = xd.open_datatree(filename_sweep_0, engine="imd")
 display(dtree)
 ```
 
 ### Volume from multiple files
+
+`xd.open_datatree(..., engine="imd")` takes a single file. To assemble a
+full IMD volume from a list of per-sweep files, use the dedicated
+`xd.io.open_imd_datatree` function (the documented multi-file carve-out
+from the engine API).
 
 ```{code-cell}
 dtree = xd.io.open_imd_datatree(volume_files)

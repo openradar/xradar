@@ -670,6 +670,8 @@ def test_open_furuno_datatree(furuno_scn_file):
     assert "altitude" in dtree.ds.coords
     assert "latitude" not in dtree.ds.data_vars
 
+    # Station vars (latitude/longitude/altitude) live as coordinates on the
+    # root only; per-sweep datasets do not duplicate them.
     assert len(dtree[sample_sweep].variables) == 18
     assert dtree[sample_sweep]["DBZH"].shape == (360, 602)
     assert len(dtree.attrs) == 9

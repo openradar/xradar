@@ -3,7 +3,7 @@ dask
 h5netcdf >= 1.0.0
 h5py >= 3.0.0
 lat_lon_parser
-netCDF4
+netCDF4 >= 1.5.0, != 1.7.3, != 1.7.4
 numpy
 pyproj
 scipy

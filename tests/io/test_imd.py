@@ -90,6 +90,35 @@ def test_open_imd_datatree_volume(imd_volume_files):
         assert int(dtree[sw].ds["sweep_number"].values) == i
 
 
+def test_xr_open_datatree_imd_engine(imd_file):
+    """End-to-end: `xr.open_datatree(file, engine="imd")` returns a DataTree."""
+    import xarray as xr
+
+    dtree = xr.open_datatree(imd_file, engine="imd")
+    assert isinstance(dtree, DataTree)
+    assert "sweep_0" in dtree.children
+
+
+def test_xd_open_datatree_imd_engine(imd_file):
+    """End-to-end: `xd.open_datatree(file, engine="imd")` returns a DataTree."""
+    import xradar as xd
+
+    dtree = xd.open_datatree(imd_file, engine="imd")
+    assert isinstance(dtree, DataTree)
+    assert "sweep_0" in dtree.children
+
+
+def test_open_imd_datatree_no_futurewarning(imd_volume_files):
+    """The multi-file `open_imd_datatree` carve-out must not emit FutureWarning."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        open_imd_datatree(imd_volume_files)
+    future = [w for w in captured if issubclass(w.category, FutureWarning)]
+    assert future == [], f"open_imd_datatree must not warn: {future}"
+
+
 def test_open_imd_datatree_angle_filter(imd_volume_files):
     """min_angle/max_angle forwarded to util.create_volume."""
     # Load first to learn the actual angles, then filter to just the lowest.

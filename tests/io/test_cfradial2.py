@@ -77,7 +77,14 @@ def test_open_cfradial2_roundtrip(cfradial1_file, temp_file):
     assert isinstance(dtree2, xr.DataTree)
     assert "sweep_0" in dtree2.children
     assert "DBZ" in dtree2["sweep_0"].data_vars
-    xr.testing.assert_equal(dtree["sweep_0"].ds["DBZ"], dtree2["sweep_0"].ds["DBZ"])
+    # cfradial1 attaches station coords to each sweep; cfradial2 places them
+    # at root only. Drop them on the left so the DBZ comparison succeeds.
+    expected = (
+        dtree["sweep_0"]
+        .ds["DBZ"]
+        .drop_vars(["latitude", "longitude", "altitude"], errors="ignore")
+    )
+    xr.testing.assert_equal(expected, dtree2["sweep_0"].ds["DBZ"])
     assert "latitude" in dtree2.ds.coords
     assert dtree2.ds["latitude"].attrs["standard_name"] == "latitude"
     assert (
@@ -137,6 +144,33 @@ def test_open_cfradial2_normalizes_common_aliases(temp_file):
 def test_open_cfradial2_invalid_path():
     with pytest.raises(FileNotFoundError):
         xd.io.open_cfradial2_datatree("missing-cfradial2-file.nc")
+
+
+def test_open_dataset_sweep_group(cfradial2_file):
+    """`xr.open_dataset(engine="cfradial2", group="sweep_0")` returns a normalized sweep."""
+    ds = xr.open_dataset(cfradial2_file, engine="cfradial2", group="sweep_0")
+    assert "azimuth" in ds.coords
+    assert "range" in ds.coords
+
+
+def test_open_dataset_missing_group_raises(cfradial2_file):
+    """`xr.open_dataset(engine="cfradial2", group="sweep_99")` raises ValueError."""
+    with pytest.raises(ValueError, match="missing from file"):
+        xr.open_dataset(cfradial2_file, engine="cfradial2", group="sweep_99")
+
+
+def test_xr_open_datatree_cfradial2_engine(cfradial2_file):
+    """End-to-end: `xr.open_datatree(file, engine="cfradial2")` returns a DataTree."""
+    dtree = xr.open_datatree(cfradial2_file, engine="cfradial2")
+    assert isinstance(dtree, xr.DataTree)
+    assert any(name.startswith("sweep_") for name in dtree.children)
+
+
+def test_xd_open_datatree_cfradial2_engine(cfradial2_file):
+    """End-to-end: `xd.open_datatree(file, engine="cfradial2")` returns a DataTree."""
+    dtree = xd.open_datatree(cfradial2_file, engine="cfradial2")
+    assert isinstance(dtree, xr.DataTree)
+    assert any(name.startswith("sweep_") for name in dtree.children)
 
 
 @pytest.mark.parametrize(
