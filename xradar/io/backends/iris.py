@@ -3732,9 +3732,9 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
         ing_conf = self.ingest_header["ingest_configuration"]
         lon = ing_conf["longitude_radar"]
         lat = ing_conf["latitude_radar"]
+        # BIN4 binary angles are decoded to [0, 360), fold into [-180, 180]
         lon = lon if lon <= 180 else lon - 360
-        # todo: is this correct for southern latitudes?
-        lat = lat if lat <= 180 else lon - 360
+        lat = lat if lat <= 180 else lat - 360
 
         return (
             lon,
