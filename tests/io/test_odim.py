@@ -411,6 +411,13 @@ def test_open_odim_datatree_how_calibration(odim_file, tmp_path):
     with open(path, "rb") as fh:
         dtree = open_odim_datatree(fh, optional_groups=True)
     np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 70.0)
+    import io
+
+    with open(path, "rb") as fh:
+        buf = io.BytesIO(fh.read())
+    dtree = open_odim_datatree(buf, optional_groups=True)
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 70.0)
+    assert buf.tell() == 0
 
 
 @pytest.mark.parametrize("layout", ["fmi", "odim"])
