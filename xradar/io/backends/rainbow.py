@@ -33,6 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
+import os
 import sys
 import zlib
 
@@ -415,6 +416,8 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -717,23 +720,18 @@ class RainbowStore(AbstractDataStore):
         timestr = f"{dstr}T{tstr}Z"
         time = dt.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
-        # range is in km
-        start_range = self.root._get_rbdict_value(
-            var, "startrange", default=0, dtype=float
-        )
-        start_range *= 1000.0
-
-        stop_range = self.root._get_rbdict_value(var, "stoprange", dtype=float)
-        stop_range *= 1000.0
+        # range is in km, start of the first range bin; the tag is
+        # `start_range`, older files might use `startrange`
+        start_range = self.root._get_rbdict_value(var, "start_range")
+        if start_range is None:
+            start_range = self.root._get_rbdict_value(var, "startrange", default=0)
+        start_range = float(start_range) * 1000.0
 
         range_step = self.root._get_rbdict_value(var, "rangestep", dtype=float)
         range_step *= 1000.0
-        rng = np.arange(
-            start_range + range_step / 2,
-            stop_range + range_step / 2,
-            range_step,
-            dtype="float32",
-        )[: int(var["slicedata"]["rawdata"]["@bins"])]
+        # bin centers
+        nbins = int(var["slicedata"]["rawdata"]["@bins"])
+        rng = (start_range + range_step * (np.arange(nbins) + 0.5)).astype("float32")
 
         range_attrs = get_range_attrs(rng)
 
