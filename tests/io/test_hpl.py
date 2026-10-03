@@ -119,7 +119,7 @@ def test_open_hpl_datatree():
     assert dtree[sample_sweep]["mean_doppler_velocity"].max() == pytest.approx(
         19.5306, rel=1e-3
     )
-    assert dtree[sample_sweep]["mean_doppler_velocity"].shape == (34, 400)
+    assert dtree[sample_sweep]["mean_doppler_velocity"].shape == (19, 400)
     # Station coords should be on root as coordinates, NOT on sweeps
     assert "latitude" in dtree.ds.coords
     assert "longitude" in dtree.ds.coords

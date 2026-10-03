@@ -9,6 +9,25 @@ import numpy as np
 from xradar import model
 
 
+def test_get_range_attrs_with_float32_precision():
+    rng = np.arange(
+        37.500034,
+        75.000034 * 8000,
+        75.000034,
+        dtype="float32",
+    )
+    range_attrs = model.get_range_attrs(rng)
+    assert range_attrs == {
+        "units": "meters",
+        "standard_name": "projection_range_coordinate",
+        "long_name": "range_to_measurement_volume",
+        "axis": "radial_range_coordinate",
+        "meters_between_gates": np.float32(75.00003),
+        "spacing_is_constant": "true",
+        "meters_to_center_of_first_gate": np.float32(37.500034),
+    }
+
+
 # todo: possibly use fixtures here
 def test_create_sweep_dataset():
     # default setup (360, 1000)

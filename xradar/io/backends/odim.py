@@ -493,6 +493,9 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
         )
+        # producer-specific legend string (e.g. "64:NONMET,72:..."), kept as is
+        if "legend" in what:
+            attrs["legend"] = _maybe_decode(what["legend"])
         return attrs
 
     @property
@@ -687,17 +690,46 @@ class OdimSubStore(AbstractDataStore):
         return self.root.coordinates
 
     def get_variables(self):
-        return FrozenDict(
-            (k1, v1)
-            for k1, v1 in {
-                **dict(
-                    [
-                        self.open_store_variable(k, v)
-                        for k, v in self.ds.variables.items()
-                    ]
-                ),
-            }.items()
-        )
+        variables = {}
+        legend = None
+        for k, v in self.ds.variables.items():
+            # compound-dtype legend table (code, class) of classification
+            # quality groups (ODIM_H5 2.4), not ray data (#395)
+            if k == "legend" and v.dtype.names is not None:
+                legend = v[...]
+                continue
+            name, var = self.open_store_variable(k, v)
+            variables[name] = var
+        if legend is not None:
+            _add_legend_flag_attrs(variables, legend)
+        return FrozenDict(variables)
+
+
+def _add_legend_flag_attrs(variables, legend):
+    """Add ODIM legend table as CF flag attributes to the group's data variable.
+
+    ODIM_H5 2.3/2.4 (Section 6.2) define the legend as compound dataset
+    ``{char[64] key; char[32] value}`` with ``key`` the class name and
+    ``value`` the data value as string. Some producers (e.g. FMI) write
+    ``{int code; string class}`` instead; both layouts are handled.
+    """
+
+    def _str(x):
+        return x.decode() if isinstance(x, bytes) else str(x)
+
+    names = legend.dtype.names
+    if {"key", "value"} <= set(names):
+        codes, classes = legend["value"], legend["key"]
+    else:
+        codes, classes = (legend[field] for field in names[:2])
+    codes = np.array([float(_str(c)) for c in codes])
+    if np.all(codes == np.round(codes)):
+        codes = codes.astype("int64")
+    meanings = [_str(c).strip().replace(" ", "_") for c in classes]
+    for var in variables.values():
+        if var.ndim == 2:
+            var.attrs["flag_values"] = codes
+            var.attrs["flag_meanings"] = " ".join(meanings)
 
 
 class OdimStore(AbstractDataStore):
