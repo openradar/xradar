@@ -704,6 +704,17 @@ class TestMalformedAndEdges:
         xdr = _Level3XDRParser(packet[8:])()
         assert len(xdr["components"]) == 2
         assert len(xdr["components"][0].radials) == 2
+        # through the file reader (crashed with AttributeError before)
+        buf = build_level3_file(msg_code=176, packet=packet)
+        f = NEXRADLevel3File(io.BytesIO(buf))
+        assert f.raw_data.shape == (2, 2)
+
+    def test_xdr_no_components(self):
+        data = np.tile(np.array([1, 2], dtype="u2"), (2, 1))
+        packet = _generic_packet28(2, 2, data, ncomponents=0)
+        buf = build_level3_file(msg_code=176, packet=packet)
+        with pytest.raises(ValueError, match="without radial component"):
+            NEXRADLevel3File(io.BytesIO(buf))
 
     def test_context_manager(self):
         with NEXRADLevel3File(build_level3_file()) as f:

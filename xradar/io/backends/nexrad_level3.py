@@ -391,8 +391,6 @@ class _Level3XDRParser(_XDRUnpacker):
                 raise NotImplementedError(f"Unknown XDR component: {code}")
             if i < num - 1:
                 self.unpack_int()  # list "pointer"
-        if num == 1:
-            ret = ret[0]
         return ret
 
     def _unpack_radial(self):
@@ -678,7 +676,11 @@ class NEXRADLevel3File:
             self.gen_data_pack = parser()
         except struct.error as err:
             raise ValueError("Truncated or corrupt generic data packet (XDR).") from err
-        component = self.gen_data_pack["components"]
+        components = self.gen_data_pack["components"]
+        if not components:
+            raise ValueError("Generic data packet (XDR) without radial component.")
+        # the products read here (176, 177) carry one radial component
+        component = components[0]
 
         radials = component.radials
         nradials = len(radials)
