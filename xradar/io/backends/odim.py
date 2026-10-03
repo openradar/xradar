@@ -220,6 +220,117 @@ _ODIM_SOURCE_TO_GLOBAL_ATTRS = {
 }
 
 
+# ODIM_H5 how-attributes which have the same units in ODIM_H5 2.2, 2.3 and 2.4
+# (ODIM_H5 2.4 Table 8) and their xradar names (CfRadial 2.1 Sections 7.1, 7.3)
+# name: (group, xradar name, factor, attributes)
+_ODIM_HOW_TO_METADATA = {
+    "beamwH": (
+        "radar_parameters",
+        "radar_beam_width_h",
+        1,
+        dict(units="degrees", long_name="half-power beam width, H polarization"),
+    ),
+    "beamwV": (
+        "radar_parameters",
+        "radar_beam_width_v",
+        1,
+        dict(units="degrees", long_name="half-power beam width, V polarization"),
+    ),
+    "antgainH": (
+        "radar_parameters",
+        "radar_antenna_gain_h",
+        1,
+        dict(units="dB", long_name="antenna gain, H polarization"),
+    ),
+    "antgainV": (
+        "radar_parameters",
+        "radar_antenna_gain_v",
+        1,
+        dict(units="dB", long_name="antenna gain, V polarization"),
+    ),
+    "radconstH": (
+        "radar_calibration",
+        "radar_constant_h",
+        1,
+        dict(units="dB", long_name="radar constant, H channel"),
+    ),
+    "radconstV": (
+        "radar_calibration",
+        "radar_constant_v",
+        1,
+        dict(units="dB", long_name="radar constant, V channel"),
+    ),
+    # system noise as reflectivity at 1 km
+    "NEZH": (
+        "radar_calibration",
+        "base_1km_hc",
+        1,
+        dict(units="dBZ", long_name="reflectivity at 1 km for SNR = 0 dB, H co-pol"),
+    ),
+    "NEZV": (
+        "radar_calibration",
+        "base_1km_vc",
+        1,
+        dict(units="dBZ", long_name="reflectivity at 1 km for SNR = 0 dB, V co-pol"),
+    ),
+    # one-way radome loss in ODIM, two-way in CfRadial
+    "radomelossH": (
+        "radar_calibration",
+        "two_way_radome_loss_h",
+        2,
+        dict(units="dB", long_name="two-way radome loss, H polarization"),
+    ),
+    "radomelossV": (
+        "radar_calibration",
+        "two_way_radome_loss_v",
+        2,
+        dict(units="dB", long_name="two-way radome loss, V polarization"),
+    ),
+}
+
+
+def _get_odim_how_metadata(filename_or_obj, sweep):
+    """Get radar_parameters and radar_calibration from ODIM how-groups.
+
+    The top-level ``/how`` is updated with the ``how`` of the dataset of the
+    given sweep, as dataset-level attributes apply to that dataset.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path or file-like
+    sweep : str
+        Sweep group name (``sweep_N``) to take dataset-level attributes from.
+
+    Returns
+    -------
+    groups : dict
+        ``{"radar_parameters": xr.Dataset, "radar_calibration": xr.Dataset}``
+    """
+    dataset = f"dataset{int(sweep.split('_')[-1]) + 1}"
+    how = {}
+    with h5netcdf.File(filename_or_obj, "r", decode_vlen_strings=True) as fh:
+        for path in ["how", f"{dataset}/how"]:
+            if path in fh:
+                how.update(fh[path].attrs)
+    if isinstance(filename_or_obj, io.BytesIO):
+        filename_or_obj.seek(0)
+
+    # ODIM_H5 2.2/2.3 `beamwidth` (deprecated in 2.4) applies to both
+    if "beamwidth" in how:
+        how.setdefault("beamwH", how["beamwidth"])
+        how.setdefault("beamwV", how["beamwidth"])
+
+    groups = {"radar_parameters": {}, "radar_calibration": {}}
+    for odim_name, (group, name, factor, attrs) in _ODIM_HOW_TO_METADATA.items():
+        value = how.get(odim_name)
+        if value is None or np.size(value) != 1:
+            continue
+        groups[group][name] = xr.DataArray(
+            float(np.ravel(value)[0]) * factor, attrs=attrs
+        )
+    return {group: xr.Dataset(data_vars) for group, data_vars in groups.items()}
+
+
 def _parse_odim_source(source):
     """Parse ODIM /what/source string like 'K1:V1,K2:V2' into a dict."""
     if source is None:
@@ -1026,12 +1137,18 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        how = _get_odim_how_metadata(filename_or_obj, sweeps[0])
+        dtree["/radar_parameters"] = xr.merge(
+            [_get_subgroup(ls_ds, radar_parameters_subgroup), how["radar_parameters"]]
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
+        dtree["/radar_calibration"] = xr.merge(
+            [
+                _get_radar_calibration(ls_ds, radar_calibration_subgroup),
+                how["radar_calibration"],
+            ]
         )
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)

@@ -349,6 +349,70 @@ def test_open_odim_datatree_optional_groups(odim_file):
     assert "radar_calibration" in dtree.children
 
 
+def test_open_odim_datatree_how_metadata(odim_file, odim_file2):
+    # ODIM_H5 2.2: beamwH/beamwV in /how
+    dtree = open_odim_datatree(odim_file, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 0.896)
+    np.testing.assert_allclose(params.radar_beam_width_v, 0.896)
+    assert params.radar_beam_width_h.attrs["units"] == "degrees"
+    # ODIM_H5 2.2/2.3: single beamwidth for both polarizations
+    dtree = open_odim_datatree(odim_file2, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 0.95)
+    np.testing.assert_allclose(params.radar_beam_width_v, 0.95)
+
+
+def test_open_odim_datatree_how_calibration(odim_file, tmp_path):
+    import shutil
+
+    import h5py
+
+    path = tmp_path / "odim_how.h5"
+    shutil.copy(odim_file, path)
+    with h5py.File(path, "a") as f:
+        how = f["how"].attrs
+        how.update(
+            dict(
+                antgainH=45.8,
+                antgainV=45.6,
+                radconstH=68.3,
+                radconstV=68.5,
+                NEZH=-44.0,
+                NEZV=-44.2,
+                radomelossH=0.2,
+                radomelossV=0.25,
+                pulsewidth=2.0,
+            )
+        )
+        # dataset-level how takes precedence for that dataset
+        f["dataset1/how"].attrs["radconstH"] = 70.0
+        f["dataset2/how"].attrs["radconstH"] = 71.0
+
+    dtree = open_odim_datatree(path, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_antenna_gain_h, 45.8)
+    np.testing.assert_allclose(params.radar_antenna_gain_v, 45.6)
+    calib = dtree["radar_calibration"].ds
+    np.testing.assert_allclose(calib.radar_constant_h, 70.0)
+    np.testing.assert_allclose(calib.radar_constant_v, 68.5)
+    np.testing.assert_allclose(calib.base_1km_hc, -44.0)
+    np.testing.assert_allclose(calib.base_1km_vc, -44.2)
+    # one-way radome loss in ODIM, two-way in CfRadial
+    np.testing.assert_allclose(calib.two_way_radome_loss_h, 0.4)
+    np.testing.assert_allclose(calib.two_way_radome_loss_v, 0.5)
+    # units differ between ODIM versions, not mapped
+    assert "pulse_width" not in calib
+
+    dtree = open_odim_datatree(path, optional_groups=True, sweep=[1])
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 71.0)
+
+    # file-like objects
+    with open(path, "rb") as fh:
+        dtree = open_odim_datatree(fh, optional_groups=True)
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 70.0)
+
+
 @pytest.mark.parametrize("layout", ["fmi", "odim"])
 def test_open_odim_quality_legend(odim_file, tmp_path, layout):
     # quality groups with compound-dtype legend tables must not be merged as
