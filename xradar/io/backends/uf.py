@@ -496,7 +496,7 @@ UF_FIELD_HEADER = OrderedDict(
         ("PulseWidth", SINT2),  # Pulse width in meters
         ("BeamWidthH", BIN2),  # Horizontal Beam width in 1/64 of degree
         ("BeamWidthV", BIN2),
-        ("BandWidth", BIN2),  # Receiver bandwidth in 1/64 Mhz
+        ("BandWidth", SINT2),  # Receiver bandwidth in MHz
         ("Polarization", SINT2),
         ("WaveLength", BIN2),  # Wavelength in 1/64 of a cm
         ("SampleSize", SINT2),  # Sample size
@@ -810,6 +810,39 @@ class UFBackendEntrypoint(BackendEntrypoint):
         return ds
 
 
+def _get_uf_radar_parameters(filename, sweep):
+    """Get radar_parameters from the field header of the first ray of a sweep.
+
+    UF field header words 8-10: beam widths (degrees x 64) and receiver
+    bandwidth (MHz), see https://www.eol.ucar.edu/content/standard-data-formats.
+    """
+    with UFFile(filename, loaddata=False) as ufh:
+        # same mapping as UFStore: sweep_N -> UF sweep number N + 1
+        sweep_number = int(sweep.split("_")[-1]) + 1
+        fields = ufh.ray_headers[sweep_number][0]["dhead"]["fields"]
+        header = next(iter(fields.values()), {})
+
+    params = {}
+    for pol, name in [("h", "BeamWidthH"), ("v", "BeamWidthV")]:
+        value = header.get(name)
+        if value is not None and value > 0:
+            params[f"radar_beam_width_{pol}"] = xr.DataArray(
+                float(value),
+                attrs=dict(
+                    units="degrees",
+                    long_name=f"beam width, {pol.upper()} polarization",
+                ),
+            )
+    # missing values are written as -9999 or 0
+    bandwidth = header.get("BandWidth")
+    if bandwidth is not None and bandwidth > 0:
+        params["radar_receiver_bandwidth"] = xr.DataArray(
+            bandwidth * 1e6,
+            attrs=dict(units="s-1", long_name="bandwidth of radar receiver"),
+        )
+    return xr.Dataset(params)
+
+
 def open_uf_datatree(
     filename_or_obj,
     mask_and_scale=True,
@@ -946,7 +979,12 @@ def open_uf_datatree(
     root, ls_ds = _assign_root(ls_ds)
     dtree: dict = {"/": root}
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        dtree["/radar_parameters"] = xr.merge(
+            [
+                _get_subgroup(ls_ds, radar_parameters_subgroup),
+                _get_uf_radar_parameters(filename_or_obj, sweeps[0]),
+            ]
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
