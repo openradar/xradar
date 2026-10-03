@@ -3671,6 +3671,12 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 kw.update({"nyquist": nyquist})
 
             return prod["func"](data, **kw)
+        elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
+            # 8-bit types without decoding function (e.g. DB_HCLASS): two
+            # range bins per 16-bit word, like the scaled 8-bit types above
+            # (DB_XHDR is already decoded into its structure)
+            rays, bins = data.shape
+            return data.view(f"(2,) {prod['dtype']}").reshape(rays, -1)[:, :bins]
         else:
             return data
 
@@ -3781,6 +3787,9 @@ class IrisArrayWrapper(BackendArray):
         prod = [v for v in datastore.root.data_types_dict if v["name"] == name]
         if prod and prod[0]["func"] is None:
             self.dtype = np.dtype("int16")
+            # 8-bit types are unpacked to one value per range bin
+            if get_dtype_size(prod[0].get("dtype", "int16")) == 1:
+                self.dtype = np.dtype(prod[0]["dtype"])
         if name == "DB_XHDR":
             self.dtype = np.dtype("O")
         if name in ["azimuth", "elevation"]:

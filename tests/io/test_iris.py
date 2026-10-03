@@ -423,6 +423,29 @@ def test_first_loaded_moment_aligned_with_others(iris0_file):
         ), f"DBZH is row-rotated relative to {moment}"
 
 
+def test_iris_8bit_without_decoding(iris0_file):
+    # DB_HCLASS (type 55) holds two 8-bit classes per 16-bit word, which were
+    # returned as packed int16 words (#390)
+    with open_dataset(
+        iris0_file, engine="iris", group="sweep_0", first_dim="time"
+    ) as ds:
+        hclass = ds.DB_HCLASS
+        assert hclass.dtype == np.uint8
+        assert hclass.shape == ds.DBZH.shape
+        values = hclass.values
+
+    raw = iris.IrisRawFile(iris0_file, rawdata=True)
+    raw.get_moment(1, "DB_HCLASS")
+    words = raw.data[1]["sweep_data"]["DB_HCLASS"]
+    expected = words.view("(2,)uint8").reshape(words.shape[0], -1)[:, : values.shape[1]]
+    np.testing.assert_array_equal(
+        np.sort(values, axis=None), np.sort(expected, axis=None)
+    )
+    # classes, no packed words
+    assert values.max() < 256
+    assert {0, 9, 17}.issubset(np.unique(values))
+
+
 @pytest.mark.parametrize(
     "lon, lat, expected",
     [
