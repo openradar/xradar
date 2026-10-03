@@ -256,3 +256,39 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path):
         dtree = src.xradar.to_cfradial2_datatree()
     assert dtree["sweep_1"].ds.sweep_mode.item() == "rhi"
     assert "elevation" in dtree["sweep_1"].ds.dims
+
+
+def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
+    # radar_parameters, radar_calibration and georeferencing_correction are
+    # read with CfRadial2.1 names and must be written back with their
+    # CfRadial1 names (#419)
+    import netCDF4
+
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True)
+    path = tmp_path / "metadata_groups.nc"
+    xd.io.to_cfradial1(dtree, path)
+
+    def metadata(nc):
+        return {
+            v
+            for v in nc.variables
+            if v.startswith(("r_calib_", "radar_")) or v.endswith("_correction")
+        }
+
+    with netCDF4.Dataset(cfradial1_file) as src, netCDF4.Dataset(path) as out:
+        assert metadata(out) == metadata(src)
+        for name in [
+            "r_calib_base_dbz_1km_hc",
+            "radar_rx_bandwidth",
+            "altitude_correction",
+            "eastward_velocity_correction",
+        ]:
+            np.testing.assert_allclose(out[name][:], src[name][:])
+
+
+def test_cfradial1_unknown_calibration_names():
+    # variables on the r_calib dimension with non-standard names must not
+    # break reading the radar_calibration group (#419)
+    filename = DATASETS.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
+    dtree = xd.io.open_cfradial1_datatree(filename, optional_groups=True)
+    assert "calibration_constant_hh" in dtree["radar_calibration"].ds
