@@ -135,7 +135,7 @@ def test_open_odim_datatree(odim_file):
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(195.0))
 
     # iterate over subgroups and check some values
-    moments = ["PHIDP", "VRADH", "DBZH", "TH", "ZDR", "RHOHV", "WRADH", "KDP"]
+    moments = ["PHIDP", "VRADH", "DBZH", "DBTH", "ZDR", "RHOHV", "WRADH", "KDP"]
     elevations = [
         0.5,
         0.9,
@@ -203,7 +203,7 @@ def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
         assert dict(ds.sizes) == {dim0: 360, "range": 1200}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
-        ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "TH", "ZDR"}
+        ) == {"WRADH", "VRADH", "PHIDP", "DBZH", "RHOHV", "KDP", "DBTH", "ZDR"}
         assert ds.sweep_number == 0
 
     # open last sweep group
@@ -217,7 +217,7 @@ def test_open_odim_dataset(odim_file, first_dim, fix_second_angle):
         assert dict(ds.sizes) == {dim0: 360, "range": 280}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
-        ) == {"VRADH", "KDP", "WRADH", "TH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
+        ) == {"VRADH", "KDP", "WRADH", "DBTH", "RHOHV", "PHIDP", "ZDR", "DBZH"}
         assert ds.sweep_number == 11
 
 
@@ -790,6 +790,52 @@ def test_odim_optional_how(odim_file2, make_temp_file):
         assert "startazT" not in ds_how
         assert "startelA" not in ds_how
         assert "stopelA" not in ds_how
+
+
+def test_odim_total_power_names(odim_file, tmp_path):
+    # ODIM TH/TV are logged (dBZ, ODIM_H5 2.4 Table 16), which is DBTH/DBTV in
+    # FM301 (Table 301-9), where TH/TV are linear (#109)
+    import shutil
+
+    with xr.open_dataset(odim_file, group="sweep_0", engine="odim") as ds:
+        assert "TH" not in ds
+        assert ds.DBTH.attrs["units"] == "dBZ"
+        assert (
+            ds.DBTH.attrs["standard_name"] == "radar_equivalent_reflectivity_factor_h"
+        )
+        with h5py.File(odim_file) as f:
+            quantities = {
+                f[f"dataset1/{k}/what"].attrs["quantity"].decode(): k
+                for k in f["dataset1"]
+                if k.startswith("data")
+            }
+            gain = f[f"dataset1/{quantities['TH']}/what"].attrs["gain"]
+        # same values as in the file (dBZ, not converted)
+        assert ds.DBTH.encoding["scale_factor"] == gain
+
+    path = tmp_path / "odim_tv.h5"
+    shutil.copy(odim_file, path)
+    with h5py.File(path, "a") as f:
+        f[f"dataset1/{quantities['TH']}/what"].attrs["quantity"] = np.bytes_("TV")
+    with xr.open_dataset(path, group="sweep_0", engine="odim") as ds:
+        assert "DBTV" in ds and "DBTH" not in ds
+        assert ds.DBTV.attrs["units"] == "dBZ"
+
+
+def test_odim_total_power_roundtrip(odim_file, tmp_path):
+    # DBTH is written as ODIM TH again
+    dtree = open_odim_datatree(odim_file, sweep=[0])
+    path = tmp_path / "odim_th.h5"
+    xradar.io.to_odim(dtree, path, source="RAD:AU71")
+    with h5py.File(path) as f:
+        quantities = [
+            f[f"dataset1/{k}/what"].attrs["quantity"].decode()
+            for k in f["dataset1"]
+            if k.startswith("data")
+        ]
+    assert "TH" in quantities and "DBTH" not in quantities
+    dtree2 = open_odim_datatree(path)
+    xr.testing.assert_equal(dtree2["sweep_0"].ds.DBTH, dtree["sweep_0"].ds.DBTH)
 
 
 def test_write_odim_source(rainbow_file2, temp_file):

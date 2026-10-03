@@ -627,9 +627,17 @@ def _get_h5netcdf_encoding(self, var):
     return encoding
 
 
+# ODIM_H5 quantities whose name means something else in FM301/CfRadial2:
+# ODIM TH/TV are logged total (uncorrected) reflectivity in dBZ
+# (ODIM_H5 2.4 Table 16), FM301 TH/TV are linear and DBTH/DBTV logged
+# (FM301 Table 301-9)
+ODIM_TO_FM301_NAMES = {"TH": "DBTH", "TV": "DBTV"}
+
+
 def _get_odim_variable_name_and_attrs(name, attrs):
     if "data" in name:
         name = attrs.pop("quantity")
+        name = ODIM_TO_FM301_NAMES.get(name, name)
         # handle non-standard moment names
         try:
             mapping = sweep_vars_mapping[name]
