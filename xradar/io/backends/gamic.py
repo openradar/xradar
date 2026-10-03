@@ -70,9 +70,9 @@ from .common import (
     _attach_sweep_groups,
     _fix_angle,
     _get_h5group_names,
-    _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _maybe_decode,
     _prepare_backend_ds,
 )
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
@@ -257,6 +257,65 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
+def _get_calibration_from_how(how):
+    """Get calibration parameters from a GAMIC scan how-group.
+
+    GAMIC stores most of them as strings, with the units in ``<name>__unit``.
+    Names are mapped according to ``radar_calibration_subgroup``.
+
+    Returns
+    -------
+    calibration : dict
+        ``{name: (value, attrs)}``
+    """
+    calibration = {}
+    for var, value in dict(how).items():
+        if var not in radar_calibration_subgroup:
+            continue
+        try:
+            value = float(_maybe_decode(value))
+        except (TypeError, ValueError):
+            continue
+        name = radar_calibration_subgroup[var] or var
+        attrs = {}
+        units = how.get(f"{var}__unit")
+        if units is not None:
+            attrs["units"] = _maybe_decode(units)
+        calibration[name] = (value, attrs)
+    return calibration
+
+
+def _get_gamic_how_metadata(filename_or_obj, sweep):
+    """Get radar_parameters and radar_calibration from GAMIC how-groups.
+
+    Beam widths are taken from the top-level ``/how`` (``azimuth_beam``,
+    ``elevation_beam``), calibration from the ``how`` of the given sweep.
+    """
+    scan = f"scan{int(sweep.split('_')[-1])}"
+    with h5netcdf.File(filename_or_obj, "r", decode_vlen_strings=True) as fh:
+        root_how = dict(fh["how"].attrs) if "how" in fh else {}
+        scan_how = dict(fh[f"{scan}/how"].attrs) if f"{scan}/how" in fh else {}
+    if isinstance(filename_or_obj, io.BytesIO):
+        filename_or_obj.seek(0)
+
+    params = {}
+    for gamic_name, pol, direction in [
+        ("azimuth_beam", "h", "azimuth"),
+        ("elevation_beam", "v", "elevation"),
+    ]:
+        value = root_how.get(gamic_name)
+        if value is not None:
+            params[f"radar_beam_width_{pol}"] = xr.DataArray(
+                float(value),
+                attrs=dict(units="degrees", long_name=f"beam width in {direction}"),
+            )
+    calibration = {
+        name: xr.DataArray(value, attrs=attrs)
+        for name, (value, attrs) in _get_calibration_from_how(scan_how).items()
+    }
+    return xr.Dataset(params), xr.Dataset(calibration)
+
+
 class GamicStore(AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
@@ -376,12 +435,10 @@ class GamicStore(AbstractDataStore):
         return FrozenDict(_attributes)
 
     def get_calibration_parameters(self):
-        calib_vars = [
-            var
-            for var in dict(self.root.how).keys()
-            if var in radar_calibration_subgroup
-        ]
-        calibration = {var: self.root.how[var] for var in calib_vars}
+        calibration = {
+            name: value
+            for name, (value, _) in _get_calibration_from_how(self.root.how).items()
+        }
         return FrozenDict(calibration)
 
 
@@ -559,12 +616,13 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
         "/": _get_required_root_dataset(ls_ds, optional=optional),
     }
     if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
+        params, calibration = _get_gamic_how_metadata(filename_or_obj, sweeps[0])
+        dtree["/radar_parameters"] = xr.merge(
+            [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
+        )
         dtree["/georeferencing_correction"] = _get_subgroup(
             ls_ds, georeferencing_correction_subgroup
         )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
+        dtree["/radar_calibration"] = calibration
     dtree = _attach_sweep_groups(dtree, ls_ds)
     return DataTree.from_dict(dtree)
