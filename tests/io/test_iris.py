@@ -7,7 +7,10 @@
 Ported from wradlib.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
+import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import iris, open_iris_datatree
@@ -441,3 +444,29 @@ def test_iris_8bit_without_decoding(iris0_file):
     # classes, no packed words
     assert values.max() < 256
     assert {0, 9, 17}.issubset(np.unique(values))
+
+
+@pytest.mark.parametrize(
+    "lon, lat, expected",
+    [
+        (10.5, 52.3, (10.5, 52.3)),
+        (288.5, 4.6, (-71.5, 4.6)),
+        (151.2, 326.1, (151.2, -33.9)),
+        (300.0, 340.0, (-60.0, -20.0)),
+    ],
+)
+def test_site_coords_fold(lon, lat, expected):
+    # BIN4 angles are decoded to [0, 360), southern latitudes must fold
+    # by latitude, not longitude (#391)
+    obj = SimpleNamespace(
+        ingest_header={
+            "ingest_configuration": {
+                "longitude_radar": lon,
+                "latitude_radar": lat,
+                "altitude_radar": 12300,
+            }
+        }
+    )
+    lon_out, lat_out, alt = iris.IrisRawFile.site_coords.fget(obj)
+    np.testing.assert_allclose((lon_out, lat_out), expected)
+    assert alt == 123.0
