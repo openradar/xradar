@@ -23,6 +23,7 @@ __all__ = [
     "ipol_time",
     "rolling_dim",
     "get_sweep_keys",
+    "dim0",
     "is_sweep",
     "apply_to_sweeps",
     "apply_to_volume",
@@ -505,6 +506,39 @@ def rolling_dim(data, window):
     return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
 
 
+def dim0(obj):
+    """Return the ray dimension (azimuth/elevation/time) of a radar object.
+
+    Taken from :func:`wradlib.util.dim0`.
+
+    Parameters
+    ----------
+    obj : :class:`xarray:xarray.Dataset` or :class:`xarray:xarray.DataArray`
+
+    Returns
+    -------
+    dim0 : str or None
+        ``azimuth`` or ``elevation`` if present, else ``time``. None if
+        ``obj`` has no ``range`` dimension.
+
+    Raises
+    ------
+    ValueError
+        If ``obj`` has a ``range`` dimension, but no ray dimension.
+    """
+    if "range" in obj.dims:
+        if dim0 := set(obj.dims) & {"azimuth", "elevation"}:
+            return dim0.pop()
+        elif "time" in obj.dims:
+            return "time"
+        else:
+            raise ValueError(
+                f"No CfRadial2/FM301 compliant dimension found in {obj.dims!r}. "
+                "Expected one of 'azimuth', 'elevation' or 'time'."
+            )
+    return None
+
+
 def is_sweep(obj, strict=False):
     """Check whether a Dataset holds a radar sweep.
 
@@ -535,10 +569,12 @@ def is_sweep(obj, strict=False):
         obj = obj.to_dataset()
     if not isinstance(obj, xr.Dataset) or "range" not in obj.dims:
         return False
-    ray_dims = [dim for dim in ["time", "azimuth", "elevation"] if dim in obj.dims]
-    if len(ray_dims) != 1:
+    if {"azimuth", "elevation"}.issubset(obj.dims):
         return False
-    ray_dim = ray_dims[0]
+    try:
+        ray_dim = dim0(obj)
+    except ValueError:
+        return False
     for angle in ["azimuth", "elevation"]:
         if angle not in obj.variables or obj[angle].dims != (ray_dim,):
             return False
