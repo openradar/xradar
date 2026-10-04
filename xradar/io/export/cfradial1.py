@@ -100,8 +100,9 @@ def _encode_string_variables(ds):
             var.dtype.kind == "O"
             and all(isinstance(v, str) for v in np.ravel(var.values))
         ):
-            data = np.char.encode(np.asarray(var.values, dtype=str), "utf-8")
-            ds[name] = var.copy(data=data)
+            # explicit bytes: xarray's S1 encoding of unicode adds
+            # _Encoding, which Py-ART cannot read
+            ds[name] = ds[name].str.encode("utf-8")
             ds[name].encoding.pop("dtype", None)
     return ds
 
