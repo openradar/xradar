@@ -62,6 +62,62 @@ def test_reindex_angle():
     np.testing.assert_array_equal(ds_out.azimuth.values, np.arange(0.5, 360, 1.0))
 
 
+def _range_sweep(start, res, ngates):
+    # range dtype follows the given start/res
+    dtype = np.result_type(start, res)
+    rng = (start + np.arange(ngates, dtype=dtype) * res).astype(dtype)
+    data = np.arange(4 * ngates, dtype="float32").reshape(4, ngates)
+    return xr.Dataset(
+        {"DBZH": (("azimuth", "range"), data, {"_FillValue": np.float32(np.nan)})},
+        coords={
+            "azimuth": [45.0, 135.0, 225.0, 315.0],
+            "range": ("range", rng, {"units": "meters"}),
+        },
+    )
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_reindex_range(dtype):
+    # range coordinates of two sweeps differ by floating point jitter
+    ds0 = _range_sweep(dtype(306.8817), dtype(59.9414), 10)
+    ds1 = _range_sweep(dtype(306.9028), dtype(59.9414), 10)
+    assert ds0.range.dtype == dtype
+    with pytest.raises(AssertionError):
+        np.testing.assert_array_equal(ds0.range, ds1.range)
+
+    start, stop = ds0.range[0].item(), ds0.range[-1].item()
+    res = ds0.range.diff("range").median().item()
+    out0 = util.reindex_range(ds0, start, stop, res)
+    out1 = util.reindex_range(ds1, start, stop, res)
+
+    xr.testing.assert_equal(out0.range, out1.range)
+    assert out0.sizes["range"] == 10
+    assert out0.range.dtype == ds0.range.dtype
+    assert out0.range.attrs["units"] == "meters"
+    assert out0.range.attrs["spacing_is_constant"] == "true"
+    np.testing.assert_array_equal(out0.DBZH.values, ds0.DBZH.values)
+    np.testing.assert_array_equal(out1.DBZH.values, ds1.DBZH.values)
+
+    # concatenation no longer creates an outer join along range
+    combined = xr.concat([out0, out1], dim="volume_time")
+    assert combined.sizes["range"] == 10
+    assert not np.isnan(combined.DBZH).any()
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int32, np.int64])
+def test_reindex_range_defaults_and_fill(dtype):
+    ds = _range_sweep(dtype(250), dtype(500), 6)
+    assert ds.range.dtype == dtype
+    xr.testing.assert_equal(util.reindex_range(ds), ds)
+
+    # extend grid beyond data: missing gates are filled with _FillValue
+    out = util.reindex_range(ds, stop_range=250.0 + 7 * 500.0)
+    assert out.sizes["range"] == 8
+    assert out.range.dtype == dtype
+    np.testing.assert_array_equal(out.DBZH.values[:, :6], ds.DBZH.values)
+    assert np.isnan(out.DBZH.values[:, 6:]).all()
+
+
 def test_extract_angle_parameters():
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
     ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")

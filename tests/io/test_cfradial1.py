@@ -258,6 +258,29 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path):
     assert "elevation" in dtree["sweep_1"].ds.dims
 
 
+def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path):
+    # the export is padded to (time, range), so the ragged index variables
+    # must not be written (#416)
+    dtree = xd.io.open_cfradial1_datatree(cfradial1n_file)
+    # source-style global flag, must be flipped as the export is padded
+    dtree.attrs["n_gates_vary"] = "true"
+    path = tmp_path / "variable_gates.nc"
+    xd.io.to_cfradial1(dtree, path)
+
+    with xr.open_dataset(path, decode_timedelta=False) as out:
+        assert "ray_n_gates" not in out.variables
+        assert "ray_start_index" not in out.variables
+        assert "n_points" not in out.dims
+        assert out.attrs["n_gates_vary"] == "false"
+
+    back = xd.io.open_cfradial1_datatree(path)
+    for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
+        nrange = dtree[sweep].ds.sizes["range"]
+        np.testing.assert_array_equal(
+            back[sweep].ds.DBZ.values[:, :nrange], dtree[sweep].ds.DBZ.values
+        )
+
+
 def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path):
     # netCDF attributes can't be bool; CfRadial uses "true"/"false" (#418)
     import netCDF4

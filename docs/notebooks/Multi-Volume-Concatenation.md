@@ -44,7 +44,18 @@ files = [DATASETS.fetch(file) for file in radar_files]
 ```
 
 ## Read the Data using Xradar
-We can read the data into xradar by using the `xr.open_mfdataset` function, but first, we need to align the angles of the different radar volumes.
+We can read the data into xradar by using the `xr.open_mfdataset` function, but first, we need to align the angles and ranges of the different radar volumes.
+
+The range coordinates of the individual files differ slightly (by a few centimeters), which would otherwise result in an outer join along `range` with mostly empty gates. We take a common range grid from the first volume and let the backend reindex all volumes onto it via `reindex_coord`.
+
+```{code-cell}
+rng = xr.open_dataset(files[0], engine="cfradial1", group="sweep_0").range
+reindex_range = dict(
+    start_range=rng[0].item(),
+    stop_range=rng[-1].item(),
+    range_res=rng.diff("range").median().item(),
+)
+```
 
 ```{code-cell}
 def fix_angle(ds):
@@ -89,6 +100,7 @@ ds = xr.open_mfdataset(
     group="sweep_0",
     concat_dim="volume_time",
     combine="nested",
+    reindex_coord=dict(range=reindex_range),
 )
 ds
 ```
