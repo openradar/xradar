@@ -19,6 +19,7 @@ __all__ = [
     "get_second_angle",
     "remove_duplicate_rays",
     "reindex_angle",
+    "reindex_range",
     "extract_angle_parameters",
     "ipol_time",
     "rolling_dim",
@@ -143,6 +144,11 @@ def _reindex_angle(ds, array, tolerance, method="nearest"):
     ds : xarray.Dataset
         Reindexed dataset
     """
+    return _reindex_dim(ds, get_first_angle(ds), array, tolerance, method=method)
+
+
+def _reindex_dim(ds, dim, array, tolerance, method="nearest"):
+    """Reindex dimension, filling missing values by variable's _FillValue."""
     # handle fill value
     fill_value = {
         k: np.asarray(v._FillValue).astype(v.dtype)
@@ -150,11 +156,9 @@ def _reindex_angle(ds, array, tolerance, method="nearest"):
         if hasattr(v, "_FillValue")
     }
 
-    angle = get_first_angle(ds)
-
     # reindex
     ds = ds.reindex(
-        {angle: array},
+        {dim: array},
         method=method,
         tolerance=tolerance,
         fill_value=fill_value,
@@ -229,6 +233,74 @@ def reindex_angle(
         ds[second_angle] = sang.fillna(sang.median(skipna=True))
 
     return ds
+
+
+def reindex_range(
+    ds,
+    start_range=None,
+    stop_range=None,
+    range_res=None,
+    method="nearest",
+    tolerance=None,
+):
+    """Reindex along range onto a regular grid.
+
+    Useful to align sweeps whose range coordinates differ slightly (e.g. by
+    floating point jitter of the first gate) before combining them.
+
+    Missing values will be filled by variable's ``_FillValue``.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset to reindex range.
+
+    Keyword Arguments
+    -----------------
+    start_range : float
+        Range of the first gate center. Defaults to the first range value.
+    stop_range : float
+        Range of the last gate center (inclusive). Defaults to the last range value.
+    range_res : float
+        Gate spacing. Defaults to the median range spacing.
+    method : str
+        Reindexing method, defaults to "nearest". See :py:meth:`xarray.Dataset.reindex`.
+    tolerance : float
+        Range tolerance up to which gates should be considered for used method.
+        Defaults to range_res / 2.
+
+    Returns
+    -------
+    ds : xarray.Dataset
+        Reindexed dataset
+    """
+    # reindexing needs an index along range
+    if "range" not in ds.xindexes:
+        ds = ds.set_xindex("range")
+    rng = ds["range"]
+    if range_res is None:
+        range_res = rng.diff("range").median().item()
+    if start_range is None:
+        start_range = rng[0].item()
+    if stop_range is None:
+        stop_range = rng[-1].item()
+    if tolerance is None:
+        tolerance = range_res / 2.0
+
+    number_gates = int(np.round((stop_range - start_range) / range_res)) + 1
+    new_range = xr.DataArray(
+        start_range + np.arange(number_gates) * range_res,
+        dims="range",
+        attrs=rng.attrs,
+    ).astype(rng.dtype)
+    new_range.attrs.update(
+        meters_to_center_of_first_gate=new_range[0].item(),
+        meters_between_gates=range_res,
+        spacing_is_constant="true",
+    )
+
+    ds = _reindex_dim(ds, "range", new_range.values, tolerance, method=method)
+    return ds.assign_coords(range=new_range)
 
 
 def extract_angle_parameters(ds):
