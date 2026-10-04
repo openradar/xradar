@@ -87,7 +87,7 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
-#: gzip magic number, gzip-wrapped archives must be decompressed by the user
+#: gzip magic number, only used for a hint when the input is not readable
 _GZIP_MAGIC = b"\x1f\x8b"
 
 
@@ -205,8 +205,18 @@ class NEXRADFile:
 
     Parameters
     ----------
-    filename : str
-        Filename of Archive II file to read.
+    filename : str, os.PathLike, bytes, bytearray or file-like
+        Archive II file to read: a path, the raw (uncompressed) bytes, or a
+        file-like object. File-like objects are rewound if seekable.
+        gzip-compressed archives have to be decompressed first.
+    mode : str, optional
+        Mode for :py:class:`numpy.memmap` when reading from a path.
+        Defaults to ``"r"``.
+    loaddata : bool, optional
+        Load all data on initialization. Defaults to ``False``.
+    has_volume_header : bool, optional
+        Whether the input starts with the 24-byte volume header (``AR2V``).
+        Set to ``False`` for I/E chunk files. Defaults to ``True``.
 
     References
     ----------
@@ -230,8 +240,11 @@ class NEXRADFile:
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
             # rewind, the same file-like is read again for every sweep
-            if getattr(filename, "seekable", lambda: False)():
+            try:
                 filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -239,14 +252,6 @@ class NEXRADFile:
             self._fh = np.memmap(self._fp.name, mode=mode)
         else:
             raise TypeError(f"Unsupported input type: {type(filename)}")
-        if bytes(self._fh[:2]) == _GZIP_MAGIC:
-            if self._fp is not None:
-                self._fp.close()
-            raise ValueError(
-                "Not a NEXRAD Level II archive: the input is gzip-compressed "
-                "(e.g. *.gz files in unidata-nexrad-level2). Decompress it "
-                "first, e.g. with `gzip.open(filename).read()`."
-            )
         self.volume_header = self._read_volume_header()
         return
 
@@ -549,8 +554,15 @@ class NEXRADRecordFile(NEXRADFile):
                 if isinstance(self.filename, (str, os.PathLike))
                 else ""
             )
+            hint = ""
+            if self._fh[:2].tobytes() == _GZIP_MAGIC:
+                hint = (
+                    " The input is gzip-compressed (e.g. *.gz files in "
+                    "unidata-nexrad-level2), decompress it first, e.g. with "
+                    "`gzip.open(filename).read()`."
+                )
             raise ValueError(
-                f"Not a NEXRAD Level II archive: no records found{source}."
+                f"Not a NEXRAD Level II archive: no records found{source}.{hint}"
             )
         return self.init_record(self.record_number + 1)
 

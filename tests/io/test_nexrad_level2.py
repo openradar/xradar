@@ -2747,7 +2747,7 @@ def test_open_nexradlevel2_datatree_gzip(nexradlevel2_msg1_file, source):
         "bytes": lambda: open(gzfile, "rb").read(),
         "filelike": lambda: io.BytesIO(open(gzfile, "rb").read()),
     }
-    with pytest.raises(ValueError, match="gzip-compressed.*Decompress it first"):
+    with pytest.raises(ValueError, match="no records found.*gzip-compressed"):
         open_nexradlevel2_datatree(inputs[source]())
 
 
@@ -2771,6 +2771,37 @@ def test_open_nexradlevel2_datatree_filelike_all_sweeps(nexradlevel2_file):
     expected = open_nexradlevel2_datatree(nexradlevel2_file)
     assert len(dtree.children) == len(expected.children)
     xarray.testing.assert_identical(dtree["sweep_1"].ds, expected["sweep_1"].ds)
+
+
+class _Unseekable(io.RawIOBase):
+    # pipe-like stream: seek() raises io.UnsupportedOperation
+    def __init__(self, data):
+        self._buf = io.BytesIO(data)
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        return self._buf.readinto(b)
+
+
+class _NoSeek:
+    # minimal reader without seek(), e.g. a socket file
+    def __init__(self, data):
+        self._data = data
+
+    def read(self):
+        return self._data
+
+
+@pytest.mark.parametrize("cls", [_Unseekable, _NoSeek])
+def test_open_nexradlevel2_filelike_not_seekable(nexradlevel2_file, cls):
+    # streams that cannot be rewound are read once from their position
+    with open(nexradlevel2_file, "rb") as f:
+        data = f.read()
+    with NEXRADLevel2File(cls(data)) as nex:
+        assert nex.volume_header["icao"] == b"KATX"
+        assert len(nex.msg_31_data_header) > 0
 
 
 def test_open_nexradlevel2_not_an_archive(tmp_path):
