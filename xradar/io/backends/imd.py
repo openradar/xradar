@@ -63,7 +63,9 @@ from ...model import (
 )
 from .common import (
     _STATION_VARS,
+    _apply_reindex_coord,
     _apply_site_as_coords,
+    _get_reindex_coord,
     _get_subgroup,
 )
 
@@ -409,9 +411,12 @@ class IMDBackendEntrypoint(BackendEntrypoint):
     first_dim : str
         Can be ``time`` or ``auto`` (default). ``auto`` selects ``azimuth``
         (PPI) or ``elevation`` (RHI) as the first dimension.
-    reindex_angle : bool or dict
-        If a dict, kwargs are passed to :func:`xradar.util.reindex_angle`.
-        Defaults to ``False``.
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs
+        for :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+        Defaults to ``None`` (no reindexing).
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     site_as_coords : bool
         If True (default), promote ``latitude``/``longitude``/``altitude`` to
         Dataset coordinates.
@@ -436,6 +441,7 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         format=None,
         group=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         site_as_coords=True,
     ):
@@ -453,16 +459,17 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         )
         ds = _conform_imd_sweep(ds, first_dim=first_dim, site_as_coords=site_as_coords)
 
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         ds._close = store.close
         return ds
 
 
-def _read_imd_sweep(filename, first_dim="auto", reindex_angle=False, **kwargs):
+def _read_imd_sweep(
+    filename, first_dim="auto", reindex_coord=None, reindex_angle=False, **kwargs
+):
     """Open one IMD file and return a CfRadial2 sweep Dataset.
 
     Avoids the xarray entrypoint registry so this works even when the
@@ -475,10 +482,9 @@ def _read_imd_sweep(filename, first_dim="auto", reindex_angle=False, **kwargs):
         **kwargs,
     )
     ds = _conform_imd_sweep(ds, first_dim=first_dim, site_as_coords=False)
-    if reindex_angle is not False:
-        ds = ds.pipe(util.remove_duplicate_rays)
-        ds = ds.pipe(util.reindex_angle, **reindex_angle)
-        ds = ds.pipe(util.ipol_time, **reindex_angle)
+    reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+    if reindex_coord:
+        ds = _apply_reindex_coord(ds, reindex_coord)
     return ds
 
 
@@ -544,6 +550,7 @@ def _build_imd_root(sweeps):
 def _open_single_imd_datatree(
     filename,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     site_as_coords=True,
     optional_groups=False,
@@ -551,7 +558,11 @@ def _open_single_imd_datatree(
 ):
     """Build a single-sweep CfRadial2 DataTree from one IMD NetCDF file."""
     sweep_ds = _read_imd_sweep(
-        filename, first_dim=first_dim, reindex_angle=reindex_angle, **kwargs
+        filename,
+        first_dim=first_dim,
+        reindex_coord=reindex_coord,
+        reindex_angle=reindex_angle,
+        **kwargs,
     )
     # position-0 in this volume
     sweep_ds["sweep_number"] = xr.DataArray(0)
@@ -602,8 +613,11 @@ def open_imd_datatree(filename_or_obj, **kwargs):
     -----------------
     first_dim : str
         ``"auto"`` (default) or ``"time"``.
-    reindex_angle : bool or dict
-        If a dict, kwargs are passed to :func:`xradar.util.reindex_angle`.
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs
+        for :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     site_as_coords : bool
         Attach station variables as coordinates on sweep Datasets.
     optional_groups : bool
@@ -674,7 +688,7 @@ def open_imd_volumes(paths, **kwargs):
     Keyword Arguments
     -----------------
     All kwargs are forwarded to :func:`open_imd_datatree` (applied per
-    volume). Typical: ``first_dim``, ``reindex_angle``, ``site_as_coords``,
+    volume). Typical: ``first_dim``, ``reindex_coord``, ``site_as_coords``,
     ``optional_groups``, ``min_angle``, ``max_angle``.
 
     Returns
