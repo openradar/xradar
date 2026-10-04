@@ -25,6 +25,7 @@
 * ENH: Expose ``target_crs`` on ``.xradar.georeference()`` accessor for DataArray, Dataset and DataTree, enabling reprojection via e.g. ``radar.xradar.georeference(target_crs=4326)`` ({issue}`243`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: set ``id-token: write`` in CI testpypi publisher for trusted publishing ({issue}`364`) by [@aladinor](https://github.com/aladinor), ({pull}`372` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MNT: use xarray from PyPI, update pin to xarray=2026.9.0 (last xarray version with Python 3.11) ({pull}`404` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: CfRadial1 export of files with a variable number of gates no longer writes the ragged-layout index variables ``ray_n_gates``/``ray_start_index`` (and sets ``n_gates_vary`` to ``false``); the data are written padded to ``(time, range)``, and the leftover variables made the file unreadable for xradar and field-less for Py-ART ({issue}`416`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
