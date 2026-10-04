@@ -231,11 +231,13 @@ def test_open_dataset_imd_reindex_angle(imd_file):
     ds = open_dataset(
         imd_file,
         engine="imd",
-        reindex_angle={
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,
+        reindex_coord={
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,
+            }
         },
     )
     assert ds.sizes["azimuth"] == 360
@@ -334,11 +336,13 @@ def test_read_imd_sweep_reindex_angle(imd_file):
 
     ds = _read_imd_sweep(
         imd_file,
-        reindex_angle={
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,
+        reindex_coord={
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,
+            }
         },
     )
     assert ds.sizes["azimuth"] == 360
