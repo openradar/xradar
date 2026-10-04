@@ -8,6 +8,7 @@ Ported from wradlib.
 """
 
 import numpy as np
+import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import iris, open_iris_datatree
@@ -441,3 +442,67 @@ def test_iris_8bit_without_decoding(iris0_file):
     # classes, no packed words
     assert values.max() < 256
     assert {0, 9, 17}.issubset(np.unique(values))
+
+
+@pytest.mark.parametrize(
+    "identifiers, nbytes, n_flags, last",
+    [
+        ([1, 2, 3, 0, 0, 0], 1, 15, ("cell_convection", 192, 64)),
+        ([2, 0, 0, 0, 0, 0], 1, 7, ("precip_heavy_precipitation", 7, 7)),
+        ([3, 1, 0, 0, 0, 0], 1, 8, ("meteo_hail", 56, 48)),
+        ([0, 0, 0, 1, 0, 0], 2, 6, ("meteo_hail", 7 << 8, 6 << 8)),
+        # classes beyond the 2-bit segment are not representable
+        ([0, 0, 2, 0, 0, 0], 1, 3, ("precip_precipitation", 192, 192)),
+        ([0, 0, 0, 0, 0, 0], 1, 0, None),
+        ([9, 255, 0, 0, 0, 0], 1, 0, None),
+    ],
+)
+def test_hclass_flag_attrs(identifiers, nbytes, n_flags, last):
+    # HydroClass bit segments, IRIS Programming Guide 4.4.14, Tables 10-12
+    attrs = iris.hclass_flag_attrs(identifiers, nbytes=nbytes)
+    if last is None:
+        assert attrs == {}
+        return
+    meanings = attrs["flag_meanings"].split()
+    assert len(meanings) == len(attrs["flag_masks"]) == len(attrs["flag_values"])
+    assert len(meanings) == n_flags
+    assert (meanings[-1], attrs["flag_masks"][-1], attrs["flag_values"][-1]) == last
+    assert attrs["flag_masks"].dtype == (np.uint8 if nbytes == 1 else np.uint16)
+    # values lie within their masks
+    assert np.all(attrs["flag_values"] & ~attrs["flag_masks"] == 0)
+
+
+def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
+    # the sample stores no classifier identifiers, so there are no flags
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        assert "flag_meanings" not in ds.DB_HCLASS.attrs
+
+    init = iris.IrisRawFile.__init__
+
+    def init_with_identifiers(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        task_end_info = self.ingest_header["task_configuration"]["task_end_info"]
+        task_end_info["echo_class_identifiers"] = bytes([1, 2, 3, 0, 0, 0])
+
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_identifiers)
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        hclass = ds.DB_HCLASS
+        attrs = hclass.attrs
+        assert hclass.dtype == np.uint8
+        value = 106  # 0b01_101_010
+        assert value in np.unique(hclass.values)
+        meanings = [
+            meaning
+            for meaning, mask, flag in zip(
+                attrs["flag_meanings"].split(),
+                attrs["flag_masks"],
+                attrs["flag_values"],
+                strict=True,
+            )
+            if value & mask == flag
+        ]
+        assert meanings == [
+            "meteo_rain",
+            "precip_light_precipitation",
+            "cell_convection",
+        ]

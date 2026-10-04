@@ -2484,6 +2484,89 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
+# HydroClass echo classifiers, keyed by the identifiers stored in
+# task_end_info "echo_class_identifiers", with their enumerated classes
+# 4.4.14, Tables 10-12, page 76f (IRIS Programming Guide M212927EN-B)
+HCLASS_CLASSIFIERS = {
+    1: (
+        "meteo",
+        {
+            1: "non_meteorological",
+            2: "rain",
+            3: "wet_snow",
+            4: "snow",
+            5: "graupel",
+            6: "hail",
+        },
+    ),
+    2: (
+        "precip",
+        {
+            1: "ground_clutter_anomalous_propagation",
+            2: "bio_scatter",
+            3: "precipitation",
+            4: "large_drops",
+            5: "light_precipitation",
+            6: "moderate_precipitation",
+            7: "heavy_precipitation",
+        },
+    ),
+    3: ("cell", {0: "stratiform", 1: "convection"}),
+}
+
+# bit segments (shift, number of bits) of one HydroClass byte
+# 4.4.14, page 75 (IRIS Programming Guide M212927EN-B)
+HCLASS_SEGMENTS = [(0, 3), (3, 3), (6, 2)]
+
+
+def hclass_flag_attrs(identifiers, nbytes=1):
+    """Get CF flag attributes for HydroClass data.
+
+    Each HydroClass byte holds up to three classifier results in bit segments.
+    The classifier of each segment is given by ``identifiers``, the classes
+    are described with CF ``flag_masks``, ``flag_values`` and
+    ``flag_meanings``, so that the data can be kept as stored.
+
+    Parameters
+    ----------
+    identifiers : sequence of int
+        Classifier identifiers of the bit segments, lowest bits first
+        (task_end_info ``echo_class_identifiers``).
+    nbytes : int, optional
+        Number of bytes of the data type (1 for DB_HCLASS, 2 for DB_HCLASS2).
+        Defaults to 1.
+
+    Returns
+    -------
+    attrs : dict
+        CF flag attributes, empty if no known classifier is allocated.
+    """
+    segments = [
+        (8 * byte + shift, nbits)
+        for byte in range(nbytes)
+        for shift, nbits in HCLASS_SEGMENTS
+    ]
+    dtype = np.uint8 if nbytes == 1 else np.uint16
+    masks, values, meanings = [], [], []
+    for ident, (shift, nbits) in zip(identifiers, segments, strict=False):
+        if ident not in HCLASS_CLASSIFIERS:
+            continue
+        name, classes = HCLASS_CLASSIFIERS[ident]
+        for value, meaning in classes.items():
+            if value >= 2**nbits:
+                continue
+            masks.append((2**nbits - 1) << shift)
+            values.append(value << shift)
+            meanings.append(f"{name}_{meaning}")
+    if not meanings:
+        return {}
+    return {
+        "flag_masks": np.array(masks, dtype=dtype),
+        "flag_values": np.array(values, dtype=dtype),
+        "flag_meanings": " ".join(meanings),
+    }
+
+
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -3866,6 +3949,16 @@ class IrisStore(AbstractDataStore):
         mname = iris_mapping.get(name, name)
         mapping = sweep_vars_mapping.get(mname, {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
+        if name in ["DB_HCLASS", "DB_HCLASS2"]:
+            task_end_info = self.root.ingest_header["task_configuration"][
+                "task_end_info"
+            ]
+            attrs.update(
+                hclass_flag_attrs(
+                    bytearray(task_end_info["echo_class_identifiers"]),
+                    nbytes=1 if name == "DB_HCLASS" else 2,
+                )
+            )
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
