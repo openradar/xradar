@@ -26,6 +26,7 @@
 * FIX: set ``id-token: write`` in CI testpypi publisher for trusted publishing ({issue}`364`) by [@aladinor](https://github.com/aladinor), ({pull}`372` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * MNT: use xarray from PyPI, update pin to xarray=2026.9.0 (last xarray version with Python 3.11) ({pull}`404` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: CfRadial1 export of files with a variable number of gates no longer writes the ragged-layout index variables ``ray_n_gates``/``ray_start_index`` (and sets ``n_gates_vary`` to ``false``); the data are written padded to ``(time, range)``, and the leftover variables made the file unreadable for xradar and field-less for Py-ART ({issue}`416`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: IRIS/Sigmet 8-bit types without decoding function (``DB_HCLASS``, ``DB_ORAIN``, ``DB_ALBEDO8``) are unpacked to one ``uint8`` value per range bin; they were returned as packed ``int16`` words holding two bins each. ``DB_HCLASS``/``DB_HCLASS2`` get CF ``flag_masks``/``flag_values``/``flag_meanings`` for the HydroClass bit segments, from the classifiers stored in ``task_end_info`` (IRIS Programming Guide 4.4.14) ({issue}`390`, {pull}`444`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
