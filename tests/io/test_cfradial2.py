@@ -198,12 +198,13 @@ def test_to_cfradial2_global_attrs(temp_file, minimal_dtree):
     )
 
 
-def test_to_cfradial2_preserves_input_dtree(odim_file, temp_file):
+@pytest.mark.parametrize("deepcopy", [False, True])
+def test_to_cfradial2_preserves_input_dtree(odim_file, temp_file, deepcopy):
     with xd.io.open_odim_datatree(odim_file) as dtree:
         dtree_original = dtree.copy(deep=True)
 
         outfile = temp_file.with_suffix(".nc")
-        export_cf2.to_cfradial2(dtree, outfile, engine="netcdf4")
+        export_cf2.to_cfradial2(dtree, outfile, engine="netcdf4", deepcopy=deepcopy)
 
         xr.testing.assert_identical(dtree, dtree_original)
 

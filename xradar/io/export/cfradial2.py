@@ -39,8 +39,11 @@ from ...model import conform_cfradial2_sweep_group
 from ...util import has_import
 
 
-def to_cfradial2(dtree, filename, engine=None, timestep=None):
+def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
     """Save DataTree to CfRadial2 compliant file.
+
+    The input DataTree is never modified. All sweep rewrites and root
+    attribute edits are applied to a copy, which is shallow by default.
 
     Parameters
     ----------
@@ -50,11 +53,16 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
         output filename
 
     Keyword Arguments
-    ----------------
+    -----------------
     timestep : int
         timestep of wanted volume, currently not used
     engine : str
         Either `netcdf4` or `h5netcdf`.
+    deepcopy : bool
+        If True, work on a deep copy of ``dtree`` (the data is duplicated in
+        memory). If False (default), work on a shallow copy, which shares the
+        underlying data arrays with ``dtree`` but not its structure and
+        attributes.
     """
     if engine is None:
         if has_import("netCDF4"):
@@ -66,10 +74,11 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
                 "xradar: ``netCDF4`` or ``h5netcdf`` needed to perform this operation."
             )
 
-    # all sweep rewrites and root-attribute edits need to happen on a copy instead of the caller’s DataTree object.
-    # otherwise, the caller’s DataTree will be modified in-place, which is not expected behavior for a writer function.
-    # Using a deep copy makes the code future-proof against any in-place modifications that might be added later on.
-    dtree = dtree.copy(deep=True)
+    # Work on a copy so the caller's DataTree is not modified in-place.
+    # A shallow copy is sufficient, since only the tree structure and the
+    # attributes are changed while the data arrays are only read. Use
+    # ``deepcopy=True`` to also decouple the data from the input.
+    dtree = dtree.copy(deep=deepcopy)
 
     # iterate over DataTree and make subgroups cfradial2 compliant
     for grp in dtree.groups:
@@ -81,7 +90,7 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None):
                 )
             )
 
-    root = dtree["/"].ds
+    root = dtree["/"]
     # fix Conventions
     root.attrs["Conventions"] = "Cf/Radial"
     root.attrs["version"] = "2.0"
