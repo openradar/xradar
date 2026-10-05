@@ -477,12 +477,12 @@ def test_iris_8bit_without_decoding(iris0_file):
 @pytest.mark.parametrize(
     "identifiers, nbytes, n_flags, last",
     [
-        ([1, 2, 3, 0, 0, 0], 1, 15, ("cell_convection", 192, 64)),
-        ([2, 0, 0, 0, 0, 0], 1, 7, ("precip_heavy_precipitation", 7, 7)),
-        ([3, 1, 0, 0, 0, 0], 1, 8, ("meteo_hail", 56, 48)),
-        ([0, 0, 0, 1, 0, 0], 2, 6, ("meteo_hail", 7 << 8, 6 << 8)),
+        ([1, 2, 3, 0, 0, 0], 1, 17, ("CELL_CLASS_CONVECTION", 192, 64)),
+        ([2, 0, 0, 0, 0, 0], 1, 8, ("PRE_CLASS_HEAVY_PRECIP", 7, 7)),
+        ([3, 1, 0, 0, 0, 0], 1, 9, ("MET_CLASS_HAIL", 56, 48)),
+        ([0, 0, 0, 1, 0, 0], 2, 7, ("MET_CLASS_HAIL", 7 << 8, 6 << 8)),
         # classes beyond the 2-bit segment are not representable
-        ([0, 0, 2, 0, 0, 0], 1, 3, ("precip_precipitation", 192, 192)),
+        ([0, 0, 2, 0, 0, 0], 1, 4, ("PRE_CLASS_PRECIP", 192, 192)),
         ([0, 0, 0, 0, 0, 0], 1, 0, None),
         ([9, 255, 0, 0, 0, 0], 1, 0, None),
     ],
@@ -531,8 +531,9 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
             )
             if value & mask == flag
         ]
+        # names as in the IRIS Programming Guide (sig_data_types.h)
         assert meanings == [
-            "meteo_rain",
-            "precip_light_precipitation",
-            "cell_convection",
+            "MET_CLASS_RAIN",
+            "PRE_CLASS_LIGHT_PRECIP",
+            "CELL_CLASS_CONVECTION",
         ]

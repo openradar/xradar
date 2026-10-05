@@ -2486,33 +2486,43 @@ SIGMET_DATA_TYPES = OrderedDict(
 )
 
 # HydroClass echo classifiers, keyed by the identifiers stored in
-# task_end_info "echo_class_identifiers", with their enumerated classes
+# task_end_info "echo_class_identifiers", with their enumerated classes,
+# named as in sig_data_types.h; values listed as "Unused" are left out
 # 4.4.14, Tables 10-12, page 76f (IRIS Programming Guide M212927EN-B)
 HCLASS_CLASSIFIERS = {
     1: (
-        "meteo",
+        "METEOCLASSIFIER",
         {
-            1: "non_meteorological",
-            2: "rain",
-            3: "wet_snow",
-            4: "snow",
-            5: "graupel",
-            6: "hail",
+            0: "MET_CLASS_THRESHOLD",
+            1: "MET_CLASS_NON_MET",
+            2: "MET_CLASS_RAIN",
+            3: "MET_CLASS_WET_SNOW",
+            4: "MET_CLASS_SNOW",
+            5: "MET_CLASS_GRAUPEL",
+            6: "MET_CLASS_HAIL",
         },
     ),
     2: (
-        "precip",
+        "PRECIPCLASSIFIER",
         {
-            1: "ground_clutter_anomalous_propagation",
-            2: "bio_scatter",
-            3: "precipitation",
-            4: "large_drops",
-            5: "light_precipitation",
-            6: "moderate_precipitation",
-            7: "heavy_precipitation",
+            0: "PRE_CLASS_THRESHOLD",
+            1: "PRE_CLASS_GC_AP",
+            2: "PRE_CLASS_BIO",
+            3: "PRE_CLASS_PRECIP",
+            4: "PRE_CLASS_LARGE_DROPS",
+            5: "PRE_CLASS_LIGHT_PRECIP",
+            6: "PRE_CLASS_MODERATE_PRECIP",
+            # named, but described as "Unused" in Table 11
+            7: "PRE_CLASS_HEAVY_PRECIP",
         },
     ),
-    3: ("cell", {0: "stratiform", 1: "convection"}),
+    3: (
+        "CELLCLASSIFIER",
+        {
+            0: "CELL_CLASS_STRATIFORM",
+            1: "CELL_CLASS_CONVECTION",
+        },
+    ),
 }
 
 # bit segments (shift, number of bits) of one HydroClass byte
@@ -2552,13 +2562,13 @@ def hclass_flag_attrs(identifiers, nbytes=1):
     for ident, (shift, nbits) in zip(identifiers, segments, strict=False):
         if ident not in HCLASS_CLASSIFIERS:
             continue
-        name, classes = HCLASS_CLASSIFIERS[ident]
+        _, classes = HCLASS_CLASSIFIERS[ident]
         for value, meaning in classes.items():
             if value >= 2**nbits:
                 continue
             masks.append((2**nbits - 1) << shift)
             values.append(value << shift)
-            meanings.append(f"{name}_{meaning}")
+            meanings.append(meaning)
     if not meanings:
         return {}
     return {
