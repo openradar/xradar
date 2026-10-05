@@ -38,7 +38,7 @@ For most operations this is not a real problem. It will turn into a problem, if 
 
 ## How should we treat it?
 
-Currently the reindexing code relies on some internals which make things a bit hard to maintain. My suggestion would be to disentangle the reindexing code from the internals but feed the needed values as parameters. Then every reader can call this per activated `reindex_angle` kwarg.
+Currently the reindexing code relies on some internals which make things a bit hard to maintain. My suggestion would be to disentangle the reindexing code from the internals but feed the needed values as parameters. Then every reader can call this per activated `reindex_coord` kwarg, e.g. `reindex_coord=dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1))` (the former `reindex_angle` kwarg is deprecated). Range can be reindexed alongside via `reindex_coord=dict(angle=..., range=dict(...))`, see {func}`xradar.util.reindex_range`.
 
 +++
 
