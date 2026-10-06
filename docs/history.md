@@ -27,6 +27,7 @@
 * MNT: use xarray from PyPI, update pin to xarray=2026.9.0 (last xarray version with Python 3.11) ({pull}`404` ) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: CfRadial1 export of files with a variable number of gates no longer writes the ragged-layout index variables ``ray_n_gates``/``ray_start_index`` (and sets ``n_gates_vary`` to ``false``); the data are written padded to ``(time, range)``, and the leftover variables made the file unreadable for xradar and field-less for Py-ART ({issue}`416`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: IRIS/Sigmet 8-bit types without decoding function (``DB_HCLASS``, ``DB_ORAIN``, ``DB_ALBEDO8``) are unpacked to one ``uint8`` value per range bin; they were returned as packed ``int16`` words holding two bins each. ``DB_HCLASS``/``DB_HCLASS2`` get CF ``flag_masks``/``flag_values``/``flag_meanings`` for the HydroClass bit segments, from the classifiers stored in ``task_end_info`` (IRIS Programming Guide 4.4.14) ({issue}`390`, {pull}`444`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: CfRadial1 export of NEXRAD split cuts (same elevation, different moments) no longer fails on conflicting ``sweep_number``, the per-sweep metadata is taken from the sweeps only once; sweeps with different range geometry (e.g. GAMIC 100 m / 150 m gates) raise a clear ``ValueError`` asking to resample onto a common range grid (CfRadial 1.4 section 2.5) instead of an xarray ``MergeError`` ({issue}`418`, {pull}`455`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 

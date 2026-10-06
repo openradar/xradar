@@ -149,6 +149,30 @@ def _extract_root_dataset(dtree):
     return root_ds
 
 
+def _check_range_geometry(sweep_datasets):
+    """Raise if the sweeps don't share one range geometry.
+
+    CfRadial1 stores one ``range(range)`` coordinate for all rays, so the
+    range to the first gate and the gate spacing must be the same in all
+    sweeps (the number of gates may differ).
+    """
+    geometries = []
+    for ds in sweep_datasets:
+        rng = ds["range"].values
+        spacing = float(np.median(np.diff(rng))) if rng.size > 1 else np.nan
+        geometries.append((float(rng[0]), spacing))
+    first = np.array(geometries[0])
+    for start, spacing in geometries[1:]:
+        if not np.allclose([start, spacing], first, equal_nan=True):
+            raise ValueError(
+                "CfRadial1 export needs one range geometry for all sweeps, "
+                f"found first gate / gate spacing {sorted(set(geometries))} m. "
+                "Resample the sweeps onto a common range grid first, e.g. with "
+                "``reindex_coord=dict(range=dict(...))`` when opening or "
+                "``xradar.util.reindex_range``."
+            )
+
+
 def _combine_sweeps(dtree, dim0=None):
     """
     Combine all sweep groups into a single ray-indexed CfRadial1 dataset.
@@ -203,7 +227,13 @@ def _combine_sweeps(dtree, dim0=None):
         # merge conflicts in combine_by_coords below.
         sweep_ds.attrs = {}
 
+        # per-sweep metadata is re-added from ``sweep_info`` below, combining
+        # it here conflicts for sweeps with different moments (split cuts)
+        sweep_ds = sweep_ds.drop_vars(SWEEP_INFO_VARS, errors="ignore")
+
         sweep_datasets.append(sweep_ds)
+
+    _check_range_geometry(sweep_datasets)
 
     # need to use combine_by_coords to correctly test for
     # incompatible attrs on DataArray's
