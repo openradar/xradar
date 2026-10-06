@@ -207,19 +207,39 @@ def _normalize_sweep(ds, fixed_angle, first_dim="auto"):
     return sweeps
 
 
+def _decode_times(ds):
+    """Decode times, resolving ``seconds since time_reference``.
+
+    Older WindCube files (e.g. WindCube Lidar server 3.3.3) give the epoch
+    in a ``time_reference`` string variable of the sweep group and refer to
+    it by name in the ``units`` of ``time``.
+    """
+    if "time_reference" in ds:
+        reference = _decode(ds["time_reference"].values)
+        for var in ds.variables.values():
+            units = var.attrs.get("units")
+            if isinstance(units, str) and units.endswith("since time_reference"):
+                var.attrs["units"] = units.replace("time_reference", reference)
+    return xr.decode_cf(ds, decode_timedelta=False)
+
+
 def _read_windcube(filename_or_obj, first_dim="auto"):
     """Read all sweeps and the root group of a WindCube file."""
     with xr.open_datatree(
-        filename_or_obj, engine="h5netcdf", decode_timedelta=False
+        filename_or_obj,
+        engine="h5netcdf",
+        decode_times=False,
+        decode_timedelta=False,
     ) as tree:
-        root = tree.ds.load()
+        root = _decode_times(tree.ds.load())
         names = [_decode(n) for n in np.atleast_1d(root["sweep_group_name"].values)]
         fixed = np.atleast_1d(root["sweep_fixed_angle"].values)
         sweeps = []
         for name, angle in zip(names, fixed, strict=False):
             if name not in tree.children:
                 continue
-            group = tree[name].to_dataset().load()
+            # no inherited root coordinates (older files have a root "sweep")
+            group = _decode_times(tree[name].to_dataset(inherit=False).load())
             # interrupted scans leave groups without measurements
             if "time" not in group.dims or group.sizes["time"] == 0:
                 continue
@@ -284,7 +304,8 @@ class WindCubeBackendEntrypoint(BackendEntrypoint):
     def guess_can_open(self, filename_or_obj):
         try:
             with xr.open_dataset(filename_or_obj, engine="h5netcdf") as ds:
-                return ds.attrs.get("title") == "WindCube data"
+                # "WindCube data", older files "Leosphere Windcube data"
+                return "windcube" in str(ds.attrs.get("title", "")).lower()
         except Exception:
             return False
 

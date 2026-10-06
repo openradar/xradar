@@ -233,3 +233,54 @@ def test_open_windcube_no_sweeps(tmp_path):
         grp.create_variable("time", ("time",), dtype="f8")
     with pytest.raises(ValueError, match="No WindCube sweeps"):
         xd.io.open_windcube_datatree(path)
+
+
+@pytest.fixture
+def windcube_file_old(tmp_path):
+    # layout of older files (e.g. WindCube Lidar server 3.3.3, WLS200s): time
+    # in seconds since a ``time_reference`` variable, a root ``sweep``
+    # coordinate and the title "Leosphere Windcube data"
+    path = tmp_path / "WLS200s-218_2022-10-07_00-51-38_dbs_1823_75m.nc"
+    gates = np.arange(50, 550, 50)
+    dbs_az = np.array([0.0, 90.0, 180.0, 270.0, 0.0])
+    dbs_el = np.array([75.0, 75.0, 75.0, 75.0, 90.0])
+    dbs_rng = np.array([gates / np.sin(np.deg2rad(75))] * 4 + [gates]).round()
+    with h5netcdf.File(path, "w") as f:
+        f.attrs.update(
+            title="Leosphere Windcube data",
+            Conventions="CF/Radial 2.0 , CF-1.7",
+            institution="Leosphere",
+        )
+        f.dimensions["sweep"] = 1
+        f.create_variable("sweep", ("sweep",), data=np.array([1], "i4"))
+        f.create_variable(
+            "sweep_group_name",
+            ("sweep",),
+            data=np.array(["Sweep_62961"], dtype=object),
+            dtype=h5py.string_dtype(),
+        )
+        f.create_variable("sweep_fixed_angle", ("sweep",), data=[75.0])
+        for name, value in [("latitude", 51.97), ("longitude", 4.93), ("altitude", 0)]:
+            f.create_variable(name, data=np.float64(value))
+        grp = f.create_group("Sweep_62961")
+        _write_sweep(grp, "dbs", dbs_az, dbs_el, dbs_rng, two_d_range=True)
+        grp.variables["time"].attrs["units"] = "seconds since time_reference"
+        grp.create_variable(
+            "time_reference",
+            data=np.array("1970-01-01T00:00:00Z", dtype=object),
+            dtype=h5py.string_dtype(),
+        )
+    return path
+
+
+def test_open_windcube_time_reference(windcube_file_old):
+    dtree = xd.io.open_windcube_datatree(windcube_file_old)
+    sweeps = [k for k in dtree.children if k.startswith("sweep_")]
+    # vertical and inclined DBS beams, no inherited root "sweep" dimension
+    assert len(sweeps) == 2
+    for s in sweeps:
+        assert "sweep" not in dtree[s].ds.dims
+    # seconds since the epoch given in ``time_reference``
+    expected = np.datetime64(int(1.7442e9 * 1000), "ms")
+    assert dtree["sweep_1"].ds.time.values[0] == expected
+    assert WindCubeBackendEntrypoint().guess_can_open(windcube_file_old)
