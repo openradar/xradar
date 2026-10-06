@@ -30,7 +30,7 @@ dependencies:
   - arm_pyart
   - wradlib
   - ffmpeg
-  - zarr>=3
+  - zarr>=3.1.6
   - pytest-xdist
   - pytest-cov
   - pre-commit

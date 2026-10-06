@@ -33,6 +33,6 @@ dependencies:
   - arm_pyart
   - wradlib
   - ffmpeg
-  - zarr>=3
+  - zarr>=3.1.6
   - pip:
     - xarray >= 2026.9.0

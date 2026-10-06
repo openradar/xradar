@@ -48,6 +48,14 @@ metek = "xradar.io.backends:MRRBackendEntrypoint"
 uf = "xradar.io.backends:UFBackendEntrypoint"
 imd = "xradar.io.backends:IMDBackendEntrypoint"
 
+[project.entry-points."zarr.codecs"]
+# Decode-only codecs for virtual (byte-range) radar stores. Registered
+# globally so any zarr v3 reader with xradar installed resolves them by
+# name — reading a virtual store needs only xradar + zarr.
+xradar-iris-sweep = "xradar.io.virtual.iris.codec:IrisSweepCodec"
+# read-only alias: the name published before the xradar- prefix
+sigmet-sweep = "xradar.io.virtual.iris.codec:IrisSweepCodec"
+
 [build-system]
 requires = [
     "setuptools>=77",
