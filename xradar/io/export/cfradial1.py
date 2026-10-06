@@ -92,6 +92,25 @@ def _normalize_sweep_metadata(sweep_ds):
     return sweep_ds
 
 
+def _is_none_placeholder(value):
+    """Return True for the ``"None"`` placeholders some readers fill in."""
+    return value is None or (isinstance(value, str) and value == "None")
+
+
+def _encode_string_variables(ds):
+    """Encode unicode/object string variables as fixed-width bytes (char arrays)."""
+    for name, var in ds.variables.items():
+        if var.dtype.kind == "U" or (
+            var.dtype.kind == "O"
+            and all(isinstance(v, str) for v in np.ravel(var.values))
+        ):
+            # explicit bytes: xarray's S1 encoding of unicode adds
+            # _Encoding, which Py-ART cannot read
+            ds[name] = ds[name].str.encode("utf-8")
+            ds[name].encoding.pop("dtype", None)
+    return ds
+
+
 def _encode_bool_attrs(ds):
     """Replace boolean attributes (global and per variable) by "true"/"false"."""
 
@@ -382,12 +401,14 @@ def _build_cfradial1_dataset(dtree, calibs=True):
         radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
         cfradial1_ds.update(radar_georef)
 
-    # Ensure that the data type of sweep_mode and similar variables matches
-    if "sweep_mode" in cfradial1_ds.variables:
-        cfradial1_ds["sweep_mode"] = cfradial1_ds["sweep_mode"].astype("S")
+    # CfRadial1 stores strings as char arrays; unicode/object strings would be
+    # written as NC_STRING, which e.g. Py-ART can't read (#417)
+    cfradial1_ds = _encode_string_variables(cfradial1_ds)
 
-    # Update global attributes
-    cfradial1_ds.attrs = dict(dtree.attrs)
+    # Update global attributes, skipping "None" placeholders
+    cfradial1_ds.attrs = {
+        k: v for k, v in dtree.attrs.items() if not _is_none_placeholder(v)
+    }
     # netCDF attributes can't be bool, CfRadial uses "true"/"false" (#418)
     cfradial1_ds = _encode_bool_attrs(cfradial1_ds)
     cfradial1_ds.attrs["Conventions"] = "Cf/Radial"
@@ -395,9 +416,10 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     if "n_gates_vary" in cfradial1_ds.attrs:
         cfradial1_ds.attrs["n_gates_vary"] = "false"
     xradar_version = version("xradar")
+    export_note = f"xradar v{xradar_version} CfRadial1 export"
     history = cfradial1_ds.attrs.get("history", "")
     cfradial1_ds.attrs["history"] = (
-        f"{history}: xradar v{xradar_version} CfRadial1 export"
+        f"{history}: {export_note}" if history else export_note
     )
 
     return cfradial1_ds

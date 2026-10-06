@@ -16,7 +16,8 @@ can be saved to an ODIM_H5 file (v2.2 at the moment).
 ### to_cfradial2
 
 With {class}`~xradar.io.export.to_cfradial2` an xradar {py:class}`xarray:xarray.DataTree`
-can be saved to a CfRadial2-like file.
+can be saved to a CfRadial2-like file. The input DataTree is not modified. The export
+works on a shallow copy by default; pass `deepcopy=True` to work on a deep copy instead.
 
 ## CfRadial1
 
