@@ -596,19 +596,26 @@ def dim0(obj):
     Raises
     ------
     ValueError
-        If ``obj`` has a ``range`` dimension, but no ray dimension.
+        If ``obj`` has a ``range`` dimension, but no ray dimension, or both
+        ``azimuth`` and ``elevation`` dimensions.
     """
-    if "range" in obj.dims:
-        if dim0 := set(obj.dims) & {"azimuth", "elevation"}:
-            return dim0.pop()
-        elif "time" in obj.dims:
-            return "time"
-        else:
-            raise ValueError(
-                f"No CfRadial2/FM301 compliant dimension found in {obj.dims!r}. "
-                "Expected one of 'azimuth', 'elevation' or 'time'."
-            )
-    return None
+    if "range" not in obj.dims:
+        return None
+    # fixed order, a set would make the result depend on string hashing
+    ray_dims = [dim for dim in ["azimuth", "elevation"] if dim in obj.dims]
+    if len(ray_dims) > 1:
+        raise ValueError(
+            f"Ambiguous ray dimension in {obj.dims!r}: "
+            "both 'azimuth' and 'elevation' are present."
+        )
+    if ray_dims:
+        return ray_dims[0]
+    if "time" in obj.dims:
+        return "time"
+    raise ValueError(
+        f"No CfRadial2/FM301 compliant dimension found in {obj.dims!r}. "
+        "Expected one of 'azimuth', 'elevation' or 'time'."
+    )
 
 
 def is_sweep(obj, strict=False):
@@ -624,6 +631,8 @@ def is_sweep(obj, strict=False):
     With ``strict=True`` the mandatory sweep metadata variables are required,
     too (``sweep_number``, ``sweep_mode``, ``follow_mode``, ``prt_mode``,
     ``sweep_fixed_angle``, see FM301 Table 301-7a).
+    Not all backends fill these yet (e.g. HPL and Metek), so their sweeps
+    are only recognized with ``strict=False``.
 
     Parameters
     ----------
@@ -640,8 +649,6 @@ def is_sweep(obj, strict=False):
     if isinstance(obj, xr.DataTree):
         obj = obj.to_dataset()
     if not isinstance(obj, xr.Dataset) or "range" not in obj.dims:
-        return False
-    if {"azimuth", "elevation"}.issubset(obj.dims):
         return False
     try:
         ray_dim = dim0(obj)

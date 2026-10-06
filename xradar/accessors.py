@@ -238,6 +238,13 @@ class XradarDataTreeAccessor(XradarAccessor):
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
 
+    def is_sweep(self, strict=False):
+        """Check whether the DataTree node holds a radar sweep.
+
+        See :func:`xradar.util.is_sweep`.
+        """
+        return is_sweep(self.xarray_obj, strict=strict)
+
     def map_over_sweeps(self, func, *args, **kwargs):
         """
         Apply a function across all sweep nodes in the DataTree using the xradar accessor.

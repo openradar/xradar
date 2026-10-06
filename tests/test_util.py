@@ -678,6 +678,8 @@ def test_is_sweep_backends(odim_file, cfradial1_file, first_dim):
         assert util.is_sweep(dtree[node])
         assert util.is_sweep(dtree[node].to_dataset(), strict=True)
         assert dtree[node].to_dataset().xradar.is_sweep()
+        assert dtree[node].xradar.is_sweep(strict=True)
+    assert not dtree.xradar.is_sweep()
     # still a sweep after georeferencing (2D x, y, z coordinates)
     assert util.is_sweep(dtree.xradar.georeference()["sweep_0"])
 
@@ -725,6 +727,10 @@ def test_dim0():
     assert util.dim0(rhi.swap_dims(time="elevation")) == "elevation"
     # no range dimension
     assert util.dim0(ds.isel(range=0)) is None
+    # both azimuth and elevation dimensions
+    both = xr.Dataset({"x": (("azimuth", "elevation", "range"), np.ones((2, 2, 2)))})
+    with pytest.raises(ValueError, match="Ambiguous ray dimension"):
+        util.dim0(both)
     # range, but no ray dimension
     with pytest.raises(ValueError, match="No CfRadial2/FM301 compliant dimension"):
         util.dim0(xr.Dataset({"x": (("ray", "range"), np.ones((2, 3)))}))
