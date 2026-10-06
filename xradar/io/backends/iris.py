@@ -435,6 +435,25 @@ def _data_type_dict(code):
     return SIGMET_DATA_TYPES.get(code, {"name": f"DB_UNKNOWN_{code}", "func": None})
 
 
+def _moment_names(type_names):
+    """CfRadial moment name per Sigmet data type, in order.
+
+    Types map through ``iris_mapping``. When two types of one sweep map to
+    the same name (e.g. the 1- and 2-byte flavors ``DB_DBZ`` and
+    ``DB_DBZ2`` both map to ``DBZH``), the first keeps the CfRadial name and
+    each later one keeps its Sigmet name, so no moment is lost.
+    """
+    names = []
+    for type_name in type_names:
+        name = iris_mapping.get(type_name, type_name)
+        if name in names:
+            name = type_name
+        if name in names:
+            raise ValueError(f"data type {type_name!r} appears twice in one sweep")
+        names.append(name)
+    return names
+
+
 def _sweep_mode(scan_mode):
     """FM301 ``sweep_mode`` for an IRIS ``antenna_scan_mode``.
 
@@ -4012,14 +4031,17 @@ class IrisStore(AbstractDataStore):
     def ds(self):
         return self._acquire()
 
-    def open_store_variable(self, name, var):
+    def open_store_variable(self, name, var, mname=None):
         dim = self.root.first_dimension
 
         data = indexing.LazilyOuterIndexedArray(IrisArrayWrapper(self, name, var))
         encoding = {"group": self._group, "source": self._filename}
 
-        mname = iris_mapping.get(name, name)
-        attrs = _cf_moment_attrs(mname)
+        if mname is None:
+            mname = iris_mapping.get(name, name)
+        # CF attrs of the mapped moment, also when a colliding type keeps its
+        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
+        attrs = _cf_moment_attrs(iris_mapping.get(name, name))
         if name in ["DB_HCLASS", "DB_HCLASS2"]:
             task_end_info = self.root.ingest_header["task_configuration"][
                 "task_end_info"
@@ -4098,12 +4120,15 @@ class IrisStore(AbstractDataStore):
         return coords
 
     def get_variables(self):
+        hdrs = self.ds["ingest_data_hdrs"]
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
                 **dict(
-                    self.open_store_variable(k, v)
-                    for k, v in self.ds["ingest_data_hdrs"].items()
+                    self.open_store_variable(k, v, mname)
+                    for (k, v), mname in zip(
+                        hdrs.items(), _moment_names(hdrs), strict=True
+                    )
                 ),
                 **self.open_store_coordinates(
                     list(self.ds["ingest_data_hdrs"].values())[0]

@@ -2,6 +2,7 @@
 
 ## Development
 
+* FIX: IRIS reader: a second data type mapping to an already used moment name (e.g. ``DB_DBZ`` + ``DB_DBZ2`` -> ``DBZH``) keeps its Sigmet name instead of silently replacing the first moment ({issue}`394`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader: PPI sector tasks get the FM301 ``sweep_mode`` ``"sector"`` (was ``"azimuth_surveillance"``); ``util.extract_angle_parameters`` takes the start/stop angles of any partial scan (sector, RHI) from the data instead of failing for modes other than ``rhi`` ({issue}`394`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader: the root ``scan_name`` is stripped of its fixed-width padding (``"SURV_HV_300"``, was ``"SURV_HV_300 "``) ({issue}`394`) by [@aladinor](https://github.com/aladinor)
 * MNT: IRIS reader: module-level helpers for moment names, sweep mode, nyquist velocity, range gates, root attributes and the no-data type table, shared with ``xradar.io.virtual`` so the two readers cannot drift; ``xradar.model`` gains ``MOMENT_COORDINATES`` and a fixed-order CF moment-attrs lookup ({issue}`394`) by [@aladinor](https://github.com/aladinor)

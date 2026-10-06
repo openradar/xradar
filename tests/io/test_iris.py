@@ -543,6 +543,35 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
 # -- helpers shared with the virtual reader ---------------------------------
 
 
+def test_moment_names_keep_colliding_types():
+    from xradar.io.backends.iris import _moment_names
+
+    assert _moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
+        "DBZH",
+        "VRADH",
+        "DB_DBZ2",
+    ]
+    assert _moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    with pytest.raises(ValueError, match="appears twice"):
+        _moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
+
+
+def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
+    """Two types mapping to one CfRadial name used to keep only the later
+    one; now the second keeps its Sigmet name. (The collision is staged by
+    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    from xradar.io.backends import iris
+
+    before = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
+    ds = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
+    np.testing.assert_array_equal(ds.DBZH.values, before.DBZH.values)
+    np.testing.assert_array_equal(ds.DB_VEL.values, before.VRADH.values)
+    # CF attrs follow the mapped name, also under the Sigmet name
+    assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+
+
 @pytest.mark.parametrize(
     "scan_mode, expected",
     [
