@@ -37,6 +37,7 @@ __all__ = [
     "get_nyquist_velocity_attrs",
     "get_range_attrs",
     "get_time_attrs",
+    "get_unambiguous_range_attrs",
     "moment_attrs",
     "sweep_vars_mapping",
     "get_azimuth_dataarray",
@@ -752,6 +753,14 @@ def get_nyquist_velocity_attrs(units="m s-1"):
         "units": units,
     }
     return nyquist_attrs
+
+
+def get_unambiguous_range_attrs(units="meters"):
+    unambiguous_range_attrs = {
+        "long_name": "unambiguous_range",
+        "units": units,
+    }
+    return unambiguous_range_attrs
 
 
 def get_moment_attrs(moment):

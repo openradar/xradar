@@ -149,6 +149,20 @@ metadata. Finally, the xarray machinery returns a {py:class}`xarray:xarray.Datas
 with wanted group (eg. ``0``). Depending on the used backend kwargs several
 more functions are applied on that {py:class}`xarray:xarray.Dataset`.
 
+Each sweep carries the ``nyquist_velocity`` (m s-1) and ``unambiguous_range``
+(meters) of the elevation cut, read from the radial data block (MSG_31) or the
+digital radar data header (MSG_1).
+
+The special moment codes below threshold (``0``) and range folded (``1``) are
+decoded to ``NaN`` with ``mask_and_scale=True`` (default). To tell them apart,
+open the data with ``mask_and_scale=False`` (globally or per variable, e.g.
+``mask_and_scale={"VRADH": False}``) and check the raw codes:
+
+```python
+raw = xr.open_dataset(filename, engine="nexradlevel2", group="sweep_1", mask_and_scale=False)
+range_folded = raw.VRADH == 1
+```
+
 ### open_nexradlevel2_datatree
 
 With {func}`~xradar.io.backends.nexrad_level2.open_nexradlevel2_datatree`
