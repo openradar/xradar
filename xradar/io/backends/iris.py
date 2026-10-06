@@ -467,8 +467,8 @@ def _range_centers(task_range_info):
 
 def _root_attrs(product_hdr, ingest_header):
     """Volume attrs from the IRIS product and ingest headers (shared with
-    the virtual parser): source, scan name, stripped instrument name, the
-    task description as comment, and the RHI elevation limits."""
+    the virtual parser): source, stripped scan/instrument names, the task
+    description as comment, and the RHI elevation limits."""
     task_conf = ingest_header["task_configuration"]
     scan_info = task_conf["task_scan_info"]
     attributes = {}
@@ -481,7 +481,7 @@ def _root_attrs(product_hdr, ingest_header):
             }
         )
     attributes["source"] = "Sigmet"
-    attributes["scan_name"] = product_hdr["product_configuration"]["task_name"]
+    attributes["scan_name"] = product_hdr["product_configuration"]["task_name"].strip()
     attributes["instrument_name"] = ingest_header["ingest_configuration"][
         "site_name"
     ].strip()

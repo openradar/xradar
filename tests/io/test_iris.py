@@ -595,6 +595,16 @@ def test_nyquist_and_range_helpers(iris0_file):
     assert rng0.size == tri["number_output_bins"]
 
 
+def test_root_attrs_are_stripped(iris0_file):
+    from xradar.io.backends.iris import IrisRawFile, _root_attrs
+
+    raw = IrisRawFile(iris0_file, loaddata=False)
+    attrs = _root_attrs(raw.product_hdr, raw.ingest_header)
+    assert attrs["scan_name"] == "SURV_HV_300"
+    assert attrs["source"] == "Sigmet"
+    assert attrs["comment"] == "AEROCIVIL OPERATIONAL DUAL POLE SCAN"
+
+
 def test_no_data_zero_types_follow_the_table():
     from xradar.io.backends.iris import _NO_DATA_ZERO_TYPES, SIGMET_DATA_TYPES
 
