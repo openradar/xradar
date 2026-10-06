@@ -45,9 +45,11 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _assign_root,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_subgroup,
 )
 from xradar.model import (
@@ -756,6 +758,7 @@ class UFBackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -789,10 +792,9 @@ class UFBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "uf"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -821,6 +823,7 @@ def open_uf_datatree(
     decode_timedelta=None,
     sweep=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -878,9 +881,12 @@ def open_uf_datatree(
         first dimension. If "auto," determines the first dimension based on the sweep
         type (azimuth or elevation). Default is "auto."
 
-    reindex_angle : bool or dict, optional
-        Controls angle reindexing. If True or a dictionary, applies reindexing with
-        specified settings (if given). Only used if `decode_coords=True`. Default is False.
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+        Only used if `decode_coords=True`. Default is None (no reindexing).
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
 
     fix_second_angle : bool, optional
         If True, corrects errors in the second angle data, such as misaligned
@@ -935,7 +941,7 @@ def open_uf_datatree(
         decode_timedelta=decode_timedelta,
         sweeps=sweeps,
         first_dim=first_dim,
-        reindex_angle=reindex_angle,
+        reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
         fix_second_angle=fix_second_angle,
         site_as_coords=False,
         optional=optional,
@@ -969,6 +975,7 @@ def open_sweeps_as_dict(
     decode_timedelta=None,
     sweeps=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -981,6 +988,7 @@ def open_sweeps_as_dict(
         lock=lock,
         groups=sweeps,
     )
+    reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
     groups_dict = {}
     for path_group, store in stores.items():
         store_entrypoint = StoreBackendEntrypoint()
@@ -1003,10 +1011,8 @@ def open_sweeps_as_dict(
             group_ds.encoding["engine"] = "uf"
 
             # handle duplicates and reindex
-            if decode_coords and reindex_angle is not False:
-                group_ds = group_ds.pipe(util.remove_duplicate_rays)
-                group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
-                group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
+            if decode_coords and reindex_coord:
+                group_ds = _apply_reindex_coord(group_ds, reindex_coord)
 
             # handling first dimension
             dim0 = "elevation" if group_ds.sweep_mode.load() == "rhi" else "azimuth"

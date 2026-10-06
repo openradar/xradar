@@ -153,7 +153,7 @@ pattern*). The padding width is chosen so the child names sort lexically:
 └── ...
 ```
 
-All `open_imd_datatree` kwargs (`first_dim`, `reindex_angle`,
+All `open_imd_datatree` kwargs (`first_dim`, `reindex_coord`,
 `optional_groups`, `min_angle`/`max_angle`, ...) are forwarded and applied
 per volume.
 

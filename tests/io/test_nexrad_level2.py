@@ -726,11 +726,13 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     kwargs = {
         "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
@@ -801,11 +803,13 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     kwargs = {
         "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
@@ -2497,6 +2501,20 @@ class TestRealChunkFiles:
         assert len(sweep_keys) > 0
         ds = dtree["sweep_0"].to_dataset()
         assert ds.sizes["azimuth"] in (360, 720)
+
+    def test_partial_chunks_pad_mode_warns(self, nexrad_chunks_klot):
+        """Padding an incomplete sweep is announced, also when it overrides
+        the user's angle reindexing."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:10]]
+        with pytest.warns(UserWarning, match="sweep_1 is incomplete and is padded"):
+            open_nexradlevel2_datatree(chunk_bytes, incomplete_sweep="pad")
+        reindex_coord = {
+            "angle": dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
+        }
+        with pytest.warns(UserWarning, match=r"reindex_coord\['angle'\] is not used"):
+            open_nexradlevel2_datatree(
+                chunk_bytes, incomplete_sweep="pad", reindex_coord=reindex_coord
+            )
 
     def test_early_stream_few_chunks(self, nexrad_chunks_klot):
         """Only 5 chunks with pad mode still produce data."""
