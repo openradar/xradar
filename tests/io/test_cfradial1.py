@@ -299,3 +299,22 @@ def test_cfradial1_export_strings_as_char_arrays(odim_file, tmp_path):
         attrs = {k: nc.getncattr(k) for k in nc.ncattrs()}
     assert "None" not in attrs.values()
     assert not attrs["history"].startswith(("None", ":"))
+
+
+def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path):
+    # netCDF attributes can't be bool; CfRadial uses "true"/"false" (#418)
+    import netCDF4
+
+    dtree = xd.io.open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 2])
+    bool_attrs = [k for k, v in dtree.attrs.items() if isinstance(v, (bool, np.bool_))]
+    assert bool_attrs
+    path = tmp_path / "nexrad_cf1.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as nc:
+        for name in bool_attrs:
+            assert nc.getncattr(name) == str(bool(dtree.attrs[name])).lower()
+    back = xd.io.open_cfradial1_datatree(path)
+    np.testing.assert_array_equal(
+        back["sweep_0"].ds.DBZH.values[:, : dtree["sweep_0"].ds.sizes["range"]],
+        dtree["sweep_0"].ds.DBZH.values,
+    )
