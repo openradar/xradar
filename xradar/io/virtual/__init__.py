@@ -30,6 +30,7 @@ from xradar.util import has_import
 #: name -> (module, extra that provides its third-party dependencies)
 _LAZY = {
     "IrisSweepCodec": ("xradar.io.virtual.iris.codec", "zarr>=3.1.6"),
+    "IrisParser": ("xradar.io.virtual.iris.parser", "xradar[virtual]"),
 }
 
 # The parsers only appear in __all__ (star-imports, docs) where their extra

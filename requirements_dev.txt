@@ -16,6 +16,7 @@ boto3
 cartopy
 s3fs
 zarr>=3.1.6
+virtualizarr>=2.7.1,<2.8
 pytest-xdist
 pytest-cov
 pre-commit

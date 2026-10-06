@@ -36,3 +36,5 @@ dependencies:
   - zarr>=3.1.6
   - pip:
     - xarray >= 2026.9.0
+    # pip, not conda: obspec-utils (a virtualizarr dep) has no conda-forge pkg
+    - virtualizarr>=2.7.1,<2.8

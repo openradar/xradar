@@ -20,6 +20,9 @@ dependencies:
   - pyproj
   - pip:
     - xarray >= 2026.4.0
+    # docs build executes IRIS_Virtual.md and resolves IrisParser;
+    # pip, not conda: obspec-utils (virtualizarr dep) has no conda-forge pkg
+    - virtualizarr>=2.7.1,<2.8
   - xmltodict
   - cartopy
   - cmweather

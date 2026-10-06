@@ -19,13 +19,15 @@ struct tables the format walker derives its layouts from.
 from xradar.io.virtual import __all__ as _available
 
 # like the parent package: parsers are listed only where their extra is
-__all__ = [name for name in ("IrisSweepCodec",) if name in _available]
+__all__ = [name for name in ("IrisParser", "IrisSweepCodec") if name in _available]
 
 
 def __getattr__(name):
     from xradar.io.virtual import _LAZY, lazy_attribute
 
-    return lazy_attribute(__name__, name, {k: _LAZY[k] for k in ("IrisSweepCodec",)})
+    return lazy_attribute(
+        __name__, name, {k: _LAZY[k] for k in ("IrisSweepCodec", "IrisParser")}
+    )
 
 
 def __dir__():
