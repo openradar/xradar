@@ -543,6 +543,37 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
 # -- helpers shared with the virtual reader ---------------------------------
 
 
+@pytest.mark.parametrize(
+    "scan_mode, expected",
+    [
+        (1, "sector"),
+        (2, "rhi"),
+        (3, "azimuth_surveillance"),
+        (4, "azimuth_surveillance"),
+        (5, "azimuth_surveillance"),
+        (7, "azimuth_surveillance"),
+    ],
+)
+def test_sweep_mode_is_fm301(scan_mode, expected):
+    """One mapping for both readers, FM301 values only."""
+    from xradar.io.backends.iris import _sweep_mode
+
+    assert _sweep_mode(scan_mode) == expected
+
+
+def test_sector_task_is_a_sector_sweep(iris0_file, monkeypatch):
+    """PPI sector tasks are FM301 "sector" sweeps (were labelled
+    azimuth_surveillance), and sweep tools handle them."""
+    from xradar import util
+    from xradar.io.backends import iris
+
+    monkeypatch.setattr(iris.IrisRawFile, "scan_mode", property(lambda self: 1))
+    ds = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    assert ds.sweep_mode.item() == "sector"
+    params = util.extract_angle_parameters(ds)
+    assert params["start_angle"] != params["stop_angle"]
+
+
 def test_nyquist_and_range_helpers(iris0_file):
     from xradar.io.backends.iris import IrisRawFile, _nyquist, _range_centers
 

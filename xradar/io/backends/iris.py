@@ -435,6 +435,16 @@ def _data_type_dict(code):
     return SIGMET_DATA_TYPES.get(code, {"name": f"DB_UNKNOWN_{code}", "func": None})
 
 
+def _sweep_mode(scan_mode):
+    """FM301 ``sweep_mode`` for an IRIS ``antenna_scan_mode``.
+
+    1 (PPI sector) -> ``sector``, 2 (RHI) -> ``rhi``; every other mode
+    (4 PPI full, and the manual/file/exec modes FM301 has no value for)
+    -> ``azimuth_surveillance``.
+    """
+    return {1: "sector", 2: "rhi"}.get(scan_mode, "azimuth_surveillance")
+
+
 def _nyquist(wavelength, prf, multi_prf_mode_flag=0):
     """Nyquist velocity (m/s) from the IRIS ``wavelength`` (1/100 cm) and
     ``prf`` (Hz), multiplied by ``multi_prf_mode_flag + 1`` (pass it for
@@ -4047,7 +4057,7 @@ class IrisStore(AbstractDataStore):
         dim = self.root.first_dimension
 
         # get coordinates from IrisFile
-        sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
+        sweep_mode = _sweep_mode(self.root.scan_mode)
         # align with CfRadial2 convention
         sweep_number = self._group - 1
         prt_mode = "not_set"

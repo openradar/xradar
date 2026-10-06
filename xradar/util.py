@@ -394,8 +394,9 @@ def extract_angle_parameters(ds):
     if mode == "azimuth_surveillance":
         start_ang = 0
         stop_ang = 360
-    elif mode == "rhi":
-        # start/stop angle, round to nearest multiple of angle_res
+    else:
+        # rhi, sector and any other partial scan: start/stop angle from the
+        # data, rounded to the nearest multiple of angle_res
         start_ang = int(np.round(min_angle / angle_res) * angle_res)
         stop_ang = int(np.round(max_angle / angle_res) * angle_res)
 
