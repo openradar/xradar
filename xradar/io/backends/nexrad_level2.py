@@ -2172,11 +2172,12 @@ def open_nexradlevel2_datatree(
         else:
             exp_sweeps = 0
             elev_data = []
-        # nominal azimuth spacing of the incomplete sweeps, used for padding
+        # nominal azimuth spacing of the incomplete sweeps, used for padding;
+        # msg_31_header is compacted past interior gaps: label -> position
         angle_resolution = {
-            sw: _AZIMUTH_RESOLUTION.get(nex.msg_31_header[sw][0]["azimuth_resolution"])
-            for sw in incomplete
-            if nex.msg_31_header[sw]
+            sw: _AZIMUTH_RESOLUTION.get(nex.msg_31_header[pos][0]["azimuth_resolution"])
+            for pos, sw in enumerate(present_keys)
+            if sw in incomplete and nex.msg_31_header[pos]
         }
 
     if isinstance(sweep, str):
