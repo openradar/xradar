@@ -483,6 +483,25 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
     return data
 
 
+def _moment_names(type_names):
+    """CfRadial moment name per Sigmet data type, in order.
+
+    Types map through ``iris_mapping``. When two types of one sweep map to
+    the same name (e.g. the 1- and 2-byte flavors ``DB_DBZ`` and
+    ``DB_DBZ2`` both map to ``DBZH``), the first keeps the CfRadial name and
+    each later one keeps its Sigmet name, so no moment is lost.
+    """
+    names = []
+    for type_name in type_names:
+        name = iris_mapping.get(type_name, type_name)
+        if name in names:
+            name = type_name
+        if name in names:
+            raise ValueError(f"data type {type_name!r} appears twice in one sweep")
+        names.append(name)
+    return names
+
+
 def _data_types_from_dsp_mask(words):
     """Return a list of the data types from the words in the data_type mask."""
     data_types = []
@@ -4040,14 +4059,17 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     def ds(self):
         return self._acquire()
 
-    def open_store_variable(self, name, var):
+    def open_store_variable(self, name, var, mname=None):
         dim = self.root.first_dimension
 
         data = indexing.LazilyOuterIndexedArray(IrisArrayWrapper(self, name, var))
         encoding = {"group": self._group, "source": self._filename}
 
-        mname = iris_mapping.get(name, name)
-        mapping = sweep_vars_mapping.get(mname, {})
+        if mname is None:
+            mname = iris_mapping.get(name, name)
+        # CF attrs of the mapped moment, also when a colliding type keeps its
+        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
+        mapping = sweep_vars_mapping.get(iris_mapping.get(name, name), {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         if name in ["DB_HCLASS", "DB_HCLASS2"]:
             task_end_info = self.root.ingest_header["task_configuration"][
@@ -4142,12 +4164,15 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         return coords
 
     def get_variables(self):
+        hdrs = self.ds["ingest_data_hdrs"]
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
                 **dict(
-                    self.open_store_variable(k, v)
-                    for k, v in self.ds["ingest_data_hdrs"].items()
+                    self.open_store_variable(k, v, mname)
+                    for (k, v), mname in zip(
+                        hdrs.items(), _moment_names(hdrs), strict=True
+                    )
                 ),
                 **self.open_store_coordinates(
                     list(self.ds["ingest_data_hdrs"].values())[0]

@@ -580,6 +580,32 @@ def _header_stub():
     )
 
 
+def test_moment_names_keep_colliding_types():
+    assert iris._moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
+        "DBZH",
+        "VRADH",
+        "DB_DBZ2",
+    ]
+    assert iris._moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    with pytest.raises(ValueError, match="appears twice"):
+        iris._moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
+
+
+def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
+    """Two types mapping to one CfRadial name used to keep only the later
+    one; now the second keeps its Sigmet name. (The collision is staged by
+    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as before:
+        dbzh, vradh = before.DBZH.values, before.VRADH.values
+    monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
+        np.testing.assert_array_equal(ds.DBZH.values, dbzh)
+        np.testing.assert_array_equal(ds.DB_VEL.values, vradh)
+        # CF attrs follow the mapped name, also under the Sigmet name
+        assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+
+
 @pytest.mark.parametrize(
     "cls, wavelength_prf",
     [(iris.IrisRawFile, (533, 1000)), (iris.IrisIngestDataFile, (999, 7777))],
