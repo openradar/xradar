@@ -120,3 +120,46 @@ def test_moment_attrs_order_is_fixed():
 
     assert list(moment_attrs("DBZH")) == ["units", "standard_name", "long_name"]
     assert moment_attrs("NOT_A_MOMENT") == {}
+
+
+def test_json_safe_and_endianness_helpers():
+    """Attrs reach zarr.json as plain JSON; inline chunks are little-endian."""
+    from xradar.io.virtual.manifest import native_endian_bytes, to_json_safe
+
+    value = {"a": np.float32(1.5), "b": [np.int64(2), (np.bool_(True),)]}
+    assert to_json_safe(value) == {"a": 1.5, "b": [2, [True]]}
+    assert to_json_safe(np.arange(3, dtype="uint8")) == [0, 1, 2]
+    one_byte, endian = native_endian_bytes(np.arange(3, dtype="uint8"))
+    assert endian is None and one_byte.dtype == np.uint8
+    big = np.arange(3, dtype=">u2")
+    little, endian = native_endian_bytes(big)
+    assert endian == "little" and little.dtype.byteorder in ("<", "=")
+    np.testing.assert_array_equal(little, big)
+
+
+def test_inline_variables_round_trip_through_zarr():
+    """Inline uint8 and datetime64 variables read back exactly; datetimes
+    carry CF units so xarray decodes them."""
+    import xarray as xr
+    from virtualizarr.manifests import ManifestGroup, ManifestStore
+
+    from xradar.io.virtual.manifest import inline_variable
+
+    small = np.array([1, 2, 3], dtype="uint8")
+    times = np.array(["2026-01-15T00:01:09", "2026-01-15T00:01:10"], "datetime64[ms]")
+    group = ManifestGroup(
+        arrays={
+            "small": inline_variable(("x",), small, {}),
+            "times": inline_variable(("t",), times, {}),
+        },
+        attributes={},
+    )
+    times_attrs = group.arrays["times"].metadata.attributes
+    assert times_attrs["units"] == "ms since 1970-01-01T00:00:00"
+    assert times_attrs["calendar"] == "proleptic_gregorian"
+    assert group.arrays["small"].metadata.to_dict()["codecs"][0] == {"name": "bytes"}
+    ds = xr.open_dataset(
+        ManifestStore(group=group), engine="zarr", consolidated=False, zarr_format=3
+    )
+    np.testing.assert_array_equal(ds["small"].values, small)
+    np.testing.assert_array_equal(ds["times"].values, times.astype("datetime64[ns]"))

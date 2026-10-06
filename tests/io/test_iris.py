@@ -624,6 +624,31 @@ def test_nyquist_and_range_helpers(iris0_file):
     assert rng0.size == tri["number_output_bins"]
 
 
+def test_root_attrs_carry_the_rhi_limits(iris0_file):
+    """RHI tasks report their elevation limits in the root attrs."""
+    from xradar.io.backends.iris import IrisRawFile, _root_attrs
+
+    raw = IrisRawFile(iris0_file, loaddata=False)
+    ingest = raw.ingest_header
+    scan_info = dict(ingest["task_configuration"]["task_scan_info"])
+    scan_info["antenna_scan_mode"] = 2
+    scan_info["task_type_scan_info"] = {
+        "lower_elevation_limit": 0.5,
+        "upper_elevation_limit": 45.0,
+    }
+    rhi = {
+        **ingest,
+        "task_configuration": {
+            **ingest["task_configuration"],
+            "task_scan_info": scan_info,
+        },
+    }
+    attrs = _root_attrs(raw.product_hdr, rhi)
+    assert attrs["elevation_lower_limit"] == 0.5
+    assert attrs["elevation_upper_limit"] == 45.0
+    assert "elevation_lower_limit" not in _root_attrs(raw.product_hdr, ingest)
+
+
 def test_root_attrs_are_stripped(iris0_file):
     from xradar.io.backends.iris import IrisRawFile, _root_attrs
 

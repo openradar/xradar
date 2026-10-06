@@ -469,3 +469,47 @@ def test_output_contract_caps_the_chunk_size():
         check_output("uint8", 0, (360, MAX_CELLS))
     with pytest.raises(ValueError, match="non-empty"):
         check_output("uint8", 0, (2.5, 3))
+
+
+def test_lazy_exports_resolve_in_process(monkeypatch):
+    """``xradar.io.virtual`` and its subpackages resolve their exports on
+    first access, list only what is importable, and explain a missing
+    optional dependency instead of failing with a bare ImportError."""
+    import importlib
+
+    import xradar.io
+    from xradar.io import virtual
+    from xradar.io.virtual import iris
+
+    assert xradar.io.virtual is virtual  # lazy attribute of xradar.io
+    assert iris.IrisSweepCodec is IrisSweepCodec
+    assert "IrisSweepCodec" in dir(iris)
+    assert "azimuth_sort_order" in dir(virtual)
+    with pytest.raises(AttributeError, match="no attribute 'Nope'"):
+        virtual.Nope
+
+    real_import = importlib.import_module
+
+    def missing(name, *args):
+        if name == "xradar.io.virtual.iris.codec":
+            raise ImportError("no zarr", name="zarr")
+        return real_import(name, *args)
+
+    monkeypatch.setattr(importlib, "import_module", missing)
+    with pytest.raises(virtual.MissingDependencyError, match="needs only xradar"):
+        virtual.lazy_attribute("xradar.io.virtual", "IrisSweepCodec", virtual._LAZY)
+
+
+def test_codec_is_decode_only_and_needs_a_mapping():
+    """A store's codec entry must be a mapping, and the codec never writes."""
+    with pytest.raises(ValueError, match="must be a mapping"):
+        IrisSweepCodec.from_dict({"name": CODEC_NAME, "configuration": [1, 2]})
+    import asyncio
+
+    codec = IrisSweepCodec(moment_index=0, ndatatypes=1)
+    with pytest.raises(NotImplementedError, match="decode-only"):
+        codec._encode_sync(None, None)
+    with pytest.raises(NotImplementedError, match="decode-only"):
+        asyncio.run(codec._encode_single(None, None))
+    with pytest.raises(NotImplementedError):
+        codec.compute_encoded_size(10, None)
