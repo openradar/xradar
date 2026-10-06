@@ -538,3 +538,52 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
         ]
     # the IRIS names are kept with the classes
     assert iris.HCLASS_CLASSIFIERS[1][2][2] == ("MET_CLASS_RAIN", "rain")
+
+
+# -- helpers shared with the virtual reader ---------------------------------
+
+
+def test_nyquist_and_range_helpers(iris0_file):
+    from xradar.io.backends.iris import IrisRawFile, _nyquist, _range_centers
+
+    # 1/100 cm and Hz -> m/s; the multi-PRF factor multiplies
+    assert _nyquist(532, 1000) == pytest.approx(13.3)
+    assert _nyquist(532, 1000, 1) == pytest.approx(26.6)
+    tri = IrisRawFile(iris0_file, loaddata=False).ingest_header["task_configuration"][
+        "task_range_info"
+    ]
+    rng = _range_centers(tri)
+    assert rng.dtype == np.float32
+    assert rng.size == tri["number_output_bins"]
+    np.testing.assert_allclose(np.diff(rng), tri["step_output_bins"] / 100)
+    assert rng[0] == tri["range_first_bin"] / 100
+    # range_first_bin 0 means "centers start half a step out"
+    zero = dict(tri, range_first_bin=0)
+    rng0 = _range_centers(zero)
+    assert rng0[0] == tri["step_output_bins"] / 2 / 100
+    assert rng0.size == tri["number_output_bins"]
+
+
+def test_no_data_zero_types_follow_the_table():
+    from xradar.io.backends.iris import _NO_DATA_ZERO_TYPES, SIGMET_DATA_TYPES
+
+    names = _NO_DATA_ZERO_TYPES
+    assert {"DB_VEL", "DB_VELC"} <= names
+    assert "DB_DBZ" not in names  # 8-bit reflectivity has no no-data word
+    by_name = {e["name"]: e for e in SIGMET_DATA_TYPES.values()}
+    assert all((by_name[n].get("fkw") or {}).get("mask") == 0 for n in names)
+
+
+def test_raw_product_bhdrs_contract(iris0_file):
+    """The virtual parser builds its sweep index from
+    ``IrisRawFile(loaddata=False).raw_product_bhdrs``: one record header per
+    record after the two volume headers, each with its sweep number."""
+    from pathlib import Path
+
+    from xradar.io.backends.iris import RECORD_BYTES, IrisRawFile
+
+    raw = IrisRawFile(iris0_file, loaddata=False)
+    nrecords = Path(iris0_file).stat().st_size // RECORD_BYTES
+    assert len(raw.raw_product_bhdrs) == nrecords - 2
+    numbers = [bhdr["sweep_number"] for bhdr in raw.raw_product_bhdrs]
+    assert numbers[0] == 1 and sorted(numbers) == numbers

@@ -54,6 +54,8 @@ from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
 from ...model import (
+    MOMENT_COORDINATES,
+    _cf_moment_attrs,
     georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -61,10 +63,8 @@ from ...model import (
     get_latitude_attrs,
     get_longitude_attrs,
     get_range_attrs,
-    moment_attrs,
     radar_calibration_subgroup,
     radar_parameters_subgroup,
-    sweep_vars_mapping,
 )
 from .common import (
     _apply_reindex_coord,
@@ -426,6 +426,57 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
             pass
 
     return data
+
+
+def _data_type_dict(code):
+    """``SIGMET_DATA_TYPES`` entry for ``code``; unknown codes get the
+    ``DB_UNKNOWN_{code}`` name and no decoder (shared with the virtual
+    parser)."""
+    return SIGMET_DATA_TYPES.get(code, {"name": f"DB_UNKNOWN_{code}", "func": None})
+
+
+def _nyquist(wavelength, prf, multi_prf_mode_flag=0):
+    """Nyquist velocity (m/s) from the IRIS ``wavelength`` (1/100 cm) and
+    ``prf`` (Hz), multiplied by ``multi_prf_mode_flag + 1`` (pass it for
+    ``DB_VEL`` only, the dual-PRF unfolded velocity)."""
+    # division by 10000 to get from 1/100 cm to m
+    return wavelength * prf / (10000.0 * 4.0) * (multi_prf_mode_flag + 1)
+
+
+def _range_centers(task_range_info):
+    """Range gate centers (m, float32) from an IRIS ``task_range_info``."""
+    step = task_range_info["step_output_bins"]
+    first = task_range_info["range_first_bin"]
+    last = task_range_info["range_last_bin"]
+    if first == 0:
+        first = step / 2
+        last += step
+    rng = np.arange(first, last + step, step, dtype="float32")
+    return rng[: task_range_info["number_output_bins"]] / 1e2
+
+
+def _root_attrs(product_hdr, ingest_header):
+    """Volume attrs from the IRIS product and ingest headers (shared with
+    the virtual parser): source, scan name, stripped instrument name, the
+    task description as comment, and the RHI elevation limits."""
+    task_conf = ingest_header["task_configuration"]
+    scan_info = task_conf["task_scan_info"]
+    attributes = {}
+    if scan_info["antenna_scan_mode"] == 2:
+        tsi = scan_info["task_type_scan_info"]
+        attributes.update(
+            {
+                "elevation_lower_limit": tsi["lower_elevation_limit"],
+                "elevation_upper_limit": tsi["upper_elevation_limit"],
+            }
+        )
+    attributes["source"] = "Sigmet"
+    attributes["scan_name"] = product_hdr["product_configuration"]["task_name"]
+    attributes["instrument_name"] = ingest_header["ingest_configuration"][
+        "site_name"
+    ].strip()
+    attributes["comment"] = task_conf["task_end_info"]["task_description"]
+    return attributes
 
 
 def _data_types_from_dsp_mask(words):
@@ -2485,6 +2536,14 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
+#: Names of the data types whose raw word 0 means "no data" (the ``mask: 0``
+#: entries of ``SIGMET_DATA_TYPES``); shared with the virtual parser.
+_NO_DATA_ZERO_TYPES = frozenset(
+    entry["name"]
+    for entry in SIGMET_DATA_TYPES.values()
+    if (entry.get("fkw") or {}).get("mask") == 0
+)
+
 # HydroClass echo classifiers, keyed by the identifiers stored in
 # task_end_info "echo_class_identifiers": (IRIS method name, CF flag prefix,
 # {value: (IRIS class name as in sig_data_types.h, CF flag meaning)});
@@ -2771,10 +2830,7 @@ class IrisIngestHeader(IrisHeaderBase):
     @property
     def data_types_dict(self):
         """Returns list of data type dictionaries."""
-        return [
-            SIGMET_DATA_TYPES.get(i, {"name": f"DB_UNKNOWN_{i}", "func": None})
-            for i in self._data_types_numbers
-        ]
+        return [_data_type_dict(i) for i in self._data_types_numbers]
 
     @property
     def data_types_count(self):
@@ -2921,9 +2977,7 @@ class IrisIngestDataHeader(IrisHeaderBase):
     @property
     def data_types_dict(self):
         """Returns list of data type dictionaries."""
-        i = self._data_types_numbers
-
-        return SIGMET_DATA_TYPES.get(i, {"name": f"DB_UNKNOWN_{i}", "func": None})
+        return _data_type_dict(self._data_types_numbers)
 
     @property
     def data_types(self):
@@ -3190,17 +3244,11 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
                 # PRF is normally used from product_hdr
                 # prf = self.product_hdr['product_end']['prf']
                 # but we can retrieve it from TASK_DSP_INFO, too
-                prf = self.ingest_header["task_configuration"]["task_dsp_info"]["prf"]
-                # division by 10000 to get from 1/100 cm to m
-                nyquist = wavelength * prf / (10000.0 * 4.0)
-                if prod["func"] == decode_vel:
-                    nyquist *= (
-                        self.ingest_header["task_configuration"]["task_dsp_info"][
-                            "multi_prf_mode_flag"
-                        ]
-                        + 1
-                    )
-                kw.update({"nyquist": nyquist})
+                dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
+                multi_prf = (
+                    dsp_info["multi_prf_mode_flag"] if prod["func"] == decode_vel else 0
+                )
+                kw.update({"nyquist": _nyquist(wavelength, dsp_info["prf"], multi_prf)})
 
             return prod["func"](data, **kw)
         else:
@@ -3758,15 +3806,14 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                     return prod["func"](data, **kw)
 
                 prf = self.product_hdr["product_end"]["prf"]
-                nyquist = wavelength * prf / (10000.0 * 4.0)
-                if prod["func"] == decode_vel:
-                    nyquist *= (
-                        self.ingest_header["task_configuration"]["task_dsp_info"][
-                            "multi_prf_mode_flag"
-                        ]
-                        + 1
-                    )
-                kw.update({"nyquist": nyquist})
+                multi_prf = (
+                    self.ingest_header["task_configuration"]["task_dsp_info"][
+                        "multi_prf_mode_flag"
+                    ]
+                    if prod["func"] == decode_vel
+                    else 0
+                )
+                kw.update({"nyquist": _nyquist(wavelength, prf, multi_prf)})
 
             return prod["func"](data, **kw)
         elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
@@ -3962,8 +4009,7 @@ class IrisStore(AbstractDataStore):
         encoding = {"group": self._group, "source": self._filename}
 
         mname = iris_mapping.get(name, name)
-        mapping = sweep_vars_mapping.get(mname, {})
-        attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
+        attrs = _cf_moment_attrs(mname)
         if name in ["DB_HCLASS", "DB_HCLASS2"]:
             task_end_info = self.root.ingest_header["task_configuration"][
                 "task_end_info"
@@ -3974,9 +4020,7 @@ class IrisStore(AbstractDataStore):
                     nbytes=1 if name == "DB_HCLASS" else 2,
                 )
             )
-        attrs["coordinates"] = (
-            "elevation azimuth range latitude longitude altitude time"
-        )
+        attrs["coordinates"] = MOMENT_COORDINATES
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self, var):
@@ -4012,20 +4056,7 @@ class IrisStore(AbstractDataStore):
         lon, lat, alt = self.root.site_coords
 
         task = self.root.ingest_header["task_configuration"]["task_range_info"]
-        range_first_bin = task["range_first_bin"]
-        range_last_bin = task["range_last_bin"]
-        if range_first_bin == 0:
-            range_first_bin = task["step_output_bins"] / 2
-            range_last_bin += task["step_output_bins"]
-        rng = (
-            np.arange(
-                range_first_bin,
-                range_last_bin + task["step_output_bins"],
-                task["step_output_bins"],
-                dtype="float32",
-            )[: task["number_output_bins"]]
-            / 1e2
-        )
+        rng = _range_centers(task)
         range_attrs = get_range_attrs()
         range_attrs["meters_between_gates"] = task["step_output_bins"] / 2
         range_attrs["spacing_is_constant"] = (
@@ -4071,28 +4102,7 @@ class IrisStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {}
-        # RHI limits
-        if self.root.scan_mode == 2:
-            tsi = self.root.ingest_header["task_configuration"]["task_scan_info"][
-                "task_type_scan_info"
-            ]
-            ll = tsi["lower_elevation_limit"]
-            ul = tsi["upper_elevation_limit"]
-            attributes.update(
-                {"elevation_lower_limit": ll, "elevation_upper_limit": ul}
-            )
-        attributes["source"] = "Sigmet"
-        attributes["scan_name"] = self.root.product_hdr["product_configuration"][
-            "task_name"
-        ]
-        attributes["instrument_name"] = self.root.ingest_header["ingest_configuration"][
-            "site_name"
-        ].strip()
-        attributes["comment"] = self.root.ingest_header["task_configuration"][
-            "task_end_info"
-        ]["task_description"]
-        return FrozenDict(attributes)
+        return FrozenDict(_root_attrs(self.root.product_hdr, self.root.ingest_header))
 
 
 def _get_iris_group_names(filename):
