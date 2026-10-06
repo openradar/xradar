@@ -58,6 +58,10 @@ SWEEP_INFO_VARS = (
 )
 
 
+#: variables of the ragged ``n_points`` layout, not valid in the padded export
+RAGGED_LAYOUT_VARS = ["ray_n_gates", "ray_start_index"]
+
+
 def _first_valid_scalar(data_array):
     """Collapse a metadata variable to its first non-missing scalar value."""
     if data_array.ndim == 0:
@@ -363,6 +367,11 @@ def _build_cfradial1_dataset(dtree, calibs=True):
 
     cfradial1_ds = _combine_sweeps(dtree)
 
+    # Sweeps are written padded to (time, range). Index variables of the
+    # ragged n_points layout would contradict that and make readers try to
+    # unpack n_points, which isn't written (#416).
+    cfradial1_ds = cfradial1_ds.drop_vars(RAGGED_LAYOUT_VARS, errors="ignore")
+
     # Handle calibration parameters
     if calibs and "radar_calibration" in dtree:
         calib_ds = _map_radar_calibration(dtree["radar_calibration"].to_dataset())
@@ -387,6 +396,8 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     }
     cfradial1_ds.attrs["Conventions"] = "Cf/Radial"
     cfradial1_ds.attrs["version"] = "1.2"
+    if "n_gates_vary" in cfradial1_ds.attrs:
+        cfradial1_ds.attrs["n_gates_vary"] = "false"
     xradar_version = version("xradar")
     export_note = f"xradar v{xradar_version} CfRadial1 export"
     history = cfradial1_ds.attrs.get("history", "")

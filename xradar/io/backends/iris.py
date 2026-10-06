@@ -2485,6 +2485,103 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
+# HydroClass echo classifiers, keyed by the identifiers stored in
+# task_end_info "echo_class_identifiers": (IRIS method name, CF flag prefix,
+# {value: (IRIS class name as in sig_data_types.h, CF flag meaning)});
+# values listed as "Unused" are left out
+# 4.4.14, Tables 10-12, page 76f (IRIS Programming Guide M212927EN-B)
+HCLASS_CLASSIFIERS = {
+    1: (
+        "METEOCLASSIFIER",
+        "meteo",
+        {
+            0: ("MET_CLASS_THRESHOLD", "no_data"),
+            1: ("MET_CLASS_NON_MET", "non_meteorological"),
+            2: ("MET_CLASS_RAIN", "rain"),
+            3: ("MET_CLASS_WET_SNOW", "wet_snow"),
+            4: ("MET_CLASS_SNOW", "snow"),
+            5: ("MET_CLASS_GRAUPEL", "graupel"),
+            6: ("MET_CLASS_HAIL", "hail"),
+        },
+    ),
+    2: (
+        "PRECIPCLASSIFIER",
+        "precip",
+        {
+            0: ("PRE_CLASS_THRESHOLD", "no_data"),
+            1: ("PRE_CLASS_GC_AP", "ground_clutter_anomalous_propagation"),
+            2: ("PRE_CLASS_BIO", "bio_scatter"),
+            3: ("PRE_CLASS_PRECIP", "precipitation"),
+            4: ("PRE_CLASS_LARGE_DROPS", "large_drops"),
+            5: ("PRE_CLASS_LIGHT_PRECIP", "light_precipitation"),
+            6: ("PRE_CLASS_MODERATE_PRECIP", "moderate_precipitation"),
+            # named, but described as "Unused" in Table 11
+            7: ("PRE_CLASS_HEAVY_PRECIP", "heavy_precipitation"),
+        },
+    ),
+    3: (
+        "CELLCLASSIFIER",
+        "cell",
+        {
+            0: ("CELL_CLASS_STRATIFORM", "stratiform"),
+            1: ("CELL_CLASS_CONVECTION", "convection"),
+        },
+    ),
+}
+
+# bit segments (shift, number of bits) of one HydroClass byte
+# 4.4.14, page 75 (IRIS Programming Guide M212927EN-B)
+HCLASS_SEGMENTS = [(0, 3), (3, 3), (6, 2)]
+
+
+def hclass_flag_attrs(identifiers, nbytes=1):
+    """Get CF flag attributes for HydroClass data.
+
+    Each HydroClass byte holds up to three classifier results in bit segments.
+    The classifier of each segment is given by ``identifiers``, the classes
+    are described with CF ``flag_masks``, ``flag_values`` and
+    ``flag_meanings``, so that the data can be kept as stored.
+
+    Parameters
+    ----------
+    identifiers : sequence of int
+        Classifier identifiers of the bit segments, lowest bits first
+        (task_end_info ``echo_class_identifiers``).
+    nbytes : int, optional
+        Number of bytes of the data type (1 for DB_HCLASS, 2 for DB_HCLASS2).
+        Defaults to 1.
+
+    Returns
+    -------
+    attrs : dict
+        CF flag attributes, empty if no known classifier is allocated.
+    """
+    segments = [
+        (8 * byte + shift, nbits)
+        for byte in range(nbytes)
+        for shift, nbits in HCLASS_SEGMENTS
+    ]
+    dtype = np.uint8 if nbytes == 1 else np.uint16
+    masks, values, meanings = [], [], []
+    for ident, (shift, nbits) in zip(identifiers, segments, strict=False):
+        if ident not in HCLASS_CLASSIFIERS:
+            continue
+        _, prefix, classes = HCLASS_CLASSIFIERS[ident]
+        for value, (_, meaning) in classes.items():
+            if value >= 2**nbits:
+                continue
+            masks.append((2**nbits - 1) << shift)
+            values.append(value << shift)
+            meanings.append(f"{prefix}_{meaning}")
+    if not meanings:
+        return {}
+    return {
+        "flag_masks": np.array(masks, dtype=dtype),
+        "flag_values": np.array(values, dtype=dtype),
+        "flag_meanings": " ".join(meanings),
+    }
+
+
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -3672,6 +3769,12 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 kw.update({"nyquist": nyquist})
 
             return prod["func"](data, **kw)
+        elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
+            # 8-bit types without decoding function (e.g. DB_HCLASS): two
+            # range bins per 16-bit word, like the scaled 8-bit types above
+            # (DB_XHDR is already decoded into its structure)
+            rays, bins = data.shape
+            return data.view(f"(2,) {prod['dtype']}").reshape(rays, -1)[:, :bins]
         else:
             return data
 
@@ -3782,6 +3885,9 @@ class IrisArrayWrapper(BackendArray):
         prod = [v for v in datastore.root.data_types_dict if v["name"] == name]
         if prod and prod[0]["func"] is None:
             self.dtype = np.dtype("int16")
+            # 8-bit types are unpacked to one value per range bin
+            if get_dtype_size(prod[0].get("dtype", "int16")) == 1:
+                self.dtype = np.dtype(prod[0]["dtype"])
         if name == "DB_XHDR":
             self.dtype = np.dtype("O")
         if name in ["azimuth", "elevation"]:
@@ -3858,6 +3964,16 @@ class IrisStore(AbstractDataStore):
         mname = iris_mapping.get(name, name)
         mapping = sweep_vars_mapping.get(mname, {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
+        if name in ["DB_HCLASS", "DB_HCLASS2"]:
+            task_end_info = self.root.ingest_header["task_configuration"][
+                "task_end_info"
+            ]
+            attrs.update(
+                hclass_flag_attrs(
+                    bytearray(task_end_info["echo_class_identifiers"]),
+                    nbytes=1 if name == "DB_HCLASS" else 2,
+                )
+            )
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
