@@ -24,7 +24,7 @@ __all__ = [
     "ipol_time",
     "rolling_dim",
     "get_sweep_keys",
-    "dim0",
+    "get_ray_dim",
     "is_sweep",
     "apply_to_sweeps",
     "apply_to_volume",
@@ -578,10 +578,10 @@ def rolling_dim(data, window):
     return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
 
 
-def dim0(obj):
+def get_ray_dim(obj):
     """Return the ray dimension (azimuth/elevation/time) of a radar object.
 
-    Taken from :func:`wradlib.util.dim0`.
+    Adapted from :func:`wradlib.util.dim0`.
 
     Parameters
     ----------
@@ -589,7 +589,7 @@ def dim0(obj):
 
     Returns
     -------
-    dim0 : str or None
+    ray_dim : str or None
         ``azimuth`` or ``elevation`` if present, else ``time``. None if
         ``obj`` has no ``range`` dimension.
 
@@ -651,7 +651,7 @@ def is_sweep(obj, strict=False):
     if not isinstance(obj, xr.Dataset) or "range" not in obj.dims:
         return False
     try:
-        ray_dim = dim0(obj)
+        ray_dim = get_ray_dim(obj)
     except ValueError:
         return False
     for angle in ["azimuth", "elevation"]:

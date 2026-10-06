@@ -719,21 +719,21 @@ def test_is_sweep_structure():
     assert not util.is_sweep(None)
 
 
-def test_dim0():
+def test_get_ray_dim():
     ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
-    assert util.dim0(ds) == "time"
-    assert util.dim0(ds.swap_dims(time="azimuth")) == "azimuth"
+    assert util.get_ray_dim(ds) == "time"
+    assert util.get_ray_dim(ds.swap_dims(time="azimuth")) == "azimuth"
     rhi = model.create_sweep_dataset(shape=(36, 10), azimuth=10.0, sweep="RHI")
-    assert util.dim0(rhi.swap_dims(time="elevation")) == "elevation"
+    assert util.get_ray_dim(rhi.swap_dims(time="elevation")) == "elevation"
     # no range dimension
-    assert util.dim0(ds.isel(range=0)) is None
+    assert util.get_ray_dim(ds.isel(range=0)) is None
     # both azimuth and elevation dimensions
     both = xr.Dataset({"x": (("azimuth", "elevation", "range"), np.ones((2, 2, 2)))})
     with pytest.raises(ValueError, match="Ambiguous ray dimension"):
-        util.dim0(both)
+        util.get_ray_dim(both)
     # range, but no ray dimension
     with pytest.raises(ValueError, match="No CfRadial2/FM301 compliant dimension"):
-        util.dim0(xr.Dataset({"x": (("ray", "range"), np.ones((2, 3)))}))
+        util.get_ray_dim(xr.Dataset({"x": (("ray", "range"), np.ones((2, 3)))}))
 
 
 def test_is_sweep_stacked():
@@ -743,7 +743,7 @@ def test_is_sweep_stacked():
     ds = ds.swap_dims(time="azimuth")
     assert util.is_sweep(ds)
     stacked = xr.concat([ds.drop_vars("time")] * 2, dim="time")
-    assert util.dim0(stacked) == "azimuth"
+    assert util.get_ray_dim(stacked) == "azimuth"
     assert not util.is_sweep(stacked)
     # range dimension, but no ray dimension
     assert not util.is_sweep(ds.rename(azimuth="ray"))
