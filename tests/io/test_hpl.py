@@ -110,7 +110,7 @@ def test_open_hpl_datatree():
     # Verify a sample variable in one of the sweep groups
     sample_sweep = sweep_groups[0]
     assert (
-        len(dtree[sample_sweep].data_vars) == 11
+        len(dtree[sample_sweep].data_vars) == 13
     ), f"Expected data variables in {sample_sweep}"
     assert (
         "mean_doppler_velocity" in dtree[sample_sweep].data_vars
@@ -139,3 +139,16 @@ def test_open_hpl_datatree_optional_groups():
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize(
+    "fname", ["User1_184_20240601_013257.hpl", "User1_100_20240714_122137.hpl"]
+)
+def test_hpl_sweep_metadata(fname):
+    # mandatory sweep metadata (FM301 Table 301-7a), follow_mode and prt_mode
+    # are not in the file and take the CfRadial 2.1 defaults (#451)
+    dtree = xd.io.open_hpl_datatree(DATASETS.fetch(fname))
+    ds = dtree["sweep_0"].to_dataset()
+    assert xd.model.required_sweep_metadata_vars.issubset(ds.variables)
+    assert ds["follow_mode"].values == b"none"
+    assert ds["prt_mode"].values == b"fixed"
