@@ -279,3 +279,58 @@ def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path):
         np.testing.assert_array_equal(
             back[sweep].ds.DBZ.values[:, :nrange], dtree[sweep].ds.DBZ.values
         )
+
+
+def test_cfradial1_export_split_cuts(nexradlevel2_file, tmp_path):
+    # NEXRAD split cuts: same elevation, different moments; combining the
+    # per-sweep metadata conflicted on sweep_number (#418)
+    dtree = xd.io.open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
+    # bool attributes are handled separately (#423)
+    dtree.attrs = {
+        k: v for k, v in dtree.attrs.items() if not isinstance(v, (bool, np.bool_))
+    }
+    assert "VRADH" not in dtree["sweep_0"].ds and "VRADH" in dtree["sweep_1"].ds
+    path = tmp_path / "split_cuts.nc"
+    xd.io.to_cfradial1(dtree, path)
+    back = xd.io.open_cfradial1_datatree(path, first_dim="time")
+    for i, sweep in enumerate(["sweep_0", "sweep_1"]):
+        src = dtree[sweep].ds.sortby("time")
+        out = back[sweep].ds
+        assert int(out.sweep_number) == i
+        assert float(out.sweep_fixed_angle) == float(src.sweep_fixed_angle)
+        np.testing.assert_array_equal(
+            out.DBZH.values[:, : src.sizes["range"]], src.DBZH.values
+        )
+    np.testing.assert_array_equal(
+        back["sweep_1"].ds.VRADH.values[:, : dtree["sweep_1"].ds.sizes["range"]],
+        dtree["sweep_1"].ds.sortby("time").VRADH.values,
+    )
+
+
+def test_cfradial1_export_range_geometry(gamic_file, tmp_path):
+    # sweeps with different gate spacing can't share one range coordinate,
+    # CfRadial 1.4 section 2.5 asks for resampling onto a common geometry
+    dtree = xd.io.open_gamic_datatree(gamic_file)
+    with pytest.raises(ValueError, match="one range geometry for all sweeps"):
+        xd.io.to_cfradial1(dtree, tmp_path / "gamic.nc")
+
+    dtree = xd.io.open_gamic_datatree(
+        gamic_file,
+        reindex_coord=dict(
+            range=dict(start_range=75.0, stop_range=150000.0, range_res=150.0)
+        ),
+    )
+    xd.io.to_cfradial1(dtree, tmp_path / "gamic.nc")
+    back = xd.io.open_cfradial1_datatree(tmp_path / "gamic.nc")
+    np.testing.assert_allclose(back["sweep_9"].ds.range.diff("range"), 150.0)
+
+
+def test_check_range_geometry():
+    def sweep(rng):
+        return xr.Dataset(coords={"range": np.asarray(rng, dtype=float)})
+
+    # the number of gates may differ, single-gate sweeps have no spacing
+    cf1_export._check_range_geometry([sweep([50, 150, 250]), sweep([50, 150])])
+    cf1_export._check_range_geometry([sweep([50]), sweep([50])])
+    with pytest.raises(ValueError, match="one range geometry"):
+        cf1_export._check_range_geometry([sweep([50, 150]), sweep([75, 175])])

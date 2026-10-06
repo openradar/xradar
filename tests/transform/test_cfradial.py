@@ -5,7 +5,6 @@
 import pytest
 import xarray as xr
 from open_radar_data import DATASETS
-from xarray import MergeError
 
 import xradar as xd
 
@@ -94,7 +93,7 @@ def test_to_cfradial1_with_different_range_shapes(nexradlevel2_bzfile):
 
 def test_to_cfradial1_error_with_different_range_bin_sizes(gamic_file):
     with xd.io.open_gamic_datatree(gamic_file) as dtree:
-        with pytest.raises(MergeError):
+        with pytest.raises(ValueError, match="one range geometry for all sweeps"):
             xd.transform.to_cfradial1(dtree)
 
 
