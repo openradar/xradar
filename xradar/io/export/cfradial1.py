@@ -111,6 +111,21 @@ def _encode_string_variables(ds):
     return ds
 
 
+def _encode_bool_attrs(ds):
+    """Replace boolean attributes (global and per variable) by "true"/"false"."""
+
+    def _encode(attrs):
+        return {
+            k: (str(bool(v)).lower() if isinstance(v, (bool, np.bool_)) else v)
+            for k, v in attrs.items()
+        }
+
+    ds.attrs = _encode(ds.attrs)
+    for var in ds.variables.values():
+        var.attrs = _encode(var.attrs)
+    return ds
+
+
 def _sweep_group_names(dtree):
     """Return the names of the sweep groups in a radar ``DataTree``."""
     return [name for name in dtree.groups if "sweep" in name]
@@ -394,6 +409,8 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     cfradial1_ds.attrs = {
         k: v for k, v in dtree.attrs.items() if not _is_none_placeholder(v)
     }
+    # netCDF attributes can't be bool, CfRadial uses "true"/"false" (#418)
+    cfradial1_ds = _encode_bool_attrs(cfradial1_ds)
     cfradial1_ds.attrs["Conventions"] = "Cf/Radial"
     cfradial1_ds.attrs["version"] = "1.2"
     if "n_gates_vary" in cfradial1_ds.attrs:
