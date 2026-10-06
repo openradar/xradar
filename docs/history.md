@@ -30,6 +30,7 @@
 * FIX: Correct the global attribute assignment in ``to_cfradial2`` (``Conventions``, ``version`` and ``history`` are now set on the exported root), and preserve the input DataTree by working on a copy, which is shallow by default; use ``deepcopy=True`` for a deep copy ({pull}`384`) by [@chfer](https://github.com/chfer)
 * DOC: Fix the roundtrip example in ``CfRadial1_Model_Transformation.md`` by setting ``first_dim="time"`` and ``optional=False`` when creating ``dtree3``, so the CfRadial1-to-CfRadial2 roundtrip assertion is meaningful and passes ({pull}`384`) by [@chfer](https://github.com/chfer)
 * FIX: IRIS/Sigmet 8-bit types without decoding function (``DB_HCLASS``, ``DB_ORAIN``, ``DB_ALBEDO8``) are unpacked to one ``uint8`` value per range bin; they were returned as packed ``int16`` words holding two bins each. ``DB_HCLASS``/``DB_HCLASS2`` get CF ``flag_masks``/``flag_values``/``flag_meanings`` for the HydroClass bit segments, from the classifiers stored in ``task_end_info`` (IRIS Programming Guide 4.4.14) ({issue}`390`, {pull}`444`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: CfRadial1 export writes string variables (``time_coverage_start``, ``instrument_type``, ``prt_mode``, ...) as char arrays instead of NC_STRING, which Py-ART could not read, and no longer writes ``"None"`` placeholder global attributes or a ``"None: ..."`` history ({issue}`417`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
