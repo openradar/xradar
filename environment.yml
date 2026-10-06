@@ -28,6 +28,7 @@ dependencies:
   - scipy
   - boto3
   - arm_pyart
+  - wradlib
   - ffmpeg
   - zarr>=3
   - pytest-xdist

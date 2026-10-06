@@ -263,3 +263,12 @@ def test_accessor_to_cfradial2():
     assert (
         "radar_parameters" in dtree_cf2_alias2
     ), "Missing radar_parameters in CfRadial2 DataTree"
+
+
+def test_create_xradar_dataarray_accessor():
+    da = xr.DataArray(np.arange(4.0), dims="x")
+    xd.accessors.create_xradar_dataarray_accessor(
+        "xradar_test", {"double": lambda obj: obj * 2, "total": lambda obj: obj.sum()}
+    )
+    xr.testing.assert_equal(da.xradar_test.double(), da * 2)
+    assert float(da.xradar_test.total()) == 6.0

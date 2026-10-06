@@ -31,6 +31,7 @@ dependencies:
   - xmltodict
   - boto3
   - arm_pyart
+  - wradlib
   - ffmpeg
   - zarr>=3
   - pip:
