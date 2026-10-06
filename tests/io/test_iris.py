@@ -7,7 +7,10 @@
 Ported from wradlib.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
+import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends import iris, open_iris_datatree
@@ -321,11 +324,13 @@ def test_open_iris_datatree(iris0_file):
     kwargs = {
         "sweep": [0, 1, 2, 4],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
@@ -418,3 +423,118 @@ def test_first_loaded_moment_aligned_with_others(iris0_file):
         assert (
             best_shift(sw["DBZH"].values, sw[moment].values) == 0
         ), f"DBZH is row-rotated relative to {moment}"
+
+
+@pytest.mark.parametrize(
+    "lon, lat, expected",
+    [
+        (10.5, 52.3, (10.5, 52.3)),
+        (288.5, 4.6, (-71.5, 4.6)),
+        (151.2, 326.1, (151.2, -33.9)),
+        (300.0, 340.0, (-60.0, -20.0)),
+    ],
+)
+def test_site_coords_fold(lon, lat, expected):
+    # BIN4 angles are decoded to [0, 360), southern latitudes must fold
+    # by latitude, not longitude (#391)
+    obj = SimpleNamespace(
+        ingest_header={
+            "ingest_configuration": {
+                "longitude_radar": lon,
+                "latitude_radar": lat,
+                "altitude_radar": 12300,
+            }
+        }
+    )
+    lon_out, lat_out, alt = iris.IrisRawFile.site_coords.fget(obj)
+    np.testing.assert_allclose((lon_out, lat_out), expected)
+    assert alt == 123.0
+
+
+def test_iris_8bit_without_decoding(iris0_file):
+    # DB_HCLASS (type 55) holds two 8-bit classes per 16-bit word, which were
+    # returned as packed int16 words (#390)
+    with open_dataset(
+        iris0_file, engine="iris", group="sweep_0", first_dim="time"
+    ) as ds:
+        hclass = ds.DB_HCLASS
+        assert hclass.dtype == np.uint8
+        assert hclass.shape == ds.DBZH.shape
+        values = hclass.values
+
+    raw = iris.IrisRawFile(iris0_file, rawdata=True)
+    raw.get_moment(1, "DB_HCLASS")
+    words = raw.data[1]["sweep_data"]["DB_HCLASS"]
+    expected = words.view("(2,)uint8").reshape(words.shape[0], -1)[:, : values.shape[1]]
+    np.testing.assert_array_equal(
+        np.sort(values, axis=None), np.sort(expected, axis=None)
+    )
+    # classes, no packed words
+    assert values.max() < 256
+    assert {0, 9, 17}.issubset(np.unique(values))
+
+
+@pytest.mark.parametrize(
+    "identifiers, nbytes, n_flags, last",
+    [
+        ([1, 2, 3, 0, 0, 0], 1, 17, ("cell_convection", 192, 64)),
+        ([2, 0, 0, 0, 0, 0], 1, 8, ("precip_heavy_precipitation", 7, 7)),
+        ([3, 1, 0, 0, 0, 0], 1, 9, ("meteo_hail", 56, 48)),
+        ([0, 0, 0, 1, 0, 0], 2, 7, ("meteo_hail", 7 << 8, 6 << 8)),
+        # classes beyond the 2-bit segment are not representable
+        ([0, 0, 2, 0, 0, 0], 1, 4, ("precip_precipitation", 192, 192)),
+        ([0, 0, 0, 0, 0, 0], 1, 0, None),
+        ([9, 255, 0, 0, 0, 0], 1, 0, None),
+    ],
+)
+def test_hclass_flag_attrs(identifiers, nbytes, n_flags, last):
+    # HydroClass bit segments, IRIS Programming Guide 4.4.14, Tables 10-12
+    attrs = iris.hclass_flag_attrs(identifiers, nbytes=nbytes)
+    if last is None:
+        assert attrs == {}
+        return
+    meanings = attrs["flag_meanings"].split()
+    assert len(meanings) == len(attrs["flag_masks"]) == len(attrs["flag_values"])
+    assert len(meanings) == n_flags
+    assert (meanings[-1], attrs["flag_masks"][-1], attrs["flag_values"][-1]) == last
+    assert attrs["flag_masks"].dtype == (np.uint8 if nbytes == 1 else np.uint16)
+    # values lie within their masks
+    assert np.all(attrs["flag_values"] & ~attrs["flag_masks"] == 0)
+
+
+def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
+    # the sample stores no classifier identifiers, so there are no flags
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        assert "flag_meanings" not in ds.DB_HCLASS.attrs
+
+    init = iris.IrisRawFile.__init__
+
+    def init_with_identifiers(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        task_end_info = self.ingest_header["task_configuration"]["task_end_info"]
+        task_end_info["echo_class_identifiers"] = bytes([1, 2, 3, 0, 0, 0])
+
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_identifiers)
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        hclass = ds.DB_HCLASS
+        attrs = hclass.attrs
+        assert hclass.dtype == np.uint8
+        value = 106  # 0b01_101_010
+        assert value in np.unique(hclass.values)
+        meanings = [
+            meaning
+            for meaning, mask, flag in zip(
+                attrs["flag_meanings"].split(),
+                attrs["flag_masks"],
+                attrs["flag_values"],
+                strict=True,
+            )
+            if value & mask == flag
+        ]
+        assert meanings == [
+            "meteo_rain",
+            "precip_light_precipitation",
+            "cell_convection",
+        ]
+    # the IRIS names are kept with the classes
+    assert iris.HCLASS_CLASSIFIERS[1][2][2] == ("MET_CLASS_RAIN", "rain")
