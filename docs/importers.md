@@ -140,7 +140,7 @@ ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 ### Virtual byte-range access
 
 {class}`~xradar.io.virtual.IrisParser` (requires the ``xradar[virtual]``
-extra) indexes a RAW volume into a VirtualiZarr ``ManifestStore`` of
+extra, Python 3.12+) indexes a RAW volume into a VirtualiZarr ``ManifestStore`` of
 byte-range references instead of decoding it: one zarr chunk = one whole
 sweep (rays are RLE-compressed with all data types interleaved ray-major, so
 no smaller unit is both contiguous and independently decodable). Every
