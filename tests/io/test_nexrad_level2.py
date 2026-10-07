@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import numpy as np
 import pytest
 import xarray
+from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
 from xradar.io.backends.nexrad_level2 import (
@@ -2580,6 +2581,84 @@ class TestRealChunkFiles:
         dtree_full = open_nexradlevel2_datatree(all_bytes, reindex_angle=False)
         assert len(dtree.match("sweep_*")) <= len(dtree_full.match("sweep_*"))
 
+    def test_partial_chunks_pad_nominal_resolution(self, nexrad_chunks_klot):
+        """Padding uses the nominal azimuth spacing from MSG_31 (#396)."""
+        from xradar import util
+
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:10]]
+        extract = util.extract_angle_parameters
+
+        def jittery(ds):
+            # measured spacing of a jittery, truncated super-res sweep
+            params = extract(ds)
+            params["angle_res"] = 0.49
+            return params
+
+        with patch("xradar.util.extract_angle_parameters", jittery):
+            dtree = open_nexradlevel2_datatree(chunk_bytes, incomplete_sweep="pad")
+        # sweep_1 is incomplete, azimuth_resolution 1 (0.5 deg)
+        ds = dtree["sweep_1"].to_dataset()
+        assert ds.sizes["azimuth"] == 720
+        np.testing.assert_allclose(ds.azimuth.diff("azimuth"), 0.5)
+        np.testing.assert_allclose(ds.azimuth[0], 0.25)
+
+    def test_partial_chunks_pad_nominal_resolution_1deg(self, nexrad_chunks_klot):
+        """Padding uses the nominal 1.0 deg spacing (azimuth_resolution 2)."""
+        from xradar import util
+
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:38]]
+        extract = util.extract_angle_parameters
+
+        def jittery(ds):
+            # measured spacing of a jittery, truncated 1.0 deg sweep
+            params = extract(ds)
+            params["angle_res"] = 0.99
+            return params
+
+        with patch("xradar.util.extract_angle_parameters", jittery):
+            dtree = open_nexradlevel2_datatree(chunk_bytes, incomplete_sweep="pad")
+        # sweep_6 is incomplete, azimuth_resolution 2 (1.0 deg)
+        ds = dtree["sweep_6"].to_dataset()
+        assert ds.sizes["azimuth"] == 360
+        np.testing.assert_allclose(ds.azimuth.diff("azimuth"), 1.0)
+        np.testing.assert_allclose(ds.azimuth[0], 0.5)
+
+    def test_partial_chunks_pad_inferred_resolution(self, nexrad_chunks_klot):
+        """Without nominal resolution, the spacing is inferred."""
+        from xradar import util
+        from xradar.io.backends.nexrad_level2 import open_sweeps_as_dict
+
+        data = b"".join(f.read_bytes() for f in nexrad_chunks_klot[:10])
+        extract = util.extract_angle_parameters
+
+        def jittery(ds):
+            # measured spacing differs from the nominal 0.5 deg
+            params = extract(ds)
+            params["angle_res"] = 0.49
+            return params
+
+        # no angle_resolution passed -> the inferred 0.49 deg must be used
+        with patch("xradar.util.extract_angle_parameters", jittery):
+            sweeps = open_sweeps_as_dict(
+                data, sweeps=["sweep_1"], incomplete_sweeps={1}, site_as_coords=False
+            )
+        ds = sweeps["sweep_1"]
+        assert ds.sizes["azimuth"] == 735
+        np.testing.assert_allclose(ds.azimuth.diff("azimuth"), 0.49)
+
+    @pytest.mark.parametrize("mode", ["drop", "pad"])
+    def test_partial_chunks_sweep_gap(self, nexrad_chunks_klot, mode):
+        """A missing chunk leaves a sweep gap, msg_31_header is compacted."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:10]]
+        del chunk_bytes[6]  # holds the end-of-elevation radial of sweep 0
+        dtree = open_nexradlevel2_datatree(chunk_bytes, incomplete_sweep=mode)
+        sweeps = [k for k in dtree.children if k.startswith("sweep_")]
+        if mode == "drop":
+            assert sweeps == []
+        else:
+            assert sweeps == ["sweep_1"]
+            assert dtree["sweep_1"].ds.sizes["azimuth"] == 720
+
     def test_partial_chunks_pad_mode(self, nexrad_chunks_klot):
         """Partial chunks with pad mode produce full azimuth grid with NaN."""
         chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
@@ -2842,3 +2921,80 @@ def test_get_dynamic_scan_type():
     assert _get_dynamic_scan_type({"sails_vcp": True, "num_sails_cuts": 0}) == "SAILS"
     assert _get_dynamic_scan_type({"mrle_vcp": True, "num_mrle_cuts": 0}) == "MRLE"
     assert _get_dynamic_scan_type({"sails_vcp": False, "mrle_vcp": False}) == "standard"
+
+
+@pytest.mark.parametrize("source", ["path", "bytes", "filelike"])
+def test_open_nexradlevel2_datatree_gzip(nexradlevel2_msg1_file, source):
+    # gzip-wrapped archives (e.g. *.gz in unidata-nexrad-level2) are not
+    # decompressed by the reader, but give a clear error (#382)
+    gzfile = DATASETS.fetch("KLIX20050828_180149.gz")
+    inputs = {
+        "path": lambda: gzfile,
+        "bytes": lambda: open(gzfile, "rb").read(),
+        "filelike": lambda: io.BytesIO(open(gzfile, "rb").read()),
+    }
+    with pytest.raises(ValueError, match="no records found.*gzip-compressed"):
+        open_nexradlevel2_datatree(inputs[source]())
+
+
+def test_open_nexradlevel2_datatree_gunzipped_bytes(nexradlevel2_msg1_file):
+    # the recommended way: decompress first, then pass bytes
+    import gzip
+
+    gzfile = DATASETS.fetch("KLIX20050828_180149.gz")
+    dtree = open_nexradlevel2_datatree(gzip.open(gzfile).read())
+    expected = open_nexradlevel2_datatree(nexradlevel2_msg1_file)
+    sweeps = [k for k in expected.children if k.startswith("sweep_")]
+    assert [k for k in dtree.children if k.startswith("sweep_")] == sweeps
+    xarray.testing.assert_identical(dtree["sweep_0"].ds, expected["sweep_0"].ds)
+
+
+def test_open_nexradlevel2_datatree_filelike_all_sweeps(nexradlevel2_file):
+    # the same file-like object is read once per sweep, it has to be rewound
+    with open(nexradlevel2_file, "rb") as f:
+        filelike = io.BytesIO(f.read())
+    dtree = open_nexradlevel2_datatree(filelike)
+    expected = open_nexradlevel2_datatree(nexradlevel2_file)
+    assert len(dtree.children) == len(expected.children)
+    xarray.testing.assert_identical(dtree["sweep_1"].ds, expected["sweep_1"].ds)
+
+
+class _Unseekable(io.RawIOBase):
+    # pipe-like stream: seek() raises io.UnsupportedOperation
+    def __init__(self, data):
+        self._buf = io.BytesIO(data)
+
+    def readable(self):
+        return True
+
+    def readinto(self, b):
+        return self._buf.readinto(b)
+
+
+class _NoSeek:
+    # minimal reader without seek(), e.g. a socket file
+    def __init__(self, data):
+        self._data = data
+
+    def read(self):
+        return self._data
+
+
+@pytest.mark.parametrize("cls", [_Unseekable, _NoSeek])
+def test_open_nexradlevel2_filelike_not_seekable(nexradlevel2_file, cls):
+    # streams that cannot be rewound are read once from their position
+    with open(nexradlevel2_file, "rb") as f:
+        data = f.read()
+    with NEXRADLevel2File(cls(data)) as nex:
+        assert nex.volume_header["icao"] == b"KATX"
+        assert len(nex.msg_31_data_header) > 0
+
+
+def test_open_nexradlevel2_not_an_archive(tmp_path):
+    data = np.random.default_rng(42).integers(0, 256, 20000, dtype=np.uint8)
+    path = tmp_path / "not_nexrad.bin"
+    path.write_bytes(data.tobytes())
+    with pytest.raises(ValueError, match="Not a NEXRAD Level II archive"):
+        open_nexradlevel2_datatree(path)
+    with pytest.raises(ValueError, match="Not a NEXRAD Level II archive"):
+        open_nexradlevel2_datatree(data.tobytes())
