@@ -252,7 +252,8 @@ def _sweep_group(
                 # mask_and_scale these bins decode to NaN instead of a
                 # plausible-looking physical value.
                 attrs["_FillValue"] = int(fill)
-        else:
+        elif "flag_meanings" not in attrs:
+            # (HydroClass words with CF flag attrs are described by them)
             attrs["comment"] = (
                 "raw Sigmet words with no CF scaling attached (nonlinear/"
                 "categorical encoding per the eager backend's "

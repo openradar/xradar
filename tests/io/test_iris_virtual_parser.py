@@ -788,32 +788,58 @@ def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):
     assert int(tree["sweep_1"]["sweep_number"]) == 2
 
 
-def test_hclass_flag_attrs_match_eager(iris0_file, local_registry, monkeypatch):
-    """HydroClass flag attrs (#444) come from the file's task_end_info
-    ``echo_class_identifiers`` through the eager helper, on both paths."""
+def _with_hclass_identifiers(monkeypatch, identifiers):
+    """Make IrisRawFile report ``identifiers`` as the task_end_info
+    ``echo_class_identifiers`` (no test file names its classifiers)."""
     from xradar.io.backends import iris
-
-    # cor-main stores no identifiers: no flags
-    plain = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
-    assert "flag_meanings" not in plain["sweep_0"]["DB_HCLASS"].attrs
 
     init = iris.IrisRawFile.__init__
 
     def init_with_identifiers(self, *args, **kwargs):
         init(self, *args, **kwargs)
         task_end_info = self.ingest_header["task_configuration"]["task_end_info"]
-        task_end_info["echo_class_identifiers"] = bytes([1, 2, 3, 0, 0, 0])
+        task_end_info["echo_class_identifiers"] = bytes(identifiers)
 
     monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_identifiers)
-    store = IrisParser()(f"file://{iris0_file}", local_registry)
-    eager = open_iris_datatree(iris0_file)
-    virt_attrs = _open_tree(store)["sweep_0"]["DB_HCLASS"].attrs
-    eager_attrs = eager["sweep_0"]["DB_HCLASS"].attrs
+
+
+@pytest.mark.parametrize(
+    "fixture, var, identifiers",
+    [
+        ("iris0_file", "DB_HCLASS", [1, 2, 3, 0, 0, 0]),
+        ("iris1_file", "DB_HCLASS2", [1, 2, 3, 1, 2, 3]),
+    ],
+)
+def test_hclass_flag_attrs_match_eager(
+    fixture, var, identifiers, local_registry, monkeypatch, request
+):
+    """HydroClass flag attrs (#444) come from the file's task_end_info
+    ``echo_class_identifiers`` through the eager helper, on both paths, for
+    1- and 2-byte HydroClass."""
+    path = request.getfixturevalue(fixture)
+    # the files store no identifiers: no flags, the raw-words comment stays
+    plain = _open_tree(IrisParser()(f"file://{path}", local_registry))
+    assert "flag_meanings" not in plain["sweep_0"][var].attrs
+    assert "comment" in plain["sweep_0"][var].attrs
+
+    _with_hclass_identifiers(monkeypatch, identifiers)
+    virt_attrs = _open_tree(IrisParser()(f"file://{path}", local_registry))["sweep_0"][
+        var
+    ].attrs
+    eager_attrs = open_iris_datatree(path)["sweep_0"][var].attrs
     assert virt_attrs["flag_meanings"] == eager_attrs["flag_meanings"]
     for key in ("flag_masks", "flag_values"):
         np.testing.assert_array_equal(virt_attrs[key], eager_attrs[key])
+    # the CF flags describe the words; no "no CF scaling" comment beside them
+    assert "comment" not in virt_attrs
 
-    # exactly what zarr.json holds: JSON lists of plain ints
+
+def test_hclass_flag_attrs_in_zarr_json(iris0_file, local_registry, monkeypatch):
+    """zarr.json holds the flags as JSON lists of plain ints (zarr attrs
+    carry no dtype, so they read back as lists, not uint8 arrays), and the
+    stored words decode to the expected classes."""
+    _with_hclass_identifiers(monkeypatch, [1, 2, 3, 0, 0, 0])
+    store = IrisParser()(f"file://{iris0_file}", local_registry)
     stored = store._group.groups["sweep_0"].arrays["DB_HCLASS"].metadata.attributes
     assert stored["flag_masks"] == [0b111] * 7 + [0b111_000] * 8 + [0b11_000_000] * 2
     assert stored["flag_values"] == (
@@ -821,8 +847,7 @@ def test_hclass_flag_attrs_match_eager(iris0_file, local_registry, monkeypatch):
     )
     assert all(type(v) is int for v in stored["flag_masks"] + stored["flag_values"])
 
-    # the stored words decode to the same classes (106 = 0b01_101_010)
-    value = 106
+    value = 106  # 0b01_101_010
     hclass = _open_tree(store)["sweep_0"]["DB_HCLASS"]
     assert value in np.unique(hclass.values)
     meanings = [

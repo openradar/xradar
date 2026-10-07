@@ -182,6 +182,9 @@ differences from `open_iris_datatree`:
   on files with `DB_XHDR`.
 - The root carries no `sweep_group_name` / `sweep_fixed_angle` (store
   builders assemble the volume-level index themselves).
+- HydroClass `flag_masks` / `flag_values` read back as integer lists, not
+  `uint8`/`uint16` arrays: zarr attributes carry no dtype. Cast them to the
+  variable's dtype before writing CF-strict netCDF.
 - The `range` attributes `meters_between_gates` and
   `meters_to_center_of_first_gate` are derived from the range values in
   metres; `open_iris_datatree` still writes the raw header numbers there.
