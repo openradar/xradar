@@ -259,3 +259,36 @@ def test_open_rainbow_datatree_optional_groups(rainbow_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize(
+    ("tag", "start"),
+    [
+        (None, 0.0),
+        (b"<start_range>2</start_range>", 2000.0),
+        # older name, padded to keep the length of the header
+        (b"<startrange>2  </startrange>", 2000.0),
+    ],
+)
+def test_rainbow_start_range(rainbow_file, tmp_path, tag, start):
+    # range is read from `start_range` (start of the first bin, km), #272
+    path = tmp_path / "start_range.vol"
+    content = open(rainbow_file, "rb").read()
+    if tag is not None:
+        content = content.replace(b"<start_range>0</start_range>", tag)
+    path.write_bytes(content)
+    with open_dataset(path, engine="rainbow", group="sweep_0") as ds:
+        # rangestep 0.25 km, bin centers
+        expected = start + 250.0 * (np.arange(ds.sizes["range"]) + 0.5)
+        np.testing.assert_allclose(ds.range.values, expected)
+        assert ds.range.attrs["meters_to_center_of_first_gate"] == start + 125.0
+        assert ds.sizes["range"] == 400
+
+
+def test_rainbow_pathlib(rainbow_file):
+    import pathlib
+
+    with open_dataset(
+        pathlib.Path(rainbow_file), engine="rainbow", group="sweep_0"
+    ) as ds:
+        assert ds.sizes["range"] == 400
