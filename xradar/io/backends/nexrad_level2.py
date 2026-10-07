@@ -89,6 +89,8 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
+#: gzip magic number, only used for a hint when the input is not readable
+_GZIP_MAGIC = b"\x1f\x8b"
 
 
 def _concatenate_chunks(file_list):
@@ -205,8 +207,18 @@ class NEXRADFile:
 
     Parameters
     ----------
-    filename : str
-        Filename of Archive II file to read.
+    filename : str, os.PathLike, bytes, bytearray or file-like
+        Archive II file to read: a path, the raw (uncompressed) bytes, or a
+        file-like object. File-like objects are rewound if seekable.
+        gzip-compressed archives have to be decompressed first.
+    mode : str, optional
+        Mode for :py:class:`numpy.memmap` when reading from a path.
+        Defaults to ``"r"``.
+    loaddata : bool, optional
+        Load all data on initialization. Defaults to ``False``.
+    has_volume_header : bool, optional
+        Whether the input starts with the 24-byte volume header (``AR2V``).
+        Set to ``False`` for I/E chunk files. Defaults to ``True``.
 
     References
     ----------
@@ -229,6 +241,12 @@ class NEXRADFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the same file-like is read again for every sweep
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -532,6 +550,22 @@ class NEXRADRecordFile(NEXRADFile):
         chk : bool
             True, if record is truncated.
         """
+        if self.record_number is None:
+            source = (
+                f" in {os.fspath(self.filename)!r}"
+                if isinstance(self.filename, (str, os.PathLike))
+                else ""
+            )
+            hint = ""
+            if self._fh[:2].tobytes() == _GZIP_MAGIC:
+                hint = (
+                    " The input is gzip-compressed (e.g. *.gz files in "
+                    "unidata-nexrad-level2), decompress it first, e.g. with "
+                    "`gzip.open(filename).read()`."
+                )
+            raise ValueError(
+                f"Not a NEXRAD Level II archive: no records found{source}.{hint}"
+            )
         return self.init_record(self.record_number + 1)
 
     def array_from_record(self, words, width, dtype):
@@ -1208,6 +1242,10 @@ _CHANNEL_CONFIGS = {
     1: "random_phase",
     2: "sz2_phase_coding",
 }
+
+
+# MSG_31 azimuth_resolution code -> degrees (ICD 2620002, Table XVII-A)
+_AZIMUTH_RESOLUTION = {1: 0.5, 2: 1.0}
 
 
 def _assign_sweep_attrs(dtree, elev_data):
@@ -2168,6 +2206,13 @@ def open_nexradlevel2_datatree(
         else:
             exp_sweeps = 0
             elev_data = []
+        # nominal azimuth spacing of the incomplete sweeps, used for padding;
+        # msg_31_header is compacted past interior gaps: label -> position
+        angle_resolution = {
+            sw: _AZIMUTH_RESOLUTION.get(nex.msg_31_header[pos][0]["azimuth_resolution"])
+            for pos, sw in enumerate(present_keys)
+            if sw in incomplete and nex.msg_31_header[pos]
+        }
 
     if isinstance(sweep, str):
         sweep = NodePath(sweep).name
@@ -2229,6 +2274,7 @@ def open_nexradlevel2_datatree(
         site_as_coords=False,
         optional=optional,
         incomplete_sweeps=incomplete,
+        angle_resolution=angle_resolution,
         lock=lock,
         **kwargs,
     )
@@ -2273,11 +2319,15 @@ def open_sweeps_as_dict(
     site_as_coords=True,
     optional=True,
     incomplete_sweeps=None,
+    angle_resolution=None,
     lock=None,
     **kwargs,
 ):
     if incomplete_sweeps is None:
         incomplete_sweeps = set()
+    if angle_resolution is None:
+        angle_resolution = {}
+
     reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
 
     stores = NexradLevel2Store.open_groups(
@@ -2315,10 +2365,15 @@ def open_sweeps_as_dict(
             if decode_coords and sweep_idx in incomplete_sweeps:
                 group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 angle_params = util.extract_angle_parameters(group_ds)
+                # use the nominal azimuth spacing of the sweep (MSG_31
+                # azimuth_resolution), the measured one is jittery (#396)
+                angle_res = angle_resolution.get(sweep_idx)
+                if angle_res is None:
+                    angle_res = float(angle_params["angle_res"])
                 reindex_kwargs = {
                     "start_angle": angle_params["start_angle"],
                     "stop_angle": angle_params["stop_angle"],
-                    "angle_res": float(angle_params["angle_res"]),
+                    "angle_res": angle_res,
                     "direction": angle_params["direction"],
                 }
                 ignored = (
