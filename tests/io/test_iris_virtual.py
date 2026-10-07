@@ -536,10 +536,60 @@ def test_zarr_v2_is_refused_with_a_clear_error():
     assert "need zarr>=3.1.6 (zarr v3); found zarr 2.18.7" in result.stdout
 
 
-def test_zarr_version_parsing():
-    from xradar.io.virtual._codec import MIN_ZARR, _version_tuple
+@pytest.mark.parametrize(
+    "version, supported",
+    [
+        ("3.1.6", True),
+        ("3.1.10", True),
+        ("3.10.0", True),
+        ("3.2.1.dev3+g1a2b", True),
+        ("4.0.0", True),
+        ("3.1.6rc1", False),  # a pre-release is older, as for importorskip
+        ("3.1.5", False),
+        ("2.18.7", False),
+        ("not-a-version", False),
+    ],
+)
+def test_zarr_version_rule(version, supported):
+    """One version rule for the codec guard and the lazy exports, with the
+    same pre-release ordering as ``pytest.importorskip(minversion=...)``."""
+    from xradar.io.virtual._checks import zarr_supported
 
-    assert _version_tuple("3.1.6") == MIN_ZARR
-    assert _version_tuple("3.2.0rc1") == (3, 2, 0) > MIN_ZARR
-    assert _version_tuple("3.2.1.dev3+g1a2b") == (3, 2, 1)
-    assert _version_tuple("2.18.7") < MIN_ZARR
+    assert zarr_supported(version) is supported
+
+
+def _run_with_old_zarr(body: str) -> str:
+    """Run ``body`` in a fresh interpreter where zarr reports 3.1.5."""
+    code = (
+        "import importlib.metadata as md, zarr\n"
+        "zarr.__version__ = '3.1.5'\n"
+        "real = md.version\n"
+        "md.version = lambda name: '3.1.5' if name == 'zarr' else real(name)\n" + body
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(xradar.__file__).parents[1],
+    )
+    return result.stdout
+
+
+def test_old_zarr_message_and_star_import():
+    """On a too-old zarr the lazy export says what is found and needed
+    (never that zarr "is not importable"), and a star import, which only
+    lists installed exports, still works."""
+    out = _run_with_old_zarr(
+        "import xradar.io.virtual as v\n"
+        "try:\n"
+        "    v.IrisSweepCodec\n"
+        "except v.MissingDependencyError as err:\n"
+        "    print(err)\n"
+        "print('IrisSweepCodec' in v.__all__)\n"
+        "exec('from xradar.io.virtual import *')\n"
+        "print('star ok')\n"
+    )
+    assert "need zarr>=3.1.6 (zarr v3); found zarr 3.1.5" in out
+    assert "not importable" not in out
+    assert "False\nstar ok" in out

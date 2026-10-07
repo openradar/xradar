@@ -13,7 +13,25 @@ import math
 
 import numpy as np
 
-__all__ = ["MAX_CELLS", "check_output", "plain"]
+# packaging is always installed: a hard dependency of xarray
+from packaging.version import InvalidVersion, Version
+
+__all__ = ["MAX_CELLS", "MIN_ZARR", "check_output", "plain", "zarr_supported"]
+
+#: The oldest zarr the virtual codecs run on: zarr v3 with its 3.1 dtype API
+#: (3.1.6 is also virtualizarr's floor). zarr v2 has no ``zarr.abc`` codecs.
+MIN_ZARR = "3.1.6"
+
+
+def zarr_supported(version: str) -> bool:
+    """Whether a zarr version can run the virtual codecs (same rules as
+    ``pytest.importorskip(minversion=...)``: pre-releases of 3.1.6 are
+    older than 3.1.6)."""
+    try:
+        return Version(version) >= Version(MIN_ZARR)
+    except InvalidVersion:
+        return False
+
 
 #: Upper bound on one decoded chunk (rays x gates). Real sweeps stay below
 #: ~3e6 cells (720 rays x 4000 gates); a store declaring more is corrupt or
