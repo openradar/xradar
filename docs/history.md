@@ -36,6 +36,7 @@
 * ENH: Add ``xradar.util.is_sweep`` and ``.xradar.is_sweep()`` for Dataset and DataTree to check whether a Dataset (or DataTree node) holds a radar sweep, based on its structure (``range`` and ray dimension, angles, moment variables) instead of the group name, with the ray dimension from the new ``xradar.util.get_ray_dim`` (adapted from ``wradlib.util.dim0``); ``strict=True`` also requires the mandatory sweep metadata (FM301 Table 301-7a) ({issue}`217`, {pull}`440`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: CfRadial1 export writes string variables (``time_coverage_start``, ``instrument_type``, ``prt_mode``, ...) as char arrays instead of NC_STRING, which Py-ART could not read, and no longer writes ``"None"`` placeholder global attributes or a ``"None: ..."`` history ({issue}`417`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: CfRadial1 export writes boolean attributes (e.g. NEXRAD ``mpda_vcp``, ``avset_enabled``) as ``"true"``/``"false"`` instead of failing, as netCDF attributes can't be bool ({issue}`418`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: Halo Photonics ``.hpl`` reader: keep the last ray of each sweep (sweeps of one ray were empty and made opening fail, {issue}`303`), number sweeps from 0, take the header length from the ``****`` separator, raise a ``ValueError`` instead of printing on a line-count mismatch, and accept ``pathlib.Path`` and binary file-like objects ({issue}`430`, {pull}`442`) by [@syedhamidali](https://github.com/syedhamidali)
 
 
 ## 0.12.0 (2026-04-21)
