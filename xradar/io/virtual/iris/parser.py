@@ -106,8 +106,8 @@ def _cf_scaling(
     entry for this type.
 
     The eager decoders are ``decode_array = (raw + offset)/scale + offset2``
-    plus thin wrappers (``decode_vel`` multiplies by the effective nyquist,
-    ``decode_width`` by the unfolded nyquist, ``decode_phidp``/``_phidp2``
+    plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by the
+    multi-PRF factor, ``decode_width`` by the single-PRF nyquist, ``decode_phidp``/``_phidp2``
     by 180/360 degrees); a ``mask`` value becomes ``_FillValue`` so CF
     mask_and_scale reproduces the eager masking. Types whose table entry
     declares a SIGNED dtype stay raw: the virtual arrays hold the unsigned
@@ -169,7 +169,7 @@ def _sweep_group(
     """One sweep's group, plus its per-ray epoch-ms times (NaN = padded)."""
     headers: tuple[DataTypeHeader, ...] = sweep.headers
     ndt = sweep.ndatatypes
-    nbins = hdr.number_output_bins
+    nbins = hdr.number_bins  # product_end, like the eager decode
 
     # One header walk per sweep gives every per-ray coordinate plus the
     # missing-ray census. Rows stay aligned across the sweep's moment arrays

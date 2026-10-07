@@ -144,7 +144,10 @@ def _naive_ms(t) -> np.datetime64:
 
 @dataclass(frozen=True)
 class IngestHeader:
-    """The subset of record 1 (INGEST_HEADER) the virtualization needs."""
+    """The subset of the product and ingest headers the virtualization
+    needs. ``prf``, ``wavelength`` and ``number_bins`` come from the
+    product header's ``product_end``, like the eager ``IrisRawFile``
+    decode (they can differ from the task configuration)."""
 
     site_name: str
     latitude: float
@@ -153,9 +156,9 @@ class IngestHeader:
     height_radar: int  # meters above ground
     altitude_cm: int  # radar altitude, centimeters MSL
     task_name: str
-    prf: int  # Hz
+    prf: int  # Hz (product_end)
     multi_prf_mode_flag: int
-    wavelength_cm: float
+    wavelength_cm: float  # product_end
     antenna_scan_mode: int
     range_first_bin_cm: int
     range_last_bin_cm: int
@@ -164,6 +167,7 @@ class IngestHeader:
     variable_range_spacing: bool
     volume_start: np.datetime64
     wavelength: int  # 1/100 cm, as stored (the eager nyquist input)
+    number_bins: int  # gates per ray in the data (product_end)
 
 
 def range_centers(hdr: IngestHeader) -> np.ndarray:
@@ -248,6 +252,8 @@ def read_volume(buf) -> IrisVolume:
     ic, tc = ih["ingest_configuration"], ih["task_configuration"]
     tri = tc["task_range_info"]
     lon, lat, _ = raw.site_coords
+    # the eager decode takes prf, wavelength and the gate count from here
+    product_end = raw.product_hdr["product_end"]
     hdr = IngestHeader(
         site_name=_text(ic["site_name"]),
         latitude=lat,
@@ -256,9 +262,9 @@ def read_volume(buf) -> IrisVolume:
         height_radar=ic["height_radar"],
         altitude_cm=ic["altitude_radar"],
         task_name=_text(tc["task_end_info"]["task_configuration_file_name"]),
-        prf=tc["task_dsp_info"]["prf"],
+        prf=product_end["prf"],
         multi_prf_mode_flag=tc["task_dsp_info"]["multi_prf_mode_flag"],
-        wavelength_cm=tc["task_misc_info"]["wavelength"] / 100.0,
+        wavelength_cm=product_end["wavelength"] / 100.0,
         antenna_scan_mode=raw.scan_mode,
         range_first_bin_cm=tri["range_first_bin"],
         range_last_bin_cm=tri["range_last_bin"],
@@ -266,13 +272,21 @@ def read_volume(buf) -> IrisVolume:
         step_output_bins_cm=tri["step_output_bins"],
         variable_range_spacing=bool(tri["variable_range_bin_spacing_flag"]),
         volume_start=_naive_ms(ic["volume_scan_start_time"]),
-        wavelength=tc["task_misc_info"]["wavelength"],
+        wavelength=product_end["wavelength"],
+        number_bins=product_end["number_bins"],
     )
 
     if hdr.step_output_bins_cm <= 0 or hdr.number_output_bins <= 0:
         raise ValueError(
             f"task_range_info declares step {hdr.step_output_bins_cm} cm and "
             f"{hdr.number_output_bins} bins — corrupt IRIS header"
+        )
+    nrange = range_centers(hdr).size
+    if nrange != hdr.number_bins:
+        # the eager reader cannot align these either
+        raise ValueError(
+            f"product_end declares {hdr.number_bins} gates but "
+            f"task_range_info gives {nrange} range bins"
         )
 
     runs: list[list[int]] = []  # [sweep_number, first_rec, last_rec]

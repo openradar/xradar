@@ -861,3 +861,85 @@ def test_hclass_flag_attrs_in_zarr_json(iris0_file, local_registry, monkeypatch)
         if value & mask == flag
     ]
     assert meanings == ["meteo_rain", "precip_light_precipitation", "cell_convection"]
+
+
+def _with_product_end(monkeypatch, **changes):
+    """Make IrisRawFile report ``changes`` in the product header's
+    product_end (the task configuration stays as stored)."""
+    from xradar.io.backends import iris
+
+    init = iris.IrisRawFile.__init__
+
+    def init_with_product_end(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        self.product_hdr["product_end"].update(changes)
+
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_product_end)
+
+
+def test_nyquist_follows_product_end_like_eager(
+    iris0_file, local_registry, monkeypatch
+):
+    """prf and wavelength come from product_end, as in the eager decode,
+    even when they differ from the task configuration (500 Hz, 5.33 cm)."""
+    _with_product_end(monkeypatch, prf=1000, wavelength=1066)
+    store = IrisParser()(f"file://{iris0_file}", local_registry)
+    tree = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)
+    ds = tree["sweep_0"].ds
+    # 10.66 cm * 1000 Hz / 4, no multi-PRF on this task
+    assert float(ds["nyquist_velocity"]) == pytest.approx(0.1066 * 1000 / 4)
+    eager = open_iris_datatree(iris0_file)["sweep_0"].ds
+    mine = ds["VRADH"].sortby("azimuth").values
+    theirs = eager["VRADH"].sortby("azimuth").values
+    both = np.isfinite(mine) & np.isfinite(theirs) & (theirs != 0)
+    assert both.sum() > 1000
+    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
+
+
+def test_gate_count_mismatch_raises(iris0_file, local_registry, monkeypatch):
+    """The data's gate count (product_end) must match the range bins of
+    task_range_info; a mismatch raises instead of misaligning range."""
+    _with_product_end(monkeypatch, number_bins=600)
+    with pytest.raises(ValueError, match="product_end declares 600 gates"):
+        IrisParser()(f"file://{iris0_file}", local_registry)
+
+
+@pytest.mark.parametrize("multi_prf", [0, 1])
+def test_multi_prf_follows_eager(iris0_file, local_registry, monkeypatch, multi_prf):
+    """The multi-PRF factor extends the 1-byte velocity's nyquist, on top
+    of the product_end prf and wavelength, exactly as in the eager decode."""
+    from xradar.io.backends import iris
+
+    _with_product_end(monkeypatch, prf=1000, wavelength=1066)
+    init = iris.IrisRawFile.__init__
+
+    def init_with_multi_prf(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        task = self.ingest_header["task_configuration"]
+        task["task_dsp_info"]["multi_prf_mode_flag"] = multi_prf
+
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_multi_prf)
+    store = IrisParser()(f"file://{iris0_file}", local_registry)
+    tree = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)
+    ds = tree["sweep_0"].ds
+    base = 0.1066 * 1000 / 4
+    assert float(ds["nyquist_velocity"]) == pytest.approx(base * (multi_prf + 1))
+    # the patches apply to the eager reader too; eager VRADH no-data
+    # decodes to 0, hence the (theirs != 0) mask
+    eager = open_iris_datatree(iris0_file)["sweep_0"].ds
+    mine = ds["VRADH"].sortby("azimuth").values
+    theirs = eager["VRADH"].sortby("azimuth").values
+    both = np.isfinite(mine) & np.isfinite(theirs) & (theirs != 0)
+    assert both.sum() > 1000
+    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
+
+
+def test_width_scaling_ignores_multi_prf():
+    """1-byte DB_WIDTH scales by the single-PRF nyquist and DB_VEL by the
+    multi-PRF one, as eager decode_width/decode_vel do (no fixture carries
+    1-byte width, so this pins the table-driven scaling directly)."""
+    from xradar.io.virtual.iris.parser import _cf_scaling
+
+    nyquist, nyquist_vel = 13.0, 26.0
+    assert _cf_scaling(4, nyquist, nyquist_vel)[0] == pytest.approx(nyquist / 256)
+    assert _cf_scaling(3, nyquist, nyquist_vel)[0] == pytest.approx(nyquist_vel / 127)
