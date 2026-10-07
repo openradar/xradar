@@ -41,6 +41,7 @@ Xradar is considered stable for the implemented readers and writers which have b
 
 > [!IMPORTANT]
 > Currently only polar (radial) and not cartesian or any other gridded radar data can be imported!
+> To grid xradar data, use downstream packages like Py-ART or wradlib, see the [Gridding example](https://docs.openradarscience.org/projects/xradar/en/latest/notebooks/Gridding.html).
 
 ## Features
 

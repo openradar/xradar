@@ -85,11 +85,13 @@ def test_open_datamet_datatree(datamet_file):
     kwargs = {
         "sweep": [0, 1],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "site_as_coords": True,
     }
