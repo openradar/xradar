@@ -35,11 +35,18 @@ from importlib.metadata import version
 
 import xarray as xr
 
-from ...model import conform_cfradial2_sweep_group
+from ...model import conform_cfradial2_sweep_group, validate_global_attrs
 from ...util import has_import
 
 
-def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
+def to_cfradial2(
+    dtree,
+    filename,
+    engine=None,
+    timestep=None,
+    global_attrs: dict[str, object] | None = None,
+    deepcopy=False
+):
     """Save DataTree to CfRadial2 compliant file.
 
     The input DataTree is never modified. All sweep rewrites and root
@@ -63,6 +70,11 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
         memory). If False (default), work on a shallow copy, which shares the
         underlying data arrays with ``dtree`` but not its structure and
         attributes.
+    global_attrs : dict
+        Dictionary of root-group global attributes to set manually, e.g. those
+        which cannot be deduced from the DataTree or should be overwritten.
+        These are applied last and take precedence over any attributes
+        derived from the DataTree.
     """
     if engine is None:
         if has_import("netCDF4"):
@@ -79,6 +91,8 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
     # attributes are changed while the data arrays are only read. Use
     # ``deepcopy=True`` to also decouple the data from the input.
     dtree = dtree.copy(deep=deepcopy)
+    if global_attrs is not None:
+        validate_global_attrs(global_attrs)
 
     # iterate over DataTree and make subgroups cfradial2 compliant
     for grp in dtree.groups:
@@ -97,6 +111,10 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
     # add xradar version to history
     xradar_version = version("xradar")
     root.attrs["history"] += f": xradar v{xradar_version} CfRadial2 export"
+
+    # apply user-supplied global attributes last, so they take precedence
+    if global_attrs is not None:
+        root.attrs.update(global_attrs)
 
     # write DataTree
     dtree.to_netcdf(filename, engine=engine)
