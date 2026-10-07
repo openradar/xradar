@@ -220,6 +220,8 @@ class IrisVolume(NamedTuple):
     header: IngestHeader
     sweeps: list[SweepIndex]
     root_attrs: dict  # the eager reader's volume attrs (``_root_attrs``)
+    #: task_end_info ``echo_class_identifiers`` (HydroClass flag attrs)
+    echo_class_identifiers: bytes = b""
 
 
 def read_volume(buf) -> IrisVolume:
@@ -323,7 +325,8 @@ def read_volume(buf) -> IrisVolume:
         k: _text(v) if isinstance(v, str | bytes) else v
         for k, v in _root_attrs(raw.product_hdr, ih).items()
     }
-    return IrisVolume(hdr, sweeps, root_attrs)
+    identifiers = bytes(tc["task_end_info"]["echo_class_identifiers"])
+    return IrisVolume(hdr, sweeps, root_attrs, identifiers)
 
 
 def parse_ingest_header(buf) -> IngestHeader:

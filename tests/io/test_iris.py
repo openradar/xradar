@@ -682,3 +682,55 @@ def test_raw_product_bhdrs_contract(iris0_file):
     assert len(raw.raw_product_bhdrs) == nrecords - 2
     numbers = [bhdr["sweep_number"] for bhdr in raw.raw_product_bhdrs]
     assert numbers[0] == 1 and sorted(numbers) == numbers
+
+
+# HydroClass flags for classifier identifiers (1, 2, 3) = (meteo, precip,
+# cell) in the bit segments 0-2, 3-5 and 6-7 of each word, written out by
+# hand so the test does not reuse the code it checks.
+HCLASS_MEANINGS = (
+    "meteo_no_data meteo_non_meteorological meteo_rain meteo_wet_snow "
+    "meteo_snow meteo_graupel meteo_hail "
+    "precip_no_data precip_ground_clutter_anomalous_propagation "
+    "precip_bio_scatter precip_precipitation precip_large_drops "
+    "precip_light_precipitation precip_moderate_precipitation "
+    "precip_heavy_precipitation "
+    "cell_stratiform cell_convection"
+)
+HCLASS_MASKS = [0b111] * 7 + [0b111_000] * 8 + [0b11_000_000] * 2
+HCLASS_VALUES = (
+    list(range(7))  # meteo classes 0-6 in bits 0-2
+    + [cls << 3 for cls in range(8)]  # precip classes 0-7 in bits 3-5
+    + [cls << 6 for cls in range(2)]  # cell classes 0-1 in bits 6-7
+)
+
+
+@pytest.mark.parametrize(
+    "type_name, dtype", [("DB_HCLASS", np.uint8), ("DB_HCLASS2", np.uint16)]
+)
+def test_moment_cf_attrs_hclass_flags(type_name, dtype):
+    """The shared moment-attrs helper returns exactly the CF flag attrs of
+    the file's classifiers, typed like the data words."""
+    from xradar.io.backends.iris import _moment_cf_attrs
+
+    attrs = _moment_cf_attrs(type_name, bytes([1, 2, 3, 0, 0, 0]))
+    assert set(attrs) == {"flag_masks", "flag_values", "flag_meanings"}
+    assert attrs["flag_meanings"] == HCLASS_MEANINGS
+    for key, expected in (
+        ("flag_masks", HCLASS_MASKS),
+        ("flag_values", HCLASS_VALUES),
+    ):
+        assert attrs[key].dtype == dtype
+        assert attrs[key].tolist() == expected
+
+
+def test_moment_cf_attrs_without_flags():
+    """No classifier identifiers: no flag attrs. Other types get the CF
+    attrs of their mapped moment, also when kept under the Sigmet name."""
+    from xradar.io.backends.iris import _moment_cf_attrs
+
+    assert _moment_cf_attrs("DB_HCLASS", bytes(6)) == {}
+    assert _moment_cf_attrs("DB_DBZ2", b"") == {
+        "units": "dBZ",
+        "standard_name": "radar_equivalent_reflectivity_factor_h",
+        "long_name": "Equivalent reflectivity factor H",
+    }

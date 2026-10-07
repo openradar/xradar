@@ -785,3 +785,53 @@ def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):
     for name in ("sweep_0", "sweep_1", "sweep_2"):
         assert int(tree[name]["sweep_number"]) == int(truth[name]["sweep_number"])
     assert int(tree["sweep_1"]["sweep_number"]) == 2
+
+
+def test_hclass_flag_attrs_match_eager(iris0_file, local_registry, monkeypatch):
+    """HydroClass flag attrs (#444) come from the file's task_end_info
+    ``echo_class_identifiers`` through the eager helper, on both paths."""
+    from xradar.io.backends import iris
+
+    # cor-main stores no identifiers: no flags
+    plain = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
+    assert "flag_meanings" not in plain["sweep_0"]["DB_HCLASS"].attrs
+
+    init = iris.IrisRawFile.__init__
+
+    def init_with_identifiers(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        task_end_info = self.ingest_header["task_configuration"]["task_end_info"]
+        task_end_info["echo_class_identifiers"] = bytes([1, 2, 3, 0, 0, 0])
+
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_identifiers)
+    store = IrisParser()(f"file://{iris0_file}", local_registry)
+    eager = open_iris_datatree(iris0_file)
+    virt_attrs = _open_tree(store)["sweep_0"]["DB_HCLASS"].attrs
+    eager_attrs = eager["sweep_0"]["DB_HCLASS"].attrs
+    assert virt_attrs["flag_meanings"] == eager_attrs["flag_meanings"]
+    for key in ("flag_masks", "flag_values"):
+        np.testing.assert_array_equal(virt_attrs[key], eager_attrs[key])
+
+    # exactly what zarr.json holds: JSON lists of plain ints
+    stored = store._group.groups["sweep_0"].arrays["DB_HCLASS"].metadata.attributes
+    assert stored["flag_masks"] == [0b111] * 7 + [0b111_000] * 8 + [0b11_000_000] * 2
+    assert stored["flag_values"] == (
+        list(range(7)) + [cls << 3 for cls in range(8)] + [cls << 6 for cls in range(2)]
+    )
+    assert all(type(v) is int for v in stored["flag_masks"] + stored["flag_values"])
+
+    # the stored words decode to the same classes (106 = 0b01_101_010)
+    value = 106
+    hclass = _open_tree(store)["sweep_0"]["DB_HCLASS"]
+    assert value in np.unique(hclass.values)
+    meanings = [
+        meaning
+        for meaning, mask, flag in zip(
+            stored["flag_meanings"].split(),
+            stored["flag_masks"],
+            stored["flag_values"],
+            strict=True,
+        )
+        if value & mask == flag
+    ]
+    assert meanings == ["meteo_rain", "precip_light_precipitation", "cell_convection"]

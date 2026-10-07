@@ -2670,6 +2670,23 @@ def hclass_flag_attrs(identifiers, nbytes=1):
     }
 
 
+def _moment_cf_attrs(type_name, echo_class_identifiers):
+    """CF attrs of one IRIS data type, shared by the eager and the virtual
+    reader: the attrs of its mapped moment (also when a colliding type keeps
+    its Sigmet name: DB_DBZ2 next to DB_DBZ is still reflectivity), plus the
+    HydroClass flag attrs for ``DB_HCLASS``/``DB_HCLASS2``, built from the
+    task_end_info ``echo_class_identifiers``."""
+    attrs = _cf_moment_attrs(iris_mapping.get(type_name, type_name))
+    if type_name in ("DB_HCLASS", "DB_HCLASS2"):
+        attrs.update(
+            hclass_flag_attrs(
+                bytearray(echo_class_identifiers),
+                nbytes=1 if type_name == "DB_HCLASS" else 2,
+            )
+        )
+    return attrs
+
+
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -4039,19 +4056,8 @@ class IrisStore(AbstractDataStore):
 
         if mname is None:
             mname = iris_mapping.get(name, name)
-        # CF attrs of the mapped moment, also when a colliding type keeps its
-        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
-        attrs = _cf_moment_attrs(iris_mapping.get(name, name))
-        if name in ["DB_HCLASS", "DB_HCLASS2"]:
-            task_end_info = self.root.ingest_header["task_configuration"][
-                "task_end_info"
-            ]
-            attrs.update(
-                hclass_flag_attrs(
-                    bytearray(task_end_info["echo_class_identifiers"]),
-                    nbytes=1 if name == "DB_HCLASS" else 2,
-                )
-            )
+        task_end_info = self.root.ingest_header["task_configuration"]["task_end_info"]
+        attrs = _moment_cf_attrs(name, task_end_info["echo_class_identifiers"])
         attrs["coordinates"] = MOMENT_COORDINATES
         return mname, Variable((dim, "range"), data, attrs, encoding)
 

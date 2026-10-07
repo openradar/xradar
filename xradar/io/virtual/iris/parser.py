@@ -50,6 +50,7 @@ from virtualizarr.manifests.utils import create_v3_array_metadata
 
 from xradar.io.backends.iris import (
     SIGMET_DATA_TYPES,
+    _moment_cf_attrs,
     _moment_names,
     _nyquist,
     _sweep_mode,
@@ -58,7 +59,6 @@ from xradar.io.backends.iris import (
     decode_phidp2,
     decode_vel,
     decode_width,
-    iris_mapping,
 )
 from xradar.io.virtual.iris import codec as _codec  # noqa: F401  (registers)
 from xradar.io.virtual.iris.format import (
@@ -79,7 +79,7 @@ from xradar.io.virtual.manifest import (
     inline_root,
     inline_scalar,
     inline_variable,
-    moment_attrs,
+    to_json_safe,
 )
 from xradar.model import (
     get_altitude_attrs,
@@ -164,6 +164,7 @@ def _sweep_group(
     nyquist_vel: float,
     pad_missing_rays: bool,
     drop_variables: set[str],
+    echo_class_identifiers: bytes = b"",
 ) -> tuple[ManifestGroup, np.ndarray]:
     """One sweep's group, plus its per-ray epoch-ms times (NaN = padded)."""
     headers: tuple[DataTypeHeader, ...] = sweep.headers
@@ -236,8 +237,10 @@ def _sweep_group(
                 f"bits_per_bin={dth.bits_per_bin}"
             )
         dtype = np.dtype("uint8") if dth.bits_per_bin == 8 else np.dtype("uint16")
+        # numpy flag arrays (HydroClass) become JSON lists for zarr.json
+        cf_attrs = to_json_safe(_moment_cf_attrs(dth.type_name, echo_class_identifiers))
         attrs: dict = {
-            **moment_attrs(iris_mapping.get(dth.type_name, dth.type_name)),
+            **cf_attrs,
             "coordinates": MOMENT_COORDINATES,
             "sigmet_data_type": dth.type_name,
         }
@@ -379,7 +382,7 @@ class IrisParser:
             One root ``ManifestGroup`` containing one subgroup per sweep.
         """
         buf = memoryview(fetch_bytes(url, registry))  # zero-copy sweep slices
-        hdr, sweeps, root_attrs = read_volume(buf)
+        hdr, sweeps, root_attrs, echo_class_identifiers = read_volume(buf)
         if _sweep_mode(hdr.antenna_scan_mode) == "rhi":
             raise NotImplementedError(
                 f"{url}: RHI tasks (antenna_scan_mode=2) are not supported by "
@@ -408,6 +411,7 @@ class IrisParser:
                 nyquist_vel,
                 self.pad_missing_rays,
                 self.drop_variables,
+                echo_class_identifiers,
             )
             ray_times.append(times)
 
