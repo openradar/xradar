@@ -56,9 +56,11 @@ from ...model import (
     radar_parameters_subgroup,
 )
 from .common import (
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
 )
@@ -167,6 +169,9 @@ def _convert_to_hours_minutes_seconds(decimal_hour, initial_time):
 
 def _hpl2dict(file_buf):
     # import hpl files into intercal storage
+    # todo: all rays are read and parsed into memory here; make the data
+    # reading lazy (index the ray lines, parse on access) if performance
+    # becomes an issue for large files
     # binary file-like objects return bytes
     lines = [
         line.decode() if isinstance(line, bytes) else line
@@ -555,6 +560,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
         site_as_coords=True,
         optional=True,
         latitude=0,
@@ -594,6 +601,10 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
         ds = _apply_site_as_coords(ds, site_as_coords)
+
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         ds.encoding["engine"] = "hpl"
         # handling first dimension
@@ -636,9 +647,14 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool

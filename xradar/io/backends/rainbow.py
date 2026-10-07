@@ -33,6 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
+import os
 import sys
 import zlib
 
@@ -47,7 +48,6 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
     georeferencing_correction_subgroup,
     get_altitude_attrs,
@@ -63,9 +63,11 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _attach_sweep_groups,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
 )
@@ -415,6 +417,8 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -717,23 +721,18 @@ class RainbowStore(AbstractDataStore):
         timestr = f"{dstr}T{tstr}Z"
         time = dt.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
-        # range is in km
-        start_range = self.root._get_rbdict_value(
-            var, "startrange", default=0, dtype=float
-        )
-        start_range *= 1000.0
-
-        stop_range = self.root._get_rbdict_value(var, "stoprange", dtype=float)
-        stop_range *= 1000.0
+        # range is in km, start of the first range bin; the tag is
+        # `start_range`, older files might use `startrange`
+        start_range = self.root._get_rbdict_value(var, "start_range")
+        if start_range is None:
+            start_range = self.root._get_rbdict_value(var, "startrange", default=0)
+        start_range = float(start_range) * 1000.0
 
         range_step = self.root._get_rbdict_value(var, "rangestep", dtype=float)
         range_step *= 1000.0
-        rng = np.arange(
-            start_range + range_step / 2,
-            stop_range + range_step / 2,
-            range_step,
-            dtype="float32",
-        )[: int(var["slicedata"]["rawdata"]["@bins"])]
+        # bin centers
+        nbins = int(var["slicedata"]["rawdata"]["@bins"])
+        rng = (start_range + range_step * (np.arange(nbins) + 0.5)).astype("float32")
 
         range_attrs = get_range_attrs(rng)
 
@@ -812,6 +811,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
+        reindex_coord=None,
         reindex_angle=False,
         first_dim="auto",
         site_as_coords=True,
@@ -843,10 +843,9 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "rainbow"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -892,9 +891,14 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
