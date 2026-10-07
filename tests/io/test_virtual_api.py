@@ -14,6 +14,7 @@ import importlib
 import numpy as np
 import pytest
 
+pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only
 pytest.importorskip("virtualizarr")
 
 #: module -> public names a store builder imports from it

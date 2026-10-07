@@ -15,11 +15,31 @@ is ``True``).
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import TYPE_CHECKING
 
-from zarr.abc.codec import ArrayBytesCodec
+import zarr
 
-from xradar.io.virtual._checks import plain
+#: The oldest zarr the virtual codecs run on: zarr v3 with its 3.1 dtype API
+#: (3.1.6 is also virtualizarr's floor). zarr v2 has no ``zarr.abc`` codecs.
+MIN_ZARR = (3, 1, 6)
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """``"3.1.6"``, ``"3.2.0rc1"``, ``"3.2.1.dev3+g1"`` -> leading integers."""
+    return tuple(int(part) for part in re.findall(r"\d+", version)[:3])
+
+
+if _version_tuple(zarr.__version__) < MIN_ZARR:
+    raise ImportError(
+        "xradar's virtual codecs need zarr>="
+        f"{'.'.join(map(str, MIN_ZARR))} (zarr v3); found zarr {zarr.__version__}",
+        name="zarr",
+    )
+
+from zarr.abc.codec import ArrayBytesCodec  # noqa: E402
+
+from xradar.io.virtual._checks import plain  # noqa: E402
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec

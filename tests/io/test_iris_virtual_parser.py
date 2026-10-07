@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only
 pytest.importorskip("virtualizarr")
 
 from obspec_utils.registry import ObjectStoreRegistry  # noqa: E402

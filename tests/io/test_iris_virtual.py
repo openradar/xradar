@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-pytest.importorskip("zarr")  # codec needs zarr>=3; numpy-1 CI cells skip
+pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only; numpy-1 cells skip
 
 import xradar  # resolves the package location for the subprocess test
 from xradar.io.backends.iris import SIGMET_DATA_TYPES, decode_array
@@ -513,3 +513,33 @@ def test_codec_is_decode_only_and_needs_a_mapping():
         asyncio.run(codec._encode_single(None, None))
     with pytest.raises(NotImplementedError):
         codec.compute_encoded_size(10, None)
+
+
+def test_zarr_v2_is_refused_with_a_clear_error():
+    """The codecs run on zarr v3 only: on zarr 2.x importing them raises an
+    ImportError naming the requirement (not a bare ``No module named
+    'zarr.abc'``), which the lazy exports turn into MissingDependencyError."""
+    code = (
+        "import zarr; zarr.__version__ = '2.18.7'\n"
+        "try:\n"
+        "    import xradar.io.virtual.iris.codec\n"
+        "except ImportError as err:\n"
+        "    print(type(err).__name__, err)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(xradar.__file__).parents[1],
+    )
+    assert "need zarr>=3.1.6 (zarr v3); found zarr 2.18.7" in result.stdout
+
+
+def test_zarr_version_parsing():
+    from xradar.io.virtual._codec import MIN_ZARR, _version_tuple
+
+    assert _version_tuple("3.1.6") == MIN_ZARR
+    assert _version_tuple("3.2.0rc1") == (3, 2, 0) > MIN_ZARR
+    assert _version_tuple("3.2.1.dev3+g1a2b") == (3, 2, 1)
+    assert _version_tuple("2.18.7") < MIN_ZARR
