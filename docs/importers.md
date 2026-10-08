@@ -177,6 +177,9 @@ differences from `open_iris_datatree`:
 
 - RHI tasks are refused (`NotImplementedError`): the eager reader lays them
   out as `(elevation, range)`, the parser builds `(azimuth, range)` sweeps.
+- Tasks with variable range bin spacing are refused (`NotImplementedError`):
+  their gate positions are not a constant step, and the parser would
+  otherwise invent an evenly spaced `range`.
 - Ray times have 1-second resolution (`DB_XHDR` millisecond times are not
   read), so `time` and the coverage strings can differ by under a second
   on files with `DB_XHDR`.

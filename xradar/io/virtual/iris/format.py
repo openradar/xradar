@@ -287,8 +287,10 @@ def read_volume(buf) -> IrisVolume:
             f"task_range_info declares step {hdr.step_output_bins_cm} cm and "
             f"{hdr.number_output_bins} bins — corrupt IRIS header"
         )
+    # (with variable spacing the gate positions are unknown; the parser
+    # refuses those tasks)
     nrange = range_centers(hdr).size
-    if nrange != hdr.number_bins:
+    if not hdr.variable_range_spacing and nrange != hdr.number_bins:
         # the eager reader cannot align these either
         raise ValueError(
             f"product_end declares {hdr.number_bins} gates but "

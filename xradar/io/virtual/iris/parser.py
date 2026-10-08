@@ -24,7 +24,8 @@ object.
 
 RHI tasks are refused: the eager reader lays them out as
 ``(elevation, range)`` and this parser builds ``(azimuth, range)`` sweeps
-only.
+only. Tasks with variable range bin spacing are refused too: the range
+coordinate would need gate positions the header does not give.
 
 Known limitation: per-ray times come from the ray header's ``dtime`` field
 (1-second resolution). Files carrying DB_XHDR extended headers have
@@ -390,6 +391,13 @@ class IrisParser:
                 f"{url}: RHI tasks (antenna_scan_mode=2) are not supported by "
                 "the virtual IRIS parser; read them with xradar's eager IRIS "
                 "backend (open_iris_datatree)"
+            )
+        if hdr.variable_range_spacing:
+            # gate positions are not a constant step: no range to build
+            raise NotImplementedError(
+                f"{url}: tasks with variable range bin spacing are not "
+                "supported by the virtual IRIS parser (gate positions are "
+                "unknown); read them with open_iris_datatree"
             )
         rng = range_centers(hdr)
 

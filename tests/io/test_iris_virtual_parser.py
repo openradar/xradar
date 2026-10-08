@@ -1015,3 +1015,29 @@ def test_ray_with_zero_rbins_is_missing(
     assert ds.sizes["azimuth"] == full.sizes["azimuth"] - 1
     wavelength_cm = parse_ingest_header(bytes(buf)).wavelength_cm
     _assert_sweep_parity(ds, eager, wavelength_cm)
+
+
+def test_variable_range_spacing_is_refused(iris0_file, local_registry, monkeypatch):
+    """Variable gate spacing has no constant-step range coordinate: refuse
+    instead of writing evenly spaced gates."""
+    _with_header(monkeypatch, variable_range_spacing=True)
+    with pytest.raises(NotImplementedError, match="variable range bin spacing"):
+        IrisParser()(f"file://{iris0_file}", local_registry)
+
+
+def test_read_volume_skips_the_gate_check_for_variable_spacing(iris0_file):
+    """With variable spacing the range bins say nothing about the gate
+    count, so read_volume leaves the refusal to the parser."""
+    from xradar.io.backends.iris import INGEST_HEADER
+    from xradar.io.virtual.iris.format import read_volume
+
+    buf = Path(iris0_file).read_bytes()
+    path = "task_configuration.task_range_info.variable_range_bin_spacing_flag"
+    flag = RECORD_SIZE + _field_offset(INGEST_HEADER, path)
+    nbins = RECORD_SIZE + _field_offset(
+        INGEST_HEADER, "task_configuration.task_range_info.number_output_bins"
+    )
+    fewer = _patched(buf, nbins, "h", 100)  # disagrees with product_end
+    with pytest.raises(ValueError, match="product_end declares"):
+        read_volume(fewer)
+    assert read_volume(_patched(fewer, flag, "H", 1)).header.variable_range_spacing
