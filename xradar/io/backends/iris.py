@@ -3908,9 +3908,7 @@ class IrisArrayWrapper(BackendArray):
             data = self.datastore.ds["sweep_data"][self.name][key]
         # decoders mask no-data bins (e.g. DB_VEL raw 0), keep them as NaN
         # instead of losing the mask (#462)
-        if np.ma.isMaskedArray(data):
-            data = data.filled(np.nan)
-        return data
+        return np.ma.filled(data, np.nan)
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(

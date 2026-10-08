@@ -543,7 +543,7 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
 def test_iris_velocity_no_data_is_nan(iris0_file):
     # DB_VEL raw 0 is "velocity data not available" (IRIS Programming Guide
     # 4.4.44), raw 128 is zero velocity; no-data bins must be NaN, not 0 (#462)
-    raw = iris.IrisRawFile(iris0_file, rawdata=True)
+    raw = iris.IrisRawFile(iris0_file, loaddata=False, rawdata=True)
     raw.get_moment(1, "DB_VEL")
     words = raw.data[1]["sweep_data"]["DB_VEL"]
     # one value per range bin, like the decoded moment
