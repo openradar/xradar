@@ -192,9 +192,6 @@ differences from `open_iris_datatree`:
   `meters_to_center_of_first_gate` are derived from the range values in
   metres; `open_iris_datatree` still writes the raw header numbers there.
 
-Stores written before the codec name gained its ``xradar-`` prefix declare
-``sigmet-sweep``; xradar still reads them through that read-only alias.
-
 See the {doc}`notebooks/IRIS_Virtual` notebook for a full walkthrough.
 
 

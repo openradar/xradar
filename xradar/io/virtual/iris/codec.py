@@ -29,9 +29,8 @@ ray-slot count come from the chunk shape, the word size from the dtype.
 Registered under the ``zarr.codecs`` entry-point group in
 ``pyproject.toml`` (and via :func:`zarr.registry.register_codec` on
 import), so any zarr reader in an environment with xradar installed
-resolves it by name with no explicit import. Stores written before the
-``xradar-`` prefix name it ``sigmet-sweep``; that name stays registered as a
-read-only alias, while writers only emit ``xradar-iris-sweep``.
+resolves it by name with no explicit import. Only the ``xradar-`` prefixed
+name is registered.
 """
 
 from __future__ import annotations
@@ -45,7 +44,7 @@ from xradar.io.virtual._codec import (
     check_chunk_shape,
     normalize_fields,
     parse_config,
-    register_codec_names,
+    register_codec_name,
 )
 from xradar.io.virtual.iris.format import decode_sweep_moment
 
@@ -54,10 +53,8 @@ if TYPE_CHECKING:
     from zarr.core.buffer import Buffer, NDBuffer
 
 CODEC_NAME = "xradar-iris-sweep"
-#: Read-only aliases: names published stores carried before the prefix.
-LEGACY_NAMES = ("sigmet-sweep",)
 
-__all__ = ["IrisSweepCodec", "CODEC_NAME", "LEGACY_NAMES"]
+__all__ = ["IrisSweepCodec", "CODEC_NAME"]
 
 #: Frozen configuration contract (key -> type); order is the JSON order.
 _FIELDS = {
@@ -92,7 +89,6 @@ class IrisSweepCodec(DecodeOnlyCodec):
             CODEC_NAME,
             _FIELDS,
             required=("moment_index", "ndatatypes"),
-            aliases=LEGACY_NAMES,
         )
         return cls(**config)
 
@@ -122,4 +118,4 @@ class IrisSweepCodec(DecodeOnlyCodec):
         return chunk_spec.prototype.nd_buffer.from_ndarray_like(arr)
 
 
-register_codec_names(IrisSweepCodec, CODEC_NAME, LEGACY_NAMES)
+register_codec_name(IrisSweepCodec, CODEC_NAME)

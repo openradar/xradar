@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DecodeOnlyCodec",
-    "register_codec_names",
+    "register_codec_name",
     "check_chunk_shape",
     "normalize_fields",
     "parse_config",
@@ -61,15 +61,10 @@ def parse_config(
     codec_name: str,
     fields: dict[str, type],
     required: tuple[str, ...],
-    aliases: tuple[str, ...] = (),
 ) -> dict:
-    """Validate a serialized codec configuration against its contract.
-
-    ``aliases`` are legacy names still accepted on read (stores written
-    before the ``xradar-`` prefix); writers only ever emit ``codec_name``.
-    """
+    """Validate a serialized codec configuration against its contract."""
     name = data.get("name") if isinstance(data, dict) else None
-    if name != codec_name and name not in aliases:
+    if name != codec_name:
         raise ValueError(f"expected codec name {codec_name!r}, got {name!r}")
     config = data.get("configuration") or {}
     if not isinstance(config, dict):
@@ -139,9 +134,9 @@ class DecodeOnlyCodec(ArrayBytesCodec):
         return chunk_spec
 
 
-def register_codec_names(codec_cls, codec_name: str, aliases: tuple[str, ...]) -> None:
-    """Register a codec class under its canonical name and legacy aliases."""
+def register_codec_name(codec_cls, codec_name: str) -> None:
+    """Register a codec class under its name (the entry point does the same
+    for readers that never import xradar)."""
     from zarr.registry import register_codec
 
-    for name in (codec_name, *aliases):
-        register_codec(name, codec_cls)
+    register_codec(codec_name, codec_cls)

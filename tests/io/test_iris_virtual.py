@@ -210,7 +210,7 @@ def test_codec_config_is_frozen():
 
 
 def test_codec_resolves_from_zarr_registry():
-    """``xradar-iris-sweep`` (and its legacy alias) resolve from the zarr registry. When several
+    """``xradar-iris-sweep`` resolves from the zarr registry. When several
     providers of the name coexist (e.g. a migration window where another
     package still registers it), zarr warns and picks one arbitrarily —
     ``zarr.config`` pins the xradar implementation deterministically."""
@@ -435,17 +435,20 @@ def test_output_contract_is_shared(dtype, fill, shape, match):
         check_output(dtype, fill, shape)
 
 
-def test_legacy_codec_name_still_reads():
-    """Stores published as ``sigmet-sweep`` keep reading (read-only alias);
-    re-serialising writes the canonical name."""
-    config = {
-        "moment_index": 3,
-        "ndatatypes": 12,
-        "sort_rays": True,
-        "pad_missing_rays": False,
+def test_only_the_prefixed_codec_name_is_registered():
+    """xradar registers ``xradar-iris-sweep`` only: the unprefixed
+    ``sigmet-sweep`` is neither accepted by ``from_dict`` nor an entry point."""
+    from importlib.metadata import entry_points
+
+    config = {"moment_index": 3, "ndatatypes": 12}
+    with pytest.raises(ValueError, match="expected codec name"):
+        IrisSweepCodec.from_dict({"name": "sigmet-sweep", "configuration": config})
+    names = {
+        ep.name
+        for ep in entry_points(group="zarr.codecs")
+        if ep.value.startswith("xradar.")
     }
-    codec = IrisSweepCodec.from_dict({"name": "sigmet-sweep", "configuration": config})
-    assert codec.to_dict() == {"name": "xradar-iris-sweep", "configuration": config}
+    assert names == {CODEC_NAME}
 
 
 def test_azimuth_sort_order_is_stable():
