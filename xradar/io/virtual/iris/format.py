@@ -343,8 +343,10 @@ def read_volume(buf) -> IrisVolume:
             for d in idhs
         )
         sweeps.append(SweepIndex(sweep_number, r0, r1, headers))
+    # the eager attrs as they are (``_root_attrs`` strips what eager strips);
+    # only undecodable bytes become str, Latin-1 keeping every byte
     root_attrs = {
-        k: _text(v) if isinstance(v, str | bytes) else v
+        k: v.decode("latin-1") if isinstance(v, bytes) else v
         for k, v in _root_attrs(raw.product_hdr, ih).items()
     }
     identifiers = bytes(tc["task_end_info"]["echo_class_identifiers"])

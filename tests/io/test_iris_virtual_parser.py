@@ -1041,3 +1041,28 @@ def test_read_volume_skips_the_gate_check_for_variable_spacing(iris0_file):
     with pytest.raises(ValueError, match="product_end declares"):
         read_volume(fewer)
     assert read_volume(_patched(fewer, flag, "H", 1)).header.variable_range_spacing
+
+
+@pytest.mark.parametrize(
+    "description", ["  padded task  ", "task\x00\x00", b"caf\xe9 radar "]
+)
+def test_root_comment_is_kept_like_eager(
+    iris0_file, local_registry, monkeypatch, description
+):
+    """The task description reaches the root ``comment`` as the eager reader
+    writes it: no stripping; bytes that are not UTF-8 decode as Latin-1."""
+    from xradar.io.backends import iris
+
+    init = iris.IrisRawFile.__init__
+
+    def init_with_description(self, *args, **kwargs):
+        init(self, *args, **kwargs)
+        task = self.ingest_header["task_configuration"]
+        task["task_end_info"]["task_description"] = description
+
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_description)
+    tree = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
+    eager = open_iris_datatree(iris0_file).attrs["comment"]
+    if isinstance(eager, bytes):
+        eager = eager.decode("latin-1")
+    assert tree.attrs["comment"] == eager
