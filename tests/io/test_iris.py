@@ -538,3 +538,199 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
         ]
     # the IRIS names are kept with the classes
     assert iris.HCLASS_CLASSIFIERS[1][2][2] == ("MET_CLASS_RAIN", "rain")
+
+
+# -- helpers shared with the virtual reader ---------------------------------
+
+
+def test_moment_names_keep_colliding_types():
+    from xradar.io.backends.iris import _moment_names
+
+    assert _moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
+        "DBZH",
+        "VRADH",
+        "DB_DBZ2",
+    ]
+    assert _moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    with pytest.raises(ValueError, match="appears twice"):
+        _moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
+
+
+def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
+    """Two types mapping to one CfRadial name used to keep only the later
+    one; now the second keeps its Sigmet name. (The collision is staged by
+    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    from xradar.io.backends import iris
+
+    before = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
+    ds = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
+    np.testing.assert_array_equal(ds.DBZH.values, before.DBZH.values)
+    np.testing.assert_array_equal(ds.DB_VEL.values, before.VRADH.values)
+    # CF attrs follow the mapped name, also under the Sigmet name
+    assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+
+
+@pytest.mark.parametrize(
+    "scan_mode, expected",
+    [
+        (1, "sector"),
+        (2, "rhi"),
+        (3, "azimuth_surveillance"),
+        (4, "azimuth_surveillance"),
+        (5, "azimuth_surveillance"),
+        (7, "azimuth_surveillance"),
+    ],
+)
+def test_sweep_mode_is_fm301(scan_mode, expected):
+    """One mapping for both readers, FM301 values only."""
+    from xradar.io.backends.iris import _sweep_mode
+
+    assert _sweep_mode(scan_mode) == expected
+
+
+def test_sector_task_is_a_sector_sweep(iris0_file, monkeypatch):
+    """PPI sector tasks are FM301 "sector" sweeps (were labelled
+    azimuth_surveillance), and sweep tools handle them."""
+    from xradar import util
+    from xradar.io.backends import iris
+
+    monkeypatch.setattr(iris.IrisRawFile, "scan_mode", property(lambda self: 1))
+    ds = open_dataset(iris0_file, engine="iris", group="sweep_0")
+    assert ds.sweep_mode.item() == "sector"
+    params = util.extract_angle_parameters(ds)
+    assert params["start_angle"] != params["stop_angle"]
+
+
+def test_nyquist_and_range_helpers(iris0_file):
+    from xradar.io.backends.iris import IrisRawFile, _nyquist, _range_centers
+
+    # 1/100 cm and Hz -> m/s; the multi-PRF factor multiplies
+    assert _nyquist(532, 1000) == pytest.approx(13.3)
+    assert _nyquist(532, 1000, 1) == pytest.approx(26.6)
+    tri = IrisRawFile(iris0_file, loaddata=False).ingest_header["task_configuration"][
+        "task_range_info"
+    ]
+    rng = _range_centers(tri)
+    assert rng.dtype == np.float32
+    assert rng.size == tri["number_output_bins"]
+    np.testing.assert_allclose(np.diff(rng), tri["step_output_bins"] / 100)
+    assert rng[0] == tri["range_first_bin"] / 100
+    # range_first_bin 0 means "centers start half a step out"
+    zero = dict(tri, range_first_bin=0)
+    rng0 = _range_centers(zero)
+    assert rng0[0] == tri["step_output_bins"] / 2 / 100
+    assert rng0.size == tri["number_output_bins"]
+
+
+def test_root_attrs_carry_the_rhi_limits(iris0_file):
+    """RHI tasks report their elevation limits in the root attrs."""
+    from xradar.io.backends.iris import IrisRawFile, _root_attrs
+
+    raw = IrisRawFile(iris0_file, loaddata=False)
+    ingest = raw.ingest_header
+    scan_info = dict(ingest["task_configuration"]["task_scan_info"])
+    scan_info["antenna_scan_mode"] = 2
+    scan_info["task_type_scan_info"] = {
+        "lower_elevation_limit": 0.5,
+        "upper_elevation_limit": 45.0,
+    }
+    rhi = {
+        **ingest,
+        "task_configuration": {
+            **ingest["task_configuration"],
+            "task_scan_info": scan_info,
+        },
+    }
+    attrs = _root_attrs(raw.product_hdr, rhi)
+    assert attrs["elevation_lower_limit"] == 0.5
+    assert attrs["elevation_upper_limit"] == 45.0
+    assert "elevation_lower_limit" not in _root_attrs(raw.product_hdr, ingest)
+
+
+def test_root_attrs_are_stripped(iris0_file):
+    from xradar.io.backends.iris import IrisRawFile, _root_attrs
+
+    raw = IrisRawFile(iris0_file, loaddata=False)
+    attrs = _root_attrs(raw.product_hdr, raw.ingest_header)
+    assert attrs["scan_name"] == "SURV_HV_300"
+    assert attrs["source"] == "Sigmet"
+    assert attrs["comment"] == "AEROCIVIL OPERATIONAL DUAL POLE SCAN"
+
+
+def test_no_data_zero_types_follow_the_table():
+    from xradar.io.backends.iris import _NO_DATA_ZERO_TYPES, SIGMET_DATA_TYPES
+
+    names = _NO_DATA_ZERO_TYPES
+    assert {"DB_VEL", "DB_VELC"} <= names
+    assert "DB_DBZ" not in names  # 8-bit reflectivity has no no-data word
+    by_name = {e["name"]: e for e in SIGMET_DATA_TYPES.values()}
+    assert all((by_name[n].get("fkw") or {}).get("mask") == 0 for n in names)
+
+
+def test_raw_product_bhdrs_contract(iris0_file):
+    """The virtual parser builds its sweep index from
+    ``IrisRawFile(loaddata=False).raw_product_bhdrs``: one record header per
+    record after the two volume headers, each with its sweep number."""
+    from pathlib import Path
+
+    from xradar.io.backends.iris import RECORD_BYTES, IrisRawFile
+
+    raw = IrisRawFile(iris0_file, loaddata=False)
+    nrecords = Path(iris0_file).stat().st_size // RECORD_BYTES
+    assert len(raw.raw_product_bhdrs) == nrecords - 2
+    numbers = [bhdr["sweep_number"] for bhdr in raw.raw_product_bhdrs]
+    assert numbers[0] == 1 and sorted(numbers) == numbers
+
+
+# HydroClass flags for classifier identifiers (1, 2, 3) = (meteo, precip,
+# cell) in the bit segments 0-2, 3-5 and 6-7 of each word, written out by
+# hand so the test does not reuse the code it checks.
+HCLASS_MEANINGS = (
+    "meteo_no_data meteo_non_meteorological meteo_rain meteo_wet_snow "
+    "meteo_snow meteo_graupel meteo_hail "
+    "precip_no_data precip_ground_clutter_anomalous_propagation "
+    "precip_bio_scatter precip_precipitation precip_large_drops "
+    "precip_light_precipitation precip_moderate_precipitation "
+    "precip_heavy_precipitation "
+    "cell_stratiform cell_convection"
+)
+HCLASS_MASKS = [0b111] * 7 + [0b111_000] * 8 + [0b11_000_000] * 2
+HCLASS_VALUES = (
+    list(range(7))  # meteo classes 0-6 in bits 0-2
+    + [cls << 3 for cls in range(8)]  # precip classes 0-7 in bits 3-5
+    + [cls << 6 for cls in range(2)]  # cell classes 0-1 in bits 6-7
+)
+
+
+@pytest.mark.parametrize(
+    "type_name, dtype", [("DB_HCLASS", np.uint8), ("DB_HCLASS2", np.uint16)]
+)
+def test_moment_cf_attrs_hclass_flags(type_name, dtype):
+    """The shared moment-attrs helper returns exactly the CF flag attrs of
+    the file's classifiers, typed like the data words."""
+    from xradar.io.backends.iris import _moment_cf_attrs
+
+    attrs = _moment_cf_attrs(type_name, bytes([1, 2, 3, 0, 0, 0]))
+    assert set(attrs) == {"flag_masks", "flag_values", "flag_meanings"}
+    assert attrs["flag_meanings"] == HCLASS_MEANINGS
+    for key, expected in (
+        ("flag_masks", HCLASS_MASKS),
+        ("flag_values", HCLASS_VALUES),
+    ):
+        assert attrs[key].dtype == dtype
+        assert attrs[key].tolist() == expected
+
+
+def test_moment_cf_attrs_without_flags():
+    """No classifier identifiers: no flag attrs. Other types get the CF
+    attrs of their mapped moment, also when kept under the Sigmet name."""
+    from xradar.io.backends.iris import _moment_cf_attrs
+
+    assert _moment_cf_attrs("DB_HCLASS", bytes(6)) == {}
+    assert _moment_cf_attrs("DB_DBZ2", b"") == {
+        "units": "dBZ",
+        "standard_name": "radar_equivalent_reflectivity_factor_h",
+        "long_name": "Equivalent reflectivity factor H",
+    }

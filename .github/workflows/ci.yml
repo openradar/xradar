@@ -70,6 +70,13 @@ jobs:
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
+    - name: Install zarr + virtualizarr (numpy 2 only)
+      # zarr>=3.1.6 and virtualizarr require numpy>=2, virtualizarr also
+      # Python>=3.12; the virtual-access test modules importorskip them, so
+      # the codec tests still run on 3.11 and only the parser tests skip.
+      if: matrix.numpy-version == '2'
+      run: |
+        python -m pip install "zarr>=3.1.6" "virtualizarr>=2.7.1,<2.8; python_version >= '3.12'"
     - name: Version Info
       run: |
         python -c "import xradar; print(xradar.version.version)"
@@ -181,6 +188,7 @@ jobs:
             setuptools
             wheel
             xmltodict
+            zarr>=3.1.6
             numpy=${{matrix.numpy-version}}
             conda
       - name: Install xarray
@@ -190,6 +198,9 @@ jobs:
       - name: Install xradar
         run: |
           python -m pip install --no-deps .
+      - name: Install virtualizarr
+        run: |
+          python -m pip install "virtualizarr>=2.7.1,<2.8"
       - name: Version Info
         run: |
           python -c "import xradar; print(xradar.version.version)"

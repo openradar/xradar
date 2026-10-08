@@ -48,6 +48,12 @@ metek = "xradar.io.backends:MRRBackendEntrypoint"
 uf = "xradar.io.backends:UFBackendEntrypoint"
 imd = "xradar.io.backends:IMDBackendEntrypoint"
 
+[project.entry-points."zarr.codecs"]
+# Decode-only codecs for virtual (byte-range) radar stores. Registered
+# globally so any zarr v3 reader with xradar installed resolves them by
+# name — reading a virtual store needs only xradar + zarr.
+xradar-iris-sweep = "xradar.io.virtual.iris.codec:IrisSweepCodec"
+
 [build-system]
 requires = [
     "setuptools>=77",
@@ -65,6 +71,7 @@ readme = {file = ["README.md", "docs/history.md"], content-type = "text/markdown
 
 [tool.setuptools.dynamic.optional-dependencies]
 dev = { file = "requirements_dev.txt"}
+virtual = { file = "requirements_virtual.txt"}
 
 [tool.setuptools_scm]
 write_to = "xradar/version.py"

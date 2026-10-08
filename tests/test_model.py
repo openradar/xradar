@@ -204,3 +204,14 @@ def test_get_sweep_dataarray():
     assert attrs["long_name"] == "Equivalent reflectivity factor H"
     assert attrs["short_name"] == "DBZH"
     assert attrs["units"] == "dBZ"
+
+
+def test_cf_moment_attrs_order_is_fixed():
+    """Attr key order must not depend on the process (``model.moment_attrs``
+    is a set); the virtual stores write these attrs in this order."""
+    assert list(model._cf_moment_attrs("DBZH")) == [
+        "units",
+        "standard_name",
+        "long_name",
+    ]
+    assert model._cf_moment_attrs("NOT_A_MOMENT") == {}

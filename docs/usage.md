@@ -32,6 +32,7 @@ notebooks/GAMIC
 notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
+notebooks/IRIS_Virtual
 notebooks/HaloPhotonics
 notebooks/MRR
 notebooks/NexradLevel2

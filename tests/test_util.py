@@ -539,7 +539,7 @@ def test_get_required_root_dataset():
     )
     assert len(list(root.attrs.keys())) == 10
     assert root.attrs["instrument_name"] == "Corozal, Radar"
-    assert root.attrs["scan_name"] == "SURV_HV_300 "
+    assert root.attrs["scan_name"] == "SURV_HV_300"
     assert root.attrs["comment"] == "AEROCIVIL OPERATIONAL DUAL POLE SCAN"
 
 

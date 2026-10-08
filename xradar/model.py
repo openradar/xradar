@@ -754,6 +754,22 @@ def get_nyquist_velocity_attrs(units="m s-1"):
     return nyquist_attrs
 
 
+#: The per-moment ``coordinates`` attribute every reader writes.
+MOMENT_COORDINATES = "elevation azimuth range latitude longitude altitude time"
+
+#: CF moment attrs copied from :data:`sweep_vars_mapping`, in a fixed order
+#: (``moment_attrs`` is a set, whose iteration order varies per process).
+_CF_MOMENT_ATTR_KEYS = ("units", "standard_name", "long_name")
+
+
+def _cf_moment_attrs(moment):
+    """``units``/``standard_name``/``long_name`` of a known moment, in a
+    fixed key order; ``{}`` for a name the model does not know. Shared by
+    the eager readers and the virtual parsers."""
+    mapping = sweep_vars_mapping.get(moment) or {}
+    return {key: mapping[key] for key in _CF_MOMENT_ATTR_KEYS if key in mapping}
+
+
 def get_moment_attrs(moment):
     """Get Radar Moment CF attributes.
 
