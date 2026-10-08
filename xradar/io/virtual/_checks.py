@@ -16,7 +16,14 @@ import numpy as np
 # packaging is always installed: a hard dependency of xarray
 from packaging.version import InvalidVersion, Version
 
-__all__ = ["MAX_CELLS", "MIN_ZARR", "check_output", "plain", "zarr_supported"]
+__all__ = [
+    "MAX_CELLS",
+    "MAX_SPAN_CELLS",
+    "MIN_ZARR",
+    "check_output",
+    "plain",
+    "zarr_supported",
+]
 
 #: The oldest zarr the virtual codecs run on: zarr v3 with its 3.1 dtype API
 #: (3.1.6 is also virtualizarr's floor). zarr v2 has no ``zarr.abc`` codecs.
@@ -37,6 +44,11 @@ def zarr_supported(version: str) -> bool:
 #: ~3e6 cells (720 rays x 4000 gates); a store declaring more is corrupt or
 #: hostile, and refusing it keeps one chunk from allocating gigabytes.
 MAX_CELLS = 2**25
+
+#: Upper bound on the words one walk of a sweep span may decode (every data
+#: type's rays, headers included). A sweep with 20 data types of 720 x 4000
+#: gates is ~5.8e7 words; this keeps a hostile span to 256 MiB.
+MAX_SPAN_CELLS = 2**27
 
 
 def plain(value):

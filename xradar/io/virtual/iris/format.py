@@ -17,7 +17,8 @@ needed) and adds only what it does not check (whole records, the
 structure identifiers, the sweep-number runs that make spans contiguous).
 Range gates, names, root attrs and the no-data table are the eager
 helpers too. Not shared on purpose: the RLE walk (``sweep_words``,
-``walk_sweep``), which the codec runs on a byte span with no file object;
+``walk_sweep``, cached per span by ``walk_span``), which the codec runs on
+a byte span with no file object;
 a shared flat-stream decoder for both readers is a possible follow-up.
 
 Only numpy and xradar's IRIS backend are needed at read time — this
@@ -26,6 +27,7 @@ module must stay importable without ``virtualizarr`` installed.
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from dataclasses import dataclass, field
 from typing import NamedTuple
@@ -46,6 +48,8 @@ from xradar.io.backends.iris import (
     _root_attrs,
     decode_bin_angle,
 )
+from xradar.io.virtual._cache import SingleFlightCache
+from xradar.io.virtual._checks import MAX_SPAN_CELLS
 from xradar.io.virtual._sort import azimuth_sort_order
 
 __all__ = [
@@ -59,6 +63,7 @@ __all__ = [
     "DataTypeHeader",
     "SweepIndex",
     "RayHeader",
+    "SweepRays",
     "parse_ingest_header",
     "IrisVolume",
     "read_volume",
@@ -68,6 +73,7 @@ __all__ = [
     "azimuth_midpoints",
     "sweep_words",
     "walk_sweep",
+    "walk_span",
     "decode_sweep_moment",
 ]
 
@@ -369,11 +375,6 @@ def azimuth_midpoints(starts, stops) -> np.ndarray:
     return mid
 
 
-#: Shared read-only source for zero runs (the max run is 32767 words);
-#: slicing it avoids one allocation per zero run in the RLE walk.
-_ZERO_WORDS = np.zeros(32768, dtype="<i2")
-
-
 def sweep_words(span, ndatatypes: int) -> np.ndarray:
     """A sweep span (bytes or uint8 array) -> little-endian int16 words.
 
@@ -383,15 +384,18 @@ def sweep_words(span, ndatatypes: int) -> np.ndarray:
     below never has to think about record boundaries. One vectorized
     column slice + copy instead of per-record slicing.
     """
-    raw = (
-        span.reshape(-1).view(np.uint8)
-        if isinstance(span, np.ndarray)
-        else np.frombuffer(span, dtype=np.uint8)
-    )
+    raw = _span_bytes(span)
     if raw.size % RECORD_SIZE:
         raise ValueError(f"sweep span of {raw.size} bytes is not whole records")
     body = raw.reshape(-1, RECORD_SIZE)[:, BHDR_SIZE:].reshape(-1)
     return body[IDH_SIZE * ndatatypes :].view("<i2")
+
+
+def _span_bytes(span) -> np.ndarray:
+    """A sweep span (bytes or uint8 array) as a flat uint8 array (no copy)."""
+    if isinstance(span, np.ndarray):
+        return span.reshape(-1).view(np.uint8)
+    return np.frombuffer(span, dtype=np.uint8)
 
 
 @dataclass(frozen=True)
@@ -406,64 +410,96 @@ class RayHeader:
     dtime_s: int  # seconds since sweep start
 
 
+@dataclass(frozen=True)
+class SweepRays:
+    """One data type's written rays of a sweep, in acquisition order.
+
+    ``payload`` holds each ray's decompressed words after its header, cut
+    to the width the walk was asked for and zero past the ray's end;
+    ``nwords`` is how many of them the ray really decoded. The arrays are
+    read-only: one walk is shared by every moment of the sweep.
+    """
+
+    headers: np.ndarray  # (rays, 6) int16 ray header words
+    payload: np.ndarray  # (rays, width) little-endian int16 words
+    nwords: np.ndarray  # (rays,) decoded payload words per ray
+    missing: tuple[int, ...]  # ray-group indices of the missing rays
+
+    def ray_headers(self) -> list[RayHeader]:
+        """The rays' headers, decoded."""
+        return [
+            RayHeader(
+                azimuth_start=bin2deg(int(words[0])),
+                elevation_start=bin2deg(int(words[1])),
+                azimuth_stop=bin2deg(int(words[2])),
+                elevation_stop=bin2deg(int(words[3])),
+                rbins=int(words[4]),
+                dtime_s=int(words[5]) & 0xFFFF,
+            )
+            for words in self.headers.astype(np.int64)
+        ]
+
+    def azimuth_key(self) -> np.ndarray:
+        """Wrap-aware azimuth midpoints, the ``sort_rays`` key."""
+        words = self.headers.astype(np.int64) & 0xFFFF
+        return azimuth_midpoints(
+            decode_bin_angle(words[:, 0], mode=2),
+            decode_bin_angle(words[:, 2], mode=2),
+        )
+
+    def rows(self, ngates: int, dtype: np.dtype, fill_value: int) -> np.ndarray:
+        """``(rays, ngates)`` raw bins: each ray's first ``rbins`` bins,
+        ``fill_value`` past them (or past the decoded words)."""
+        dtype = np.dtype(dtype)
+        per_word = 2 // dtype.itemsize  # 1-byte types pack two bins a word
+        words = self.payload
+        bins = words.view(np.uint8) if per_word == 2 else words.view("<u2")
+        rbins = np.clip(self.headers[:, 4].astype(np.int64), 0, None)
+        valid = np.minimum(np.minimum(rbins, self.nwords * per_word), ngates)
+        ncols = min(ngates, bins.shape[1])
+        out = np.full((len(words), ngates), fill_value, dtype=dtype)
+        keep = np.arange(ncols) < valid[:, None]
+        out[:, :ncols] = np.where(keep, bins[:, :ncols], fill_value)
+        return out
+
+
 def walk_sweep(
     words: np.ndarray,
     ndatatypes: int,
-    moment_index: int | None,
-    ngates_out: int = 0,
-    dtype: np.dtype | None = None,
-    fill_value: int = 0,
-    collect_headers: bool = True,
-):
-    """RLE walk of one sweep's word stream.
+    payload_words: int = 0,
+    max_rays: int | None = None,
+) -> tuple[SweepRays, ...]:
+    """One RLE walk of a sweep's word stream, demultiplexed by data type.
 
     Every ray of every data type is visited in interleave order (ray group
-    g's type t is interleave index ``g * ndatatypes + t``). Rays of
-    ``moment_index`` are fully decoded and COMPACTED. A missing ray
-    contributes no row, like the eager reader, which drops every ray whose
-    header ``rbins`` word is 0: a ray is missing when its FIRST code word is
-    the end-of-ray marker (value 1, MSB clear; no header at all) or when its
-    header declares 0 bins. All other rays are skip-scanned (their code
-    words are hopped without touching payload). The walk ends when the
+    g's type t is interleave index ``g * ndatatypes + t``) and decompressed
+    up to its 6 header words plus ``payload_words`` words; the census
+    (``payload_words=0``) reads only the headers. The walk ends when the
     remaining stream is zero padding (records are zero-padded after the
     last ray).
 
-    With ``moment_index=None`` (the census) no rows are decoded: the header
-    of every ray is read, so missing rays are found for every ordinal, and
-    ``RayHeader`` objects are collected for ordinal 0. With
-    ``collect_headers=False`` (codec fast path when no sort is needed) no
-    ``RayHeader`` objects are built.
-    Returns ``(row_list, headers, missing_by_ordinal)`` where
-    ``missing_by_ordinal`` maps each interleave ordinal to the sorted
-    group indices whose ray was missing — the parser uses it to verify
-    missingness is group-consistent, which is what keeps compacted rows
-    aligned ACROSS the sweep's moment arrays.
-    """
-    census = moment_index is None
-    header_ordinal = 0 if census else moment_index
-    # the census reads only each ray's header words
-    word_limit = RAY_HEADER_WORDS if census else None
-    if moment_index is not None and dtype is None:
-        raise ValueError("dtype required when decoding a moment")
+    A missing ray contributes no row, like the eager reader, which drops
+    every ray whose header ``rbins`` word is 0: a ray is missing when its
+    FIRST code word is the end-of-ray marker (value 1, MSB clear; no header
+    at all) or when its header declares 0 bins.
 
-    row_list: list[np.ndarray] = []
-    headers: list[RayHeader] = []
-    missing_by_ordinal: dict[int, list[int]] = {}
+    Returns one :class:`SweepRays` per data type (``ndatatypes`` of them).
+    ``max_rays`` bounds the written rays of each type (a store's declared
+    ray count); more raise ``ValueError`` before anything else is decoded.
+    """
+    width = RAY_HEADER_WORDS + payload_words
+    rays: list[list[np.ndarray]] = [[] for _ in range(ndatatypes)]
+    nwords: list[list[int]] = [[] for _ in range(ndatatypes)]
+    missing: list[list[int]] = [[] for _ in range(ndatatypes)]
     n_words = len(words)
     pos = 0
     i = 0
 
     while pos < n_words and words.item(pos) != 0:
         group, ordinal = divmod(i, ndatatypes)
-        decode_row = not census and ordinal == moment_index
-        keep_header = ordinal == header_ordinal
-        # decode_row implies want_header (same ordinal in decode mode)
-        want_header = census or keep_header
-
-        ray_words: list[np.ndarray] = []
-        got = 0
+        ray = np.zeros(width, dtype="<i2")
+        got = 0  # decompressed words of this ray so far
         first = True
-        missing = False
         while True:
             if pos >= n_words:
                 raise ValueError(
@@ -472,65 +508,98 @@ def walk_sweep(
                 )
             code = words.item(pos)
             pos += 1
-            if code >= 0:
-                if code == 1:  # end of ray
-                    if first:
-                        missing = True
-                    break
-                # zero run: `code` decompressed words, no payload
-                if want_header and (word_limit is None or got < word_limit):
-                    ray_words.append(_ZERO_WORDS[:code])
-                    got += code
-                first = False
-            else:
-                run = code + 32768  # data run of `run` words
-                if want_header and (word_limit is None or got < word_limit):
-                    ray_words.append(words[pos : pos + run])
-                    got += run
+            if code == 1:  # end of ray
+                break
+            if code >= 0:  # zero run: `code` words, already zero in `ray`
+                got += code
+            else:  # data run of `run` words
+                run = code + 32768
+                if got < width:
+                    take = min(run, width - got)
+                    ray[got : got + take] = words[pos : pos + take]
+                got += run
                 pos += run
-                first = False
+            first = False
         i += 1
 
-        if missing:
-            missing_by_ordinal.setdefault(ordinal, []).append(group)
+        if first:  # end-of-ray as the first code word: no header at all
+            missing[ordinal].append(group)
             continue
-        if not want_header:
-            continue
-        ray = np.concatenate(ray_words) if len(ray_words) > 1 else ray_words[0]
-        if len(ray) < RAY_HEADER_WORDS:
+        if got < RAY_HEADER_WORDS:
             raise ValueError(
-                f"ray at interleave index {i - 1} decodes to {len(ray)} "
+                f"ray at interleave index {i - 1} decodes to {got} "
                 f"words — shorter than the {RAY_HEADER_WORDS}-word ray header"
             )
-        rbins = int(ray.item(4))
-        if rbins == 0:  # a header but no bins: the eager reader drops it
-            missing_by_ordinal.setdefault(ordinal, []).append(group)
+        if ray.item(4) == 0:  # a header but no bins: the eager reader drops it
+            missing[ordinal].append(group)
             continue
-        if keep_header and collect_headers:
-            hdr_words = ray[:RAY_HEADER_WORDS].astype(np.int64)
-            headers.append(
-                RayHeader(
-                    azimuth_start=bin2deg(int(hdr_words[0])),
-                    elevation_start=bin2deg(int(hdr_words[1])),
-                    azimuth_stop=bin2deg(int(hdr_words[2])),
-                    elevation_stop=bin2deg(int(hdr_words[3])),
-                    rbins=rbins,
-                    dtime_s=int(hdr_words[5]) & 0xFFFF,
-                )
+        if max_rays is not None and len(rays[ordinal]) == max_rays:
+            raise ValueError(
+                f"sweep span holds more than the {max_rays} rays the array "
+                "metadata declares — manifest/file mismatch"
             )
-        if decode_row:
-            assert dtype is not None  # guaranteed by the guard above
-            payload = ray[RAY_HEADER_WORDS:]
-            if dtype.itemsize == 1:
-                bins = payload.astype("<i2").view(np.uint8)[:rbins]
-            else:
-                bins = payload.view(f"<u{dtype.itemsize}")[:rbins]
-            row = np.full(ngates_out, fill_value, dtype=dtype)
-            n = min(len(bins), ngates_out)
-            row[:n] = bins[:n]
-            row_list.append(row)
+        rays[ordinal].append(ray)
+        nwords[ordinal].append(min(got, width) - RAY_HEADER_WORDS)
 
-    return row_list, headers, missing_by_ordinal
+    out = []
+    for ordinal in range(ndatatypes):
+        block = (
+            np.stack(rays[ordinal])
+            if rays[ordinal]
+            else np.zeros((0, width), dtype="<i2")
+        )
+        counts = np.asarray(nwords[ordinal], dtype=np.int64)
+        for arr in (block, counts):
+            arr.setflags(write=False)
+        out.append(
+            SweepRays(
+                headers=block[:, :RAY_HEADER_WORDS],
+                payload=block[:, RAY_HEADER_WORDS:],
+                nwords=counts,
+                missing=tuple(missing[ordinal]),
+            )
+        )
+    return tuple(out)
+
+
+def _walk_nbytes(walk: tuple[SweepRays, ...]) -> int:
+    return sum(r.headers.nbytes + r.payload.nbytes + r.nwords.nbytes for r in walk)
+
+
+#: Walked spans, shared by every moment of a sweep (12 moments of a
+#: 360 x 750 sweep keep ~6.5 MB).
+_SPANS: SingleFlightCache[tuple[SweepRays, ...]] = SingleFlightCache(
+    max_bytes=128 * 2**20, sizeof=_walk_nbytes
+)
+
+
+def walk_span(
+    span, ndatatypes: int, out_shape: tuple[int, int]
+) -> tuple[SweepRays, ...]:
+    """:func:`walk_sweep` over a whole sweep span, cached.
+
+    The first moment read from a span walks it once for every data type;
+    the sweep's other moments (which reference the same bytes) are served
+    from a small cache, keyed by the span's content and the walk's
+    parameters. Concurrent readers of one span wait for a single walk.
+    """
+    n_rows, ngates = out_shape
+    if ndatatypes * n_rows * (RAY_HEADER_WORDS + ngates) > MAX_SPAN_CELLS:
+        raise ValueError(
+            f"{ndatatypes} data types x {out_shape} cells exceed "
+            f"{MAX_SPAN_CELLS} words per sweep — corrupt or hostile metadata"
+        )
+    raw = _span_bytes(span)
+    digest = hashlib.blake2b(raw, digest_size=16).digest()
+    return _SPANS.get(
+        (digest, ndatatypes, n_rows, ngates),
+        lambda: walk_sweep(
+            sweep_words(raw, ndatatypes),
+            ndatatypes,
+            payload_words=ngates,
+            max_rays=n_rows,
+        ),
+    )
 
 
 def decode_sweep_moment(
@@ -547,7 +616,8 @@ def decode_sweep_moment(
 
     ``span`` is the contiguous run of complete records of one sweep (bhdr +
     prologue included). Rows are in acquisition order, gates
-    padded/truncated to ``out_shape[1]``.
+    padded/truncated to ``out_shape[1]``. The span is walked once for all
+    its data types (:func:`walk_span`).
 
     Missing rays (end-of-ray marker as the FIRST code word, or a ray
     header declaring 0 bins):
@@ -564,52 +634,34 @@ def decode_sweep_moment(
     key) sort last.
     """
     n_rows_out, ngates_out = out_shape
-    words = sweep_words(span, ndatatypes)
-    row_list, headers, missing = walk_sweep(
-        words,
-        ndatatypes,
-        moment_index,
-        ngates_out=ngates_out,
-        dtype=np.dtype(dtype),
-        fill_value=fill_value,
-        collect_headers=sort_rays,  # headers feed only the sort key here
-    )
-    key = None
-    if sort_rays:
-        key = azimuth_midpoints(
-            [h.azimuth_start for h in headers],
-            [h.azimuth_stop for h in headers],
-        )
+    rays = walk_span(span, ndatatypes, out_shape)[moment_index]
+    written = rays.rows(ngates_out, dtype, fill_value)
+    key = rays.azimuth_key() if sort_rays else None
 
     if pad_missing_rays:
-        missing_slots = set(missing.get(moment_index, []))
-        n_slots = len(row_list) + len(missing_slots)
+        missing_slots = set(rays.missing)
+        n_slots = len(written) + len(missing_slots)
         if n_slots != n_rows_out:
             raise ValueError(
-                f"sweep span holds {n_slots} ray slots ({len(row_list)} "
+                f"sweep span holds {n_slots} ray slots ({len(written)} "
                 f"written + {len(missing_slots)} missing) but the array "
                 f"metadata declares {n_rows_out} — manifest/file mismatch"
             )
         rows = np.full(out_shape, fill_value, dtype=dtype)
         written_slots = [g for g in range(n_rows_out) if g not in missing_slots]
-        for row, slot in zip(row_list, written_slots):
-            rows[slot] = row
+        rows[written_slots] = written
         if sort_rays:
             full_key = np.full(n_rows_out, np.nan)
             full_key[written_slots] = key
             key = full_key
     else:
-        if len(row_list) != n_rows_out:
+        if len(written) != n_rows_out:
             raise ValueError(
-                f"sweep span decoded {len(row_list)} written rays but the "
+                f"sweep span decoded {len(written)} written rays but the "
                 f"array metadata declares {n_rows_out} — manifest/file "
                 "mismatch"
             )
-        rows = (
-            np.stack(row_list)
-            if row_list
-            else np.full(out_shape, fill_value, dtype=dtype)
-        )
+        rows = written
 
     if sort_rays:
         rows = rows[azimuth_sort_order(key)]

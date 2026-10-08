@@ -8,7 +8,10 @@ One virtual chunk = the contiguous byte range of ALL records of one sweep
 (``raw_prod_bhdr`` record headers and the ``ingest_data_header`` prologue
 included). Every data-type array of a sweep references the SAME span; this
 fused array-bytes codec strips the framing, walks the Sigmet 16-bit-word
-RLE stream, and decodes only its configured interleave ordinal::
+RLE stream, and returns its configured interleave ordinal. The walk decodes
+every data type at once and is cached per span
+(:func:`~xradar.io.virtual.iris.format.walk_span`), so the sweep's other
+moments do not walk the same bytes again::
 
     "codecs": [
         {"name": "xradar-iris-sweep",

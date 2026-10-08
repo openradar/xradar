@@ -176,24 +176,25 @@ def _sweep_group(
     # ONLY if missingness is group-consistent, so a sweep where data types
     # disagree on which rays are missing is rejected.
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
-    _, ray_headers, missing = walk_sweep(sweep_words(span, ndt), ndt, None)
-    missing_sets = {o: set(groups) for o, groups in missing.items()}
-    if missing_sets and len({frozenset(s) for s in missing_sets.values()}) != 1:
+    census = walk_sweep(sweep_words(span, ndt), ndt)
+    if len({rays.missing for rays in census}) != 1:
         raise ValueError(
             f"sweep {sweep.sweep_number}: missing rays are not group-"
-            f"consistent across data types ({missing_sets}) — rows "
-            "would misalign between moments"
+            f"consistent across data types "
+            f"({[rays.missing for rays in census]}) — rows would misalign "
+            "between moments"
         )
-    if missing_sets and set(missing_sets) != set(range(ndt)):
+    if len({len(rays.headers) for rays in census}) != 1:
         raise ValueError(
-            f"sweep {sweep.sweep_number}: only ordinals "
-            f"{sorted(missing_sets)} of {ndt} report missing rays — rows "
-            "would misalign between moments"
+            f"sweep {sweep.sweep_number}: data types hold "
+            f"{[len(rays.headers) for rays in census]} rays — rows would "
+            "misalign between moments"
         )
+    ray_headers = census[0].ray_headers()
     if len(ray_headers) == 0:
         raise ValueError(f"sweep {sweep.sweep_number}: no written rays")
 
-    missing_slots = sorted(missing_sets.get(0, set())) if missing_sets else []
+    missing_slots = list(census[0].missing)
     azimuth = _angle_midpoints(ray_headers, "azimuth")
     elevation = _angle_midpoints(ray_headers, "elevation")
     sweep_start = headers[0].sweep_start

@@ -93,11 +93,10 @@ def test_index_sweeps_surgavere_16bit(iris1_file):
     assert sweep.headers[0].nrays_expected == 360
 
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
-    _, headers, missing = walk_sweep(
-        sweep_words(span, sweep.ndatatypes), sweep.ndatatypes, None
-    )
-    assert len(headers) == 359  # one missing ray, compacted
-    assert all(len(groups) == 1 for groups in missing.values())
+    census = walk_sweep(sweep_words(span, sweep.ndatatypes), sweep.ndatatypes)
+    assert len(census) == sweep.ndatatypes
+    assert all(len(rays.headers) == 359 for rays in census)  # one compacted
+    assert all(len(rays.missing) == 1 for rays in census)
 
 
 def _decoded_rows_and_azimuths(buf, sweeps, sweep_idx, type_name, nbins):
@@ -108,9 +107,9 @@ def _decoded_rows_and_azimuths(buf, sweeps, sweep_idx, type_name, nbins):
     dth = sweep.headers[ordinal]
     dtype = np.dtype("uint8") if dth.bits_per_bin == 8 else np.dtype("uint16")
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
-    _, headers, _ = walk_sweep(
-        sweep_words(span, sweep.ndatatypes), sweep.ndatatypes, None
-    )
+    headers = walk_sweep(sweep_words(span, sweep.ndatatypes), sweep.ndatatypes)[
+        0
+    ].ray_headers()
     rows = decode_sweep_moment(
         span, ordinal, sweep.ndatatypes, (len(headers), nbins), dtype
     )
@@ -238,9 +237,9 @@ def test_zarr_end_to_end_read(iris1_file, tmp_path):
     types = [h.type_name for h in sweep.headers]
     ordinal = types.index("DB_DBZ2")
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
-    _, headers, _ = walk_sweep(
-        sweep_words(span, sweep.ndatatypes), sweep.ndatatypes, None
-    )
+    headers = walk_sweep(sweep_words(span, sweep.ndatatypes), sweep.ndatatypes)[
+        0
+    ].headers
     nrays, nbins = len(headers), hdr.number_output_bins
 
     codec = IrisSweepCodec(moment_index=ordinal, ndatatypes=sweep.ndatatypes)
@@ -334,7 +333,8 @@ def test_decode_flavors_and_shape_guard(iris1_file):
     ndt = sweep.ndatatypes
     ordinal = [h.type_name for h in sweep.headers].index("DB_DBZ2")
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
-    _, headers, missing = walk_sweep(sweep_words(span, ndt), ndt, None)
+    census = walk_sweep(sweep_words(span, ndt), ndt)
+    headers = census[ordinal].ray_headers()
     nbins = hdr.number_output_bins
     n_written = len(headers)  # 359
     n_expected = sweep.headers[0].nrays_expected  # 360
@@ -355,7 +355,7 @@ def test_decode_flavors_and_shape_guard(iris1_file):
     padded = decode_sweep_moment(
         span, ordinal, ndt, (n_expected, nbins), dtype, pad_missing_rays=True
     )
-    (missing_slot,) = missing[ordinal]
+    (missing_slot,) = census[ordinal].missing
     assert (padded[missing_slot] == 0).all()
     np.testing.assert_array_equal(np.delete(padded, missing_slot, axis=0), plain)
 
@@ -593,3 +593,97 @@ def test_old_zarr_message_and_star_import():
     assert "need zarr>=3.1.6 (zarr v3); found zarr 3.1.5" in out
     assert "not importable" not in out
     assert "False\nstar ok" in out
+
+
+@pytest.fixture
+def counted_walks(monkeypatch):
+    """Clear the span cache and count the RLE walks that run."""
+    from xradar.io.virtual.iris import format as fmt
+
+    fmt._SPANS.clear()
+    calls = []
+    real = fmt.walk_sweep
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(fmt, "walk_sweep", counting)
+    yield calls
+    fmt._SPANS.clear()
+
+
+def _sur_sweep(iris1_file):
+    buf = Path(iris1_file).read_bytes()
+    hdr = parse_ingest_header(buf)
+    (sweep,) = index_sweeps(buf)
+    span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+    return span, sweep, hdr.number_bins
+
+
+def test_one_walk_serves_every_moment(iris1_file, counted_walks):
+    """Every moment of a sweep references the same span: the first decode
+    walks it for all data types, the rest come from the cache, and the
+    cached rows equal a fresh walk's."""
+    from xradar.io.virtual.iris import format as fmt
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    ndt, shape = sweep.ndatatypes, (359, nbins)
+    dtype = np.dtype("uint16")
+    cached = [decode_sweep_moment(span, o, ndt, shape, dtype) for o in range(ndt)]
+    assert len(counted_walks) == 1
+    for ordinal, rows in enumerate(cached):
+        fmt._SPANS.clear()
+        fresh = decode_sweep_moment(span, ordinal, ndt, shape, dtype)
+        np.testing.assert_array_equal(rows, fresh)
+    # the padded layout declares other rows: its own entry, same walk rule
+    fmt._SPANS.clear()
+    counted_walks.clear()
+    decode_sweep_moment(span, 0, ndt, shape, dtype)
+    decode_sweep_moment(span, 0, ndt, (360, nbins), dtype, pad_missing_rays=True)
+    assert len(counted_walks) == 2 and len(fmt._SPANS) == 2
+
+
+def test_concurrent_moment_reads_walk_once(iris1_file, counted_walks):
+    from concurrent.futures import ThreadPoolExecutor
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    ndt, dtype = sweep.ndatatypes, np.dtype("uint16")
+    with ThreadPoolExecutor(ndt) as pool:
+        rows = list(
+            pool.map(
+                lambda o: decode_sweep_moment(span, o, ndt, (359, nbins), dtype),
+                range(ndt),
+            )
+        )
+    assert len(counted_walks) == 1
+    assert all(r.shape == (359, nbins) for r in rows)
+
+
+def test_cached_walk_is_read_only(iris1_file, counted_walks):
+    from xradar.io.virtual.iris.format import walk_span
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    rays = walk_span(span, sweep.ndatatypes, (359, nbins))[0]
+    for arr in (rays.headers, rays.payload, rays.nwords):
+        with pytest.raises(ValueError, match="read-only"):
+            arr[0] = 1
+    rows = decode_sweep_moment(span, 0, sweep.ndatatypes, (359, nbins), "uint16")
+    rows[0] = 1  # decoded rows are the caller's own
+
+
+def test_span_walk_is_bounded(iris1_file):
+    """A store declaring more data types x cells than any sweep holds is
+    refused before the span is walked (no decompression bomb)."""
+    from xradar.io.virtual._checks import MAX_SPAN_CELLS
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    ndt = MAX_SPAN_CELLS // (360 * (6 + nbins)) + 1
+    with pytest.raises(ValueError, match="corrupt or hostile"):
+        decode_sweep_moment(span, 0, ndt, (360, nbins), np.dtype("uint16"))
+
+
+def test_more_rays_than_declared_stop_the_walk(iris1_file, counted_walks):
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    with pytest.raises(ValueError, match="more than the 100 rays"):
+        decode_sweep_moment(span, 0, sweep.ndatatypes, (100, nbins), np.dtype("uint16"))

@@ -540,28 +540,32 @@ def test_elevation_midpoint_folds_below_the_horizon():
 
 
 @pytest.mark.parametrize(
-    "missing, match",
+    "doctor, match",
     [
         ("inconsistent", "not group-consistent"),
-        ("partial", "report missing rays"),
+        ("short", r"hold \[.*\] rays"),
     ],
 )
 def test_missing_ray_census_must_be_group_consistent(
-    iris1_file, local_registry, monkeypatch, missing, match
+    iris1_file, local_registry, monkeypatch, doctor, match
 ):
     """Rows only align across a sweep's moments if every data type misses
-    the same rays; anything else is refused, never silently misaligned."""
+    the same rays and holds as many; anything else is refused, never
+    silently misaligned."""
+    import dataclasses
+
     from xradar.io.virtual.iris import parser as sigmet_parser
 
     real_walk = sigmet_parser.walk_sweep
 
-    def doctored(words, ndt, *args):
-        values, headers, census = real_walk(words, ndt, *args)
-        if missing == "inconsistent":
-            census = {o: [o] for o in range(ndt)}  # each type misses another ray
-        else:
-            census = {0: [5]}  # only one ordinal reports a missing ray
-        return values, headers, census
+    def doctored(words, ndt, *args, **kwargs):
+        census = list(real_walk(words, ndt, *args, **kwargs))
+        last = census[-1]
+        if doctor == "inconsistent":  # the last type misses another ray
+            census[-1] = dataclasses.replace(last, missing=(*last.missing, 5))
+        else:  # the stream ends before the last type's final ray
+            census[-1] = dataclasses.replace(last, headers=last.headers[:-1])
+        return tuple(census)
 
     monkeypatch.setattr(sigmet_parser, "walk_sweep", doctored)
     with pytest.raises(ValueError, match=match):
