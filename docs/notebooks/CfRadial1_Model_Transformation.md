@@ -247,7 +247,7 @@ for grp in dtree.groups:
 #### Roundtrip with `xradar.io.to_cfradial2`
 
 ```{code-cell}
-dtree3 = xd.io.open_cfradial1_datatree(filename, optional_groups=True)
+dtree3 = xd.io.open_cfradial1_datatree(filename, optional_groups=True, first_dim="time", optional=False)
 ```
 
 ```{code-cell}

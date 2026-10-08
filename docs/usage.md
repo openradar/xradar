@@ -52,6 +52,7 @@ notebooks/plot-ppi
 notebooks/angle_reindexing
 notebooks/NDPointIndex
 notebooks/Multi-Volume-Concatenation
+notebooks/Gridding
 notebooks/multiple-sweeps-into-volume-scan
 notebooks/Transform
 ```
