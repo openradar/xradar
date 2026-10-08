@@ -419,24 +419,30 @@ def walk_sweep(
 
     Every ray of every data type is visited in interleave order (ray group
     g's type t is interleave index ``g * ndatatypes + t``). Rays of
-    ``moment_index`` are fully decoded and COMPACTED — a ray whose FIRST
-    code word is the end-of-ray marker (value 1, MSB clear) is a missing
-    ray and contributes no row, mirroring the eager reader's
-    written-rays-only convention. All other rays are skip-scanned (their
-    code words are hopped without touching payload). The walk ends when the
+    ``moment_index`` are fully decoded and COMPACTED. A missing ray
+    contributes no row, like the eager reader, which drops every ray whose
+    header ``rbins`` word is 0: a ray is missing when its FIRST code word is
+    the end-of-ray marker (value 1, MSB clear; no header at all) or when its
+    header declares 0 bins. All other rays are skip-scanned (their code
+    words are hopped without touching payload). The walk ends when the
     remaining stream is zero padding (records are zero-padded after the
     last ray).
 
-    With ``moment_index=None`` no rows are decoded (headers of ordinal 0
-    are collected instead). With ``collect_headers=False`` (codec fast
-    path when no sort is needed) no ``RayHeader`` objects are built.
+    With ``moment_index=None`` (the census) no rows are decoded: the header
+    of every ray is read, so missing rays are found for every ordinal, and
+    ``RayHeader`` objects are collected for ordinal 0. With
+    ``collect_headers=False`` (codec fast path when no sort is needed) no
+    ``RayHeader`` objects are built.
     Returns ``(row_list, headers, missing_by_ordinal)`` where
     ``missing_by_ordinal`` maps each interleave ordinal to the sorted
     group indices whose ray was missing — the parser uses it to verify
     missingness is group-consistent, which is what keeps compacted rows
     aligned ACROSS the sweep's moment arrays.
     """
-    header_ordinal = 0 if moment_index is None else moment_index
+    census = moment_index is None
+    header_ordinal = 0 if census else moment_index
+    # the census reads only each ray's header words
+    word_limit = RAY_HEADER_WORDS if census else None
     if moment_index is not None and dtype is None:
         raise ValueError("dtype required when decoding a moment")
 
@@ -449,11 +455,13 @@ def walk_sweep(
 
     while pos < n_words and words.item(pos) != 0:
         group, ordinal = divmod(i, ndatatypes)
-        decode_row = moment_index is not None and ordinal == moment_index
+        decode_row = not census and ordinal == moment_index
+        keep_header = ordinal == header_ordinal
         # decode_row implies want_header (same ordinal in decode mode)
-        want_header = ordinal == header_ordinal
+        want_header = census or keep_header
 
         ray_words: list[np.ndarray] = []
+        got = 0
         first = True
         missing = False
         while True:
@@ -470,13 +478,15 @@ def walk_sweep(
                         missing = True
                     break
                 # zero run: `code` decompressed words, no payload
-                if want_header:
+                if want_header and (word_limit is None or got < word_limit):
                     ray_words.append(_ZERO_WORDS[:code])
+                    got += code
                 first = False
             else:
                 run = code + 32768  # data run of `run` words
-                if want_header:
+                if want_header and (word_limit is None or got < word_limit):
                     ray_words.append(words[pos : pos + run])
+                    got += run
                 pos += run
                 first = False
         i += 1
@@ -492,9 +502,12 @@ def walk_sweep(
                 f"ray at interleave index {i - 1} decodes to {len(ray)} "
                 f"words — shorter than the {RAY_HEADER_WORDS}-word ray header"
             )
-        if collect_headers:
+        rbins = int(ray.item(4))
+        if rbins == 0:  # a header but no bins: the eager reader drops it
+            missing_by_ordinal.setdefault(ordinal, []).append(group)
+            continue
+        if keep_header and collect_headers:
             hdr_words = ray[:RAY_HEADER_WORDS].astype(np.int64)
-            rbins = int(hdr_words[4])
             headers.append(
                 RayHeader(
                     azimuth_start=bin2deg(int(hdr_words[0])),
@@ -505,8 +518,6 @@ def walk_sweep(
                     dtime_s=int(hdr_words[5]) & 0xFFFF,
                 )
             )
-        else:
-            rbins = int(ray.item(4))
         if decode_row:
             assert dtype is not None  # guaranteed by the guard above
             payload = ray[RAY_HEADER_WORDS:]
@@ -538,7 +549,8 @@ def decode_sweep_moment(
     prologue included). Rows are in acquisition order, gates
     padded/truncated to ``out_shape[1]``.
 
-    Missing rays (end-of-ray marker as the FIRST code word):
+    Missing rays (end-of-ray marker as the FIRST code word, or a ray
+    header declaring 0 bins):
 
     - ``pad_missing_rays=False`` (default, eager-reader parity): missing
       rays contribute no row; ``out_shape[0]`` must equal the WRITTEN ray

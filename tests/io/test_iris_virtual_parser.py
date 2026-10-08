@@ -943,3 +943,71 @@ def test_width_scaling_ignores_multi_prf():
     nyquist, nyquist_vel = 13.0, 26.0
     assert _cf_scaling(4, nyquist, nyquist_vel)[0] == pytest.approx(nyquist / 256)
     assert _cf_scaling(3, nyquist, nyquist_vel)[0] == pytest.approx(nyquist_vel / 127)
+
+
+def _rbins_offsets(buf, sweep, group):
+    """File byte offsets of the ``rbins`` header word of ray ``group``, one
+    per data type, found by walking the sweep's RLE code words."""
+    from xradar.io.virtual.iris.format import BHDR_SIZE, IDH_SIZE
+
+    ndt = sweep.ndatatypes
+    body = RECORD_SIZE - BHDR_SIZE  # bytes per record after its bhdr
+    first = IDH_SIZE * ndt  # the ingest_data_header prologue
+
+    def word(i):
+        at = first + 2 * i
+        offset = sweep.byte_offset + (at // body) * RECORD_SIZE + BHDR_SIZE
+        offset += at % body
+        return offset, int.from_bytes(buf[offset : offset + 2], "little", signed=True)
+
+    offsets, i, ray = [], 0, 0
+    while len(offsets) < ndt:
+        start, code = word(i)
+        if ray // ndt == group:
+            assert code < 0 and code + 32768 > 4, "header not in one data run"
+            offsets.append(word(i + 5)[0])
+        i += 1
+        while code != 1:
+            i += code + 32768 if code < 0 else 0
+            _, code = word(i)
+            i += 1
+        ray += 1
+    return offsets
+
+
+@pytest.mark.parametrize("all_types", [True, False])
+def test_ray_with_zero_rbins_is_missing(
+    iris0_file, local_registry, tmp_path, all_types
+):
+    """A ray whose header declares 0 bins is dropped, as the eager reader
+    drops every ray with rbins == 0; when only some data types drop it, rows
+    would misalign between moments, so the sweep is refused."""
+    buf = bytearray(Path(iris0_file).read_bytes())
+    sweep = index_sweeps(bytes(buf))[0]
+    offsets = _rbins_offsets(buf, sweep, group=10)
+    for offset in offsets if all_types else offsets[1:2]:
+        buf[offset : offset + 2] = b"\x00\x00"
+    if all_types:
+        # the eager reader sizes its arrays by the written-ray count
+        from xradar.io.backends.iris import INGEST_DATA_HEADER
+        from xradar.io.virtual.iris.format import BHDR_SIZE, IDH_SIZE
+
+        field = _field_offset(INGEST_DATA_HEADER, "number_rays_file_written")
+        first = sweep.byte_offset + BHDR_SIZE + field
+        for t in range(sweep.ndatatypes):
+            at = first + t * IDH_SIZE
+            written = int.from_bytes(buf[at : at + 2], "little")
+            buf[at : at + 2] = (written - 1).to_bytes(2, "little")
+    path = tmp_path / "rbins0.RAW"
+    path.write_bytes(bytes(buf))
+
+    if not all_types:
+        with pytest.raises(ValueError, match="rows would misalign"):
+            IrisParser()(f"file://{path}", local_registry)
+        return
+    ds = _open_tree(IrisParser()(f"file://{path}", local_registry))["sweep_0"].ds
+    eager = open_iris_datatree(str(path))["sweep_0"].ds
+    full = open_iris_datatree(iris0_file)["sweep_0"].ds
+    assert ds.sizes["azimuth"] == full.sizes["azimuth"] - 1
+    wavelength_cm = parse_ingest_header(bytes(buf)).wavelength_cm
+    _assert_sweep_parity(ds, eager, wavelength_cm)
