@@ -179,6 +179,19 @@ def _decoded_like_eager(ds: xr.Dataset, var: str, wavelength_cm: float):
     return None  # categorical / unmapped: no value gate
 
 
+def _assert_same_mask(var, attrs, raw, mine, theirs):
+    """Virtual and eager mask the same bins. Every bin eager masks is
+    masked here; the one known extra is velocity no-data (DB_VEL raw word 0),
+    which the eager reader decodes to 0.0 instead of NaN."""
+    mine_nan, eager_nan = np.isnan(mine), np.isnan(theirs)
+    assert not (eager_nan & ~mine_nan).any(), f"{var}: eager masks more bins"
+    extra = mine_nan & ~eager_nan
+    if extra.any():
+        assert attrs["sigmet_data_type"] == "DB_VEL", f"{var}: masks more bins"
+        assert (raw[extra] == attrs["_FillValue"]).all(), var
+        assert (theirs[extra] == 0.0).all(), var
+
+
 def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset, wavelength_cm: float):
     assert dict(ds.sizes) == dict(xds.sizes)
     order = azimuth_sort_order(ds["azimuth"].values)
@@ -223,6 +236,7 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset, wavelength_cm: float):
         theirs = xds[var].values.astype("float64")
         mine = mine[order]
         theirs = theirs[xorder]
+        _assert_same_mask(var, attrs, ds[var].values[order], mine, theirs)
         both = np.isfinite(mine) & np.isfinite(theirs)
         assert both.any(), var
         np.testing.assert_allclose(mine[both], theirs[both], atol=1e-5, err_msg=var)
