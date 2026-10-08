@@ -41,7 +41,6 @@ from xradar.io.backends.common import _assign_root
 from xradar.io.virtual._checks import plain
 from xradar.model import (
     MOMENT_COORDINATES,
-    _cf_moment_attrs,
     get_altitude_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
@@ -53,7 +52,6 @@ if TYPE_CHECKING:
 __all__ = [
     "MOMENT_COORDINATES",
     "FM301_STRING_DEFAULTS",
-    "moment_attrs",
     "to_json_safe",
     "native_endian_bytes",
     "encode_vlen_utf8",
@@ -73,13 +71,6 @@ FM301_STRING_DEFAULTS = {
     "prt_mode": "not_set",
     "follow_mode": "not_set",
 }
-
-
-def moment_attrs(cf_name: str) -> dict:
-    """CF attrs (units, standard_name, long_name) of a mapped moment, from
-    :mod:`xradar.model`, in a fixed key order (``{}`` for a name the model
-    does not know)."""
-    return _cf_moment_attrs(cf_name)
 
 
 def to_json_safe(value):

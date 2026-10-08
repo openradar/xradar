@@ -40,8 +40,7 @@ from xradar.io.virtual import IrisParser  # noqa: E402
 from xradar.io.virtual.iris.format import (  # noqa: E402
     RECORD_SIZE,
     azimuth_sort_order,
-    index_sweeps,
-    parse_ingest_header,
+    read_volume,
 )
 from xradar.io.virtual.manifest import inline_variable  # noqa: E402
 
@@ -79,7 +78,7 @@ def cor_vdt(cor_store):
 
 @pytest.fixture(scope="module")
 def cor_hdr(iris0_file):
-    return parse_ingest_header(Path(iris0_file).read_bytes())
+    return read_volume(Path(iris0_file).read_bytes()).header
 
 
 @pytest.fixture(scope="module")
@@ -263,7 +262,7 @@ def test_parity_surgavere_16bit(iris1_file, local_registry):
     reader."""
     tree = _open_tree(IrisParser()(f"file://{iris1_file}", local_registry))
     truth = open_iris_datatree(iris1_file)
-    wavelength_cm = parse_ingest_header(Path(iris1_file).read_bytes()).wavelength_cm
+    wavelength_cm = read_volume(Path(iris1_file).read_bytes()).header.wavelength_cm
 
     ds = tree["sweep_0"].dataset
     assert "DB_XHDR" not in ds.data_vars
@@ -474,7 +473,7 @@ def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
     from xradar.io.virtual.iris.parser import _sweep_group
 
     buf = memoryview(Path(iris0_file).read_bytes())
-    sweep = index_sweeps(buf)[0]
+    sweep = read_volume(buf).sweeps[0]
     names = [h.type_name for h in sweep.headers]
     dbz, vel = names.index("DB_DBZ"), names.index("DB_VEL")
     headers = list(sweep.headers)
@@ -522,7 +521,7 @@ def test_drop_variables(iris0_file, local_registry):
 
 def test_moment_name_mapping_follows_iris_mapping(iris0_file, cor_vdt):
     buf = Path(iris0_file).read_bytes()
-    sweeps = index_sweeps(buf)
+    sweeps = read_volume(buf).sweeps
     expected = {
         iris_mapping.get(h.type_name, h.type_name)
         for h in sweeps[0].headers
@@ -1001,7 +1000,7 @@ def test_ray_with_zero_rbins_is_missing(
     drops every ray with rbins == 0; when only some data types drop it, rows
     would misalign between moments, so the sweep is refused."""
     buf = bytearray(Path(iris0_file).read_bytes())
-    sweep = index_sweeps(bytes(buf))[0]
+    sweep = read_volume(bytes(buf)).sweeps[0]
     offsets = _rbins_offsets(buf, sweep, group=10)
     for offset in offsets if all_types else offsets[1:2]:
         buf[offset : offset + 2] = b"\x00\x00"
@@ -1027,7 +1026,7 @@ def test_ray_with_zero_rbins_is_missing(
     eager = open_iris_datatree(str(path))["sweep_0"].ds
     full = open_iris_datatree(iris0_file)["sweep_0"].ds
     assert ds.sizes["azimuth"] == full.sizes["azimuth"] - 1
-    wavelength_cm = parse_ingest_header(bytes(buf)).wavelength_cm
+    wavelength_cm = read_volume(bytes(buf)).header.wavelength_cm
     _assert_sweep_parity(ds, eager, wavelength_cm)
 
 

@@ -36,9 +36,8 @@ from xradar.io.virtual.iris.format import (
     azimuth_midpoints,
     azimuth_sort_order,
     decode_sweep_moment,
-    index_sweeps,
-    parse_ingest_header,
     range_centers,
+    read_volume,
     sweep_words,
     walk_sweep,
 )
@@ -55,11 +54,10 @@ def test_framing_constants_derive_from_iris_structs():
     assert (PRODUCT_HDR_ID, INGEST_HEADER_ID, INGEST_DATA_HEADER_ID) == (27, 23, 24)
 
 
-def test_index_sweeps_corozal(iris0_file):
+def test_read_volume_sweeps_corozal(iris0_file):
     """10-sweep 8-bit IDEAM Corozal volume: sweeps tile the file exactly."""
     buf = Path(iris0_file).read_bytes()
-    hdr = parse_ingest_header(buf)
-    sweeps = index_sweeps(buf)
+    hdr, sweeps, *_ = read_volume(buf)
 
     assert hdr.task_name == "SURV_HV_300"
     assert "Corozal" in hdr.site_name
@@ -77,10 +75,10 @@ def test_index_sweeps_corozal(iris0_file):
     assert "DB_XHDR" not in types
 
 
-def test_index_sweeps_surgavere_16bit(iris1_file):
+def test_read_volume_sweeps_surgavere_16bit(iris1_file):
     """Single-sweep all-16-bit volume with DB_XHDR and one missing ray."""
     buf = Path(iris1_file).read_bytes()
-    sweeps = index_sweeps(buf)
+    sweeps = read_volume(buf).sweeps
 
     assert len(sweeps) == 1
     (sweep,) = sweeps
@@ -146,8 +144,7 @@ def _assert_parity_az_aligned(rows, azimuths, type_code, eager):
 
 def test_decode_moment_parity_corozal(iris0_file):
     buf = Path(iris0_file).read_bytes()
-    hdr = parse_ingest_header(buf)
-    sweeps = index_sweeps(buf)
+    hdr, sweeps, *_ = read_volume(buf)
     rows, azimuths, code = _decoded_rows_and_azimuths(
         buf, sweeps, 0, "DB_DBZ", hdr.number_output_bins
     )
@@ -157,8 +154,7 @@ def test_decode_moment_parity_corozal(iris0_file):
 
 def test_decode_moment_parity_surgavere_16bit(iris1_file):
     buf = Path(iris1_file).read_bytes()
-    hdr = parse_ingest_header(buf)
-    sweeps = index_sweeps(buf)
+    hdr, sweeps, *_ = read_volume(buf)
     rows, azimuths, code = _decoded_rows_and_azimuths(
         buf, sweeps, 0, "DB_DBZ2", hdr.number_output_bins
     )
@@ -232,8 +228,7 @@ def test_zarr_end_to_end_read(iris1_file, tmp_path):
     """A hand-written zarr v3 store whose single chunk is a raw sweep span
     decodes through the public zarr API purely via the registered codec."""
     buf = Path(iris1_file).read_bytes()
-    hdr = parse_ingest_header(buf)
-    (sweep,) = index_sweeps(buf)
+    hdr, (sweep,), *_ = read_volume(buf)
     types = [h.type_name for h in sweep.headers]
     ordinal = types.index("DB_DBZ2")
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
@@ -317,7 +312,7 @@ def test_io_import_does_not_pull_virtual():
 def test_range_centers_matches_eager(iris0_file, iris1_file):
     """The mirrored range-gate construction equals the eager backend's."""
     for path in (iris0_file, iris1_file):
-        hdr = parse_ingest_header(Path(path).read_bytes())
+        hdr = read_volume(Path(path).read_bytes()).header
         with xr.open_dataset(path, engine="iris", group="sweep_0") as ds:
             np.testing.assert_allclose(
                 range_centers(hdr), ds["range"].values, atol=1e-3
@@ -328,8 +323,7 @@ def test_decode_flavors_and_shape_guard(iris1_file):
     """sort_rays / pad_missing_rays row layouts, and the manifest/file
     mismatch guard, at the format level (SUR has one real missing ray)."""
     buf = Path(iris1_file).read_bytes()
-    hdr = parse_ingest_header(buf)
-    (sweep,) = index_sweeps(buf)
+    hdr, (sweep,), *_ = read_volume(buf)
     ndt = sweep.ndatatypes
     ordinal = [h.type_name for h in sweep.headers].index("DB_DBZ2")
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
@@ -618,8 +612,7 @@ def counted_walks(monkeypatch):
 
 def _sur_sweep(iris1_file):
     buf = Path(iris1_file).read_bytes()
-    hdr = parse_ingest_header(buf)
-    (sweep,) = index_sweeps(buf)
+    hdr, (sweep,), *_ = read_volume(buf)
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
     return span, sweep, hdr.number_bins
 

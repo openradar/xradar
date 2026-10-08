@@ -27,7 +27,6 @@ PUBLIC = {
     "xradar.io.virtual.manifest": (
         "MOMENT_COORDINATES",
         "FM301_STRING_DEFAULTS",
-        "moment_attrs",
         "variable_to_inline_manifest_array",
         "inline_variable",
         "inline_scalar",
@@ -38,8 +37,6 @@ PUBLIC = {
         "NO_DATA_ZERO_TYPES",
         "RECORD_SIZE",
         "IngestHeader",
-        "parse_ingest_header",
-        "index_sweeps",
         "read_volume",
         "range_centers",
         "azimuth_midpoints",
@@ -112,15 +109,6 @@ def test_inline_root_needs_ray_times():
 
     with pytest.raises(ValueError, match="no ray times"):
         inline_root([np.array([np.nan])], 0.0, 0.0, 0.0, {})
-
-
-def test_moment_attrs_order_is_fixed():
-    """Attr key order must not depend on the process (``model.moment_attrs``
-    used to be a set)."""
-    from xradar.io.virtual.manifest import moment_attrs
-
-    assert list(moment_attrs("DBZH")) == ["units", "standard_name", "long_name"]
-    assert moment_attrs("NOT_A_MOMENT") == {}
 
 
 def test_json_safe_and_endianness_helpers():

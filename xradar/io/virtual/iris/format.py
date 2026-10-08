@@ -64,11 +64,9 @@ __all__ = [
     "SweepIndex",
     "RayHeader",
     "SweepRays",
-    "parse_ingest_header",
     "IrisVolume",
     "read_volume",
     "range_centers",
-    "index_sweeps",
     "azimuth_sort_order",
     "azimuth_midpoints",
     "sweep_words",
@@ -158,22 +156,22 @@ class IngestHeader:
     site_name: str
     latitude: float
     longitude: float
-    height_site: int  # meters MSL (ground)
-    height_radar: int  # meters above ground
     altitude_cm: int  # radar altitude, centimeters MSL
     task_name: str
     prf: int  # Hz (product_end)
     multi_prf_mode_flag: int
-    wavelength_cm: float  # product_end
     antenna_scan_mode: int
     range_first_bin_cm: int
     range_last_bin_cm: int
     number_output_bins: int
     step_output_bins_cm: int
     variable_range_spacing: bool
-    volume_start: np.datetime64
-    wavelength: int  # 1/100 cm, as stored (the eager nyquist input)
+    wavelength: int  # 1/100 cm (product_end), the eager nyquist input
     number_bins: int  # gates per ray in the data (product_end)
+
+    @property
+    def wavelength_cm(self) -> float:
+        return self.wavelength / 100.0
 
 
 def range_centers(hdr: IngestHeader) -> np.ndarray:
@@ -264,20 +262,16 @@ def read_volume(buf) -> IrisVolume:
         site_name=_text(ic["site_name"]),
         latitude=lat,
         longitude=lon,
-        height_site=ic["height_site"],
-        height_radar=ic["height_radar"],
         altitude_cm=ic["altitude_radar"],
         task_name=_text(tc["task_end_info"]["task_configuration_file_name"]),
         prf=product_end["prf"],
         multi_prf_mode_flag=tc["task_dsp_info"]["multi_prf_mode_flag"],
-        wavelength_cm=product_end["wavelength"] / 100.0,
         antenna_scan_mode=raw.scan_mode,
         range_first_bin_cm=tri["range_first_bin"],
         range_last_bin_cm=tri["range_last_bin"],
         number_output_bins=tri["number_output_bins"],
         step_output_bins_cm=tri["step_output_bins"],
         variable_range_spacing=bool(tri["variable_range_bin_spacing_flag"]),
-        volume_start=_naive_ms(ic["volume_scan_start_time"]),
         wavelength=product_end["wavelength"],
         number_bins=product_end["number_bins"],
     )
@@ -351,16 +345,6 @@ def read_volume(buf) -> IrisVolume:
     }
     identifiers = bytes(tc["task_end_info"]["echo_class_identifiers"])
     return IrisVolume(hdr, sweeps, root_attrs, identifiers)
-
-
-def parse_ingest_header(buf) -> IngestHeader:
-    """Thin wrapper (whole file required: ``IrisRawFile`` walks every record)."""
-    return read_volume(buf).header
-
-
-def index_sweeps(buf) -> list[SweepIndex]:
-    """Thin wrapper over :func:`read_volume`."""
-    return read_volume(buf).sweeps
 
 
 def azimuth_midpoints(starts, stops) -> np.ndarray:
