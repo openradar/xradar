@@ -67,7 +67,7 @@ from xradar.io.virtual.iris.format import (
     IngestHeader,
     RayHeader,
     SweepIndex,
-    azimuth_midpoints,
+    check_aligned,
     range_centers,
     read_volume,
     sweep_words,
@@ -140,18 +140,15 @@ def _cf_scaling(
     return None
 
 
-def _angle_midpoints(headers: list[RayHeader], which: str) -> np.ndarray:
-    """Per-ray angle midpoint (start/stop mean) — the eager backend's
-    coordinate convention: azimuth on [0, 360) with wrap-aware midpoints,
-    elevation folded to signed degrees (a ray slightly below the horizon is
-    -0.05, not 359.95)."""
-    start = np.array([getattr(h, f"{which}_start") for h in headers], dtype=np.float64)
-    stop = np.array([getattr(h, f"{which}_stop") for h in headers], dtype=np.float64)
-    if which == "elevation":
-        start = np.where(start > 180.0, start - 360.0, start)
-        stop = np.where(stop > 180.0, stop - 360.0, stop)
-        return (start + stop) / 2.0
-    return azimuth_midpoints(start, stop)
+def _elevation_midpoints(headers: list[RayHeader]) -> np.ndarray:
+    """Per-ray elevation midpoint (start/stop mean) — the eager backend's
+    convention, folded to signed degrees (a ray slightly below the horizon
+    is -0.05, not 359.95). Azimuth is ``SweepRays.azimuth_key``."""
+    start = np.array([h.elevation_start for h in headers], dtype=np.float64)
+    stop = np.array([h.elevation_stop for h in headers], dtype=np.float64)
+    start = np.where(start > 180.0, start - 360.0, start)
+    stop = np.where(stop > 180.0, stop - 360.0, stop)
+    return (start + stop) / 2.0
 
 
 def _sweep_group(
@@ -178,26 +175,14 @@ def _sweep_group(
     # disagree on which rays are missing is rejected.
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
     census = walk_sweep(sweep_words(span, ndt), ndt)
-    if len({rays.missing for rays in census}) != 1:
-        raise ValueError(
-            f"sweep {sweep.sweep_number}: missing rays are not group-"
-            f"consistent across data types "
-            f"({[rays.missing for rays in census]}) — rows would misalign "
-            "between moments"
-        )
-    if len({len(rays.headers) for rays in census}) != 1:
-        raise ValueError(
-            f"sweep {sweep.sweep_number}: data types hold "
-            f"{[len(rays.headers) for rays in census]} rays — rows would "
-            "misalign between moments"
-        )
+    check_aligned(census, f"sweep {sweep.sweep_number}")
     ray_headers = census[0].ray_headers()
     if len(ray_headers) == 0:
         raise ValueError(f"sweep {sweep.sweep_number}: no written rays")
 
-    missing_slots = list(census[0].missing)
-    azimuth = _angle_midpoints(ray_headers, "azimuth")
-    elevation = _angle_midpoints(ray_headers, "elevation")
+    missing_slots = census[0].missing.tolist()
+    azimuth = census[0].azimuth_key()  # the codec's sort_rays key too
+    elevation = _elevation_midpoints(ray_headers)
     sweep_start = headers[0].sweep_start
     epoch_ms = sweep_start.astype("datetime64[ms]").astype(np.int64)
     time = np.array(

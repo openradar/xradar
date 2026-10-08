@@ -46,7 +46,7 @@ from xradar.io.virtual._codec import (
     parse_config,
     register_codec_name,
 )
-from xradar.io.virtual.iris.format import decode_sweep_moment
+from xradar.io.virtual.iris.format import MAX_DATATYPES, decode_sweep_moment
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec
@@ -76,6 +76,8 @@ class IrisSweepCodec(DecodeOnlyCodec):
 
     def __post_init__(self) -> None:
         normalize_fields(self, CODEC_NAME, _FIELDS)
+        if not 1 <= self.ndatatypes <= MAX_DATATYPES:
+            raise ValueError(f"ndatatypes={self.ndatatypes} outside 1..{MAX_DATATYPES}")
         if not 0 <= self.moment_index < self.ndatatypes:
             raise ValueError(
                 f"moment_index {self.moment_index} out of range for "

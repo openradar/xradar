@@ -544,12 +544,12 @@ def test_vel_scales_with_unfolded_nyquist_width_with_nyquist():
 def test_elevation_midpoint_folds_below_the_horizon():
     from types import SimpleNamespace
 
-    from xradar.io.virtual.iris.parser import _angle_midpoints
+    from xradar.io.virtual.iris.parser import _elevation_midpoints
 
     rays = [SimpleNamespace(elevation_start=359.9, elevation_stop=0.1)]
-    np.testing.assert_allclose(_angle_midpoints(rays, "elevation"), [0.0], atol=1e-9)
+    np.testing.assert_allclose(_elevation_midpoints(rays), [0.0], atol=1e-9)
     rays = [SimpleNamespace(elevation_start=359.8, elevation_stop=359.9)]
-    np.testing.assert_allclose(_angle_midpoints(rays, "elevation"), [-0.15], atol=1e-9)
+    np.testing.assert_allclose(_elevation_midpoints(rays), [-0.15], atol=1e-9)
 
 
 @pytest.mark.parametrize(
@@ -575,7 +575,8 @@ def test_missing_ray_census_must_be_group_consistent(
         census = list(real_walk(words, ndt, *args, **kwargs))
         last = census[-1]
         if doctor == "inconsistent":  # the last type misses another ray
-            census[-1] = dataclasses.replace(last, missing=(*last.missing, 5))
+            missing = np.append(last.missing, 5).astype(last.missing.dtype)
+            census[-1] = dataclasses.replace(last, missing=missing)
         else:  # the stream ends before the last type's final ray
             census[-1] = dataclasses.replace(last, headers=last.headers[:-1])
         return tuple(census)
@@ -768,23 +769,6 @@ def test_sector_task_is_a_sector_sweep(iris0_file, local_registry, monkeypatch):
     assert tree["sweep_0"]["sweep_mode"].values.item() == "sector"
 
 
-def test_multi_prf_unfolds_the_velocity_nyquist(
-    iris0_file, local_registry, monkeypatch
-):
-    """The dual-PRF factor applies to the velocity nyquist (and VRADH's
-    scaling) only, as in the eager reader."""
-    plain = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
-    _with_header(monkeypatch, multi_prf_mode_flag=1)
-    dual = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
-    before, after = plain["sweep_0"], dual["sweep_0"]
-    assert float(after["nyquist_velocity"]) == pytest.approx(
-        2 * float(before["nyquist_velocity"])
-    )
-    assert after["VRADH"].attrs["scale_factor"] == pytest.approx(
-        2 * before["VRADH"].attrs["scale_factor"]
-    )
-
-
 def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):
     """With a sweep missing from the file, groups are named by position and
     ``sweep_number`` is the file's own, exactly like the eager reader."""
@@ -880,18 +864,43 @@ def test_hclass_flag_attrs_in_zarr_json(iris0_file, local_registry, monkeypatch)
     assert meanings == ["meteo_rain", "precip_light_precipitation", "cell_convection"]
 
 
-def _with_product_end(monkeypatch, **changes):
-    """Make IrisRawFile report ``changes`` in the product header's
-    product_end (the task configuration stays as stored)."""
+def _patch_raw_file(monkeypatch, change):
+    """Run ``change(raw)`` on every ``IrisRawFile`` after it reads its
+    headers. Both readers build one, so the virtual and the eager reader
+    see the same edited headers."""
     from xradar.io.backends import iris
 
     init = iris.IrisRawFile.__init__
 
-    def init_with_product_end(self, *args, **kwargs):
+    def patched(self, *args, **kwargs):
         init(self, *args, **kwargs)
-        self.product_hdr["product_end"].update(changes)
+        change(self)
 
-    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_product_end)
+    monkeypatch.setattr(iris.IrisRawFile, "__init__", patched)
+
+
+def _with_product_end(monkeypatch, **changes):
+    """Edit the product header's product_end (the task configuration stays
+    as stored)."""
+    _patch_raw_file(
+        monkeypatch, lambda raw: raw.product_hdr["product_end"].update(changes)
+    )
+
+
+def _task(raw):
+    return raw.ingest_header["task_configuration"]
+
+
+def _assert_vradh_matches_eager(ds, iris_file):
+    """Virtual VRADH equals the eager decode of the same (patched) file.
+    Eager velocity no-data decodes to 0.0 instead of NaN, hence the
+    ``theirs != 0`` mask."""
+    eager = open_iris_datatree(iris_file)["sweep_0"].ds
+    mine = ds["VRADH"].sortby("azimuth").values
+    theirs = eager["VRADH"].sortby("azimuth").values
+    both = np.isfinite(mine) & np.isfinite(theirs) & (theirs != 0)
+    assert both.sum() > 1000
+    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
 
 
 def test_nyquist_follows_product_end_like_eager(
@@ -901,16 +910,28 @@ def test_nyquist_follows_product_end_like_eager(
     even when they differ from the task configuration (500 Hz, 5.33 cm)."""
     _with_product_end(monkeypatch, prf=1000, wavelength=1066)
     store = IrisParser()(f"file://{iris0_file}", local_registry)
-    tree = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)
-    ds = tree["sweep_0"].ds
+    ds = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)[
+        "sweep_0"
+    ].ds
     # 10.66 cm * 1000 Hz / 4, no multi-PRF on this task
     assert float(ds["nyquist_velocity"]) == pytest.approx(0.1066 * 1000 / 4)
-    eager = open_iris_datatree(iris0_file)["sweep_0"].ds
-    mine = ds["VRADH"].sortby("azimuth").values
-    theirs = eager["VRADH"].sortby("azimuth").values
-    both = np.isfinite(mine) & np.isfinite(theirs) & (theirs != 0)
-    assert both.sum() > 1000
-    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
+    _assert_vradh_matches_eager(ds, iris0_file)
+
+
+def test_multi_prf_unfolds_velocity_like_eager(iris0_file, local_registry, monkeypatch):
+    """The multi-PRF factor doubles the 1-byte velocity's nyquist, on top
+    of the product_end prf and wavelength, exactly as in the eager decode."""
+    _with_product_end(monkeypatch, prf=1000, wavelength=1066)
+    _patch_raw_file(
+        monkeypatch,
+        lambda raw: _task(raw)["task_dsp_info"].update(multi_prf_mode_flag=1),
+    )
+    store = IrisParser()(f"file://{iris0_file}", local_registry)
+    ds = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)[
+        "sweep_0"
+    ].ds
+    assert float(ds["nyquist_velocity"]) == pytest.approx(2 * 0.1066 * 1000 / 4)
+    _assert_vradh_matches_eager(ds, iris0_file)
 
 
 def test_gate_count_mismatch_raises(iris0_file, local_registry, monkeypatch):
@@ -919,36 +940,6 @@ def test_gate_count_mismatch_raises(iris0_file, local_registry, monkeypatch):
     _with_product_end(monkeypatch, number_bins=600)
     with pytest.raises(ValueError, match="product_end declares 600 gates"):
         IrisParser()(f"file://{iris0_file}", local_registry)
-
-
-@pytest.mark.parametrize("multi_prf", [0, 1])
-def test_multi_prf_follows_eager(iris0_file, local_registry, monkeypatch, multi_prf):
-    """The multi-PRF factor extends the 1-byte velocity's nyquist, on top
-    of the product_end prf and wavelength, exactly as in the eager decode."""
-    from xradar.io.backends import iris
-
-    _with_product_end(monkeypatch, prf=1000, wavelength=1066)
-    init = iris.IrisRawFile.__init__
-
-    def init_with_multi_prf(self, *args, **kwargs):
-        init(self, *args, **kwargs)
-        task = self.ingest_header["task_configuration"]
-        task["task_dsp_info"]["multi_prf_mode_flag"] = multi_prf
-
-    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_multi_prf)
-    store = IrisParser()(f"file://{iris0_file}", local_registry)
-    tree = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)
-    ds = tree["sweep_0"].ds
-    base = 0.1066 * 1000 / 4
-    assert float(ds["nyquist_velocity"]) == pytest.approx(base * (multi_prf + 1))
-    # the patches apply to the eager reader too; eager VRADH no-data
-    # decodes to 0, hence the (theirs != 0) mask
-    eager = open_iris_datatree(iris0_file)["sweep_0"].ds
-    mine = ds["VRADH"].sortby("azimuth").values
-    theirs = eager["VRADH"].sortby("azimuth").values
-    both = np.isfinite(mine) & np.isfinite(theirs) & (theirs != 0)
-    assert both.sum() > 1000
-    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
 
 
 def test_width_scaling_ignores_multi_prf():
@@ -962,72 +953,95 @@ def test_width_scaling_ignores_multi_prf():
     assert _cf_scaling(3, nyquist, nyquist_vel)[0] == pytest.approx(nyquist_vel / 127)
 
 
-def _rbins_offsets(buf, sweep, group):
-    """File byte offsets of the ``rbins`` header word of ray ``group``, one
-    per data type, found by walking the sweep's RLE code words."""
+def _file_offset(sweep, word_index):
+    """File byte offset of word ``word_index`` of ``sweep_words`` (the
+    stream without record headers and the ingest_data_header prologue)."""
     from xradar.io.virtual.iris.format import BHDR_SIZE, IDH_SIZE
 
-    ndt = sweep.ndatatypes
-    body = RECORD_SIZE - BHDR_SIZE  # bytes per record after its bhdr
-    first = IDH_SIZE * ndt  # the ingest_data_header prologue
+    body = RECORD_SIZE - BHDR_SIZE  # bytes of each record after its bhdr
+    at = IDH_SIZE * sweep.ndatatypes + 2 * word_index
+    return sweep.byte_offset + (at // body) * RECORD_SIZE + BHDR_SIZE + at % body
 
-    def word(i):
-        at = first + 2 * i
-        offset = sweep.byte_offset + (at // body) * RECORD_SIZE + BHDR_SIZE
-        offset += at % body
-        return offset, int.from_bytes(buf[offset : offset + 2], "little", signed=True)
 
-    offsets, i, ray = [], 0, 0
-    while len(offsets) < ndt:
-        start, code = word(i)
-        if ray // ndt == group:
-            assert code < 0 and code + 32768 > 4, "header not in one data run"
-            offsets.append(word(i + 5)[0])
+def _zero_rbins(buf, sweep, group, ordinals):
+    """Set the ``rbins`` header word of ray ``group`` to 0 for ``ordinals``."""
+    from xradar.io.virtual.iris.format import sweep_words
+
+    span = bytes(buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length])
+    words = sweep_words(span, sweep.ndatatypes)
+    i = 0
+    for ray in range((group + 1) * sweep.ndatatypes):
+        code = int(words[i])
+        if ray // sweep.ndatatypes == group and ray % sweep.ndatatypes in ordinals:
+            # the 6 header words open the ray's first data run
+            assert code < 0 and code + 32768 >= 6
+            at = _file_offset(sweep, i + 1 + 4)  # past the code word
+            buf[at : at + 2] = b"\x00\x00"
+        while code != 1:  # skip to the end-of-ray code
+            i += 1 + (code + 32768 if code < 0 else 0)
+            code = int(words[i])
         i += 1
-        while code != 1:
-            i += code + 32768 if code < 0 else 0
-            _, code = word(i)
-            i += 1
-        ray += 1
-    return offsets
 
 
-@pytest.mark.parametrize("all_types", [True, False])
-def test_ray_with_zero_rbins_is_missing(
-    iris0_file, local_registry, tmp_path, all_types
-):
-    """A ray whose header declares 0 bins is dropped, as the eager reader
-    drops every ray with rbins == 0; when only some data types drop it, rows
-    would misalign between moments, so the sweep is refused."""
+def _rbins0_file(iris0_file, tmp_path, ordinals=None):
+    """cor-main with ray 10 of sweep 1 declaring 0 bins in ``ordinals``
+    (default: every data type)."""
+    from xradar.io.backends.iris import INGEST_DATA_HEADER
+    from xradar.io.virtual.iris.format import BHDR_SIZE, IDH_SIZE
+
     buf = bytearray(Path(iris0_file).read_bytes())
     sweep = read_volume(bytes(buf)).sweeps[0]
-    offsets = _rbins_offsets(buf, sweep, group=10)
-    for offset in offsets if all_types else offsets[1:2]:
-        buf[offset : offset + 2] = b"\x00\x00"
-    if all_types:
-        # the eager reader sizes its arrays by the written-ray count
-        from xradar.io.backends.iris import INGEST_DATA_HEADER
-        from xradar.io.virtual.iris.format import BHDR_SIZE, IDH_SIZE
-
-        field = _field_offset(INGEST_DATA_HEADER, "number_rays_file_written")
-        first = sweep.byte_offset + BHDR_SIZE + field
-        for t in range(sweep.ndatatypes):
-            at = first + t * IDH_SIZE
-            written = int.from_bytes(buf[at : at + 2], "little")
-            buf[at : at + 2] = (written - 1).to_bytes(2, "little")
+    if ordinals is None:
+        ordinals = range(sweep.ndatatypes)
+    _zero_rbins(buf, sweep, group=10, ordinals=ordinals)
+    # the eager reader sizes its arrays by the written-ray count
+    field = _field_offset(INGEST_DATA_HEADER, "number_rays_file_written")
+    for t in range(sweep.ndatatypes):
+        at = sweep.byte_offset + BHDR_SIZE + t * IDH_SIZE + field
+        written = int.from_bytes(buf[at : at + 2], "little")
+        buf[at : at + 2] = (written - 1).to_bytes(2, "little")
     path = tmp_path / "rbins0.RAW"
     path.write_bytes(bytes(buf))
+    return path
 
-    if not all_types:
-        with pytest.raises(ValueError, match="rows would misalign"):
-            IrisParser()(f"file://{path}", local_registry)
-        return
+
+@pytest.mark.filterwarnings("ignore:invalid value:RuntimeWarning")  # eager sqrt
+def test_ray_with_zero_rbins_is_missing(iris0_file, local_registry, tmp_path):
+    """A ray whose header declares 0 bins is dropped, as the eager reader
+    drops every ray with rbins == 0."""
+    path = _rbins0_file(iris0_file, tmp_path)
     ds = _open_tree(IrisParser()(f"file://{path}", local_registry))["sweep_0"].ds
     eager = open_iris_datatree(str(path))["sweep_0"].ds
     full = open_iris_datatree(iris0_file)["sweep_0"].ds
     assert ds.sizes["azimuth"] == full.sizes["azimuth"] - 1
-    wavelength_cm = read_volume(bytes(buf)).header.wavelength_cm
-    _assert_sweep_parity(ds, eager, wavelength_cm)
+    _assert_sweep_parity(ds, eager, read_volume(path.read_bytes()).header.wavelength_cm)
+
+
+def test_zero_rbins_ray_keeps_its_slot_when_padded(
+    iris0_file, local_registry, tmp_path
+):
+    path = _rbins0_file(iris0_file, tmp_path)
+    ds = _open_tree(
+        IrisParser(pad_missing_rays=True)(f"file://{path}", local_registry)
+    )["sweep_0"].ds
+    full = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))[
+        "sweep_0"
+    ].ds
+    assert ds.sizes["azimuth"] == full.sizes["azimuth"]
+    assert np.isnan(ds["azimuth"].values[10])
+    assert (ds["DBZH"].values[10] == 0).all()  # raw fill row
+    np.testing.assert_array_equal(
+        np.delete(ds["DBZH"].values, 10, axis=0),
+        np.delete(full["DBZH"].values, 10, axis=0),
+    )
+
+
+def test_zero_rbins_in_one_type_only_is_refused(iris0_file, local_registry, tmp_path):
+    """When only some data types drop a ray, rows would misalign between
+    moments, so the sweep is refused."""
+    path = _rbins0_file(iris0_file, tmp_path, ordinals=[1])
+    with pytest.raises(ValueError, match="rows would misalign"):
+        IrisParser()(f"file://{path}", local_registry)
 
 
 def test_variable_range_spacing_is_refused(iris0_file, local_registry, monkeypatch):
@@ -1042,7 +1056,6 @@ def test_read_volume_skips_the_gate_check_for_variable_spacing(iris0_file):
     """With variable spacing the range bins say nothing about the gate
     count, so read_volume leaves the refusal to the parser."""
     from xradar.io.backends.iris import INGEST_HEADER
-    from xradar.io.virtual.iris.format import read_volume
 
     buf = Path(iris0_file).read_bytes()
     path = "task_configuration.task_range_info.variable_range_bin_spacing_flag"
@@ -1064,16 +1077,10 @@ def test_root_comment_is_kept_like_eager(
 ):
     """The task description reaches the root ``comment`` as the eager reader
     writes it: no stripping; bytes that are not UTF-8 decode as Latin-1."""
-    from xradar.io.backends import iris
-
-    init = iris.IrisRawFile.__init__
-
-    def init_with_description(self, *args, **kwargs):
-        init(self, *args, **kwargs)
-        task = self.ingest_header["task_configuration"]
-        task["task_end_info"]["task_description"] = description
-
-    monkeypatch.setattr(iris.IrisRawFile, "__init__", init_with_description)
+    _patch_raw_file(
+        monkeypatch,
+        lambda raw: _task(raw)["task_end_info"].update(task_description=description),
+    )
     tree = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
     eager = open_iris_datatree(iris0_file).attrs["comment"]
     if isinstance(eager, bytes):

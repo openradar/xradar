@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+from array import array
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -36,6 +37,7 @@ import numpy as np
 
 from xradar.io.backends.iris import (
     _NO_DATA_ZERO_TYPES,
+    DSP_DATA_MASK,
     LEN_INGEST_DATA_HEADER,
     LEN_RAW_PROD_BHDR,
     LEN_RAY_HEADER,
@@ -72,6 +74,8 @@ __all__ = [
     "sweep_words",
     "walk_sweep",
     "walk_span",
+    "check_aligned",
+    "MAX_DATATYPES",
     "decode_sweep_moment",
 ]
 
@@ -81,6 +85,10 @@ RECORD_SIZE = RECORD_BYTES
 BHDR_SIZE = LEN_RAW_PROD_BHDR  # raw_prod_bhdr, start of EVERY record
 IDH_SIZE = LEN_INGEST_DATA_HEADER  # one per data type per sweep
 RAY_HEADER_WORDS = LEN_RAY_HEADER // 2  # 6 int16 words per ray
+
+#: Most data types one sweep can carry: one per bit of the DSP data mask's
+#: 32-bit mask words (160).
+MAX_DATATYPES = 32 * sum(key.startswith("mask_word_") for key in DSP_DATA_MASK)
 
 #: structure_header.structure_identifier values, from the identifiers table.
 _ID_BY_NAME = {v["name"]: k for k, v in STRUCTURE_HEADER_IDENTIFIERS.items()}
@@ -398,7 +406,7 @@ class RayHeader:
     dtime_s: int  # seconds since sweep start
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class SweepRays:
     """One data type's written rays of a sweep, in acquisition order.
 
@@ -411,7 +419,16 @@ class SweepRays:
     headers: np.ndarray  # (rays, 6) int16 ray header words
     payload: np.ndarray  # (rays, width) little-endian int16 words
     nwords: np.ndarray  # (rays,) decoded payload words per ray
-    missing: tuple[int, ...]  # ray-group indices of the missing rays
+    missing: np.ndarray  # ray-group indices of the missing rays
+
+    @property
+    def nbytes(self) -> int:
+        return (
+            self.headers.nbytes
+            + self.payload.nbytes
+            + self.nwords.nbytes
+            + self.missing.nbytes
+        )
 
     def ray_headers(self) -> list[RayHeader]:
         """The rays' headers, decoded."""
@@ -428,7 +445,8 @@ class SweepRays:
         ]
 
     def azimuth_key(self) -> np.ndarray:
-        """Wrap-aware azimuth midpoints, the ``sort_rays`` key."""
+        """Wrap-aware azimuth midpoints: the azimuth coordinate and the
+        ``sort_rays`` key."""
         words = self.headers.astype(np.int64) & 0xFFFF
         return azimuth_midpoints(
             decode_bin_angle(words[:, 0], mode=2),
@@ -442,13 +460,16 @@ class SweepRays:
         per_word = 2 // dtype.itemsize  # 1-byte types pack two bins a word
         words = self.payload
         bins = words.view(np.uint8) if per_word == 2 else words.view("<u2")
-        rbins = np.clip(self.headers[:, 4].astype(np.int64), 0, None)
-        valid = np.minimum(np.minimum(rbins, self.nwords * per_word), ngates)
-        ncols = min(ngates, bins.shape[1])
-        out = np.full((len(words), ngates), fill_value, dtype=dtype)
-        keep = np.arange(ncols) < valid[:, None]
-        out[:, :ncols] = np.where(keep, bins[:, :ncols], fill_value)
-        return out
+        if bins.shape[1] < ngates:
+            bins = np.pad(bins, ((0, 0), (0, ngates - bins.shape[1])))
+        valid = np.minimum(self.headers[:, 4], self.nwords * per_word)
+        keep = np.arange(ngates) < valid[:, None]
+        return np.where(keep, bins[:, :ngates], fill_value).astype(dtype)
+
+
+def _read_only(arr: np.ndarray) -> np.ndarray:
+    arr.setflags(write=False)
+    return arr
 
 
 def walk_sweep(
@@ -469,23 +490,28 @@ def walk_sweep(
     A missing ray contributes no row, like the eager reader, which drops
     every ray whose header ``rbins`` word is 0: a ray is missing when its
     FIRST code word is the end-of-ray marker (value 1, MSB clear; no header
-    at all) or when its header declares 0 bins.
+    at all) or when its header declares 0 bins. A negative ``rbins`` is
+    corrupt and raises ``ValueError``.
 
     Returns one :class:`SweepRays` per data type (``ndatatypes`` of them).
     ``max_rays`` bounds the written rays of each type (a store's declared
-    ray count); more raise ``ValueError`` before anything else is decoded.
+    ray count); more raise ``ValueError``. Memory stays bounded by the
+    stream: each type's rows go into one block (``max_rays`` rows, or
+    grown by doubling for the census) and a missing ray costs 4 bytes.
     """
     width = RAY_HEADER_WORDS + payload_words
-    rays: list[list[np.ndarray]] = [[] for _ in range(ndatatypes)]
-    nwords: list[list[int]] = [[] for _ in range(ndatatypes)]
-    missing: list[list[int]] = [[] for _ in range(ndatatypes)]
+    blocks: dict[int, np.ndarray] = {}  # ordinal -> (capacity, width) rows
+    decoded: dict[int, list[int]] = {}  # ordinal -> payload words per ray
+    missing: dict[int, array] = {}  # ordinal -> missing ray groups
+    ray = np.zeros(width, dtype="<i2")  # one ray, reused
+    dirty = 0
     n_words = len(words)
     pos = 0
     i = 0
 
     while pos < n_words and words.item(pos) != 0:
         group, ordinal = divmod(i, ndatatypes)
-        ray = np.zeros(width, dtype="<i2")
+        ray[:dirty] = 0  # only the words the previous ray wrote
         got = 0  # decompressed words of this ray so far
         first = True
         while True:
@@ -502,6 +528,11 @@ def walk_sweep(
                 got += code
             else:  # data run of `run` words
                 run = code + 32768
+                if pos + run > n_words:
+                    raise ValueError(
+                        f"RLE stream exhausted mid-ray at interleave index "
+                        f"{i} — corrupt sweep span or wrong ndatatypes"
+                    )
                 if got < width:
                     take = min(run, width - got)
                     ray[got : got + take] = words[pos : pos + take]
@@ -509,55 +540,85 @@ def walk_sweep(
                 pos += run
             first = False
         i += 1
+        dirty = min(got, width)  # cleared before the next ray
 
         if first:  # end-of-ray as the first code word: no header at all
-            missing[ordinal].append(group)
+            missing.setdefault(ordinal, array("i")).append(group)
             continue
         if got < RAY_HEADER_WORDS:
             raise ValueError(
                 f"ray at interleave index {i - 1} decodes to {got} "
                 f"words — shorter than the {RAY_HEADER_WORDS}-word ray header"
             )
-        if ray.item(4) == 0:  # a header but no bins: the eager reader drops it
-            missing[ordinal].append(group)
+        rbins = ray.item(4)
+        if rbins < 0:
+            raise ValueError(
+                f"ray at interleave index {i - 1} declares {rbins} bins — "
+                "corrupt ray header"
+            )
+        if rbins == 0:  # a header but no bins: the eager reader drops it
+            missing.setdefault(ordinal, array("i")).append(group)
             continue
-        if max_rays is not None and len(rays[ordinal]) == max_rays:
+        counts = decoded.setdefault(ordinal, [])
+        n = len(counts)
+        block = blocks.get(ordinal)
+        if max_rays is not None and n == max_rays:
             raise ValueError(
                 f"sweep span holds more than the {max_rays} rays the array "
                 "metadata declares — manifest/file mismatch"
             )
-        rays[ordinal].append(ray)
-        nwords[ordinal].append(min(got, width) - RAY_HEADER_WORDS)
+        if block is None or n == len(block):
+            capacity = max_rays if max_rays is not None else max(64, 2 * n)
+            grown = np.zeros((capacity, width), dtype="<i2")
+            if block is not None:
+                grown[:n] = block
+            block = blocks[ordinal] = grown
+        block[n] = ray
+        counts.append(min(got, width) - RAY_HEADER_WORDS)
 
     out = []
     for ordinal in range(ndatatypes):
-        block = (
-            np.stack(rays[ordinal])
-            if rays[ordinal]
-            else np.zeros((0, width), dtype="<i2")
-        )
-        counts = np.asarray(nwords[ordinal], dtype=np.int64)
-        for arr in (block, counts):
-            arr.setflags(write=False)
+        counts = decoded.get(ordinal, [])
+        block = blocks.get(ordinal, np.zeros((0, width), dtype="<i2"))
+        if len(block) != len(counts):
+            block = block[: len(counts)].copy()  # keep only the used rows
+        _read_only(block)
         out.append(
             SweepRays(
                 headers=block[:, :RAY_HEADER_WORDS],
                 payload=block[:, RAY_HEADER_WORDS:],
-                nwords=counts,
-                missing=tuple(missing[ordinal]),
+                nwords=_read_only(np.asarray(counts, dtype=np.int64)),
+                missing=_read_only(
+                    np.frombuffer(missing.get(ordinal, array("i")), dtype=np.intc)
+                ),
             )
         )
     return tuple(out)
 
 
-def _walk_nbytes(walk: tuple[SweepRays, ...]) -> int:
-    return sum(r.headers.nbytes + r.payload.nbytes + r.nwords.nbytes for r in walk)
+def check_aligned(walk: tuple[SweepRays, ...], sweep: str) -> None:
+    """Rows only align across a sweep's moments if every data type misses
+    the same rays and holds as many; anything else raises ``ValueError``
+    instead of decoding misaligned moments."""
+    if len({rays.missing.tobytes() for rays in walk}) != 1:
+        raise ValueError(
+            f"{sweep}: missing rays are not group-consistent across data "
+            f"types ({[rays.missing.tolist() for rays in walk]}) — rows "
+            "would misalign between moments"
+        )
+    if len({len(rays.headers) for rays in walk}) != 1:
+        raise ValueError(
+            f"{sweep}: data types hold {[len(rays.headers) for rays in walk]} "
+            "rays — rows would misalign between moments"
+        )
 
 
 #: Walked spans, shared by every moment of a sweep (12 moments of a
-#: 360 x 750 sweep keep ~6.5 MB).
+#: 360 x 750 sweep keep ~6.5 MB). The budget holds the largest walk
+#: ``walk_span`` allows, so every allowed sweep is walked once.
 _SPANS: SingleFlightCache[tuple[SweepRays, ...]] = SingleFlightCache(
-    max_bytes=128 * 2**20, sizeof=_walk_nbytes
+    max_bytes=2 * MAX_SPAN_CELLS,
+    sizeof=lambda walk: sum(rays.nbytes for rays in walk),
 )
 
 
@@ -570,8 +631,14 @@ def walk_span(
     the sweep's other moments (which reference the same bytes) are served
     from a small cache, keyed by the span's content and the walk's
     parameters. Concurrent readers of one span wait for a single walk.
+    The walk must be aligned across data types (:func:`check_aligned`).
     """
     n_rows, ngates = out_shape
+    if not 1 <= ndatatypes <= MAX_DATATYPES:
+        raise ValueError(
+            f"ndatatypes={ndatatypes} outside 1..{MAX_DATATYPES} (the data "
+            "types an IRIS DSP mask can select) — corrupt or hostile metadata"
+        )
     if ndatatypes * n_rows * (RAY_HEADER_WORDS + ngates) > MAX_SPAN_CELLS:
         raise ValueError(
             f"{ndatatypes} data types x {out_shape} cells exceed "
@@ -579,15 +646,18 @@ def walk_span(
         )
     raw = _span_bytes(span)
     digest = hashlib.blake2b(raw, digest_size=16).digest()
-    return _SPANS.get(
-        (digest, ndatatypes, n_rows, ngates),
-        lambda: walk_sweep(
+
+    def walk() -> tuple[SweepRays, ...]:
+        rays = walk_sweep(
             sweep_words(raw, ndatatypes),
             ndatatypes,
             payload_words=ngates,
             max_rays=n_rows,
-        ),
-    )
+        )
+        check_aligned(rays, "sweep span")
+        return rays
+
+    return _SPANS.get((digest, ndatatypes, n_rows, ngates), walk)
 
 
 def decode_sweep_moment(
@@ -618,25 +688,30 @@ def decode_sweep_moment(
       the EXPECTED slot count.
 
     With ``sort_rays`` the rows are reordered by ``azimuth_sort_order``
-    over the rays' wrap-aware azimuth midpoints; padded missing rows (NaN
-    key) sort last.
+    over the azimuth midpoints of the sweep's first data type (the
+    parser's azimuth coordinate); padded missing rows (NaN key) sort last.
     """
     n_rows_out, ngates_out = out_shape
-    rays = walk_span(span, ndatatypes, out_shape)[moment_index]
+    walk = walk_span(span, ndatatypes, out_shape)
+    rays = walk[moment_index]
     written = rays.rows(ngates_out, dtype, fill_value)
-    key = rays.azimuth_key() if sort_rays else None
+    key = walk[0].azimuth_key() if sort_rays else None
 
     if pad_missing_rays:
-        missing_slots = set(rays.missing)
-        n_slots = len(written) + len(missing_slots)
+        n_missing = len(rays.missing)
+        n_slots = len(written) + n_missing
         if n_slots != n_rows_out:
             raise ValueError(
                 f"sweep span holds {n_slots} ray slots ({len(written)} "
-                f"written + {len(missing_slots)} missing) but the array "
+                f"written + {n_missing} missing) but the array "
                 f"metadata declares {n_rows_out} — manifest/file mismatch"
             )
+        # missing groups are distinct and below n_slots (the walk counts
+        # every ray slot once), so the written slots are the rest
+        is_written = np.ones(n_rows_out, dtype=bool)
+        is_written[rays.missing] = False
+        written_slots = np.flatnonzero(is_written)
         rows = np.full(out_shape, fill_value, dtype=dtype)
-        written_slots = [g for g in range(n_rows_out) if g not in missing_slots]
         rows[written_slots] = written
         if sort_rays:
             full_key = np.full(n_rows_out, np.nan)

@@ -69,7 +69,7 @@ def test_concurrent_callers_share_one_computation():
     assert calls == [1]
 
 
-def test_waiters_get_the_failure_too():
+def test_every_caller_gets_the_failure():
     release = threading.Event()
 
     def fail():
@@ -84,3 +84,20 @@ def test_waiters_get_the_failure_too():
             with pytest.raises(ValueError, match="corrupt span"):
                 future.result()
     assert len(cache) == 0
+
+
+def test_a_failing_sizeof_does_not_wedge_the_key():
+    """If sizing the value fails, the key is released: the next call
+    computes again instead of waiting forever."""
+    sizes = iter([ValueError("boom"), 2])
+
+    def sizeof(value):
+        size = next(sizes)
+        if isinstance(size, Exception):
+            raise size
+        return size
+
+    cache = SingleFlightCache(max_bytes=100, sizeof=sizeof)
+    with pytest.raises(ValueError, match="boom"):
+        cache.get("a", lambda: "v1")
+    assert cache.get("a", lambda: "v2") == "v2"

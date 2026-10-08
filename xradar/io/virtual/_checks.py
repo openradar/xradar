@@ -47,8 +47,8 @@ MAX_CELLS = 2**25
 
 #: Upper bound on the words one walk of a sweep span may decode (every data
 #: type's rays, headers included). A sweep with 20 data types of 720 x 4000
-#: gates is ~5.8e7 words; this keeps a hostile span to 256 MiB.
-MAX_SPAN_CELLS = 2**27
+#: gates is ~5.8e7 words; this keeps one walk to 128 MiB.
+MAX_SPAN_CELLS = 2**26
 
 
 def plain(value):

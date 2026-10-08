@@ -593,11 +593,21 @@ def test_old_zarr_message_and_star_import():
 
 
 @pytest.fixture
-def counted_walks(monkeypatch):
-    """Clear the span cache and count the RLE walks that run."""
+def fresh_span_cache():
+    """An empty span cache, and none left behind for other tests."""
     from xradar.io.virtual.iris import format as fmt
 
     fmt._SPANS.clear()
+    yield fmt._SPANS
+    fmt._SPANS.clear()
+
+
+@pytest.fixture
+def counted_walks(fresh_span_cache, monkeypatch):
+    """Count the RLE walks that run (``walk_span`` calls ``walk_sweep``
+    through the module, so the patch sees every walk)."""
+    from xradar.io.virtual.iris import format as fmt
+
     calls = []
     real = fmt.walk_sweep
 
@@ -606,8 +616,7 @@ def counted_walks(monkeypatch):
         return real(*args, **kwargs)
 
     monkeypatch.setattr(fmt, "walk_sweep", counting)
-    yield calls
-    fmt._SPANS.clear()
+    return calls
 
 
 def _sur_sweep(iris1_file):
@@ -632,15 +641,35 @@ def test_one_walk_serves_every_moment(iris1_file, counted_walks):
         fmt._SPANS.clear()
         fresh = decode_sweep_moment(span, ordinal, ndt, shape, dtype)
         np.testing.assert_array_equal(rows, fresh)
-    # the padded layout declares other rows: its own entry, same walk rule
+    # the padded layout declares other rows: a walk of its own
     fmt._SPANS.clear()
     counted_walks.clear()
     decode_sweep_moment(span, 0, ndt, shape, dtype)
     decode_sweep_moment(span, 0, ndt, (360, nbins), dtype, pad_missing_rays=True)
-    assert len(counted_walks) == 2 and len(fmt._SPANS) == 2
+    assert len(counted_walks) == 2
+
+
+def test_cache_key_is_the_span_content(iris0_file, counted_walks):
+    """Two sweeps with the same shape and data types are different spans:
+    each gets its own walk and its own rows."""
+    buf = Path(iris0_file).read_bytes()
+    hdr, sweeps, *_ = read_volume(buf)
+    first, second = sweeps[:2]
+    shape = (first.headers[0].nrays_written, hdr.number_bins)
+    assert shape[0] == second.headers[0].nrays_written
+    assert first.ndatatypes == second.ndatatypes
+
+    def decode(sweep):
+        span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+        return decode_sweep_moment(span, 1, sweep.ndatatypes, shape, np.uint8)
+
+    assert not np.array_equal(decode(first), decode(second))
+    assert len(counted_walks) == 2
 
 
 def test_concurrent_moment_reads_walk_once(iris1_file, counted_walks):
+    """Integration smoke test (the threads may not overlap); the
+    single-flight wait itself is tested in test_virtual_cache.py."""
     from concurrent.futures import ThreadPoolExecutor
 
     span, sweep, nbins = _sur_sweep(iris1_file)
@@ -656,7 +685,7 @@ def test_concurrent_moment_reads_walk_once(iris1_file, counted_walks):
     assert all(r.shape == (359, nbins) for r in rows)
 
 
-def test_cached_walk_is_read_only(iris1_file, counted_walks):
+def test_cached_walk_is_read_only(iris1_file, fresh_span_cache):
     from xradar.io.virtual.iris.format import walk_span
 
     span, sweep, nbins = _sur_sweep(iris1_file)
@@ -679,7 +708,108 @@ def test_span_walk_is_bounded(iris1_file):
         decode_sweep_moment(span, 0, ndt, (360, nbins), np.dtype("uint16"))
 
 
-def test_more_rays_than_declared_stop_the_walk(iris1_file, counted_walks):
+def test_more_rays_than_declared_stop_the_walk(iris1_file, fresh_span_cache):
     span, sweep, nbins = _sur_sweep(iris1_file)
     with pytest.raises(ValueError, match="more than the 100 rays"):
         decode_sweep_moment(span, 0, sweep.ndatatypes, (100, nbins), np.dtype("uint16"))
+
+
+# --- the walk on hand-built word streams ------------------------------------
+
+
+def _data(*words):
+    """A data run: its code word, then the words."""
+    return [len(words) - 32768, *words]
+
+
+def _ray(azimuth, rbins, *payload):
+    """One ray: header (azimuth start/stop words, rbins), payload, end."""
+    return [*_data(azimuth, 0, azimuth, 0, rbins, 0, *payload), 1]
+
+
+def _walk(*rays, ndt=1, payload_words=4, max_rays=None):
+    from xradar.io.virtual.iris.format import walk_sweep
+
+    words = np.array([w for ray in rays for w in ray] + [0, 0], dtype="<i2")
+    return walk_sweep(words, ndt, payload_words=payload_words, max_rays=max_rays)
+
+
+def test_walk_marks_missing_rays_and_stops_at_padding():
+    """End-of-ray as the first code word, or rbins 0, is a missing ray;
+    the zero padding after the last ray ends the walk."""
+    (rays,) = _walk(_ray(100, 2, 7, 8), [1], _ray(200, 0, 9), _ray(300, 1, 5))
+    assert rays.missing.tolist() == [1, 2]
+    assert rays.headers[:, 0].tolist() == [100, 300]
+    assert rays.nwords.tolist() == [2, 1]
+
+
+@pytest.mark.parametrize(
+    "stream, match",
+    [
+        ([*_data(1, 2, 3), 1], "shorter than the 6-word ray header"),
+        (_data(1, 0, 1, 0, 2, 0, 5), "exhausted mid-ray"),  # no end-of-ray
+        ([-32768 + 50, 1, 2], "exhausted mid-ray"),  # run past the end
+        (_ray(100, -3, 7), "declares -3 bins"),
+    ],
+)
+def test_walk_refuses_corrupt_rays(stream, match):
+    from xradar.io.virtual.iris.format import walk_sweep
+
+    words = np.array(stream, dtype="<i2")  # no padding: the stream just ends
+    with pytest.raises(ValueError, match=match):
+        walk_sweep(words, 1, payload_words=4)
+
+
+def test_walk_memory_is_bounded_by_the_stream():
+    """A missing ray costs 4 bytes, and is counted in the cache size; rows
+    go into one block of the declared ray count."""
+    (rays,) = _walk(*[[1]] * 1000, _ray(100, 2, 7, 8), max_rays=4)
+    assert rays.missing.dtype.itemsize == 4 and len(rays.missing) == 1000
+    assert rays.nbytes >= rays.missing.nbytes + rays.payload.nbytes
+    assert rays.payload.shape == (1, 4)
+
+
+def test_rows_follow_rbins_and_word_size():
+    """``rbins`` bins of each ray, fill past them; 1-byte types pack two
+    bins a word (little-endian), and a ray that decoded fewer words than
+    ``rbins`` claims fills the rest."""
+    (rays,) = _walk(_ray(1, 3, 0x0201, 0x0403), _ray(2, 9, 0x0605))
+    u8 = rays.rows(5, np.uint8, 255)
+    assert u8.tolist() == [[1, 2, 3, 255, 255], [5, 6, 255, 255, 255]]
+    u16 = rays.rows(3, np.uint16, 7)
+    assert u16.tolist() == [[0x0201, 0x0403, 7], [0x0605, 7, 7]]
+    # more gates than the walk kept words for
+    assert rays.rows(10, np.uint16, 7).shape == (2, 10)
+
+
+def test_misaligned_data_types_are_refused():
+    """A store whose data types miss different rays (built elsewhere, or a
+    file changed after parsing) is refused instead of decoding moments
+    whose rows are different physical rays."""
+    from xradar.io.virtual.iris.format import check_aligned
+
+    walk = _walk(_ray(1, 2, 7), [1], [1], _ray(2, 2, 8), ndt=2)
+    with pytest.raises(ValueError, match="not group-consistent"):
+        check_aligned(walk, "sweep")
+    walk = _walk(_ray(1, 2, 7), _ray(1, 2, 8), _ray(2, 2, 9), ndt=2)
+    with pytest.raises(ValueError, match="rows would misalign"):
+        check_aligned(walk, "sweep")
+
+
+def test_ndatatypes_is_capped():
+    """An IRIS sweep carries at most one data type per DSP mask bit (160);
+    a larger ``ndatatypes`` is refused before any walk."""
+    from xradar.io.virtual.iris.format import MAX_DATATYPES, walk_span
+
+    assert MAX_DATATYPES == 160
+    with pytest.raises(ValueError, match="ndatatypes"):
+        IrisSweepCodec(moment_index=0, ndatatypes=MAX_DATATYPES + 1)
+    with pytest.raises(ValueError, match="outside 1..160"):
+        walk_span(bytes(2 * RECORD_SIZE), 10**6, (1, 1))
+
+
+def test_cache_holds_the_largest_allowed_walk():
+    from xradar.io.virtual._checks import MAX_SPAN_CELLS
+    from xradar.io.virtual.iris import format as fmt
+
+    assert fmt._SPANS.max_bytes >= 2 * MAX_SPAN_CELLS  # int16 words

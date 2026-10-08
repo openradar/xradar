@@ -136,7 +136,8 @@ class DecodeOnlyCodec(ArrayBytesCodec):
 
 def register_codec_name(codec_cls, codec_name: str) -> None:
     """Register a codec class under its name (the entry point does the same
-    for readers that never import xradar)."""
+    for readers that never import xradar). zarr is imported here, behind
+    this module's zarr v3 check, not by each codec module."""
     from zarr.registry import register_codec
 
     register_codec(codec_name, codec_cls)

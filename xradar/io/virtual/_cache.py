@@ -65,12 +65,12 @@ class SingleFlightCache(Generic[V]):
 
         try:
             value = compute()
+            size = self._sizeof(value)
         except BaseException as exc:
             with self._lock:
                 del self._pending[key]
             future.set_exception(exc)
             raise
-        size = self._sizeof(value)
         with self._lock:
             del self._pending[key]
             if size <= self.max_bytes:
