@@ -758,7 +758,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 9
+    assert len(dtree[sample_sweep].data_vars) == 11
     assert (
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"
@@ -835,7 +835,7 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
 
     # Verify a sample variable in one of the sweep groups (adjust as needed based on expected variables)
     sample_sweep = sweep_groups[0]
-    assert len(dtree[sample_sweep].data_vars) == 6
+    assert len(dtree[sample_sweep].data_vars) == 8
     assert (
         "DBZH" in dtree[sample_sweep].data_vars
     ), f"DBZH should be a data variable in {sample_sweep}"
@@ -865,6 +865,96 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     assert required_attrs.issubset(dtree.attrs)
     assert dtree.attrs["instrument_name"] == "KLIX"
     assert dtree.attrs["scan_name"] == "VCP-0"
+
+
+@pytest.mark.parametrize(
+    "sweep, nyquist, unambiguous_range",
+    [(0, 8.81, 466000.0), (1, 35.09, 117000.0), (9, 29.97, 137000.0)],
+)
+def test_nexradlevel2_nyquist_unambiguous_range(
+    nexradlevel2_file, sweep, nyquist, unambiguous_range
+):
+    """Nyquist velocity and unambiguous range from the MSG_31 RAD block."""
+    ds = open_dataset(nexradlevel2_file, engine="nexradlevel2", group=f"sweep_{sweep}")
+    assert ds.nyquist_velocity.dims == ()
+    assert ds.nyquist_velocity.attrs == {
+        "standard_name": "nyquist_velocity",
+        "units": "m s-1",
+    }
+    np.testing.assert_allclose(ds.nyquist_velocity, nyquist)
+    assert ds.unambiguous_range.dims == ()
+    assert ds.unambiguous_range.attrs["units"] == "meters"
+    np.testing.assert_allclose(ds.unambiguous_range, unambiguous_range)
+    with NEXRADLevel2File(nexradlevel2_file, loaddata=False) as nex:
+        rad = nex.msg_31_data_header[sweep]["msg_31_data_header"]["RAD"]
+        np.testing.assert_allclose(ds.nyquist_velocity, rad["nyquist_vel"] / 100.0)
+
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[sweep])
+    np.testing.assert_allclose(dtree[f"sweep_{sweep}"].nyquist_velocity, nyquist)
+
+
+def test_nexradlevel2_msg1_nyquist_unambiguous_range(nexradlevel2_msg1_file):
+    """Nyquist velocity and unambiguous range from the MSG_1 header."""
+    dtree = open_nexradlevel2_datatree(nexradlevel2_msg1_file, sweep=[0, 1, 9])
+    # surveillance-only cut has no Nyquist velocity
+    assert np.isnan(dtree["sweep_0"].nyquist_velocity)
+    np.testing.assert_allclose(dtree["sweep_0"].unambiguous_range, 466000.0)
+    np.testing.assert_allclose(dtree["sweep_1"].nyquist_velocity, 25.37)
+    np.testing.assert_allclose(dtree["sweep_1"].unambiguous_range, 148000.0)
+    np.testing.assert_allclose(dtree["sweep_9"].nyquist_velocity, 27.41)
+    np.testing.assert_allclose(dtree["sweep_9"].unambiguous_range, 137000.0)
+
+
+@pytest.mark.parametrize("moment", ["DBZH", "VRADH", "WRADH"])
+def test_nexradlevel2_mask_special_codes(nexradlevel2_file, moment):
+    """Below threshold (0) and range folded (1) are masked by default."""
+    raw = open_dataset(
+        nexradlevel2_file, engine="nexradlevel2", group="sweep_1", mask_and_scale=False
+    )[moment]
+    ds = open_dataset(nexradlevel2_file, engine="nexradlevel2", group="sweep_1")[moment]
+    # raw codes are kept with mask_and_scale=False
+    assert raw.dtype == np.uint8
+    assert raw.attrs["_FillValue"] == 0
+    below = (raw == 0).values
+    folded = (raw == 1).values
+    assert below.any() and folded.any()
+
+    # both codes decode to NaN, all other values are valid
+    np.testing.assert_array_equal(ds.isnull().values, below | folded)
+    assert ds.encoding["_FillValue"] == 0
+    scale, offset = raw.attrs["scale_factor"], raw.attrs["add_offset"]
+    valid = ~(below | folded)
+    np.testing.assert_allclose(
+        ds.values[valid], raw.values[valid] * scale + offset, rtol=1e-12
+    )
+    # decoded special code values do not show up as data
+    assert float(ds.min()) > offset + scale
+
+
+def test_nexradlevel2_mask_special_codes_dual_pol(nexradlevel2_file):
+    """Special codes are masked for 16 bit moments (PHIDP) and RHOHV, ZDR."""
+    raw = open_dataset(
+        nexradlevel2_file, engine="nexradlevel2", group="sweep_0", mask_and_scale=False
+    )
+    ds = open_dataset(nexradlevel2_file, engine="nexradlevel2", group="sweep_0")
+    for moment in ["ZDR", "PHIDP", "RHOHV"]:
+        codes = raw[moment].isin([0, 1]).values
+        assert codes.any()
+        np.testing.assert_array_equal(ds[moment].isnull().values, codes)
+    assert raw["PHIDP"].dtype == np.uint16
+
+
+def test_nexradlevel2_mask_and_scale_mapping(nexradlevel2_file):
+    """Per-variable mask_and_scale keeps raw codes only for that variable."""
+    ds = open_dataset(
+        nexradlevel2_file,
+        engine="nexradlevel2",
+        group="sweep_1",
+        mask_and_scale={"VRADH": False},
+    )
+    assert ds.VRADH.dtype == np.uint8
+    assert (ds.VRADH == 1).any()
+    assert ds.DBZH.isnull().any()
 
 
 def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):

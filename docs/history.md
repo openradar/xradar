@@ -39,6 +39,7 @@
 * FIX: CfRadial1 export writes string variables (``time_coverage_start``, ``instrument_type``, ``prt_mode``, ...) as char arrays instead of NC_STRING, which Py-ART could not read, and no longer writes ``"None"`` placeholder global attributes or a ``"None: ..."`` history ({issue}`417`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: CfRadial1 export writes boolean attributes (e.g. NEXRAD ``mpda_vcp``, ``avset_enabled``) as ``"true"``/``"false"`` instead of failing, as netCDF attributes can't be bool ({issue}`418`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: Halo Photonics ``.hpl`` reader: keep the last ray of each sweep (sweeps of one ray were empty and made opening fail, {issue}`303`), number sweeps from 0, take the header length from the ``****`` separator, raise a ``ValueError`` instead of printing on a line-count mismatch, and accept ``pathlib.Path`` and binary file-like objects ({issue}`430`, {pull}`442`) by [@syedhamidali](https://github.com/syedhamidali)
+* ENH: NEXRAD Level 2 reader exposes ``nyquist_velocity`` and ``unambiguous_range`` per sweep (MSG_31 radial data block / MSG_1 header) and masks the special moment codes below threshold (``0``) and range folded (``1``) to ``NaN`` via ``_FillValue`` when ``mask_and_scale=True``; raw codes stay available with ``mask_and_scale=False`` ({pull}`457`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
