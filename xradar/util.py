@@ -19,10 +19,13 @@ __all__ = [
     "get_second_angle",
     "remove_duplicate_rays",
     "reindex_angle",
+    "reindex_range",
     "extract_angle_parameters",
     "ipol_time",
     "rolling_dim",
     "get_sweep_keys",
+    "get_ray_dim",
+    "is_sweep",
     "apply_to_sweeps",
     "apply_to_volume",
     "map_over_sweeps",
@@ -141,6 +144,11 @@ def _reindex_angle(ds, array, tolerance, method="nearest"):
     ds : xarray.Dataset
         Reindexed dataset
     """
+    return _reindex_dim(ds, get_first_angle(ds), array, tolerance, method=method)
+
+
+def _reindex_dim(ds, dim, array, tolerance, method="nearest"):
+    """Reindex dimension, filling missing values by variable's _FillValue."""
     # handle fill value
     fill_value = {
         k: np.asarray(v._FillValue).astype(v.dtype)
@@ -148,11 +156,9 @@ def _reindex_angle(ds, array, tolerance, method="nearest"):
         if hasattr(v, "_FillValue")
     }
 
-    angle = get_first_angle(ds)
-
     # reindex
     ds = ds.reindex(
-        {angle: array},
+        {dim: array},
         method=method,
         tolerance=tolerance,
         fill_value=fill_value,
@@ -227,6 +233,74 @@ def reindex_angle(
         ds[second_angle] = sang.fillna(sang.median(skipna=True))
 
     return ds
+
+
+def reindex_range(
+    ds,
+    start_range=None,
+    stop_range=None,
+    range_res=None,
+    method="nearest",
+    tolerance=None,
+):
+    """Reindex along range onto a regular grid.
+
+    Useful to align sweeps whose range coordinates differ slightly (e.g. by
+    floating point jitter of the first gate) before combining them.
+
+    Missing values will be filled by variable's ``_FillValue``.
+
+    Parameters
+    ----------
+    ds : xarray.Dataset
+        Dataset to reindex range.
+
+    Keyword Arguments
+    -----------------
+    start_range : float
+        Range of the first gate center. Defaults to the first range value.
+    stop_range : float
+        Range of the last gate center (inclusive). Defaults to the last range value.
+    range_res : float
+        Gate spacing. Defaults to the median range spacing.
+    method : str
+        Reindexing method, defaults to "nearest". See :py:meth:`xarray.Dataset.reindex`.
+    tolerance : float
+        Range tolerance up to which gates should be considered for used method.
+        Defaults to range_res / 2.
+
+    Returns
+    -------
+    ds : xarray.Dataset
+        Reindexed dataset
+    """
+    # reindexing needs an index along range
+    if "range" not in ds.xindexes:
+        ds = ds.set_xindex("range")
+    rng = ds["range"]
+    if range_res is None:
+        range_res = rng.diff("range").median().item()
+    if start_range is None:
+        start_range = rng[0].item()
+    if stop_range is None:
+        stop_range = rng[-1].item()
+    if tolerance is None:
+        tolerance = range_res / 2.0
+
+    number_gates = int(np.round((stop_range - start_range) / range_res)) + 1
+    new_range = xr.DataArray(
+        start_range + np.arange(number_gates) * range_res,
+        dims="range",
+        attrs=rng.attrs,
+    ).astype(rng.dtype)
+    new_range.attrs.update(
+        meters_to_center_of_first_gate=new_range[0].item(),
+        meters_between_gates=range_res,
+        spacing_is_constant="true",
+    )
+
+    ds = _reindex_dim(ds, "range", new_range.values, tolerance, method=method)
+    return ds.assign_coords(range=new_range)
 
 
 def extract_angle_parameters(ds):
@@ -504,6 +578,92 @@ def rolling_dim(data, window):
     return np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
 
 
+def get_ray_dim(obj):
+    """Return the ray dimension (azimuth/elevation/time) of a radar object.
+
+    Adapted from :func:`wradlib.util.dim0`.
+
+    Parameters
+    ----------
+    obj : :class:`xarray:xarray.Dataset` or :class:`xarray:xarray.DataArray`
+
+    Returns
+    -------
+    ray_dim : str or None
+        ``azimuth`` or ``elevation`` if present, else ``time``. None if
+        ``obj`` has no ``range`` dimension.
+
+    Raises
+    ------
+    ValueError
+        If ``obj`` has a ``range`` dimension, but no ray dimension, or both
+        ``azimuth`` and ``elevation`` dimensions.
+    """
+    if "range" not in obj.dims:
+        return None
+    # fixed order, a set would make the result depend on string hashing
+    ray_dims = [dim for dim in ["azimuth", "elevation"] if dim in obj.dims]
+    if len(ray_dims) > 1:
+        raise ValueError(
+            f"Ambiguous ray dimension in {obj.dims!r}: "
+            "both 'azimuth' and 'elevation' are present."
+        )
+    if ray_dims:
+        return ray_dims[0]
+    if "time" in obj.dims:
+        return "time"
+    raise ValueError(
+        f"No CfRadial2/FM301 compliant dimension found in {obj.dims!r}. "
+        "Expected one of 'azimuth', 'elevation' or 'time'."
+    )
+
+
+def is_sweep(obj, strict=False):
+    """Check whether a Dataset holds a radar sweep.
+
+    The check is based on the structure, not on names:
+
+    - a ``range`` dimension and one ray dimension (``time``, ``azimuth`` or
+      ``elevation``),
+    - ``azimuth`` and ``elevation`` variables along the ray dimension,
+    - at least one data variable with dimensions (ray, ``range``).
+
+    With ``strict=True`` the mandatory sweep metadata variables are required,
+    too (``sweep_number``, ``sweep_mode``, ``follow_mode``, ``prt_mode``,
+    ``sweep_fixed_angle``, see FM301 Table 301-7a).
+    Not all backends fill these yet (e.g. HPL and Metek), so their sweeps
+    are only recognized with ``strict=False``.
+
+    Parameters
+    ----------
+    obj : :class:`xarray:xarray.Dataset` or :class:`xarray:xarray.DataTree`
+        Dataset or DataTree node to check.
+    strict : bool, optional
+        Also require the mandatory sweep metadata variables. Defaults to False.
+
+    Returns
+    -------
+    sweep : bool
+        True if ``obj`` holds a radar sweep.
+    """
+    if isinstance(obj, xr.DataTree):
+        obj = obj.to_dataset()
+    if not isinstance(obj, xr.Dataset) or "range" not in obj.dims:
+        return False
+    try:
+        ray_dim = get_ray_dim(obj)
+    except ValueError:
+        return False
+    for angle in ["azimuth", "elevation"]:
+        if angle not in obj.variables or obj[angle].dims != (ray_dim,):
+            return False
+    if not any(set(var.dims) == {ray_dim, "range"} for var in obj.data_vars.values()):
+        return False
+    if strict:
+        return required_sweep_metadata_vars.issubset(obj.variables)
+    return True
+
+
 def get_sweep_keys(dtree):
     """Return which nodes in the datatree contain sweep variables
 
@@ -620,8 +780,8 @@ def map_over_sweeps(func):
     """
     Decorator to apply a function only to sweep nodes in a DataTree.
 
-    This decorator first checks whether the dataset provided to the function has the 'range' dimension,
-    indicating it's a sweep node. If true, the function is applied. Non-sweep nodes are left unchanged.
+    The function is applied to the sweep nodes (``sweep_*``), all other nodes are
+    left unchanged.
 
     Parameters
     ----------

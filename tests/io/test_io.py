@@ -427,7 +427,10 @@ def test_open_gamic_dataset_reindex(gamic_file):
     # open first sweep group
     reindex_angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
     with xr.open_dataset(
-        gamic_file, group="sweep_0", engine="gamic", reindex_angle=reindex_angle
+        gamic_file,
+        group="sweep_0",
+        engine="gamic",
+        reindex_coord={"angle": reindex_angle},
     ) as ds:
         assert dict(ds.sizes) == {"azimuth": 360, "range": 360}
 
@@ -895,7 +898,7 @@ def test_open_datamet_dataset_reindex(datamet_file):
         group="sweep_10",
         engine="datamet",
         decode_coords=True,
-        reindex_angle=reindex_angle,
+        reindex_coord={"angle": reindex_angle},
     ) as ds:
         assert dict(ds.sizes) == {"azimuth": 180, "range": 1332}
 
