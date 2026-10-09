@@ -545,3 +545,124 @@ def test_iris_velocity_no_data_is_nan(iris0_file):
     assert np.isnan(vel).sum() == (words == 0).sum() > 0
     # true zero velocities stay zero
     assert (vel == 0).sum() == (words == 128).sum() > 0
+
+
+#: Data types whose raw word 0 is "no data" in the IRIS Programming Guide
+#: M212927EN-B, chapter 4.4. The corrected (``DB_DBZC``, ``DB_ZDRC``) and the
+#: V/E reflectivity types (``DB_DBZV8``, ``DB_DBZE8``, ...) have no format
+#: section there and follow their base types: on IDEAM volumes raw 0 is a
+#: marker in them (millions of bins, against a few dozen for each of raw 1-8)
+#: and lines up with the no-data bins of ``DB_DBZ``.
+MANUAL_ZERO_IS_NO_DATA = frozenset(
+    {
+        *("DB_DBT", "DB_DBZ", "DB_DBT2", "DB_DBZ2", "DB_DBZC", "DB_DBZC2"),  # 4.4.31-32
+        *("DB_DBTV8", "DB_DBTV16", "DB_DBZV8", "DB_DBZV16"),
+        *("DB_DBTE8", "DB_DBTE16", "DB_DBZE8", "DB_DBZE16"),
+        *("DB_VEL", "DB_VEL2", "DB_VELC", "DB_VELC2"),  # 4.4.42-45
+        *("DB_WIDTH", "DB_WIDTH2"),  # 4.4.48-49
+        *("DB_ZDR", "DB_ZDR2", "DB_ZDRC", "DB_ZDRC2"),  # 4.4.53-54
+        *("DB_PHIDP", "DB_PHIDP2", "DB_PHIH", "DB_PHIV", "DB_PHIH2", "DB_PHIV2"),
+        *("DB_RHOHV", "DB_RHOHV2", "DB_RHOH", "DB_RHOV", "DB_RHOH2", "DB_RHOV2"),
+        *("DB_SQI", "DB_SQI2", "DB_PMI8", "DB_PMI16", "DB_CCOR8", "DB_CCOR16"),
+        *("DB_KDP2", "DB_LDRH", "DB_LDRV", "DB_LDRH2", "DB_LDRV2"),  # 4.4.19-21
+        # 4.4.11, 4.4.47, 4.4.30, 4.4.41, 4.4.50
+        *("DB_HEIGHT", "DB_VIL2", "DB_RAINRATE2", "DB_TIME2", "DB_SHEAR"),
+    }
+)
+
+#: Data types whose raw word 0 is a real value (4.4.2, 4.4.9, 4.4.10, 4.4.12,
+#: 4.4.13, 4.4.46): no mask, raw 0 decodes to 0.
+MANUAL_ZERO_IS_DATA = frozenset(
+    {"DB_AXDIL2", "DB_DEFORM2", "DB_DIVERGE2", "DB_FLIQUID2", "DB_HDIR2", "DB_VVEL2"}
+)
+
+#: Sigmet type name -> its SIGMET_DATA_TYPES entry
+_ENTRIES = {e["name"]: e for e in iris.SIGMET_DATA_TYPES.values()}
+
+
+def _decode_raw(entry, words):
+    """Decode raw words through a table entry, injecting the per-file
+    arguments the way ``IrisRawFile.decode_data`` does."""
+    kwargs = dict(entry.get("fkw") or {})
+    if entry["func"] in (iris.decode_vel, iris.decode_width):
+        kwargs["nyquist"] = 10.0
+    if entry["func"] is iris.decode_kdp:
+        kwargs["wavelength"] = 5.33
+    data = np.array(words).astype(entry["dtype"])
+    return np.ma.filled(entry["func"](data, **kwargs).astype("float64"), np.nan)
+
+
+def _raw_words(raw, sweep, name, nbins):
+    """One raw word per range bin of ``name``, rays as in the decoded moment
+    (``raw`` is an ``IrisRawFile`` opened with ``rawdata=True``)."""
+    raw.get_moment(sweep, name)
+    words = raw.data[sweep]["sweep_data"][name]
+    one_byte = np.dtype(_ENTRIES[name].get("dtype", "uint16")).itemsize == 1
+    words = words.view("(2,)uint8" if one_byte else "uint16")
+    return words.reshape(words.shape[0], -1)[:, :nbins]
+
+
+def test_no_data_masks_follow_the_manual():
+    """The table masks raw 0 for exactly the no-data types listed above (the
+    guide's plus the types that follow a base type); ``DB_KDP`` handles it
+    in ``decode_kdp``."""
+    masked = {n for n, e in _ENTRIES.items() if "mask" in (e.get("fkw") or {})}
+    assert masked == MANUAL_ZERO_IS_NO_DATA
+    assert all(_ENTRIES[n]["fkw"]["mask"] == 0 for n in masked)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [e for e in _ENTRIES.values() if e["func"] is not None and e.get("dtype")],
+    ids=lambda e: e["name"],
+)
+def test_raw_zero_decodes_as_the_manual_says(entry):
+    """Every decoder at raw 0: NaN for no data, the real value where the
+    guide defines one, and never a NaN for a data word."""
+    with np.errstate(invalid="raise"):  # no sqrt of a negative "no data"
+        decoded = _decode_raw(entry, [0, 2])
+    if entry["name"] in MANUAL_ZERO_IS_NO_DATA or entry["name"] == "DB_KDP":
+        assert np.isnan(decoded[0])
+    elif entry["name"] in MANUAL_ZERO_IS_DATA:
+        assert decoded[0] == 0.0
+    # the DB_SNR8/16 family: the guide gives raw 0 no meaning, nothing pinned
+    assert np.isfinite(decoded[1])
+
+
+@pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
+def test_no_data_bins_are_nan(fixture, request):
+    """In every no-data moment of both test files, exactly the manual's
+    no-data words decode to NaN (#465): raw 0, plus raw 255 for ``DB_KDP``.
+    Positions are checked on the decoder output (file ray order, like the
+    raw words), counts on the Dataset, whose rays may be reordered."""
+    path = request.getfixturevalue(fixture)
+    raw = iris.IrisRawFile(path, loaddata=False, rawdata=True)
+    decoded = iris.IrisRawFile(path, loaddata=False)
+    sweep = 1  # IRIS numbers sweeps from 1: the file's first sweep is sweep_0
+    names = [
+        name
+        for name in raw.data[sweep]["ingest_data_hdrs"]
+        if name in MANUAL_ZERO_IS_NO_DATA or name == "DB_KDP"
+    ]
+    assert len(names) >= 6
+    found = 0
+    with open_dataset(path, engine="iris", group="sweep_0") as ds:
+        for name in names:
+            # (iris_mapping holds for these files: no two types share a name)
+            values = ds[iris.iris_mapping.get(name, name)].values
+            words = _raw_words(raw, sweep, name, values.shape[1])
+            no_data = np.isin(words, (0, 255) if name == "DB_KDP" else (0,))
+            found += no_data.any()
+            decoded.get_moment(sweep, name)
+            moment = decoded.data[sweep]["sweep_data"][name][:, : values.shape[1]]
+            nan = np.isnan(np.ma.filled(moment.astype("float64"), np.nan))
+            np.testing.assert_array_equal(nan, no_data, err_msg=name)
+            assert np.isnan(values).sum() == no_data.sum(), name
+    assert found >= 5  # most moments have no-data bins (DB_SQI2 has none)
+
+
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+def test_masked_moments_read_without_runtime_warnings(iris0_file):
+    """RHOHV no-data is masked before ``decode_sqi``'s square root."""
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        ds.load()
