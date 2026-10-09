@@ -3905,7 +3905,10 @@ class IrisArrayWrapper(BackendArray):
         with self.datastore.lock:
             # read the data and put it into dict
             self.datastore.root.get_moment(self.group, self.name)
-            return self.datastore.ds["sweep_data"][self.name][key]
+            data = self.datastore.ds["sweep_data"][self.name][key]
+        # decoders mask no-data bins (e.g. DB_VEL raw 0), keep them as NaN
+        # instead of losing the mask (#462)
+        return np.ma.filled(data, np.nan)
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(

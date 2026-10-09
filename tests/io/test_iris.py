@@ -538,3 +538,22 @@ def test_iris_hclass_flag_attrs(iris0_file, monkeypatch):
         ]
     # the IRIS names are kept with the classes
     assert iris.HCLASS_CLASSIFIERS[1][2][2] == ("MET_CLASS_RAIN", "rain")
+
+
+def test_iris_velocity_no_data_is_nan(iris0_file):
+    # DB_VEL raw 0 is "velocity data not available" (IRIS Programming Guide
+    # 4.4.44), raw 128 is zero velocity; no-data bins must be NaN, not 0 (#462)
+    raw = iris.IrisRawFile(iris0_file, loaddata=False, rawdata=True)
+    raw.get_moment(1, "DB_VEL")
+    words = raw.data[1]["sweep_data"]["DB_VEL"]
+    # one value per range bin, like the decoded moment
+    words = words.view("(2,)uint8").reshape(words.shape[0], -1)
+    with open_dataset(
+        iris0_file, engine="iris", group="sweep_0", first_dim="time"
+    ) as ds:
+        vel = ds.VRADH.values
+    # rays are sorted in the Dataset, so compare counts
+    words = words[:, : vel.shape[1]]
+    assert np.isnan(vel).sum() == (words == 0).sum() > 0
+    # true zero velocities stay zero
+    assert (vel == 0).sum() == (words == 128).sum() > 0
