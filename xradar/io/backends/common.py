@@ -22,6 +22,7 @@ import h5netcdf
 import numpy as np
 import xarray as xr
 
+from ... import util
 from ...model import (
     georeferencing_correction_subgroup,
     optional_root_attrs,
@@ -31,6 +32,78 @@ from ...model import (
     required_global_attrs,
     required_root_vars,
 )
+
+#: coordinates which can be reindexed via ``reindex_coord``
+_REINDEX_COORDS = ("angle", "range")
+
+
+def _get_reindex_coord(reindex_coord=None, reindex_angle=False):
+    """Validate ``reindex_coord`` and map deprecated ``reindex_angle`` onto it.
+
+    Parameters
+    ----------
+    reindex_coord : dict or None
+        Nested dict with optional keys ``angle`` and ``range``, each holding
+        the kwargs for :func:`xradar.util.reindex_angle` and
+        :func:`xradar.util.reindex_range`.
+    reindex_angle : dict or False
+        Deprecated, kwargs for :func:`xradar.util.reindex_angle`.
+
+    Returns
+    -------
+    reindex_coord : dict or None
+    """
+    if reindex_angle is not False and reindex_angle is not None:
+        if reindex_coord is not None:
+            warnings.warn(
+                "Both `reindex_coord` and the deprecated `reindex_angle` are "
+                "given, `reindex_coord` is used. Please drop `reindex_angle`.",
+                UserWarning,
+                stacklevel=3,
+            )
+        else:
+            warnings.warn(
+                "`reindex_angle` is deprecated and will be removed in a future "
+                "version, use `reindex_coord=dict(angle=...)` instead.",
+                FutureWarning,
+                stacklevel=3,
+            )
+            reindex_coord = {"angle": reindex_angle}
+
+    if reindex_coord is None:
+        return None
+    if not isinstance(reindex_coord, dict):
+        raise TypeError(
+            "`reindex_coord` must be a dict, e.g. "
+            "`dict(angle=dict(...), range=dict(...))`, "
+            f"got {type(reindex_coord).__name__}."
+        )
+    unknown = set(reindex_coord) - set(_REINDEX_COORDS)
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) {sorted(unknown)} in `reindex_coord`, "
+            f"expected any of {list(_REINDEX_COORDS)}."
+        )
+    for key, kwargs in reindex_coord.items():
+        if not isinstance(kwargs, dict):
+            raise TypeError(
+                f"`reindex_coord[{key!r}]` must be a dict of kwargs, "
+                f"got {type(kwargs).__name__}."
+            )
+    return reindex_coord
+
+
+def _apply_reindex_coord(ds, reindex_coord):
+    """Reindex angle and/or range as given by ``reindex_coord``."""
+    if not reindex_coord:
+        return ds
+    if (angle := reindex_coord.get("angle")) is not None:
+        ds = ds.pipe(util.remove_duplicate_rays)
+        ds = ds.pipe(util.reindex_angle, **angle)
+        ds = ds.pipe(util.ipol_time, **angle)
+    if (rng := reindex_coord.get("range")) is not None:
+        ds = ds.pipe(util.reindex_range, **rng)
+    return ds
 
 
 def _maybe_decode(attr):
@@ -499,11 +572,14 @@ optional_groups : bool, optional
 #: rays onto a regular angular grid (odim, gamic, nexrad, cfradial1,
 #: iris, furuno, uf).
 REINDEX_PARAMS_DOC = """
-reindex_angle : bool or dict, optional
-    Resample rays onto a regular angular grid when truthy. A dict is
-    passed as kwargs to :func:`xradar.util.reindex_angle` (e.g.
-    ``{"start_angle": 0.0, "stop_angle": 360.0, "angle_res": 1.0}``).
-    Only invoked when ``decode_coords=True``. Defaults to ``False``.
+reindex_coord : dict, optional
+    Nested dict with optional keys ``angle`` and ``range`` holding the
+    kwargs for :func:`xradar.util.reindex_angle` and
+    :func:`xradar.util.reindex_range`, e.g. ``dict(angle=dict(start_angle=0,
+    stop_angle=360, angle_res=1.0, direction=1))``. Only invoked when
+    ``decode_coords=True``. Defaults to ``None`` (no reindexing).
+reindex_angle : dict, optional
+    Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
 fix_second_angle : bool, optional
     Correct erroneous secondary-angle values (azimuth on RHI,
     elevation on PPI). Only effective with ``first_dim="auto"``.

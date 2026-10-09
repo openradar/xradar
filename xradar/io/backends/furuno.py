@@ -54,7 +54,6 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -75,12 +74,14 @@ from .common import (
     UINT1,
     UINT2,
     UINT4,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _build_groups_dict,
     _calculate_angle_res,
     _compose_docstring,
     _deprecation_warning,
     _get_fmt_string,
+    _get_reindex_coord,
     _resolve_sweeps,
     _unpack_dictionary,
 )
@@ -721,6 +722,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         decode_timedelta=None,
         group=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -754,10 +756,9 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "furuno"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -791,6 +792,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_coords=True,
@@ -810,6 +812,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,

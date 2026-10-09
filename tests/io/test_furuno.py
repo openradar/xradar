@@ -558,7 +558,9 @@ def test_open_dataset_with_reindex_and_dimensions(furuno_scn_file):
         use_cftime=use_cftime,
         decode_timedelta=decode_timedelta,
         group=group,
-        reindex_angle=reindex_angle,  # Pass reindex_angle to trigger reindexing
+        reindex_coord={
+            "angle": reindex_angle
+        },  # Pass reindex_angle to trigger reindexing
         first_dim=first_dim,  # Test first_dim="auto"
         obsmode=obsmode,
     )
@@ -595,7 +597,7 @@ def test_open_dataset_with_reindex_and_dimensions(furuno_scn_file):
         use_cftime=use_cftime,
         decode_timedelta=decode_timedelta,
         group=group,
-        reindex_angle=reindex_angle,
+        reindex_coord={"angle": reindex_angle},
         first_dim="time",  # Set to "time" to test alternative branch
         obsmode=obsmode,
     )
@@ -629,11 +631,13 @@ def test_open_furuno_datatree(furuno_scn_file):
     # Define parameters to trigger all conditions
     kwargs = {
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,

@@ -33,6 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
+import os
 import sys
 import zlib
 
@@ -46,7 +47,6 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -61,10 +61,12 @@ from ...model import (
 from .common import (
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _get_reindex_coord,
     _resolve_sweeps,
 )
 
@@ -413,6 +415,8 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -715,23 +719,18 @@ class RainbowStore(AbstractDataStore):
         timestr = f"{dstr}T{tstr}Z"
         time = dt.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
-        # range is in km
-        start_range = self.root._get_rbdict_value(
-            var, "startrange", default=0, dtype=float
-        )
-        start_range *= 1000.0
-
-        stop_range = self.root._get_rbdict_value(var, "stoprange", dtype=float)
-        stop_range *= 1000.0
+        # range is in km, start of the first range bin; the tag is
+        # `start_range`, older files might use `startrange`
+        start_range = self.root._get_rbdict_value(var, "start_range")
+        if start_range is None:
+            start_range = self.root._get_rbdict_value(var, "startrange", default=0)
+        start_range = float(start_range) * 1000.0
 
         range_step = self.root._get_rbdict_value(var, "rangestep", dtype=float)
         range_step *= 1000.0
-        rng = np.arange(
-            start_range + range_step / 2,
-            stop_range + range_step / 2,
-            range_step,
-            dtype="float32",
-        )[: int(var["slicedata"]["rawdata"]["@bins"])]
+        # bin centers
+        nbins = int(var["slicedata"]["rawdata"]["@bins"])
+        rng = (start_range + range_step * (np.arange(nbins) + 0.5)).astype("float32")
 
         range_attrs = get_range_attrs(rng)
 
@@ -811,6 +810,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
+        reindex_coord=None,
         reindex_angle=False,
         first_dim="auto",
         site_as_coords=True,
@@ -842,10 +842,9 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "rainbow"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -878,6 +877,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         site_coords=True,
         sweep=None,
@@ -897,6 +897,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
             site_as_coords=site_coords,
         )

@@ -50,11 +50,13 @@ from xradar.io.backends.common import (
     LOCK_PARAM_DOC,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _assign_root,
     _compose_docstring,
     _deprecation_warning,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_subgroup,
     _resolve_sweeps,
 )
@@ -766,6 +768,7 @@ class UFBackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -799,10 +802,9 @@ class UFBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "uf"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -832,6 +834,7 @@ class UFBackendEntrypoint(BackendEntrypoint):
         decode_timedelta=None,
         sweep=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_coords=True,
@@ -874,6 +877,7 @@ class UFBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
             sweeps=sweeps,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
@@ -951,6 +955,7 @@ def open_sweeps_as_dict(
     decode_timedelta=None,
     sweeps=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -963,6 +968,7 @@ def open_sweeps_as_dict(
         lock=lock,
         groups=sweeps,
     )
+    reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
     groups_dict = {}
     for path_group, store in stores.items():
         store_entrypoint = StoreBackendEntrypoint()
@@ -985,10 +991,8 @@ def open_sweeps_as_dict(
             group_ds.encoding["engine"] = "uf"
 
             # handle duplicates and reindex
-            if decode_coords and reindex_angle is not False:
-                group_ds = group_ds.pipe(util.remove_duplicate_rays)
-                group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
-                group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
+            if decode_coords and reindex_coord:
+                group_ds = _apply_reindex_coord(group_ds, reindex_coord)
 
             # handling first dimension
             dim0 = "elevation" if group_ds.sweep_mode.load() == "rhi" else "azimuth"

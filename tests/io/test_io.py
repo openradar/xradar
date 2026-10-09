@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 import pytest
 import xarray as xr
+from open_radar_data import DATASETS
 
 import xradar.io
 from tests import skip_import
@@ -426,7 +427,10 @@ def test_open_gamic_dataset_reindex(gamic_file):
     # open first sweep group
     reindex_angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
     with xr.open_dataset(
-        gamic_file, group="sweep_0", engine="gamic", reindex_angle=reindex_angle
+        gamic_file,
+        group="sweep_0",
+        engine="gamic",
+        reindex_coord={"angle": reindex_angle},
     ) as ds:
         assert dict(ds.sizes) == {"azimuth": 360, "range": 360}
 
@@ -792,6 +796,53 @@ def test_odim_optional_how(odim_file2, make_temp_file):
         assert "stopelA" not in ds_how
 
 
+def test_write_odim_source_from_attrs(odim_file, odim_file2, make_temp_file):
+    # identifiers stored by the ODIM reader are written back (#98)
+    dtree = open_odim_datatree(odim_file2)
+    temp_file = make_temp_file()
+    xradar.io.to_odim(dtree, temp_file)
+    with h5py.File(temp_file) as f:
+        assert f["what"].attrs["source"].decode() == "WMO:01104,NOD:norst"
+    dtree2 = open_odim_datatree(temp_file)
+    assert dtree2.attrs["wmo__id"] == "01104"
+    assert dtree2.attrs["node"] == "norst"
+
+    # an explicit source wins
+    temp_file = make_temp_file()
+    xradar.io.to_odim(dtree, temp_file, source="NOD:xxxxx")
+    with h5py.File(temp_file) as f:
+        assert f["what"].attrs["source"].decode() == "NOD:xxxxx"
+
+    # only PLC is stored, no mandatory identifier
+    dtree = open_odim_datatree(odim_file)
+    with pytest.raises(ValueError, match="got 'PLC:T/Hills'"):
+        xradar.io.to_odim(dtree, make_temp_file())
+
+
+def test_write_odim_source_all_identifiers(make_temp_file):
+    dtree = open_odim_datatree(DATASETS.fetch("202506090955_fianj_PVOL.h5"))
+    temp_file = make_temp_file()
+    xradar.io.to_odim(dtree, temp_file)
+    with h5py.File(temp_file) as f:
+        assert f["what"].attrs["source"].decode() == (
+            "WMO:02954,PLC:Anjalankoski,NOD:fianj,WIGOS:0-246-0-101234"
+        )
+
+
+@pytest.mark.parametrize(
+    ("attrs", "expected"),
+    [
+        ({"node": "norst", "wmo__id": "01104"}, "WMO:01104,NOD:norst"),
+        ({"node": "", "site_name": "Somewhere"}, "PLC:Somewhere"),
+        ({"instrument_name": "radar"}, None),
+    ],
+)
+def test_get_odim_source(attrs, expected):
+    from xradar.io.export.odim import _get_odim_source
+
+    assert _get_odim_source(attrs) == expected
+
+
 def test_write_odim_source(rainbow_file2, temp_file):
     dtree = open_rainbow_datatree(rainbow_file2)
     with pytest.raises(ValueError):
@@ -800,6 +851,9 @@ def test_write_odim_source(rainbow_file2, temp_file):
             temp_file,
             source="PLC:Wideumont",
         )
+    # no identifiers in the attributes either
+    with pytest.raises(ValueError, match="got None"):
+        xradar.io.to_odim(dtree, temp_file)
 
     xradar.io.to_odim(
         dtree,
@@ -844,7 +898,7 @@ def test_open_datamet_dataset_reindex(datamet_file):
         group="sweep_10",
         engine="datamet",
         decode_coords=True,
-        reindex_angle=reindex_angle,
+        reindex_coord={"angle": reindex_angle},
     ) as ds:
         assert dict(ds.sizes) == {"azimuth": 180, "range": 1332}
 

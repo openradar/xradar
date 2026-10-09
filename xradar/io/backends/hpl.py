@@ -31,6 +31,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import io
+import os
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
@@ -54,10 +55,12 @@ from ...model import (
 from .common import (
     HDF5_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _get_reindex_coord,
     _resolve_sweeps,
 )
 
@@ -165,12 +168,22 @@ def _convert_to_hours_minutes_seconds(decimal_hour, initial_time):
 
 def _hpl2dict(file_buf):
     # import hpl files into intercal storage
-    lines = file_buf.readlines()
+    # todo: all rays are read and parsed into memory here; make the data
+    # reading lazy (index the ray lines, parse on access) if performance
+    # becomes an issue for large files
+    # binary file-like objects return bytes
+    lines = [
+        line.decode() if isinstance(line, bytes) else line
+        for line in file_buf.readlines()
+    ]
 
     # write lines into Dictionary
     data_temp = dict()
 
-    header_n = 17  # length of header
+    # the header ends with a "****" line, 17 lines in the files seen so far
+    header_n = next(
+        (i + 1 for i, line in enumerate(lines[:50]) if line.startswith("****")), 17
+    )
     data_temp["filename"] = lines[0].split()[-1]
     data_temp["system_id"] = int(lines[1].split()[-1])
     data_temp["number_of_gates"] = int(lines[2].split()[-1])
@@ -185,8 +198,12 @@ def _hpl2dict(file_buf):
     was changed in the measuring period of the data file (especially possible for stare data)
     """
     if not rays_n.is_integer():
-        print("Number of lines does not match expected format")
-        return np.nan
+        raise ValueError(
+            f"Number of lines ({len(lines)}) does not match the expected format: "
+            f"{header_n} header lines plus rays of 1 + "
+            f"{data_temp['number_of_gates']} lines. The number of range gates "
+            "might have changed within the file."
+        )
 
     data_temp["no_of_rays_in_file"] = int(rays_n)
     data_temp["scan_type"] = " ".join(lines[7].split()[2:])
@@ -256,6 +273,9 @@ class HplFile:
         latitude = kwargs.pop("latitude", 0)
         longitude = kwargs.pop("longitude", 0)
         altitude = kwargs.pop("altitude", 0)
+        self._fp = None
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
         if isinstance(filename, str):
             self._fp = open(filename)
             self._filename = filename
@@ -263,6 +283,11 @@ class HplFile:
             filename.seek(0)
             self._fp = filename
             self._filename = None
+        else:
+            raise TypeError(
+                f"Unsupported input type {type(filename).__name__!r}, "
+                "expected a path or a file-like object."
+            )
         data_temp = _hpl2dict(self._fp)
         initial_time = pd.to_datetime(data_temp["start_time"])
 
@@ -359,9 +384,10 @@ class HplFile:
         self._data = OrderedDict()
         for i in range(len(data_unsorted["fixed_angle"])):
             sweep_dict = OrderedDict()
+            # sweep_end_ray_index is the index of the last ray of the sweep
             time_inds = slice(
                 data_unsorted["sweep_start_ray_index"][i],
-                data_unsorted["sweep_end_ray_index"][i],
+                data_unsorted["sweep_end_ray_index"][i] + 1,
             )
             for k in data_unsorted.keys():
                 if k == "sweep_start_ray_index" or k == "sweep_end_ray_index":
@@ -369,8 +395,8 @@ class HplFile:
                 if k == "fixed_angle":
                     sweep_dict["sweep_fixed_angle"] = data_unsorted["fixed_angle"][i]
                 elif k == "sweep_number":
-                    sweep_dict["sweep_group_name"] = np.array(f"sweep_{i - 1}")
-                    sweep_dict["sweep_number"] = np.array(i - 1)
+                    sweep_dict["sweep_group_name"] = np.array(f"sweep_{i}")
+                    sweep_dict["sweep_number"] = np.array(i)
                 elif len(variable_attr_dict[k]["dims"]) == 0:
                     sweep_dict[k] = data_unsorted[k]
                 elif variable_attr_dict[k]["dims"][0] == "time":
@@ -534,6 +560,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
         site_as_coords=True,
         optional=True,
         latitude=0,
@@ -573,6 +601,10 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"elevation": ds.elevation})
         ds = ds.assign_coords({"time": ds.time})
         ds = _apply_site_as_coords(ds, site_as_coords)
+
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         ds.encoding["engine"] = "hpl"
         # handling first dimension

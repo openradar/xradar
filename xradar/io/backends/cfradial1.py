@@ -38,7 +38,6 @@ from xarray.backends import NetCDF4DataStore
 from xarray.backends.common import BackendEntrypoint
 from xarray.backends.store import StoreBackendEntrypoint
 
-from ... import util
 from ...model import (
     conform_cfradial2_sweep_group,
     georeferencing_correction_subgroup,
@@ -53,9 +52,11 @@ from .common import (
     _STATION_VARS,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _compose_docstring,
     _deprecation_warning,
+    _get_reindex_coord,
     _maybe_decode,
 )
 
@@ -353,9 +354,14 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     optional : bool
@@ -402,9 +408,14 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         For PPI only. If True, fixes erroneous second angle data. Defaults to False.
     site_as_coords : bool
@@ -431,6 +442,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         format=None,
         group="/",
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -465,10 +477,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         if ds is None:
             raise ValueError(f"Group `{group}` missing from file `{filename_or_obj}`.")
 
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # ensure close works
         ds._close = store.close
@@ -487,6 +498,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=False,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_coords=True,

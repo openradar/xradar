@@ -59,11 +59,13 @@ from xradar.io.backends.common import (
     LOCK_PARAM_DOC,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _assign_root,
     _compose_docstring,
     _deprecation_warning,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_subgroup,
     _resolve_sweeps,
 )
@@ -94,6 +96,8 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
+#: gzip magic number, only used for a hint when the input is not readable
+_GZIP_MAGIC = b"\x1f\x8b"
 
 
 def _concatenate_chunks(file_list):
@@ -210,8 +214,18 @@ class NEXRADFile:
 
     Parameters
     ----------
-    filename : str
-        Filename of Archive II file to read.
+    filename : str, os.PathLike, bytes, bytearray or file-like
+        Archive II file to read: a path, the raw (uncompressed) bytes, or a
+        file-like object. File-like objects are rewound if seekable.
+        gzip-compressed archives have to be decompressed first.
+    mode : str, optional
+        Mode for :py:class:`numpy.memmap` when reading from a path.
+        Defaults to ``"r"``.
+    loaddata : bool, optional
+        Load all data on initialization. Defaults to ``False``.
+    has_volume_header : bool, optional
+        Whether the input starts with the 24-byte volume header (``AR2V``).
+        Set to ``False`` for I/E chunk files. Defaults to ``True``.
 
     References
     ----------
@@ -234,6 +248,12 @@ class NEXRADFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the same file-like is read again for every sweep
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -537,6 +557,22 @@ class NEXRADRecordFile(NEXRADFile):
         chk : bool
             True, if record is truncated.
         """
+        if self.record_number is None:
+            source = (
+                f" in {os.fspath(self.filename)!r}"
+                if isinstance(self.filename, (str, os.PathLike))
+                else ""
+            )
+            hint = ""
+            if self._fh[:2].tobytes() == _GZIP_MAGIC:
+                hint = (
+                    " The input is gzip-compressed (e.g. *.gz files in "
+                    "unidata-nexrad-level2), decompress it first, e.g. with "
+                    "`gzip.open(filename).read()`."
+                )
+            raise ValueError(
+                f"Not a NEXRAD Level II archive: no records found{source}.{hint}"
+            )
         return self.init_record(self.record_number + 1)
 
     def array_from_record(self, words, width, dtype):
@@ -1231,6 +1267,10 @@ def _sweep_attrs_from_msg5_elev(elev):
         "mpda_cut": sup.get("mpda_cut", False),
         "base_tilt_cut": sup.get("base_tilt_cut", False),
     }
+
+
+# MSG_31 azimuth_resolution code -> degrees (ICD 2620002, Table XVII-A)
+_AZIMUTH_RESOLUTION = {1: 0.5, 2: 1.0}
 
 
 def _assign_sweep_attrs(dtree, elev_data):
@@ -1976,6 +2016,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -2009,10 +2050,9 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "nexradlevel2"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -2045,6 +2085,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         decode_timedelta=None,
         sweep=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_coords=True,
@@ -2077,6 +2118,16 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             present_keys = sorted(nex.data)
             act_sweeps = len(present_keys)
             elev_data = nex.msg_5.get("elevation_data", []) if nex.msg_5 else []
+            # nominal azimuth spacing of the incomplete sweeps, used for
+            # padding; msg_31_header is compacted past interior gaps:
+            # label -> position
+            angle_resolution = {
+                sw: _AZIMUTH_RESOLUTION.get(
+                    nex.msg_31_header[pos][0]["azimuth_resolution"]
+                )
+                for pos, sw in enumerate(present_keys)
+                if sw in incomplete and nex.msg_31_header[pos]
+            }
 
         # Normalise NodePath strings before resolving sweeps
         if isinstance(sweep, str):
@@ -2136,11 +2187,13 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
             sweeps=sweeps,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
             optional=optional,
             incomplete_sweeps=incomplete_sweeps,
+            angle_resolution=angle_resolution,
             lock=lock,
             **kwargs,
         )
@@ -2217,6 +2270,7 @@ def open_nexradlevel2_datatree(
     decode_timedelta=None,
     sweep=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -2280,9 +2334,12 @@ def open_nexradlevel2_datatree(
         first dimension. If "auto," determines the first dimension based on the sweep
         type (azimuth or elevation). Default is "auto."
 
-    reindex_angle : bool or dict, optional
-        Controls angle reindexing. If True or a dictionary, applies reindexing with
-        specified settings (if given). Only used if `decode_coords=True`. Default is False.
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+        Only used if `decode_coords=True`. Default is None (no reindexing).
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
 
     fix_second_angle : bool, optional
         If True, corrects errors in the second angle data, such as misaligned
@@ -2333,7 +2390,7 @@ def open_nexradlevel2_datatree(
         decode_timedelta=decode_timedelta,
         sweep=sweep,
         first_dim=first_dim,
-        reindex_angle=reindex_angle,
+        reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
         fix_second_angle=fix_second_angle,
         site_coords=site_as_coords,
         optional=optional,
@@ -2355,16 +2412,22 @@ def open_sweeps_as_dict(
     decode_timedelta=None,
     sweeps=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
     optional=True,
     incomplete_sweeps=None,
+    angle_resolution=None,
     lock=None,
     **kwargs,
 ):
     if incomplete_sweeps is None:
         incomplete_sweeps = set()
+    if angle_resolution is None:
+        angle_resolution = {}
+
+    reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
 
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
@@ -2397,22 +2460,43 @@ def open_sweeps_as_dict(
 
             # handle duplicates and reindex
             # For incomplete sweeps in pad mode, auto-detect angle parameters
-            # and force reindex even when reindex_angle=False
+            # and force angle reindex even without reindex_coord["angle"]
             if decode_coords and sweep_idx in incomplete_sweeps:
                 group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 angle_params = util.extract_angle_parameters(group_ds)
+                # use the nominal azimuth spacing of the sweep (MSG_31
+                # azimuth_resolution), the measured one is jittery (#396)
+                angle_res = angle_resolution.get(sweep_idx)
+                if angle_res is None:
+                    angle_res = float(angle_params["angle_res"])
                 reindex_kwargs = {
                     "start_angle": angle_params["start_angle"],
                     "stop_angle": angle_params["stop_angle"],
-                    "angle_res": float(angle_params["angle_res"]),
+                    "angle_res": angle_res,
                     "direction": angle_params["direction"],
                 }
+                ignored = (
+                    " The given reindex_coord['angle'] is not used for this sweep."
+                    if reindex_coord and "angle" in reindex_coord
+                    else ""
+                )
+                warnings.warn(
+                    f"{path_group} is incomplete and is padded to a full angle "
+                    f"grid (angle_res={reindex_kwargs['angle_res']}, "
+                    f"start_angle={reindex_kwargs['start_angle']}, "
+                    f"stop_angle={reindex_kwargs['stop_angle']}) with NaN-filled "
+                    f"rays.{ignored}",
+                    UserWarning,
+                    stacklevel=2,
+                )
                 group_ds = group_ds.pipe(util.reindex_angle, **reindex_kwargs)
                 group_ds = group_ds.pipe(util.ipol_time, **reindex_kwargs)
-            elif decode_coords and reindex_angle is not False:
-                group_ds = group_ds.pipe(util.remove_duplicate_rays)
-                group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
-                group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
+                if reindex_coord and "range" in reindex_coord:
+                    group_ds = _apply_reindex_coord(
+                        group_ds, {"range": reindex_coord["range"]}
+                    )
+            elif decode_coords and reindex_coord:
+                group_ds = _apply_reindex_coord(group_ds, reindex_coord)
 
             # handling first dimension
             dim0 = "elevation" if group_ds.sweep_mode.load() == "rhi" else "azimuth"

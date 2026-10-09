@@ -167,6 +167,8 @@ variable_attr_dict = dict(
 )
 
 variable_attr_dict["time"]["dims"] = ("time",)
+# times are stored as datetimes, a "units" attribute would block encoding
+variable_attr_dict["time"].pop("units", None)
 variable_attr_dict["azimuth"]["dims"] = ("time",)
 variable_attr_dict["elevation"]["dims"] = ("time",)
 variable_attr_dict["velocity"]["dims"] = ("time", "range")

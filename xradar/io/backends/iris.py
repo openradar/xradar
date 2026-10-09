@@ -52,7 +52,6 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
     get_altitude_attrs,
     get_azimuth_attrs,
@@ -67,10 +66,12 @@ from .common import (
     LOCK_PARAM_DOC,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _get_reindex_coord,
     _resolve_sweeps,
 )
 
@@ -2483,6 +2484,103 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
+# HydroClass echo classifiers, keyed by the identifiers stored in
+# task_end_info "echo_class_identifiers": (IRIS method name, CF flag prefix,
+# {value: (IRIS class name as in sig_data_types.h, CF flag meaning)});
+# values listed as "Unused" are left out
+# 4.4.14, Tables 10-12, page 76f (IRIS Programming Guide M212927EN-B)
+HCLASS_CLASSIFIERS = {
+    1: (
+        "METEOCLASSIFIER",
+        "meteo",
+        {
+            0: ("MET_CLASS_THRESHOLD", "no_data"),
+            1: ("MET_CLASS_NON_MET", "non_meteorological"),
+            2: ("MET_CLASS_RAIN", "rain"),
+            3: ("MET_CLASS_WET_SNOW", "wet_snow"),
+            4: ("MET_CLASS_SNOW", "snow"),
+            5: ("MET_CLASS_GRAUPEL", "graupel"),
+            6: ("MET_CLASS_HAIL", "hail"),
+        },
+    ),
+    2: (
+        "PRECIPCLASSIFIER",
+        "precip",
+        {
+            0: ("PRE_CLASS_THRESHOLD", "no_data"),
+            1: ("PRE_CLASS_GC_AP", "ground_clutter_anomalous_propagation"),
+            2: ("PRE_CLASS_BIO", "bio_scatter"),
+            3: ("PRE_CLASS_PRECIP", "precipitation"),
+            4: ("PRE_CLASS_LARGE_DROPS", "large_drops"),
+            5: ("PRE_CLASS_LIGHT_PRECIP", "light_precipitation"),
+            6: ("PRE_CLASS_MODERATE_PRECIP", "moderate_precipitation"),
+            # named, but described as "Unused" in Table 11
+            7: ("PRE_CLASS_HEAVY_PRECIP", "heavy_precipitation"),
+        },
+    ),
+    3: (
+        "CELLCLASSIFIER",
+        "cell",
+        {
+            0: ("CELL_CLASS_STRATIFORM", "stratiform"),
+            1: ("CELL_CLASS_CONVECTION", "convection"),
+        },
+    ),
+}
+
+# bit segments (shift, number of bits) of one HydroClass byte
+# 4.4.14, page 75 (IRIS Programming Guide M212927EN-B)
+HCLASS_SEGMENTS = [(0, 3), (3, 3), (6, 2)]
+
+
+def hclass_flag_attrs(identifiers, nbytes=1):
+    """Get CF flag attributes for HydroClass data.
+
+    Each HydroClass byte holds up to three classifier results in bit segments.
+    The classifier of each segment is given by ``identifiers``, the classes
+    are described with CF ``flag_masks``, ``flag_values`` and
+    ``flag_meanings``, so that the data can be kept as stored.
+
+    Parameters
+    ----------
+    identifiers : sequence of int
+        Classifier identifiers of the bit segments, lowest bits first
+        (task_end_info ``echo_class_identifiers``).
+    nbytes : int, optional
+        Number of bytes of the data type (1 for DB_HCLASS, 2 for DB_HCLASS2).
+        Defaults to 1.
+
+    Returns
+    -------
+    attrs : dict
+        CF flag attributes, empty if no known classifier is allocated.
+    """
+    segments = [
+        (8 * byte + shift, nbits)
+        for byte in range(nbytes)
+        for shift, nbits in HCLASS_SEGMENTS
+    ]
+    dtype = np.uint8 if nbytes == 1 else np.uint16
+    masks, values, meanings = [], [], []
+    for ident, (shift, nbits) in zip(identifiers, segments, strict=False):
+        if ident not in HCLASS_CLASSIFIERS:
+            continue
+        _, prefix, classes = HCLASS_CLASSIFIERS[ident]
+        for value, (_, meaning) in classes.items():
+            if value >= 2**nbits:
+                continue
+            masks.append((2**nbits - 1) << shift)
+            values.append(value << shift)
+            meanings.append(f"{prefix}_{meaning}")
+    if not meanings:
+        return {}
+    return {
+        "flag_masks": np.array(masks, dtype=dtype),
+        "flag_values": np.array(values, dtype=dtype),
+        "flag_meanings": " ".join(meanings),
+    }
+
+
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -3670,6 +3768,12 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 kw.update({"nyquist": nyquist})
 
             return prod["func"](data, **kw)
+        elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
+            # 8-bit types without decoding function (e.g. DB_HCLASS): two
+            # range bins per 16-bit word, like the scaled 8-bit types above
+            # (DB_XHDR is already decoded into its structure)
+            rays, bins = data.shape
+            return data.view(f"(2,) {prod['dtype']}").reshape(rays, -1)[:, :bins]
         else:
             return data
 
@@ -3731,9 +3835,9 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
         ing_conf = self.ingest_header["ingest_configuration"]
         lon = ing_conf["longitude_radar"]
         lat = ing_conf["latitude_radar"]
+        # BIN4 binary angles are decoded to [0, 360), fold into [-180, 180]
         lon = lon if lon <= 180 else lon - 360
-        # todo: is this correct for southern latitudes?
-        lat = lat if lat <= 180 else lon - 360
+        lat = lat if lat <= 180 else lat - 360
 
         return (
             lon,
@@ -3780,6 +3884,9 @@ class IrisArrayWrapper(BackendArray):
         prod = [v for v in datastore.root.data_types_dict if v["name"] == name]
         if prod and prod[0]["func"] is None:
             self.dtype = np.dtype("int16")
+            # 8-bit types are unpacked to one value per range bin
+            if get_dtype_size(prod[0].get("dtype", "int16")) == 1:
+                self.dtype = np.dtype(prod[0]["dtype"])
         if name == "DB_XHDR":
             self.dtype = np.dtype("O")
         if name in ["azimuth", "elevation"]:
@@ -3797,7 +3904,10 @@ class IrisArrayWrapper(BackendArray):
         with self.datastore.lock:
             # read the data and put it into dict
             self.datastore.root.get_moment(self.group, self.name)
-            return self.datastore.ds["sweep_data"][self.name][key]
+            data = self.datastore.ds["sweep_data"][self.name][key]
+        # decoders mask no-data bins (e.g. DB_VEL raw 0), keep them as NaN
+        # instead of losing the mask (#462)
+        return np.ma.filled(data, np.nan)
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
@@ -3856,6 +3966,16 @@ class IrisStore(AbstractDataStore):
         mname = iris_mapping.get(name, name)
         mapping = sweep_vars_mapping.get(mname, {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
+        if name in ["DB_HCLASS", "DB_HCLASS2"]:
+            task_end_info = self.root.ingest_header["task_configuration"][
+                "task_end_info"
+            ]
+            attrs.update(
+                hclass_flag_attrs(
+                    bytearray(task_end_info["echo_class_identifiers"]),
+                    nbytes=1 if name == "DB_HCLASS" else 2,
+                )
+            )
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
@@ -4006,6 +4126,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -4042,10 +4163,9 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "iris"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)
@@ -4082,6 +4202,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_coords=True,
@@ -4101,6 +4222,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
             lock=lock,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,

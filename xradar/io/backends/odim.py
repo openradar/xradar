@@ -69,12 +69,14 @@ from .common import (
     HDF5_PARAMS_DOC,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
     _fix_angle,
     _get_h5group_names,
+    _get_reindex_coord,
     _maybe_decode,
     _maybe_recover_surrogate,
     _prepare_backend_ds,
@@ -862,9 +864,14 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
@@ -894,6 +901,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -933,10 +941,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "odim"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -978,6 +985,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_coords=True,
@@ -1002,6 +1010,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
@@ -1059,9 +1068,14 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool

@@ -334,3 +334,17 @@ def test_open_metek_datatree_optional_groups(metek_pro_gz_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+def test_metek_to_netcdf_roundtrip(metek_pro_gz_file, tmp_path):
+    # time must not carry a "units" attribute, which blocks encoding (#453)
+    dtree = metek.open_metek_datatree(metek_pro_gz_file)
+    assert "units" not in dtree["sweep_0"]["time"].attrs
+    path = tmp_path / "metek.nc"
+    dtree.to_netcdf(path)
+    with xr.open_datatree(path) as back:
+        xr.testing.assert_equal(back["sweep_0"]["time"], dtree["sweep_0"]["time"])
+        np.testing.assert_allclose(
+            back["sweep_0"]["reflectivity"].values,
+            dtree["sweep_0"]["reflectivity"].values,
+        )
