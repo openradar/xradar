@@ -1816,7 +1816,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZC",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Uncorrected reflectivity (2 byte)
@@ -1876,7 +1876,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RAINRATE2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 10000.0, "offset": -1.0, "tofloat": True},
+                "fkw": {"scale": 10000.0, "offset": -1.0, "tofloat": True, "mask": 0.0},
             },
         ),
         # Kdp (specific differential phase)(1 byte)
@@ -1888,7 +1888,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_KDP2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # PHIdp (differential phase)(1 byte)
@@ -1953,7 +1953,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZC2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Corrected Velocity (2 byte)
@@ -1993,7 +1993,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRH",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0},
+                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0, "mask": 0.0},
             },
         ),
         # LDR H to V (2 byte)
@@ -2003,7 +2003,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRH2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # LDR V to H (1 byte)
@@ -2013,7 +2013,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRV",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0},
+                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0, "mask": 0.0},
             },
         ),
         # LDR V to H (2 byte)
@@ -2023,7 +2023,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRV2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Individual flag bits for each bin
@@ -2039,7 +2039,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_HEIGHT",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 10.0, "offset": -1.0},
+                "fkw": {"scale": 10.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Linear liquid (.001mm) (2 byte)
@@ -2049,7 +2049,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_VIL2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 1000.0, "offset": -1.0},
+                "fkw": {"scale": 1000.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Data type is not applicable
@@ -2061,7 +2061,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SHEAR",
                 "dtype": "int8",
                 "func": decode_array,
-                "fkw": {"scale": 5.0, "offset": -128.0},
+                "fkw": {"scale": 5.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # Divergence (.001 10**-4) (2-byte)
@@ -2137,7 +2137,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_TIME2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 60.0, "offset": -32768},
+                "fkw": {"scale": 60.0, "offset": -32768, "mask": 0.0},
             },
         ),
         # Rho H to V (1 byte)
@@ -2233,7 +2233,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDRC",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 16.0, "offset": -128.0},
+                "fkw": {"scale": 16.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # Corrected Differential reflectivity (2 byte)
@@ -2243,7 +2243,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDRC2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Temperature (2 byte)
@@ -2257,7 +2257,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTV8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Total V Power (2 byte)
@@ -2267,7 +2267,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTV16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected V Reflectivity (1 byte)
@@ -2277,7 +2277,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZV8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected V Reflectivity (2 byte)
@@ -2287,7 +2287,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZV16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Signal to Noise ratio (1 byte)
@@ -2325,7 +2325,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTE8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Total Power Enhanced (via H+V or HV) (2 byte)
@@ -2335,7 +2335,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTE16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected Reflectivity Enhanced (1 byte)
@@ -2345,7 +2345,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZE8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected Reflectivity Enhanced (2 byte)
@@ -2355,7 +2355,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZE16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Polarimetric meteo index (1 byte)
