@@ -270,23 +270,11 @@ def test_get_sweep(iris0_file, file_or_filelike):
         moment_data = sweep_data[moment]
         assert moment_data.shape == (360, 664), f"{moment} data shape mismatch"
 
-        # Check data types for moments, including masked arrays for velocity
-        if moment == "DB_VEL":
-            assert isinstance(
-                moment_data, np.ma.MaskedArray
-            ), "DB_VEL should be a masked array"
-        else:
-            assert isinstance(
-                moment_data, np.ndarray
-            ), f"{moment} should be a numpy array"
-
-        # Optional: check for expected placeholder/masked values
-        if moment == "DB_DBZ":
-            assert (
-                moment_data == -32
-            ).sum() > 0, "DB_DBZ should contain placeholder values (-32)"
-        if moment == "DB_VEL":
-            assert moment_data.mask.sum() > 0, "DB_VEL should have masked values"
+        # raw 0 is "no data" for both moments: masked, never -32 dBZ (#465)
+        assert isinstance(
+            moment_data, np.ma.MaskedArray
+        ), f"{moment} should be a masked array"
+        assert moment_data.mask.sum() > 0, f"{moment} should have masked values"
 
 
 def test_array_from_file(iris0_file, file_or_filelike):

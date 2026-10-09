@@ -1764,7 +1764,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBT",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected H reflectivity (1 byte)
@@ -1774,7 +1774,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZ",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Velocity (1 byte)
@@ -1794,7 +1794,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_WIDTH",
                 "dtype": "uint8",
                 "func": decode_width,
-                "fkw": {"scale": 256.0},
+                "fkw": {"scale": 256.0, "mask": 0.0},
             },
         ),
         # Differential reflectivity (1 byte)
@@ -1804,7 +1804,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDR",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 16.0, "offset": -128.0},
+                "fkw": {"scale": 16.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # Old Rainfall rate (stored as dBZ), not used
@@ -1826,7 +1826,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBT2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Corrected reflectivity (2 byte)
@@ -1836,7 +1836,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZ2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Velocity (2 byte)
@@ -1846,7 +1846,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_VEL2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Width (2 byte)
@@ -1856,7 +1856,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_WIDTH2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0},
+                "fkw": {"scale": 100.0, "mask": 0.0},
             },
         ),
         # Differential reflectivity (2 byte)
@@ -1866,7 +1866,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDR2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Rainfall rate (2 byte)
@@ -1963,7 +1963,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_VELC2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # SQI (2 byte)
