@@ -11,7 +11,11 @@ Reads data from Vaisala's IRIS data formats
 
 IRIS (Vaisala Sigmet Interactive Radar Information System)
 
-See M211318EN-F Programming Guide ftp://ftp.sigmet.com/outgoing/manuals/
+See the IRIS Programming Guide M212927EN-B (2024),
+https://ftp.sigmet.vaisala.com/files/manuals/10.1.0/IRIS-Radar-Programming-Guide-M212927EN.pdf.
+The decoders cite its sections and pages. The structure comments were
+written against the earlier M211318EN-F: their section numbers match the
+2024 guide, some page numbers are off by one.
 
 To read from IRIS files :class:`numpy:numpy.memmap` is used to get access to
 the data. The IRIS header (`PRODUCT_HDR`, `INGEST_HEADER`) is read in any case
@@ -134,7 +138,7 @@ def to_float(data):
 
     Note
     ----
-    DB_FLIQUID2 decoding see IRIS manuals, 4.4.12 - Page 75
+    DB_FLIQUID2 decoding, see 4.4.12 p.74
 
     """
     exp = data >> 12
@@ -175,10 +179,14 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
     Parameters
     ----------
     data : array-like
-    scale : int
-    offset: int
-    offset2: int
-    tofloat: bool
+        raw words
+    scale : float
+    offset : float
+    offset2 : float
+    tofloat : bool
+        decode the words as 16-bit IRIS floating point first (``to_float``)
+    mask : number, optional
+        raw word meaning "no data"; those bins are masked in the result
 
     Returns
     -------
@@ -198,18 +206,16 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
 def decode_vel(data, **kwargs):
     """Decode `DB_VEL`.
 
-    See 4.4.46 p.85
+    See 4.4.44 p.86
     """
     nyquist = kwargs.pop("nyquist")
-    # mask = kwargs.pop('mask')
-    # data = np.ma.masked_equal(data, mask)
     return decode_array(data, **kwargs) * nyquist
 
 
 def decode_width(data, **kwargs):
     """Decode `DB_WIDTH`.
 
-    See 4.4.50 p.87
+    See 4.4.48 p.87
     """
     nyquist = kwargs.pop("nyquist")
     return decode_array(data, **kwargs) * nyquist
@@ -218,7 +224,7 @@ def decode_width(data, **kwargs):
 def decode_kdp(data, **kwargs):
     """Decode `DB_KDP`.
 
-    See 4.4.20 p.77
+    See 4.4.18 p.78
     """
     wavelength = kwargs.pop("wavelength")
     zero = data == -128
@@ -234,7 +240,7 @@ def decode_kdp(data, **kwargs):
 def decode_phidp(data, **kwargs):
     """Decode `DB_PHIDP`.
 
-    See 4.4.28 p.79
+    See 4.4.26 p.80
     """
     return 180.0 * decode_array(data, **kwargs)
 
@@ -242,7 +248,7 @@ def decode_phidp(data, **kwargs):
 def decode_phidp2(data, **kwargs):
     """Decode `DB_PHIDP2`.
 
-    See 4.4.29 p.80
+    See 4.4.27 p.81
     """
     return 360.0 * decode_array(data, **kwargs)
 
@@ -250,7 +256,7 @@ def decode_phidp2(data, **kwargs):
 def decode_sqi(data, **kwargs):
     """Decode `DB_SQI`
 
-    See 4.4.41 p.83
+    See 4.4.39 p.84
     """
     return np.sqrt(decode_array(data, **kwargs))
 
