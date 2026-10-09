@@ -203,6 +203,19 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
     return (data + offset) / scale + offset2
 
 
+def _nyquist(wavelength, prf, multi_prf_mode_flag=0):
+    """Nyquist velocity (m/s) from the IRIS ``wavelength`` (1/100 cm) and
+    ``prf`` (Hz), multiplied by ``multi_prf_mode_flag + 1`` (pass it for
+    ``DB_VEL`` only, the dual-PRF unfolded velocity).
+
+    See 4.4.44 p.86 (velocity) and 4.4.48 p.87 (width, not enlarged by dual
+    PRF). Halving for alternating polarization (same sections) is not
+    applied yet (#466).
+    """
+    # division by 10000 to get from 1/100 cm to m
+    return wavelength * prf / (10000.0 * 4.0) * (multi_prf_mode_flag + 1)
+
+
 def decode_vel(data, **kwargs):
     """Decode `DB_VEL`.
 
@@ -3196,17 +3209,11 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
                 # PRF is normally used from product_hdr
                 # prf = self.product_hdr['product_end']['prf']
                 # but we can retrieve it from TASK_DSP_INFO, too
-                prf = self.ingest_header["task_configuration"]["task_dsp_info"]["prf"]
-                # division by 10000 to get from 1/100 cm to m
-                nyquist = wavelength * prf / (10000.0 * 4.0)
-                if prod["func"] == decode_vel:
-                    nyquist *= (
-                        self.ingest_header["task_configuration"]["task_dsp_info"][
-                            "multi_prf_mode_flag"
-                        ]
-                        + 1
-                    )
-                kw.update({"nyquist": nyquist})
+                dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
+                multi_prf = (
+                    dsp_info["multi_prf_mode_flag"] if prod["func"] == decode_vel else 0
+                )
+                kw.update({"nyquist": _nyquist(wavelength, dsp_info["prf"], multi_prf)})
 
             return prod["func"](data, **kw)
         else:
@@ -3764,15 +3771,11 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                     return prod["func"](data, **kw)
 
                 prf = self.product_hdr["product_end"]["prf"]
-                nyquist = wavelength * prf / (10000.0 * 4.0)
-                if prod["func"] == decode_vel:
-                    nyquist *= (
-                        self.ingest_header["task_configuration"]["task_dsp_info"][
-                            "multi_prf_mode_flag"
-                        ]
-                        + 1
-                    )
-                kw.update({"nyquist": nyquist})
+                dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
+                multi_prf = (
+                    dsp_info["multi_prf_mode_flag"] if prod["func"] == decode_vel else 0
+                )
+                kw.update({"nyquist": _nyquist(wavelength, prf, multi_prf)})
 
             return prod["func"](data, **kw)
         elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
