@@ -600,9 +600,7 @@ def _decode_raw(entry, words):
         kwargs["nyquist"] = 10.0
     if entry["func"] is iris.decode_kdp:
         kwargs["wavelength"] = 5.33
-    data = np.asarray(words).astype(entry["dtype"])
-    # np.asarray, not np.ma.filled: the decoders put NaN under their mask
-    return np.asarray(entry["func"](data, **kwargs), dtype="float64")
+    return entry["func"](np.asarray(words).astype(entry["dtype"]), **kwargs)
 
 
 def _raw_words(raw, sweep, name, nbins):
@@ -634,7 +632,12 @@ def test_no_data_masks_follow_the_manual():
 )
 def test_raw_zero_decodes_as_the_manual_says(entry):
     with np.errstate(invalid="raise"):  # no sqrt of a negative "no data"
-        decoded = _decode_raw(entry, [0, 2])
+        out = _decode_raw(entry, [0, 2])
+    if entry["name"] in MANUAL_ZERO_IS_NO_DATA:  # masked, NaN under the mask
+        assert isinstance(out, np.ma.MaskedArray)
+        assert out.mask.tolist() == [True, False]
+        assert np.isnan(out.fill_value)
+    decoded = np.asarray(out, dtype="float64")  # NaN shows without filled()
     assert np.isnan(decoded[0]) == (entry["name"] in NAN_AT_ZERO)
     if entry["name"] in MANUAL_ZERO_IS_DATA:
         assert decoded[0] == 0.0
@@ -644,10 +647,12 @@ def test_raw_zero_decodes_as_the_manual_says(entry):
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt
 @pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
 def test_no_data_bins_are_nan(fixture, request):
-    """The decoded NaNs are exactly the no-data words (#465): positions
-    through the table decoders, counts in the Dataset (rays reordered)."""
+    """The decoded NaNs are exactly the no-data words (#465): in the table
+    decoders and in ``IrisRawFile`` (masked arrays with NaN under the mask,
+    #467), and as counts in the Dataset (rays reordered)."""
     path = request.getfixturevalue(fixture)
     raw = iris.IrisRawFile(path, loaddata=False, rawdata=True)
+    decoded = iris.IrisRawFile(path, loaddata=False)
     sweep = 1  # IRIS numbers sweeps from 1: the file's first sweep is sweep_0
     names = [n for n in raw.data[sweep]["ingest_data_hdrs"] if n in NAN_AT_ZERO]
     with open_dataset(path, engine="iris", group="sweep_0") as ds:
@@ -656,44 +661,38 @@ def test_no_data_bins_are_nan(fixture, request):
             values = ds[iris.iris_mapping.get(name, name)].values
             words = _raw_words(raw, sweep, name, values.shape[1])
             no_data = np.isin(words, (0, 255) if name == "DB_KDP" else (0,))
-            nan = np.isnan(_decode_raw(_ENTRIES[name], words))
+            nan = np.isnan(np.asarray(_decode_raw(_ENTRIES[name], words)))
             np.testing.assert_array_equal(nan, no_data, err_msg=name)
             assert np.isnan(values).sum() == no_data.sum(), name
-    assert len(names) >= 6
-
-
-@pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
-def test_raw_file_no_data_reads_as_nan(fixture, request):
-    """``IrisRawFile`` keeps masked arrays for the no-data types, with NaN
-    under the mask: ``np.asarray`` and ``.filled()`` never return the raw
-    word as a value (#467)."""
-    path = request.getfixturevalue(fixture)
-    raw = iris.IrisRawFile(path, loaddata=False, rawdata=True)
-    decoded = iris.IrisRawFile(path, loaddata=False)
-    sweep = 1  # IRIS numbers sweeps from 1
-    names = [n for n in raw.data[sweep]["ingest_data_hdrs"] if n in NAN_AT_ZERO]
-    for name in names:
-        decoded.get_moment(sweep, name)
-        moment = decoded.data[sweep]["sweep_data"][name]
-        words = _raw_words(raw, sweep, name, moment.shape[1])
-        no_data = np.isin(words, (0, 255) if name == "DB_KDP" else (0,))
-        np.testing.assert_array_equal(np.isnan(np.asarray(moment)), no_data, name)
-        if name in MANUAL_ZERO_IS_NO_DATA:  # (DB_KDP is a plain array, skips this)
-            assert isinstance(moment, np.ma.MaskedArray), name
-            np.testing.assert_array_equal(moment.mask, no_data, name)
-            assert np.isnan(moment.fill_value), name
-            assert np.isnan(moment.filled()).sum() == no_data.sum(), name
+            decoded.get_moment(sweep, name)
+            moment = decoded.data[sweep]["sweep_data"][name][:, : values.shape[1]]
+            np.testing.assert_array_equal(np.isnan(np.asarray(moment)), no_data, name)
+            if name in MANUAL_ZERO_IS_NO_DATA:  # (DB_KDP is a plain array)
+                np.testing.assert_array_equal(moment.mask, no_data, err_msg=name)
+                np.testing.assert_array_equal(
+                    np.isnan(moment.filled()), no_data, err_msg=name
+                )
     assert len(names) >= 6
 
 
 def test_ingest_data_no_data_reads_as_nan():
     """The ingest-data decode path gives the same NaN-under-mask arrays."""
     stub = SimpleNamespace(_rawdata=False)
-    dbz = iris.SIGMET_DATA_TYPES[2]
-    assert dbz["name"] == "DB_DBZ"
     decoded = iris.IrisIngestDataFile.decode_data(
-        stub, np.array([[0, 2, 128]], dtype="uint8"), dbz
+        stub, np.array([[0, 2, 128]], dtype="uint8"), _ENTRIES["DB_DBZ"]
     )
     assert isinstance(decoded, np.ma.MaskedArray)
     np.testing.assert_array_equal(np.asarray(decoded), [[np.nan, -31.0, 32.0]])
     np.testing.assert_array_equal(decoded.mask, [[True, False, False]])
+
+
+def test_decoders_keep_a_caller_mask_and_take_scalars():
+    """A mask the caller passes in is merged with the no-data words, and a
+    single raw word decodes too."""
+    dbz = _ENTRIES["DB_DBZ"]
+    words = np.ma.MaskedArray([0, 2, 128], mask=[False, True, False], dtype="uint8")
+    out = dbz["func"](words, **dbz["fkw"])
+    assert out.mask.tolist() == [True, True, False]
+    assert np.isnan(np.asarray(out)[:2]).all() and np.asarray(out)[2] == 32.0
+    assert np.isnan(np.asarray(dbz["func"](np.uint8(0), **dbz["fkw"])))
+    assert dbz["func"](np.uint8(128), **dbz["fkw"]) == 32.0
