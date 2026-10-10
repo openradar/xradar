@@ -2320,6 +2320,11 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
+        # The SNR family (DB_SNR, DB_LOG, DB_CSP, DB_AH, DB_AV, DB_AZDR, 1 and
+        # 2 byte): raw 0 is masked. The 1-byte raw 0 lies below the guide's
+        # -31.5 dB floor (4.4.37), the 2-byte one decodes to -327.68 dB; on
+        # the SUR test file the raw-0 DB_SNR16 bins line up with the no-data
+        # bins of DB_DBZ2 (#475).
         # Signal to Noise ratio (1 byte)
         (
             65,
@@ -2327,7 +2332,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SNR8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Signal to Noise ratio (2 byte)
@@ -2337,7 +2342,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SNR16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Albedo (1 byte)
@@ -2416,7 +2421,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LOG8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # The log receiver signal-to-noise ratio (2 byte)
@@ -2426,7 +2431,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LOG16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Doppler channel clutter signal power (-CSR) (1 byte)
@@ -2436,7 +2441,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CSP8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Doppler channel clutter signal power (-CSR) (2 byte)
@@ -2446,7 +2451,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CSP16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Cross correlation, uncorrected rhohv (1 byte)
@@ -2476,7 +2481,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AH8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zh (2 byte)
@@ -2486,7 +2491,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AH16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zv (1 byte)
@@ -2496,7 +2501,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AV8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zv (2 byte)
@@ -2506,7 +2511,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AV16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zzdr (1 byte)
@@ -2516,7 +2521,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AZDR8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zzdr (2 byte)
@@ -2526,7 +2531,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AZDR16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
     ]
