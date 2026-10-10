@@ -563,6 +563,9 @@ MANUAL_ZERO_IS_NO_DATA = frozenset(
         "DB_KDP2", "DB_LDRH", "DB_LDRV", "DB_LDRH2", "DB_LDRV2",
         # derived, 4.4.11, 4.4.30, 4.4.41, 4.4.47, 4.4.50
         "DB_HEIGHT", "DB_VIL2", "DB_RAINRATE2", "DB_TIME2", "DB_SHEAR",
+        # SNR family, below the -31.5 dB floor of 4.4.37 (#475)
+        "DB_SNR8", "DB_SNR16", "DB_LOG8", "DB_LOG16", "DB_CSP8", "DB_CSP16",
+        "DB_AH8", "DB_AH16", "DB_AV8", "DB_AV16", "DB_AZDR8", "DB_AZDR16",
     }
 )  # fmt: skip
 
@@ -572,18 +575,9 @@ MANUAL_ZERO_IS_DATA = frozenset(
     {"DB_AXDIL2", "DB_DEFORM2", "DB_DIVERGE2", "DB_FLIQUID2", "DB_HDIR2", "DB_VVEL2"}
 )
 
-#: The guide gives raw 0 no meaning (the DB_SNR8/16 family; DB_HVEL2 has no
-#: section): no mask, nothing pinned.
-MANUAL_ZERO_UNDEFINED = frozenset(
-    {
-        *(
-            f"DB_{t}{n}"
-            for t in ("SNR", "LOG", "CSP", "AH", "AV", "AZDR")
-            for n in (8, 16)
-        ),
-        "DB_HVEL2",
-    }
-)
+#: The guide gives raw 0 no meaning (DB_HVEL2 has no section): no mask,
+#: nothing pinned.
+MANUAL_ZERO_UNDEFINED = frozenset({"DB_HVEL2"})
 
 #: ``decode_kdp`` NaNs raw 0 (and 255) itself
 NAN_AT_ZERO = MANUAL_ZERO_IS_NO_DATA | {"DB_KDP"}
@@ -710,3 +704,26 @@ def test_phih_phiv_decode_like_phidp(name):
     np.testing.assert_allclose(
         _decode_entry(name, [1, 128, 254]), [0.0, 90.0, 179.2913], atol=1e-4
     )
+
+
+@pytest.mark.parametrize("family", ["SNR", "LOG", "CSP", "AH", "AV", "AZDR"])
+def test_snr_family_scaling(family):
+    """1-byte: -31.5 ... +95.5 dB in 0.5 dB steps (4.4.37); 2-byte:
+    (N - 32768) / 100 like the other 2-byte dB types (#475)."""
+    np.testing.assert_allclose(
+        _decode_entry(f"DB_{family}8", [1, 64, 255]), [-31.5, 0.0, 95.5]
+    )
+    np.testing.assert_allclose(
+        _decode_entry(f"DB_{family}16", [27133, 32768, 39853]), [-56.35, 0.0, 70.85]
+    )
+
+
+def test_snr16_on_the_test_file(iris1_file):
+    """SUR's SNRH was -31.5 ... 19895 dB with the 1-byte scaling; it now
+    gives -56 ... +71 dB, and raw 0 is masked where DBZH has no data
+    (#475)."""
+    with open_dataset(iris1_file, engine="iris", group="sweep_0") as ds:
+        snr, dbz = ds.SNRH.values, ds.DBZH.values
+    assert -60 < np.nanmin(snr) < np.nanmax(snr) < 75
+    assert np.isnan(snr).any()
+    assert not (np.isnan(snr) & ~np.isnan(dbz)).any()
