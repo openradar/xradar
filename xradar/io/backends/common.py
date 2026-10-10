@@ -13,6 +13,7 @@ Currently, all private and not part of the public API.
 """
 
 import io
+import os
 import struct
 import warnings
 from collections import OrderedDict
@@ -138,6 +139,38 @@ def _calculate_angle_res(dim):
     #  make this robust or parameterisable
     angle_diff_wanted = angle_diff[:-1][angle_diff2 < 0.05]
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
+
+
+#: first bytes of a gzip stream
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _fspath(filename_or_obj):
+    """Turn a path-like into ``str``, return anything else (file-like, bytes) as is."""
+    if isinstance(filename_or_obj, os.PathLike):
+        return os.fspath(filename_or_obj)
+    return filename_or_obj
+
+
+def _apply_fix_second_angle(ds):
+    """Replace the secondary angle of a sweep by its median (no-op for non-sweeps)."""
+    if "sweep_mode" not in ds:
+        return ds
+    dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+    dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
+    return ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
+
+
+class _ManagedStoreMixin:
+    """Give a backend store the ``close`` of the file it holds.
+
+    The stores keep their file in ``self._manager`` (an xarray file manager);
+    without this ``Dataset.close()`` was a no-op and the file stayed open
+    until the manager was garbage collected. Requires ``self._manager``.
+    """
+
+    def close(self, **kwargs):
+        self._manager.close(**kwargs)
 
 
 def _fix_angle(da):

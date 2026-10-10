@@ -31,7 +31,6 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import io
-import os
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
@@ -59,10 +58,12 @@ from .common import (
     _apply_reindex_coord,
     _apply_site_as_coords,
     _attach_sweep_groups,
+    _fspath,
     _get_radar_calibration,
     _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
+    _ManagedStoreMixin,
 )
 
 variable_attr_dict = {}
@@ -275,8 +276,7 @@ class HplFile:
         longitude = kwargs.pop("longitude", 0)
         altitude = kwargs.pop("altitude", 0)
         self._fp = None
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        filename = _fspath(filename)
         if isinstance(filename, str):
             self._fp = open(filename)
             self._filename = filename
@@ -460,7 +460,7 @@ class HplArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class HplStore(AbstractDataStore):
+class HplStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading Furuno sweeps via wradlib."""
 
     def __init__(self, manager, group=None):

@@ -50,6 +50,7 @@ from ...model import (
 )
 from .common import (
     _STATION_VARS,
+    _apply_fix_second_angle,
     _apply_reindex_coord,
     _apply_site_as_coords,
     _attach_sweep_groups,
@@ -492,6 +493,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
         if decode_coords and reindex_coord:
             ds = _apply_reindex_coord(ds, reindex_coord)
+
+        if fix_second_angle and first_dim == "auto":
+            ds = _apply_fix_second_angle(ds)
 
         # ensure close works
         ds._close = store.close

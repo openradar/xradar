@@ -79,6 +79,7 @@ from .common import (
     _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
+    _ManagedStoreMixin,
     _maybe_decode,
     _maybe_recover_surrogate,
     _prepare_backend_ds,
@@ -735,7 +736,7 @@ def _add_legend_flag_attrs(variables, legend):
             var.attrs["flag_meanings"] = " ".join(meanings)
 
 
-class OdimStore(AbstractDataStore):
+class OdimStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):

@@ -55,12 +55,14 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _GZIP_MAGIC,
     _apply_reindex_coord,
     _apply_site_as_coords,
     _assign_root,
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _ManagedStoreMixin,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -90,7 +92,6 @@ NEXRADL2_LOCK = SerializableLock()
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
 #: gzip magic number, only used for a hint when the input is not readable
-_GZIP_MAGIC = b"\x1f\x8b"
 
 
 def _concatenate_chunks(file_list):
@@ -1783,7 +1784,7 @@ class NexradLevel2ArrayWrapper(BackendArray):
         )
 
 
-class NexradLevel2Store(AbstractDataStore):
+class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
     def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
         self._manager = manager
         self._group = int(group[6:])

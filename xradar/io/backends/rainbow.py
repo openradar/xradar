@@ -33,7 +33,6 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
-import os
 import sys
 import zlib
 
@@ -66,10 +65,12 @@ from .common import (
     _apply_reindex_coord,
     _apply_site_as_coords,
     _attach_sweep_groups,
+    _fspath,
     _get_radar_calibration,
     _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
+    _ManagedStoreMixin,
 )
 
 #: mapping of rainbow moment names to CfRadial2/ODIM names
@@ -417,8 +418,7 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -596,7 +596,7 @@ class RainbowArrayWrapper(BackendArray):
         )
 
 
-class RainbowStore(AbstractDataStore):
+class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading RAINBOW5 sweeps via wradlib."""
 
     def __init__(self, manager, group=None):

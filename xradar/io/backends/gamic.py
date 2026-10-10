@@ -75,6 +75,7 @@ from .common import (
     _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
+    _ManagedStoreMixin,
     _prepare_backend_ds,
 )
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
@@ -259,7 +260,7 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
-class GamicStore(AbstractDataStore):
+class GamicStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):

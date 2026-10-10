@@ -56,10 +56,12 @@ from .common import (
     _apply_reindex_coord,
     _apply_site_as_coords,
     _attach_sweep_groups,
+    _fspath,
     _get_radar_calibration,
     _get_reindex_coord,
     _get_required_root_dataset,
     _get_subgroup,
+    _ManagedStoreMixin,
 )
 
 #: mapping from DataMet names to CfRadial2/ODIM
@@ -95,6 +97,7 @@ def convert_value(value):
 
 class DataMetFile:
     def __init__(self, filename):
+        filename = _fspath(filename)
         self.filename = filename
         # Handle .tar.gz case
         if self.filename.endswith(".gz"):
@@ -230,7 +233,7 @@ class DataMetArrayWrapper(BackendArray):
         return ds.data[self.group][self.variable_name]
 
 
-class DataMetStore(AbstractDataStore):
+class DataMetStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading DataMet sweeps."""
 
     def __init__(self, manager, group=None):
