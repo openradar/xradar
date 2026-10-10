@@ -40,6 +40,7 @@
 * FIX: CfRadial1 export writes boolean attributes (e.g. NEXRAD ``mpda_vcp``, ``avset_enabled``) as ``"true"``/``"false"`` instead of failing, as netCDF attributes can't be bool ({issue}`418`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: Halo Photonics ``.hpl`` reader: keep the last ray of each sweep (sweeps of one ray were empty and made opening fail, {issue}`303`), number sweeps from 0, take the header length from the ``****`` separator, raise a ``ValueError`` instead of printing on a line-count mismatch, and accept ``pathlib.Path`` and binary file-like objects ({issue}`430`, {pull}`442`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: IRIS reader returns NaN instead of ``0.0`` for no-data velocity bins (``DB_VEL``, ``DB_VELC`` raw ``0``, IRIS Programming Guide 4.4.44); the decoder masked them, but the mask was lost in the backend array ({issue}`462`, {pull}`463`) by [@syedhamidali](https://github.com/syedhamidali)
+* MNT: IRIS decoders cite the IRIS Programming Guide M212927EN-B (2024); one Nyquist helper for both decode paths, with the dual-PRF factor applied in ``decode_vel`` only ({issue}`466`, {pull}`470`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.12.0 (2026-04-21)
 
