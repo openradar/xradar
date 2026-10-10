@@ -2212,7 +2212,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIH",
                 "dtype": "uint8",
                 "func": decode_phidp,
-                "fkw": {"mask": 0.0},
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Phi H to V (2 byte)
@@ -2232,7 +2232,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIV",
                 "dtype": "uint8",
                 "func": decode_phidp,
-                "fkw": {"mask": 0.0},
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Phi V to H (2 byte)
