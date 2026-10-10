@@ -237,6 +237,19 @@ def decode_width(data, **kwargs):
     return _masked(values * nyquist, no_data)
 
 
+def decode_velc(data, **kwargs):
+    """Decode `DB_VELC`.
+
+    A fixed span of +/- 75 m/s with 128 as zero velocity: raw 1 ... 128 is
+    -75 ... 0 m/s in 127 steps, raw 128 ... 254 is 0 ... +75 m/s in 126
+    steps. See 4.4.42 p.85
+    """
+    values, no_data = _decode_linear(data, offset=-128.0, **kwargs)
+    values *= 75.0 / 126
+    values[values < 0] *= 126 / 127
+    return _masked(values, no_data)
+
+
 def decode_kdp(data, **kwargs):
     """Decode `DB_KDP`.
 
@@ -1932,13 +1945,8 @@ SIGMET_DATA_TYPES = OrderedDict(
             {
                 "name": "DB_VELC",
                 "dtype": "uint8",
-                "func": decode_array,
-                "fkw": {
-                    "offset": -1,
-                    "scale": 253.0 / 150,
-                    "offset2": -75,
-                    "mask": 0.0,
-                },
+                "func": decode_velc,
+                "fkw": {"mask": 0.0},
             },
         ),
         # SQI (1 byte)

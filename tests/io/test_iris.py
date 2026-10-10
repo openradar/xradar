@@ -735,3 +735,11 @@ def test_shear_is_unsigned():
     np.testing.assert_allclose(
         _decode_entry("DB_SHEAR", [1, 128, 200, 254]), [-25.4, 0.0, 14.4, 25.2]
     )
+
+
+def test_velc_matches_the_guide_table():
+    """4.4.42: 1 = -75.0, 2 = -74.4, 128 = zero velocity, 129 = +0.6,
+    254 = +75.0 m/s (#477)."""
+    decoded = _decode_entry("DB_VELC", [1, 2, 128, 129, 254])
+    np.testing.assert_allclose(decoded, [-75.0, -74.4, 0.0, 0.6, 75.0], atol=0.01)
+    assert decoded[2] == 0.0
