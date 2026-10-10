@@ -621,7 +621,7 @@ def test_no_data_masks_follow_the_manual():
 
 @pytest.mark.parametrize(
     "entry",
-    [e for e in _ENTRIES.values() if e["func"] is not None and e.get("dtype")],
+    [e for e in _ENTRIES.values() if e["func"] is not None],
     ids=lambda e: e["name"],
 )
 def test_raw_zero_decodes_as_the_manual_says(entry):
@@ -753,3 +753,11 @@ def test_sqi2_format_scale(name):
     decoded = _decode_entry(name, [1, 128, 65533, 65534])
     np.testing.assert_allclose(decoded, [0.0, 0.00194, 0.99998, 1.0], atol=5e-6)
     assert decoded[-1] == 1.0
+
+
+def test_hvel2_has_a_dtype():
+    """Signed 0.01 m/s like DB_VVEL2 (#479); every other entry with a
+    decoder is checked by test_raw_zero_decodes_as_the_manual_says."""
+    np.testing.assert_allclose(
+        _decode_entry("DB_HVEL2", [-100, 0, 100]), [-1.0, 0.0, 1.0]
+    )

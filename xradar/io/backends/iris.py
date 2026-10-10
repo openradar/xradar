@@ -2142,7 +2142,15 @@ SIGMET_DATA_TYPES = OrderedDict(
             },
         ),
         # Horizontal velocity (.01 m/s) (2-byte)
-        (42, {"name": "DB_HVEL2", "func": decode_array, "fkw": {"scale": 100.0}}),
+        (
+            42,
+            {
+                "name": "DB_HVEL2",
+                "dtype": "int16",
+                "func": decode_array,
+                "fkw": {"scale": 100.0},
+            },
+        ),
         # Horizontal wind direction (.1 degree) (2-byte)
         (
             43,
