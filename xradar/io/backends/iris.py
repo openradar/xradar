@@ -2250,6 +2250,11 @@ SIGMET_DATA_TYPES = OrderedDict(
         (59, {"name": "DB_TEMPERATURE16", "dtype": "uint16", "func": None}),
         # Vertically Integrated Reflectivity (2 byte)
         (60, {"name": "DB_VIR16", "dtype": "uint16", "func": None}),
+        # The V and E reflectivity types (DB_DBTV*, DB_DBZV*, DB_DBTE*, DB_DBZE*)
+        # have no format section in the IRIS Programming Guide. Their raw 0 is
+        # masked from data, not from the guide: on IDEAM volumes it is a
+        # no-data marker that lines up with the no-data bins of DB_DBZ/DB_DBT
+        # (#467).
         # Total V Power (1 byte)
         (
             61,
@@ -2318,6 +2323,7 @@ SIGMET_DATA_TYPES = OrderedDict(
         (69, {"name": "DB_VILD16", "dtype": "uint16", "func": None}),
         # Turbulence (2 byte)
         (70, {"name": "DB_TURB16", "dtype": "uint16", "func": None}),
+        # (raw 0 masked from IDEAM data, see DB_DBTV8 above)
         # Total Power Enhanced (via H+V or HV) (1 byte)
         (
             71,
