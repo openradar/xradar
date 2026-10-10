@@ -801,6 +801,9 @@ def test_netcdf_engine_reaches_reader(engine, cfradial1_file, cfradial2_file):
     legacy = getattr(xd.io, f"open_{engine}_datatree")
     with pytest.warns(FutureWarning), pytest.raises(ValueError, match="not-an-engine"):
         legacy(filename, engine="not-an-engine")
+    # the legacy `engine` is mapped from backend_kwargs too
+    with pytest.warns(FutureWarning), pytest.raises(ValueError, match="not-an-engine"):
+        legacy(filename, backend_kwargs={"engine": "not-an-engine"})
 
 
 def test_legacy_backend_kwargs_decoder(nexradlevel2_file):
