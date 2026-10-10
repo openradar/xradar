@@ -54,6 +54,7 @@ from ...model import (
 )
 from .common import (
     HDF5_PARAMS_DOC,
+    REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
@@ -602,13 +603,15 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
         ds = _apply_site_as_coords(ds, site_as_coords)
 
+        ds.encoding["engine"] = "hpl"
+        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+        # angle reindexing needs the angle as dimension
         reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
         if decode_coords and reindex_coord:
+            if "time" in ds.dims:
+                ds = ds.swap_dims({"time": dim0})
             ds = _apply_reindex_coord(ds, reindex_coord)
-
-        ds.encoding["engine"] = "hpl"
         # handling first dimension
-        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
         if first_dim == "auto":
             if "time" in ds.dims:
                 ds = ds.swap_dims({"time": dim0})
@@ -639,6 +642,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
         site_coords=True,
         sweep=None,
         optional=True,
@@ -664,6 +669,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
+            reindex_coord=reindex_coord,
+            reindex_angle=reindex_angle,
             site_as_coords=site_coords,
             latitude=latitude,
             longitude=longitude,
@@ -706,6 +713,7 @@ HPLBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     "Open a Halo Photonics Stream Line (.hpl) lidar file as a\n"
     "    CfRadial2-shaped dict of group datasets.",
     HDF5_PARAMS_DOC,
+    REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
     _HPL_PARAMS_DOC,
 )

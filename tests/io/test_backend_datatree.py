@@ -12,13 +12,16 @@ deprecated standalone functions, and ``supports_groups`` attribute.
 
 import warnings
 
+import numpy as np
 import pytest
 import xarray as xr
 from xarray import DataTree
 
 import xradar as xd
 from xradar.io import _ENGINE_REGISTRY
+from xradar.io.backends import imd as imd_backend
 from xradar.io.backends import open_imd_datatree
+from xradar.io.backends.common import _resolve_sweeps
 
 # -- Fixtures ----------------------------------------------------------------
 
@@ -85,6 +88,12 @@ def _assert_cfradial2_structure(dtree, optional_groups=False):
 # -- xd.open_datatree integration tests (all engines) -----------------------
 
 
+_ANGLE_GRID = {
+    "azimuth": dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1),
+    "elevation": dict(start_angle=0, stop_angle=90, angle_res=1.0, direction=1),
+}
+
+
 class TestXdOpenDatatree:
     """Test xd.open_datatree() for all engines."""
 
@@ -123,6 +132,31 @@ class TestXdOpenDatatree:
         with pytest.raises(ValueError, match="sweep list is empty"):
             xd.open_datatree(filepath, engine=engine, sweep=[])
 
+    @pytest.mark.parametrize(
+        "sweep,exc,match",
+        [
+            (True, TypeError, "Unsupported sweep True"),
+            (-1, TypeError, "Unsupported sweep -1"),
+            ([True], ValueError, "Invalid type in 'sweep' list"),
+            ([0, 1.0], ValueError, "Invalid type in 'sweep' list"),
+        ],
+    )
+    def test_invalid_sweep_raises(self, engine_and_file, sweep, exc, match):
+        engine, filepath = engine_and_file
+        with pytest.raises(exc, match=match):
+            xd.open_datatree(filepath, engine=engine, sweep=sweep)
+
+    def test_reindex_coord(self, engine_and_file):
+        engine, filepath = engine_and_file
+        if engine in ("metek", "cfradial2"):
+            pytest.skip(f"{engine} has no reindexing")
+        plain = xd.open_datatree(filepath, engine=engine, sweep=0)["sweep_0"]
+        dim = "elevation" if plain["sweep_mode"].item() == "rhi" else "azimuth"
+        dtree = xd.open_datatree(
+            filepath, engine=engine, sweep=0, reindex_coord={"angle": _ANGLE_GRID[dim]}
+        )
+        assert dtree["sweep_0"].sizes[dim] == (90 if dim == "elevation" else 360)
+
 
 # -- xd.open_datatree for CfRadial1 -----------------------------------------
 
@@ -150,6 +184,57 @@ class TestXdOpenDatatreeCfRadial1:
         )
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == 2
+
+    @pytest.mark.parametrize(
+        "sweep,exc,match",
+        [
+            (True, TypeError, "Unsupported sweep True"),
+            ([0, 1.0], ValueError, "Invalid type in 'sweep' list"),
+            (99, ValueError, r"Sweep\(s\) \['sweep_99'\] not found"),
+        ],
+    )
+    def test_invalid_sweep_raises(self, cfradial1_file, sweep, exc, match):
+        with pytest.raises(exc, match=match):
+            xd.open_datatree(cfradial1_file, engine="cfradial1", sweep=sweep)
+
+    def test_sweep_path(self, cfradial1_file):
+        dtree = xd.open_datatree(cfradial1_file, engine="cfradial1", sweep="/sweep_0")
+        assert list(dtree.match("sweep_*")) == ["sweep_0"]
+
+    def test_reindex_coord(self, cfradial1_file):
+        dtree = xd.open_datatree(
+            cfradial1_file,
+            engine="cfradial1",
+            sweep=0,
+            reindex_coord={"angle": _ANGLE_GRID["azimuth"]},
+        )
+        assert dtree["sweep_0"].sizes["azimuth"] == 360
+
+
+@pytest.mark.parametrize("first_dim,dim0", [("auto", "azimuth"), ("time", "time")])
+def test_hpl_angle_reindex(hpl_file, first_dim, dim0):
+    # angle reindexing used to fail while time was still the first dimension
+    dtree = xd.open_datatree(
+        hpl_file,
+        engine="hpl",
+        sweep=0,
+        first_dim=first_dim,
+        reindex_coord={"angle": _ANGLE_GRID["azimuth"]},
+    )
+    sweep = dtree["sweep_0"]
+    assert sweep["intensity"].dims[0] == dim0
+    assert sweep.sizes[dim0] == 360
+
+
+@pytest.mark.parametrize(
+    "engine,fixture_name",
+    [("furuno", "furuno_scn_file"), ("metek", "metek_ave_gz_file")],
+)
+@pytest.mark.parametrize("sweep", [1, "sweep_2", [0, 1]])
+def test_single_sweep_engines_reject_other_sweeps(engine, fixture_name, sweep, request):
+    filepath = request.getfixturevalue(fixture_name)
+    with pytest.raises(ValueError, match="single sweep"):
+        xd.open_datatree(filepath, engine=engine, sweep=sweep)
 
 
 # -- xr.open_datatree tests -------------------------------------------------
@@ -237,6 +322,51 @@ class TestIMDMultiFile:
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == len(imd_volume_files)
 
+    @pytest.mark.parametrize("site_coords", [True, False])
+    def test_engine_imd_accepts_site_coords(self, imd_file, odim_file, site_coords):
+        # same keyword and same station-coord layout as the other engines
+        def station_coords(dtree):
+            stations = {"latitude", "longitude", "altitude"}
+            return (
+                sorted(stations & set(dtree.ds.coords)),
+                sorted(stations & set(dtree["sweep_0"].to_dataset().variables)),
+            )
+
+        imd = xd.open_datatree(imd_file, engine="imd", site_coords=site_coords)
+        odim = xd.open_datatree(
+            odim_file, engine="odim", site_coords=site_coords, sweep=0
+        )
+        assert station_coords(imd) == station_coords(odim)
+
+    def test_engine_imd_rejects_unknown_kwarg(self, imd_file):
+        with pytest.raises(TypeError, match="site_as_coords"):
+            xd.open_datatree(imd_file, engine="imd", site_as_coords=False)
+
+    @pytest.mark.parametrize("sweep", [0, "sweep_0", "/sweep_0", [0]])
+    def test_engine_imd_sweep_0(self, imd_file, sweep):
+        dtree = xd.open_datatree(imd_file, engine="imd", sweep=sweep)
+        assert list(dtree.match("sweep_*")) == ["sweep_0"]
+
+    @pytest.mark.parametrize("sweep", [1, [0, 1], "sweep_2"])
+    def test_engine_imd_other_sweep_raises(self, imd_file, sweep):
+        with pytest.raises(ValueError, match="single sweep"):
+            xd.open_datatree(imd_file, engine="imd", sweep=sweep)
+
+    def test_legacy_site_coords_alias(self, imd_file, monkeypatch):
+        seen = {}
+
+        def fake_open(filename, **kwargs):
+            seen.update(kwargs)
+            return DataTree()
+
+        monkeypatch.setattr(imd_backend, "_open_single_imd_datatree", fake_open)
+        open_imd_datatree(imd_file, site_coords=False)
+        assert seen == {"site_as_coords": False}
+
+    def test_legacy_site_coords_both_raises(self, imd_file):
+        with pytest.raises(TypeError, match="not both"):
+            open_imd_datatree(imd_file, site_coords=False, site_as_coords=True)
+
 
 # -- CfRadial2 site_coords behavior ------------------------------------------
 
@@ -303,6 +433,62 @@ class TestDocstrings:
         doc = _ENGINE_REGISTRY[engine].open_datatree.__doc__
         assert doc, f"{engine} open_datatree has no docstring"
         assert "open_groups_as_dict" in doc
+
+
+def _no_discovery():
+    raise AssertionError("discover_fn must not be called for an explicit sweep")
+
+
+@pytest.mark.parametrize(
+    "sweep,expected",
+    [
+        (0, ["sweep_0"]),
+        (np.int64(2), ["sweep_2"]),
+        ("sweep_1", ["sweep_1"]),
+        ("/sweep_1", ["sweep_1"]),
+        ([0, 2], ["sweep_0", "sweep_2"]),
+        ((0, 2), ["sweep_0", "sweep_2"]),
+        ([np.int32(0), 1], ["sweep_0", "sweep_1"]),
+        (["sweep_0", "/sweep_3"], ["sweep_0", "sweep_3"]),
+        ([0, "sweep_1"], ["sweep_0", "sweep_1"]),
+    ],
+)
+def test_resolve_sweeps_valid(sweep, expected):
+    assert _resolve_sweeps(sweep, _no_discovery) == expected
+
+
+def test_resolve_sweeps_none_discovers():
+    assert _resolve_sweeps(None, lambda: ["sweep_0", "sweep_1"]) == [
+        "sweep_0",
+        "sweep_1",
+    ]
+
+
+@pytest.mark.parametrize(
+    "sweep,exc,match",
+    [
+        (True, TypeError, "Unsupported sweep True"),
+        (1.0, TypeError, "Unsupported sweep 1.0"),
+        (-1, TypeError, "Unsupported sweep -1"),
+        ("/", TypeError, "Unsupported sweep '/'"),
+        ({0}, TypeError, r"Unsupported sweep \{0\}"),
+        ([0, -1], ValueError, "Invalid type in 'sweep' list"),
+        ([], ValueError, "sweep list is empty"),
+        ([True, False], ValueError, "Invalid type in 'sweep' list"),
+        ([0, 1.5], ValueError, "Invalid type in 'sweep' list"),
+        ([None], ValueError, "Invalid type in 'sweep' list"),
+    ],
+)
+def test_resolve_sweeps_invalid(sweep, exc, match):
+    with pytest.raises(exc, match=match):
+        _resolve_sweeps(sweep, _no_discovery)
+
+
+def test_resolve_sweeps_error_message_is_bounded():
+    # untrusted input must not blow up error messages / logs
+    with pytest.raises(ValueError) as excinfo:
+        _resolve_sweeps([0] * 10_000 + [1.5], _no_discovery)
+    assert len(str(excinfo.value)) < 300
 
 
 def test_compose_docstring_structure():
@@ -424,4 +610,6 @@ class TestDeprecation:
                 f"FutureWarnings, expected 1"
             )
             assert func_name in str(deprecation_warnings[0].message)
+            # stacklevel must point at the caller's line, not xradar internals
+            assert deprecation_warnings[0].filename == __file__
         _assert_cfradial2_structure(dtree)

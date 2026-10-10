@@ -2095,8 +2095,6 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         lock=None,
         **kwargs,
     ):
-        from xarray.core.treenode import NodePath
-
         # Handle list/tuple of chunk files or bytes
         if isinstance(filename_or_obj, (list, tuple)):
             filename_or_obj = _concatenate_chunks(filename_or_obj)
@@ -2129,19 +2127,6 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                 if sw in incomplete and nex.msg_31_header[pos]
             }
 
-        # Normalise NodePath strings before resolving sweeps
-        if isinstance(sweep, str):
-            sweep = NodePath(sweep).name
-        elif isinstance(sweep, list) and sweep:
-            if isinstance(sweep[0], str):
-                sweep = [NodePath(i).name for i in sweep]
-            elif not isinstance(sweep[0], int):
-                raise ValueError(
-                    "Invalid type in 'sweep' list. Expected integers "
-                    "(e.g., [0, 1, 2]) or strings "
-                    "(e.g. [/sweep_0, sweep_1])."
-                )
-
         if sweep is not None:
             sweeps = _resolve_sweeps(
                 sweep,
@@ -2156,13 +2141,15 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                         f"{sorted(incomplete)}. Use incomplete_sweep='pad' "
                         f"to include them with NaN-filled rays.",
                         UserWarning,
-                        stacklevel=2,
+                        # caller -> open_datatree -> open_groups_as_dict
+                        stacklevel=4,
                     )
                 if not sweeps:
                     warnings.warn(
                         "All sweeps are incomplete. Returning empty dict.",
                         UserWarning,
-                        stacklevel=2,
+                        # caller -> open_datatree -> open_groups_as_dict
+                        stacklevel=4,
                     )
                     return {"/": xr.Dataset()}
             elif incomplete_sweep == "pad":
@@ -2172,9 +2159,6 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                     f"Invalid incomplete_sweep={incomplete_sweep!r}. "
                     "Expected 'drop' or 'pad'."
                 )
-
-        # For pad mode, pass incomplete set to open_sweeps_as_dict
-        incomplete_sweeps = incomplete if incomplete_sweep == "pad" else set()
 
         sweep_dict = open_sweeps_as_dict(
             filename_or_obj=filename_or_obj,
@@ -2192,7 +2176,9 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
             optional=optional,
-            incomplete_sweeps=incomplete_sweeps,
+            # incomplete sweeps that are still selected (pad mode, or an
+            # explicit `sweep=`) are padded to their nominal azimuth grid
+            incomplete_sweeps=incomplete,
             angle_resolution=angle_resolution,
             lock=lock,
             **kwargs,

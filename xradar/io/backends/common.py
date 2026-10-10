@@ -12,11 +12,15 @@ Currently, all private and not part of the public API.
 
 """
 
+import inspect
 import io
+import numbers
+import reprlib
 import struct
 import textwrap
 import warnings
 from collections import OrderedDict
+from pathlib import Path, PurePosixPath
 
 import h5netcdf
 import numpy as np
@@ -509,6 +513,27 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     return groups_dict
 
 
+_XRADAR_DIR = str(Path(__file__).resolve().parents[2])
+_XARRAY_DIR = str(Path(xr.__file__).resolve().parent)
+
+
+def _external_stacklevel():
+    """Return the ``stacklevel`` of the first frame outside xradar and xarray.
+
+    Call it at the ``warnings.warn`` site; for warnings raised at a call depth
+    that differs between entry points (``xd.open_datatree``,
+    ``xr.open_datatree``, legacy openers).
+    """
+    frame = inspect.currentframe().f_back
+    level = 1
+    while frame is not None and frame.f_code.co_filename.startswith(
+        (_XRADAR_DIR, _XARRAY_DIR)
+    ):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
 def _deprecation_warning(old_name, engine):
     """Emit FutureWarning for deprecated standalone open_*_datatree functions."""
     warnings.warn(
@@ -516,7 +541,8 @@ def _deprecation_warning(old_name, engine):
         f'`xd.open_datatree(file, engine="{engine}")` or '
         f'`xr.open_datatree(file, engine="{engine}")` instead.',
         FutureWarning,
-        stacklevel=4,
+        # user code -> open_*_datatree -> _deprecation_warning -> warn
+        stacklevel=3,
     )
 
 
@@ -568,10 +594,9 @@ optional_groups : bool, optional
 """
 
 
-#: Reindex/angle parameter block — shared by backends that resample
-#: rays onto a regular angular grid (odim, gamic, nexrad, cfradial1,
-#: iris, furuno, uf).
-REINDEX_PARAMS_DOC = """
+#: ``reindex_coord`` parameter block, shared by every backend that can
+#: reindex angle and/or range.
+REINDEX_COORD_DOC = """
 reindex_coord : dict, optional
     Nested dict with optional keys ``angle`` and ``range`` holding the
     kwargs for :func:`xradar.util.reindex_angle` and
@@ -580,7 +605,10 @@ reindex_coord : dict, optional
     ``decode_coords=True``. Defaults to ``None`` (no reindexing).
 reindex_angle : dict, optional
     Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
-fix_second_angle : bool, optional
+"""
+
+#: Reindex plus second-angle fix block, for backends that support both.
+REINDEX_PARAMS_DOC = REINDEX_COORD_DOC + """fix_second_angle : bool, optional
     Correct erroneous secondary-angle values (azimuth on RHI,
     elevation on PPI). Only effective with ``first_dim="auto"``.
     Defaults to ``False``.
@@ -664,8 +692,10 @@ def _resolve_sweeps(sweep, discover_fn):
 
     Parameters
     ----------
-    sweep : int, str, list, or None
-        User-supplied sweep selection.
+    sweep : int, str, list or tuple of int/str, or None
+        User-supplied sweep selection. Integers map to ``sweep_<n>``;
+        strings may be DataTree paths (``"/sweep_0"``), only the last path
+        component is used. Sequence items are resolved one by one.
     discover_fn : callable
         Zero-arg function returning all sweep group names for the file.
 
@@ -674,19 +704,51 @@ def _resolve_sweeps(sweep, discover_fn):
     list[str]
         List of sweep group name strings.
     """
-    if isinstance(sweep, str):
-        return [sweep]
-    if isinstance(sweep, int):
-        return [f"sweep_{sweep}"]
-    if isinstance(sweep, list):
-        if not sweep:
-            raise ValueError("sweep list is empty.")
-        if isinstance(sweep[0], int):
-            return [f"sweep_{i}" for i in sweep]
-        return list(sweep)
     if sweep is None:
         return discover_fn()
-    raise TypeError(f"Unsupported sweep type: {type(sweep)}")
+    if isinstance(sweep, (list, tuple)):
+        if not sweep:
+            raise ValueError("sweep list is empty.")
+        names = [_sweep_name(item) for item in sweep]
+        if None in names:
+            # ValueError (not TypeError) keeps the message and type the
+            # NEXRAD/UF readers raised before this helper existed
+            raise ValueError(
+                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) "
+                f"or strings (e.g. [/sweep_0, sweep_1]), got {reprlib.repr(sweep)}."
+            )
+        return names
+    name = _sweep_name(sweep)
+    if name is None:
+        raise TypeError(
+            f"Unsupported sweep {reprlib.repr(sweep)} ({type(sweep).__name__}), "
+            "expected a "
+            "non-negative int, a sweep name or a list of those."
+        )
+    return [name]
+
+
+def _resolve_single_sweep(sweep, engine, hint=""):
+    """Resolve ``sweep`` for single-sweep formats, only ``sweep_0`` exists."""
+    if sweep is not None and _resolve_sweeps(sweep, lambda: None) != ["sweep_0"]:
+        raise ValueError(
+            f"{engine} files hold a single sweep (sweep_0), "
+            f"got sweep={reprlib.repr(sweep)}." + (f" {hint}" if hint else "")
+        )
+    return ["sweep_0"]
+
+
+def _sweep_name(item):
+    """Map one sweep selector to its group name, or None if unsupported.
+
+    ``bool`` is rejected although it subclasses ``int``; numpy integers are
+    accepted. Negative integers and empty names are rejected.
+    """
+    if isinstance(item, numbers.Integral) and not isinstance(item, bool):
+        return f"sweep_{item}" if item >= 0 else None
+    if isinstance(item, str):
+        return PurePosixPath(item).name or None
+    return None
 
 
 # IRIS Data Types and corresponding python struct format characters

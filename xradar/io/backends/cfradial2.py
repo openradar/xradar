@@ -63,6 +63,8 @@ from .common import (
     _apply_site_as_coords,
     _compose_docstring,
     _deprecation_warning,
+    _external_stacklevel,
+    _resolve_sweeps,
 )
 
 _ROOT_ATTR_RENAMES = {
@@ -172,21 +174,20 @@ def _iter_selected_sweeps(tree: DataTree, sweep: Any) -> list[str]:
     )
     if sweep is None:
         return available
-    if isinstance(sweep, str):
-        return [_normalize_sweep_name(sweep)]
-    if isinstance(sweep, int):
-        return [f"sweep_{sweep}"]
-    if isinstance(sweep, Iterable):
-        selected: list[str] = []
-        for item in sweep:
-            if isinstance(item, int):
-                selected.append(f"sweep_{item}")
-            else:
-                selected.append(_normalize_sweep_name(item))
-        if not selected:
-            raise ValueError("sweep list is empty.")
-        return selected
-    raise TypeError("sweep must be None, int, str or an iterable of ints/strings")
+    if isinstance(sweep, Iterable) and not isinstance(sweep, (str, list, tuple)):
+        # released in v0.12.0; every other engine takes only lists/tuples, and
+        # e.g. a set has no defined order
+        warnings.warn(
+            f"Passing sweep as {type(sweep).__name__} is deprecated and will be "
+            "removed in a future version, pass a list or tuple instead.",
+            FutureWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        sweep = list(sweep)
+    return [
+        _normalize_sweep_name(name)
+        for name in _resolve_sweeps(sweep, lambda: available)
+    ]
 
 
 def _coerce_scalar_dataarray(ds, name: str, value: Any):

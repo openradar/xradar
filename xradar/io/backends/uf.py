@@ -843,28 +843,11 @@ class UFBackendEntrypoint(BackendEntrypoint):
         lock=None,
         **kwargs,
     ):
-        from xarray.core.treenode import NodePath
+        def _discover():
+            with UFFile(filename_or_obj, loaddata=False) as ufh:
+                return [f"sweep_{i}" for i in range(ufh.nsweeps)]
 
-        # Normalise NodePath strings ("/sweep_0" -> "sweep_0") and validate
-        # list element types before resolving.
-        if isinstance(sweep, str):
-            sweep = NodePath(sweep).name
-        elif isinstance(sweep, list) and sweep:
-            if isinstance(sweep[0], str):
-                sweep = [NodePath(i).name for i in sweep]
-            elif not isinstance(sweep[0], int):
-                raise ValueError(
-                    "Invalid type in 'sweep' list. Expected integers "
-                    "(e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
-                )
-
-        sweeps = _resolve_sweeps(
-            sweep,
-            lambda: [
-                f"sweep_{i}"
-                for i in range(UFFile(filename_or_obj, loaddata=False).nsweeps)
-            ],
-        )
+        sweeps = _resolve_sweeps(sweep, _discover)
 
         sweep_dict = open_sweeps_as_dict(
             filename_or_obj=filename_or_obj,

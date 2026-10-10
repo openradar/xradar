@@ -82,7 +82,7 @@ from .common import (
     _deprecation_warning,
     _get_fmt_string,
     _get_reindex_coord,
-    _resolve_sweeps,
+    _resolve_single_sweep,
     _unpack_dictionary,
 )
 
@@ -801,7 +801,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         optional_groups=False,
         obsmode=None,
     ):
-        sweeps = _resolve_sweeps(sweep, lambda: ["sweep_0"])
+        sweeps = _resolve_single_sweep(sweep, "Furuno")
 
         ds_kwargs = dict(
             mask_and_scale=mask_and_scale,

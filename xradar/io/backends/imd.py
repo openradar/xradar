@@ -63,11 +63,14 @@ from ...model import (
 )
 from .common import (
     _STATION_VARS,
+    REINDEX_COORD_DOC,
+    SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
     _compose_docstring,
     _get_reindex_coord,
     _get_subgroup,
+    _resolve_single_sweep,
 )
 
 #: IMD moment codes to CfRadial2 names. IMD's published NetCDF format ships
@@ -482,18 +485,24 @@ class IMDBackendEntrypoint(BackendEntrypoint):
         drop_variables=None,
         use_cftime=None,
         decode_timedelta=False,
+        sweep=None,
         first_dim="auto",
         reindex_coord=None,
         reindex_angle=False,
-        site_as_coords=True,
+        site_coords=True,
         optional_groups=False,
-        **kwargs,
     ):
         """Open a single IMD sweep file as a dict of CfRadial2 group datasets.
 
         Single-file only. For multi-file IMD volumes (one sweep per file),
         use :func:`open_imd_datatree` with a list of paths.
         """
+        # one IMD file holds exactly one sweep
+        _resolve_single_sweep(
+            sweep,
+            "IMD",
+            hint="Use `xd.io.open_imd_datatree([files])` for multi-file volumes.",
+        )
         return _build_single_imd_dtree_dict(
             filename_or_obj,
             mask_and_scale=mask_and_scale,
@@ -506,9 +515,8 @@ class IMDBackendEntrypoint(BackendEntrypoint):
             first_dim=first_dim,
             reindex_coord=reindex_coord,
             reindex_angle=reindex_angle,
-            site_as_coords=site_as_coords,
+            site_as_coords=site_coords,
             optional_groups=optional_groups,
-            **kwargs,
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
@@ -517,18 +525,9 @@ class IMDBackendEntrypoint(BackendEntrypoint):
 
 
 _IMD_PARAMS_DOC = """
-    reindex_coord : dict, optional
-        Nested dict with optional keys ``angle`` and ``range`` holding the
-        kwargs for :func:`xradar.util.reindex_angle` and
-        :func:`xradar.util.reindex_range`. Defaults to ``None`` (no
-        reindexing).
-    reindex_angle : dict, optional
-        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
-    site_as_coords : bool, optional
-        Attach ``latitude``/``longitude``/``altitude`` as coords on the
-        sweep dataset. (Note: IMD uses the legacy ``site_as_coords``
-        spelling rather than ``site_coords`` — kept for backward
-        compatibility.) Defaults to ``True``.
+    sweep : int, str or list, optional
+        IMD files hold one sweep, so only ``None``, ``0`` or ``"sweep_0"``
+        are accepted. Defaults to ``None``.
 """
 
 IMDBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
@@ -536,6 +535,8 @@ IMDBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     "    CfRadial2-shaped dict of group datasets. Single-file only — for\n"
     "    multi-file IMD volumes use :func:`open_imd_datatree`.",
     _IMD_PARAMS_DOC,
+    REINDEX_COORD_DOC,
+    SITE_COORDS_PARAM_DOC,
 )
 IMDBackendEntrypoint.open_datatree.__doc__ = (
     "Open a single IMD NetCDF file as :py:class:`xarray.DataTree`. "
@@ -714,6 +715,7 @@ def open_imd_datatree(filename_or_obj, **kwargs):
         Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     site_as_coords : bool
         Attach station variables as coordinates on sweep Datasets.
+        ``site_coords`` is accepted as an alias.
     optional_groups : bool
         Include ``/radar_parameters``, ``/georeferencing_correction`` and
         ``/radar_calibration`` subgroups. Defaults to ``False``.
@@ -726,6 +728,11 @@ def open_imd_datatree(filename_or_obj, **kwargs):
     dtree : xarray.DataTree
         CfRadial2-style DataTree with ``/`` root and ``sweep_N`` children.
     """
+    # Accept the `site_coords` spelling used by `xd.open_datatree`.
+    if "site_coords" in kwargs:
+        if "site_as_coords" in kwargs:
+            raise TypeError("Pass either `site_coords` or `site_as_coords`, not both.")
+        kwargs["site_as_coords"] = kwargs.pop("site_coords")
     # Multi-file kwargs go to create_volume; everything else is per-sweep.
     cv_kwargs = {
         k: kwargs.pop(k)

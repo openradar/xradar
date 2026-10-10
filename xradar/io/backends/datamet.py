@@ -471,7 +471,11 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
     ):
         def _discover():
             dmet = DataMetFile(filename_or_obj)
-            return [f"sweep_{i}" for i in range(dmet.scan_metadata["elevation_number"])]
+            try:
+                n_sweeps = dmet.scan_metadata["elevation_number"]
+            finally:
+                dmet.close()
+            return [f"sweep_{i}" for i in range(n_sweeps)]
 
         sweeps = _resolve_sweeps(sweep, _discover)
 

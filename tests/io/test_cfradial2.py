@@ -407,3 +407,18 @@ def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file):
 
     with pytest.raises(ValueError, match="missing from file"):
         xd.io.open_cfradial2_datatree(outfile, engine="netcdf4", sweep="sweep_9")
+
+
+@pytest.mark.parametrize("sweep", [{0}, range(1), (i for i in [0])])
+def test_cfradial2_non_sequence_sweep_deprecated(cfradial2_file, sweep):
+    with pytest.warns(FutureWarning, match="pass a list or tuple") as record:
+        dtree = xd.open_datatree(cfradial2_file, engine="cfradial2", sweep=sweep)
+    assert list(dtree.match("sweep_*")) == ["sweep_0"]
+    assert record[0].filename == __file__
+
+
+def test_cfradial2_non_sequence_sweep_warning_points_at_caller(cfradial2_file):
+    # same through xarray's entry point, which is one call deeper
+    with pytest.warns(FutureWarning, match="pass a list or tuple") as record:
+        xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0})
+    assert record[0].filename == __file__

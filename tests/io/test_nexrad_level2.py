@@ -16,6 +16,7 @@ import xarray
 from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends.nexrad_level2 import (
     NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
@@ -2601,6 +2602,37 @@ class TestRealChunkFiles:
         assert len(sweep_keys) > 0
         ds = dtree["sweep_0"].to_dataset()
         assert ds.sizes["azimuth"] in (360, 720)
+
+    def test_partial_chunks_pad_mode_engine(self, nexrad_chunks_klot):
+        """Pad mode through the engine API uses the nominal azimuth grid."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
+        with pytest.warns(UserWarning, match="is incomplete and is padded"):
+            dtree = xd.open_datatree(
+                chunk_bytes, engine="nexradlevel2", incomplete_sweep="pad"
+            )
+        assert dtree["sweep_0"].sizes["azimuth"] in (360, 720)
+
+    def test_partial_chunks_explicit_incomplete_sweep_is_padded(
+        self, nexrad_chunks_klot
+    ):
+        """An explicitly selected incomplete sweep is padded, as on main."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:8]]
+        with pytest.warns(UserWarning, match="sweep_1 is incomplete and is padded"):
+            dtree = xd.open_datatree(chunk_bytes, engine="nexradlevel2", sweep=[1])
+        assert dtree["sweep_1"].sizes["azimuth"] == 720
+
+    def test_partial_chunks_drop_warning_points_at_caller(self, nexrad_chunks_klot):
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:8]]
+        for opener in (
+            lambda: xd.open_datatree(chunk_bytes, engine="nexradlevel2"),
+            lambda: open_nexradlevel2_datatree(chunk_bytes),
+        ):
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                opener()
+            dropped = [x for x in w if "Dropped" in str(x.message)]
+            assert len(dropped) == 1
+            assert dropped[0].filename == __file__
 
     def test_partial_chunks_pad_mode_warns(self, nexrad_chunks_klot):
         """Padding an incomplete sweep is announced, also when it overrides

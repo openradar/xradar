@@ -46,7 +46,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
-    _resolve_sweeps,
+    _resolve_single_sweep,
 )
 
 __all__ = [
@@ -653,7 +653,7 @@ class MRRBackendEntrypoint(BackendEntrypoint):
         optional=True,
         optional_groups=False,
     ):
-        sweeps = _resolve_sweeps(sweep, lambda: ["sweep_0"])
+        sweeps = _resolve_single_sweep(sweep, "Metek MRR")
 
         ds_kwargs = dict(
             mask_and_scale=mask_and_scale,

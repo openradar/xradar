@@ -32,6 +32,8 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+import reprlib
+
 import numpy as np
 from xarray import Dataset, DataTree, open_dataset
 from xarray.backends import NetCDF4DataStore
@@ -58,6 +60,7 @@ from .common import (
     _deprecation_warning,
     _get_reindex_coord,
     _maybe_decode,
+    _resolve_sweeps,
 )
 
 
@@ -520,6 +523,18 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
         )
 
+        available = [f"sweep_{i}" for i in range(ds.sizes["sweep"])]
+        try:
+            sweeps = _resolve_sweeps(sweep, lambda: available)
+            if missing := [name for name in sweeps if name not in available]:
+                raise ValueError(
+                    f"Sweep(s) {reprlib.repr(missing)} not found in file, "
+                    f"available: {reprlib.repr(available)}."
+                )
+        except (TypeError, ValueError):
+            ds.close()
+            raise
+
         groups_dict = {
             "/": _get_required_root_dataset(ds, optional=optional),
         }
@@ -535,14 +550,17 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         sweep_datasets = list(
             _get_sweep_groups(
                 ds,
-                sweep=sweep,
+                sweep=sweeps,
                 first_dim=first_dim,
                 optional=optional,
                 site_as_coords=site_coords,
             ).values()
         )
 
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
         for i, sw_ds in enumerate(sweep_datasets):
+            if decode_coords and reindex_coord:
+                sw_ds = _apply_reindex_coord(sw_ds, reindex_coord)
             # Drop station coords from per-sweep datasets — they live on root.
             sw = sw_ds.drop_vars(_STATION_VARS, errors="ignore")
             groups_dict[f"/sweep_{i}"] = sw.drop_attrs(deep=False)
