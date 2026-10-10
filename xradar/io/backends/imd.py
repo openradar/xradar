@@ -513,8 +513,7 @@ class IMDBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             site_as_coords=site_coords,
             optional_groups=optional_groups,
         )
@@ -537,6 +536,7 @@ IMDBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     _IMD_PARAMS_DOC,
     REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
+    optional=False,
 )
 IMDBackendEntrypoint.open_datatree.__doc__ = (
     "Open a single IMD NetCDF file as :py:class:`xarray.DataTree`. "

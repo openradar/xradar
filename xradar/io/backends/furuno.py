@@ -82,6 +82,7 @@ from .common import (
     _deprecation_warning,
     _get_fmt_string,
     _get_reindex_coord,
+    _open_legacy_datatree,
     _resolve_single_sweep,
     _unpack_dictionary,
 )
@@ -812,8 +813,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
             obsmode=obsmode,
@@ -857,18 +857,4 @@ def open_furuno_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_furuno_datatree", "furuno")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return FurunoBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(FurunoBackendEntrypoint, filename_or_obj, kwargs)

@@ -62,6 +62,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _get_reindex_coord,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 
@@ -669,8 +670,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             site_as_coords=site_coords,
             latitude=latitude,
             longitude=longitude,
@@ -736,18 +736,4 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_hpl_datatree", "hpl")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return HPLBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(HPLBackendEntrypoint, filename_or_obj, kwargs)

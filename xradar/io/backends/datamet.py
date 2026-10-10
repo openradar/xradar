@@ -49,7 +49,7 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
-    REINDEX_PARAMS_DOC,
+    REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
@@ -57,6 +57,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _get_reindex_coord,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 
@@ -488,8 +489,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             site_as_coords=site_coords,
         )
 
@@ -508,7 +508,7 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
 DataMetBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     "Open a DataMet (Servizio Meteorologico Italiano) ``.tar.gz`` archive as a\n"
     "    CfRadial2-shaped dict of group datasets.",
-    REINDEX_PARAMS_DOC,
+    REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
 )
 DataMetBackendEntrypoint.open_datatree.__doc__ = (
@@ -525,18 +525,4 @@ def open_datamet_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_datamet_datatree", "datamet")
 
-    kwargs.pop("backend_kwargs", {})
-    optional = kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return DataMetBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(DataMetBackendEntrypoint, filename_or_obj, kwargs)

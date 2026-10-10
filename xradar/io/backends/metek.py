@@ -46,6 +46,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _open_legacy_datatree,
     _resolve_single_sweep,
 )
 
@@ -704,18 +705,4 @@ def open_metek_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_metek_datatree", "metek")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return MRRBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(MRRBackendEntrypoint, filename_or_obj, kwargs)
