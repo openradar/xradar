@@ -2,6 +2,7 @@
 
 ## Development
 
+* FIX: IRIS 2-byte SQI-format types (``DB_SQI2``, ``DB_RHOHV2``, ``DB_RHOH2``, ``DB_RHOV2``, ``DB_PMI16``, ``DB_CCOR16``) decode as ``(N - 1) / 65533`` (IRIS Programming Guide 4.4.40), so raw 65534 is 1.0 ({issue}`478`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS ``DB_VELC`` decodes raw 128 as zero velocity, with 127 steps below and 126 above over +/-75 m/s (IRIS Programming Guide 4.4.42), instead of +0.3 m/s ({issue}`477`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS ``DB_SHEAR`` is read as unsigned (IRIS Programming Guide 4.4.50), so raw 128 is zero shear instead of -51.2 ({issue}`476`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS SNR-family types (``DB_SNR``, ``DB_LOG``, ``DB_CSP``, ``DB_AH``, ``DB_AV``, ``DB_AZDR``, 1 and 2 byte) decode as ``(N - 64) / 2`` dB (1 byte, IRIS Programming Guide 4.4.37) and ``(N - 32768) / 100`` dB (2 byte) instead of ``(N - 63) / 2`` for both, which gave 2-byte SNR up to about 19900 dB; raw 0 is no data ({issue}`475`) by [@aladinor](https://github.com/aladinor)
