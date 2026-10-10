@@ -12,10 +12,15 @@ Currently, all private and not part of the public API.
 
 """
 
+import inspect
 import io
+import numbers
+import reprlib
 import struct
+import textwrap
 import warnings
 from collections import OrderedDict
+from pathlib import Path, PurePosixPath
 
 import h5netcdf
 import numpy as np
@@ -23,8 +28,11 @@ import xarray as xr
 
 from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     optional_root_attrs,
     optional_root_vars,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     required_global_attrs,
     required_root_vars,
 )
@@ -466,6 +474,281 @@ def _prepare_backend_ds(ds):
     # create indexes
     ds = ds.set_index({dim: dim for dim in ds.dims})
     return ds
+
+
+def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
+    """Build CfRadial2 groups dict from a list of sweep Datasets.
+
+    Parameters
+    ----------
+    ls_ds : list of xr.Dataset
+        List of sweep Datasets.
+    optional : bool
+        Import optional metadata, defaults to True.
+    optional_groups : bool
+        If True, includes ``/radar_parameters``, ``/georeferencing_correction``
+        and ``/radar_calibration`` metadata subgroups. Default is False.
+
+    Returns
+    -------
+    groups_dict : dict[str, xr.Dataset]
+        Dictionary with CfRadial2 group structure.
+    """
+    groups_dict = {
+        "/": _get_required_root_dataset(ls_ds, optional=optional),
+    }
+    if optional_groups:
+        groups_dict["/radar_parameters"] = _get_subgroup(
+            ls_ds, radar_parameters_subgroup
+        )
+        groups_dict["/georeferencing_correction"] = _get_subgroup(
+            ls_ds, georeferencing_correction_subgroup
+        )
+        groups_dict["/radar_calibration"] = _get_radar_calibration(
+            ls_ds, radar_calibration_subgroup
+        )
+    for i, ds in enumerate(ls_ds):
+        sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
+        groups_dict[f"/sweep_{i}"] = sw
+    return groups_dict
+
+
+_XRADAR_DIR = str(Path(__file__).resolve().parents[2])
+_XARRAY_DIR = str(Path(xr.__file__).resolve().parent)
+
+
+def _external_stacklevel():
+    """Return the ``stacklevel`` of the first frame outside xradar and xarray.
+
+    Call it at the ``warnings.warn`` site; for warnings raised at a call depth
+    that differs between entry points (``xd.open_datatree``,
+    ``xr.open_datatree``, legacy openers).
+    """
+    frame = inspect.currentframe().f_back
+    level = 1
+    while frame is not None and frame.f_code.co_filename.startswith(
+        (_XRADAR_DIR, _XARRAY_DIR)
+    ):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
+def _deprecation_warning(old_name, engine):
+    """Emit FutureWarning for deprecated standalone open_*_datatree functions."""
+    warnings.warn(
+        f"`{old_name}` is deprecated. Use "
+        f'`xd.open_datatree(file, engine="{engine}")` or '
+        f'`xr.open_datatree(file, engine="{engine}")` instead.',
+        FutureWarning,
+        # user code -> open_*_datatree -> _deprecation_warning -> warn
+        stacklevel=3,
+    )
+
+
+#: NumPy-style Parameters block shared across all `open_groups_as_dict`
+#: methods. Backend-specific blocks are appended via :func:`_compose_docstring`.
+#: The CF decoder kwargs (`mask_and_scale`, `decode_times`, ...) thread
+#: through to :py:func:`xarray.open_dataset`; see xarray's documentation for
+#: full semantics.
+COMMON_BACKEND_PARAMS_DOC = """
+Parameters
+----------
+filename_or_obj : str, Path, or file-like
+    Path or file-like object understood by the underlying reader.
+mask_and_scale : bool or dict-like, optional
+    Replace fill values with NA and apply ``scale_factor``/``add_offset``
+    decoding. See :py:func:`xarray.open_dataset`. Defaults to ``True``.
+decode_times : bool or dict-like, optional
+    Decode CF time variables (calendar, units) into ``np.datetime64``.
+    Defaults to ``True``.
+concat_characters : bool or dict-like, optional
+    Concatenate character arrays into strings along their trailing
+    dimension. Defaults to ``True``.
+decode_coords : bool or {"coordinates", "all"}, optional
+    Decode the CF ``coordinates`` attribute. Defaults to ``True``
+    (equivalent to ``"coordinates"``).
+drop_variables : str or iterable of str, optional
+    Names of variables to drop before processing.
+use_cftime : bool, optional
+    Force ``cftime`` decoding for time variables (instead of
+    ``np.datetime64``). Defaults to ``None`` (auto).
+decode_timedelta : bool, optional
+    Decode CF timedelta variables. Default mirrors ``decode_times``
+    unless the backend overrides it (cfradial1, cfradial2, and imd
+    default to ``False``).
+sweep : int, str, or list of int/str, optional
+    Sweep selection. ``None`` (default) returns all sweeps. An ``int``
+    or ``"sweep_N"`` string returns one sweep; a list returns the
+    named subset.
+first_dim : {"auto", "time"}, optional
+    Leading dimension of each sweep dataset. ``"auto"`` picks
+    ``azimuth`` (PPI) or ``elevation`` (RHI); ``"time"`` keeps the
+    raw time axis. Default ``"auto"`` (``"time"`` for cfradial2).
+optional : bool, optional
+    Include optional root variables when available. Defaults to ``True``.
+optional_groups : bool, optional
+    Include the ``/radar_parameters``, ``/georeferencing_correction``,
+    and ``/radar_calibration`` metadata subgroups under the root.
+    Defaults to ``False``.
+"""
+
+
+#: ``reindex_coord`` parameter block, shared by every backend that can
+#: reindex angle and/or range.
+REINDEX_COORD_DOC = """
+reindex_coord : dict, optional
+    Nested dict with optional keys ``angle`` and ``range`` holding the
+    kwargs for :func:`xradar.util.reindex_angle` and
+    :func:`xradar.util.reindex_range`, e.g. ``dict(angle=dict(start_angle=0,
+    stop_angle=360, angle_res=1.0, direction=1))``. Only invoked when
+    ``decode_coords=True``. Defaults to ``None`` (no reindexing).
+reindex_angle : dict, optional
+    Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
+"""
+
+#: Reindex plus second-angle fix block, for backends that support both.
+REINDEX_PARAMS_DOC = REINDEX_COORD_DOC + """fix_second_angle : bool, optional
+    Correct erroneous secondary-angle values (azimuth on RHI,
+    elevation on PPI). Only effective with ``first_dim="auto"``.
+    Defaults to ``False``.
+"""
+
+#: Site-coordinate parameter block. Most multi-sweep backends spell this
+#: `site_coords`; IMD uses the legacy `site_as_coords`.
+SITE_COORDS_PARAM_DOC = """
+site_coords : bool, optional
+    Attach ``latitude``/``longitude``/``altitude`` as coordinates on
+    the root dataset (and on per-sweep datasets where the backend
+    supports it). Defaults to ``True``.
+"""
+
+#: HDF5/h5netcdf options shared by ODIM, GAMIC, HPL, Metek.
+HDF5_PARAMS_DOC = """
+format : str, optional
+    h5netcdf format string. Defaults to ``None``.
+invalid_netcdf : bool, optional
+    Accept HDF5 files that are not strictly NetCDF-conformant.
+phony_dims : {"access", "sort", None}, optional
+    How h5netcdf labels unnamed dimensions. Defaults to ``"access"``.
+decode_vlen_strings : bool, optional
+    Decode variable-length strings stored in HDF5. Defaults to ``True``.
+"""
+
+#: Reader-lock parameter shared by NEXRAD, IRIS, UF.
+LOCK_PARAM_DOC = """
+lock : threading.Lock or None, optional
+    Reader lock for thread-safe access. Defaults to ``None``.
+"""
+
+
+def _compose_docstring(summary, *extra_blocks):
+    """Compose a NumPy-style docstring from a summary plus parameter blocks.
+
+    The composed result always opens with the shared
+    :data:`COMMON_BACKEND_PARAMS_DOC` Parameters block and closes with a
+    fixed Returns section. Per-backend blocks (e.g. :data:`HDF5_PARAMS_DOC`,
+    :data:`REINDEX_PARAMS_DOC`) are inserted between the common block and
+    the Returns section in the order given.
+
+    Each block is independently de-indented and re-indented with four
+    spaces, so block authors do not need to keep the indentation in sync
+    by hand — write a block at any indent level and this helper
+    normalises it.
+
+    Parameters
+    ----------
+    summary : str
+        One-paragraph summary that opens the docstring.
+    *extra_blocks : str
+        Optional backend-specific parameter blocks. Each may use any
+        indentation; the helper normalises them to four-space indent.
+
+    Returns
+    -------
+    str
+        Complete docstring suitable for ``method.__doc__ = ...``.
+    """
+
+    def _block(text):
+        return textwrap.indent(textwrap.dedent(text).strip("\n"), "    ")
+
+    parts = [summary.strip("\n"), "", _block(COMMON_BACKEND_PARAMS_DOC)]
+    for block in extra_blocks:
+        if block:
+            parts.append(_block(block))
+    returns_body = (
+        "dict[str, xarray.Dataset]\n"
+        "    CfRadial2 group paths (``/``, ``/sweep_N``, optional\n"
+        "    ``/radar_parameters`` etc.) mapped to their datasets,\n"
+        "    ready for :py:meth:`xarray.DataTree.from_dict`."
+    )
+    parts += ["", "    Returns", "    -------", _block(returns_body)]
+    return "\n".join(parts) + "\n"
+
+
+def _resolve_sweeps(sweep, discover_fn):
+    """Normalise the sweep parameter into a list of sweep group names.
+
+    Parameters
+    ----------
+    sweep : int, str, list or tuple of int/str, or None
+        User-supplied sweep selection. Integers map to ``sweep_<n>``;
+        strings may be DataTree paths (``"/sweep_0"``), only the last path
+        component is used. Sequence items are resolved one by one.
+    discover_fn : callable
+        Zero-arg function returning all sweep group names for the file.
+
+    Returns
+    -------
+    list[str]
+        List of sweep group name strings.
+    """
+    if sweep is None:
+        return discover_fn()
+    if isinstance(sweep, (list, tuple)):
+        if not sweep:
+            raise ValueError("sweep list is empty.")
+        names = [_sweep_name(item) for item in sweep]
+        if None in names:
+            # ValueError (not TypeError) keeps the message and type the
+            # NEXRAD/UF readers raised before this helper existed
+            raise ValueError(
+                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) "
+                f"or strings (e.g. [/sweep_0, sweep_1]), got {reprlib.repr(sweep)}."
+            )
+        return names
+    name = _sweep_name(sweep)
+    if name is None:
+        raise TypeError(
+            f"Unsupported sweep {reprlib.repr(sweep)} ({type(sweep).__name__}), "
+            "expected a "
+            "non-negative int, a sweep name or a list of those."
+        )
+    return [name]
+
+
+def _resolve_single_sweep(sweep, engine, hint=""):
+    """Resolve ``sweep`` for single-sweep formats, only ``sweep_0`` exists."""
+    if sweep is not None and _resolve_sweeps(sweep, lambda: None) != ["sweep_0"]:
+        raise ValueError(
+            f"{engine} files hold a single sweep (sweep_0), "
+            f"got sweep={reprlib.repr(sweep)}." + (f" {hint}" if hint else "")
+        )
+    return ["sweep_0"]
+
+
+def _sweep_name(item):
+    """Map one sweep selector to its group name, or None if unsupported.
+
+    ``bool`` is rejected although it subclasses ``int``; numpy integers are
+    accepted. Negative integers and empty names are rejected.
+    """
+    if isinstance(item, numbers.Integral) and not isinstance(item, bool):
+        return f"sweep_{item}" if item >= 0 else None
+    if isinstance(item, str):
+        return PurePosixPath(item).name or None
+    return None
 
 
 # IRIS Data Types and corresponding python struct format characters

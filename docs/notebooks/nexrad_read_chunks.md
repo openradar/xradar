@@ -142,7 +142,7 @@ When all chunks (S through E) are available, passing the list to
 complete volume file.
 
 ```{code-cell}
-dtree = xd.io.open_nexradlevel2_datatree(all_bytes)
+dtree = xd.open_datatree(all_bytes, engine="nexradlevel2")
 display(dtree)
 ```
 
@@ -170,8 +170,7 @@ partial_chunks = all_bytes[:15]
 
 with warnings.catch_warnings(record=True) as w:
     warnings.simplefilter("always")
-    dtree_drop = xd.io.open_nexradlevel2_datatree(
-        partial_chunks, incomplete_sweep="drop"
+    dtree_drop = xd.open_datatree(partial_chunks, engine="nexradlevel2", incomplete_sweep="drop"
     )
 
 # Show warnings
@@ -216,7 +215,7 @@ This is useful for visualization and monitoring where you want to see all
 available data as soon as it arrives.
 
 ```{code-cell}
-dtree_pad = xd.io.open_nexradlevel2_datatree(partial_chunks, incomplete_sweep="pad")
+dtree_pad = xd.open_datatree(partial_chunks, engine="nexradlevel2", incomplete_sweep="pad")
 
 sweep_groups_pad = list(dtree_pad.match("sweep_*").keys())
 print(f"Sweeps available (pad mode): {sweep_groups_pad}")
@@ -254,7 +253,7 @@ are still missing.
 ```{code-cell}
 early_chunks = all_bytes[:5]
 
-dtree_early = xd.io.open_nexradlevel2_datatree(early_chunks, incomplete_sweep="pad")
+dtree_early = xd.open_datatree(early_chunks, engine="nexradlevel2", incomplete_sweep="pad")
 
 sweep_groups_early = list(dtree_early.match("sweep_*").keys())
 print(f"Sweeps from 5 chunks: {sweep_groups_early}")

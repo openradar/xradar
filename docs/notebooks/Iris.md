@@ -76,27 +76,26 @@ display(ds)
 The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.ds`.
 
 ```{code-cell}
-help(xd.io.open_iris_datatree)
+help(xd.open_datatree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_iris_datatree(filename_volume)
+dtree = xd.open_datatree(filename_volume, engine="iris")
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_iris_datatree(filename_volume, sweep="sweep_8")
+dtree = xd.open_datatree(filename_volume, engine="iris", sweep="sweep_8")
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_iris_datatree(filename_volume, sweep=[1, 2, 8])
+dtree = xd.open_datatree(filename_volume, engine="iris", sweep=[1, 2, 8])
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_iris_datatree(
-    filename_volume,
+dtree = xd.open_datatree(filename_volume, engine="iris",
     sweep=["sweep_0", "sweep_1", "sweep_8"],
 )
 display(dtree)

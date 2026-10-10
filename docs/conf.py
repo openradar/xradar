@@ -151,6 +151,17 @@ rst_files = glob.glob("*.rst")
 autosummary_generate = rst_files
 autoclass_content = "both"
 
+# Render `open_groups_as_dict`, `open_datatree`, and `open_dataset` method
+# docstrings on each BackendEntrypoint class. Without `members: True` the
+# class page only shows the class-level docstring and class members get
+# silently dropped — see `xradar/io/backends/common.py:_compose_docstring`
+# for the per-method blocks that need rendering.
+autodoc_default_options = {
+    "members": True,
+    "undoc-members": False,
+    "show-inheritance": True,
+}
+
 # The version info for the project you're documenting, acts as replacement
 # for |version| and |release|, also used in various other places throughout
 # the built documents.
