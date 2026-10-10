@@ -54,6 +54,7 @@ from .common import (
     _STATION_VARS,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_fix_second_angle,
     _apply_reindex_coord,
     _apply_site_as_coords,
     _compose_docstring,
@@ -483,6 +484,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
         if decode_coords and reindex_coord:
             ds = _apply_reindex_coord(ds, reindex_coord)
+
+        if fix_second_angle and first_dim == "auto":
+            ds = _apply_fix_second_angle(ds)
 
         # ensure close works
         ds._close = store.close

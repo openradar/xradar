@@ -80,8 +80,10 @@ from .common import (
     _calculate_angle_res,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_fmt_string,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _resolve_single_sweep,
     _unpack_dictionary,
 )
@@ -305,6 +307,7 @@ class FurunoFile:
         self._loaddata = kwargs.get("loaddata", True)
         self._obsmode = kwargs.get("obsmode", None)
         self._fp = None
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             if filename.endswith(".gz"):
@@ -535,7 +538,7 @@ class FurunoArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class FurunoStore(AbstractDataStore):
+class FurunoStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading Furuno sweeps via wradlib."""
 
     def __init__(self, manager, group=None):

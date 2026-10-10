@@ -71,7 +71,9 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _resolve_sweeps,
 )
 
@@ -467,6 +469,7 @@ def _get_iris_memmap_handle(filename):
 
 
 def _check_iris_file(filename):
+    filename = _fspath(filename)
     with _get_iris_memmap_handle(filename) as fh:
         head = _unpack_dictionary(fh[0:LEN_STRUCTURE_HEADER], STRUCTURE_HEADER, False)
         structure_identifier = STRUCTURE_HEADER_IDENTIFIERS[
@@ -2954,6 +2957,7 @@ class IrisFile(IrisFileBase, IrisStructureHeader):
         self._debug = kwargs.get("debug", False)
         self._rawdata = kwargs.get("rawdata", False)
         self._loaddata = kwargs.get("loaddata", True)
+        filename = _fspath(filename)
         self._fp = None
         self._filename = filename
         if isinstance(filename, str):
@@ -3918,7 +3922,7 @@ class IrisArrayWrapper(BackendArray):
         )
 
 
-class IrisStore(AbstractDataStore):
+class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading IRIS sweeps via xradar.
 
     Ported from wradlib.

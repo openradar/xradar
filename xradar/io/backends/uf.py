@@ -58,6 +58,7 @@ from xradar.io.backends.common import (
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _ManagedStoreMixin,
     _resolve_sweeps,
 )
 from xradar.model import (
@@ -171,6 +172,12 @@ class UFFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the object may have been read before (e.g. sweep discovery)
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -557,7 +564,7 @@ class UFArrayWrapper(BackendArray):
         )
 
 
-class UFStore(AbstractDataStore):
+class UFStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading UF sweeps via xradar."""
 
     def __init__(self, manager, group=None, lock=UF_LOCK):

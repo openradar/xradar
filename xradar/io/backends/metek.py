@@ -19,6 +19,7 @@ Example::
    {}
 """
 
+import gzip
 import io
 import warnings
 from datetime import datetime
@@ -41,11 +42,14 @@ from ...model import (
     get_time_attrs,
 )
 from .common import (
+    _GZIP_MAGIC,
     HDF5_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
+    _ManagedStoreMixin,
     _resolve_single_sweep,
 )
 
@@ -190,6 +194,15 @@ def _parse_spectra_line(input_str, num_gates):
     return out_array
 
 
+def _open_text(filename):
+    """Open an MRR text file, transparently decompressing gzip files."""
+    with open(filename, "rb") as fh:
+        is_gzip = fh.read(2) == _GZIP_MAGIC
+    if is_gzip:
+        return gzip.open(filename, "rt")
+    return open(filename)
+
+
 class MRR2File:
     def __init__(self, file_name="", **kwargs):
         self.vel_bin_spacing = 0.1887
@@ -233,13 +246,14 @@ class MRR2File:
             self.open(file_name)
 
     def open(self, filename_or_obj):
+        filename_or_obj = _fspath(filename_or_obj)
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
             self._fp = filename_or_obj
 
         if isinstance(filename_or_obj, str):
             self.filename = filename_or_obj
-            self._fp = open(filename_or_obj)
+            self._fp = _open_text(filename_or_obj)
 
         num_times = 0
         temp_spectra = np.zeros((self.n_gates, 64))
@@ -499,7 +513,7 @@ class MRR2ArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class MRR2DataStore(AbstractDataStore):
+class MRR2DataStore(_ManagedStoreMixin, AbstractDataStore):
     def __init__(self, manager, group=None):
         self._manager = manager
         self._group = group

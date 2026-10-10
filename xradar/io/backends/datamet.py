@@ -56,7 +56,9 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _resolve_sweeps,
 )
 
@@ -93,6 +95,7 @@ def convert_value(value):
 
 class DataMetFile:
     def __init__(self, filename):
+        filename = _fspath(filename)
         self.filename = filename
         # Handle .tar.gz case
         if self.filename.endswith(".gz"):
@@ -228,7 +231,7 @@ class DataMetArrayWrapper(BackendArray):
         return ds.data[self.group][self.variable_name]
 
 
-class DataMetStore(AbstractDataStore):
+class DataMetStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading DataMet sweeps."""
 
     def __init__(self, manager, group=None):

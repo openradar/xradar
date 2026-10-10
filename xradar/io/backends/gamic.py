@@ -74,6 +74,7 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _prepare_backend_ds,
     _resolve_sweeps,
 )
@@ -259,7 +260,7 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
-class GamicStore(AbstractDataStore):
+class GamicStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
