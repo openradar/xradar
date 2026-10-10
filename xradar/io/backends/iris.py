@@ -206,7 +206,7 @@ def _nyquist(wavelength, prf):
     (1/100 cm) and ``prf`` (Hz); ``decode_vel`` applies the dual-PRF factor.
 
     See 4.4.44 p.86. Halving for alternating polarization is not applied
-    yet (#466).
+    yet (#473).
     """
     # division by 10000 to get from 1/100 cm to m
     return wavelength * prf / (10000.0 * 4.0)
