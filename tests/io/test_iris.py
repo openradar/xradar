@@ -696,3 +696,17 @@ def test_decoders_keep_a_caller_mask_and_take_scalars():
     assert np.isnan(np.asarray(out)[:2]).all() and np.asarray(out)[2] == 32.0
     assert np.isnan(np.asarray(dbz["func"](np.uint8(0), **dbz["fkw"])))
     assert dbz["func"](np.uint8(128), **dbz["fkw"]) == 32.0
+
+
+def _decode_entry(name, words):
+    """``_decode_raw`` by type name, as plain floats (NaN at masked bins)."""
+    return np.asarray(_decode_raw(_ENTRIES[name], words), dtype="float64")
+
+
+@pytest.mark.parametrize("name", ["DB_PHIH", "DB_PHIV"])
+def test_phih_phiv_decode_like_phidp(name):
+    """4.4.24: same format as DB_PHIDP (#474)."""
+    assert _ENTRIES[name]["fkw"] == _ENTRIES["DB_PHIDP"]["fkw"]
+    np.testing.assert_allclose(
+        _decode_entry(name, [1, 128, 254]), [0.0, 90.0, 179.2913], atol=1e-4
+    )
