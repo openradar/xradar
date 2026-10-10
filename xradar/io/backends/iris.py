@@ -2084,7 +2084,7 @@ SIGMET_DATA_TYPES = OrderedDict(
             35,
             {
                 "name": "DB_SHEAR",
-                "dtype": "int8",
+                "dtype": "uint8",
                 "func": decode_array,
                 "fkw": {"scale": 5.0, "offset": -128.0, "mask": 0.0},
             },

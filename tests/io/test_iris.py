@@ -727,3 +727,11 @@ def test_snr16_on_the_test_file(iris1_file):
     assert -60 < np.nanmin(snr) < np.nanmax(snr) < 75
     assert np.isnan(snr).any()
     assert not (np.isnan(snr) & ~np.isnan(dbz)).any()
+
+
+def test_shear_is_unsigned():
+    """4.4.50: subtract 128 and multiply by 0.2; 1 = -25.4, 254 = +25.2
+    (#476)."""
+    np.testing.assert_allclose(
+        _decode_entry("DB_SHEAR", [1, 128, 200, 254]), [-25.4, 0.0, 14.4, 25.2]
+    )
