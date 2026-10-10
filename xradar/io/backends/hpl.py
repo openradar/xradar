@@ -46,23 +46,23 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
 )
 from .common import (
+    HDF5_PARAMS_DOC,
+    REINDEX_COORD_DOC,
+    SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
-    _get_radar_calibration,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
     _get_reindex_coord,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _resolve_sweeps,
 )
 
 variable_attr_dict = {}
@@ -542,6 +542,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
 
     description = "Backend for reading Halo Photonics Doppler lidar processed data"
     url = "https://xradar.rtfd.io/en/latest/io.html#metek"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -567,8 +568,8 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         latitude=0,
         longitude=0,
         altitude=0,
-        transition_threshold_azi=0.05,
-        transition_threshold_el=0.001,
+        transition_threshold_azi=0.01,
+        transition_threshold_el=0.005,
     ):
         store_entrypoint = StoreBackendEntrypoint()
 
@@ -602,13 +603,15 @@ class HPLBackendEntrypoint(BackendEntrypoint):
         ds = ds.assign_coords({"time": ds.time})
         ds = _apply_site_as_coords(ds, site_as_coords)
 
+        ds.encoding["engine"] = "hpl"
+        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+        # angle reindexing needs the angle as dimension
         reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
         if decode_coords and reindex_coord:
+            if "time" in ds.dims:
+                ds = ds.swap_dims({"time": dim0})
             ds = _apply_reindex_coord(ds, reindex_coord)
-
-        ds.encoding["engine"] = "hpl"
         # handling first dimension
-        dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
         if first_dim == "auto":
             if "time" in ds.dims:
                 ds = ds.swap_dims({"time": dim0})
@@ -623,8 +626,104 @@ class HPLBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        format=None,
+        invalid_netcdf=None,
+        phony_dims="access",
+        decode_vlen_strings=True,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+        latitude=0,
+        longitude=0,
+        altitude=0,
+        transition_threshold_azi=0.01,
+        transition_threshold_el=0.005,
+    ):
+        sweeps = _resolve_sweeps(sweep, lambda: _get_hpl_group_names(filename_or_obj))
 
-def _get_h5group_names(filename_or_obj):
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            format=format,
+            invalid_netcdf=invalid_netcdf,
+            phony_dims=phony_dims,
+            decode_vlen_strings=decode_vlen_strings,
+            first_dim=first_dim,
+            reindex_coord=reindex_coord,
+            reindex_angle=reindex_angle,
+            site_as_coords=site_coords,
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            transition_threshold_azi=transition_threshold_azi,
+            transition_threshold_el=transition_threshold_el,
+        )
+
+        ls_ds = [
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
+        ]
+        groups_dict = _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+        # HPL root uses "fixed_angle" instead of "sweep_fixed_angle"
+        root = groups_dict["/"]
+        if "sweep_fixed_angle" in root:
+            groups_dict["/"] = root.rename({"sweep_fixed_angle": "fixed_angle"})
+        return groups_dict
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
+
+_HPL_PARAMS_DOC = """
+latitude : float, optional
+    Override the site latitude (HPL files often lack geolocation).
+longitude : float, optional
+    Override the site longitude.
+altitude : float, optional
+    Override the site altitude above sea level (meters).
+transition_threshold_azi : float, optional
+    Azimuth-jump threshold (deg) for sweep boundary detection.
+transition_threshold_el : float, optional
+    Elevation-jump threshold (deg) for sweep boundary detection.
+"""
+
+HPLBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a Halo Photonics Stream Line (.hpl) lidar file as a\n"
+    "    CfRadial2-shaped dict of group datasets.",
+    HDF5_PARAMS_DOC,
+    REINDEX_COORD_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _HPL_PARAMS_DOC,
+)
+HPLBackendEntrypoint.open_datatree.__doc__ = (
+    "Open a Halo Photonics .hpl file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
+
+def _get_hpl_group_names(filename_or_obj):
     store = HplStore.open(filename_or_obj)
     return [f"sweep_{i}" for i in store.root.data["sweep_number"]]
 
@@ -632,79 +731,23 @@ def _get_h5group_names(filename_or_obj):
 def open_hpl_datatree(filename_or_obj, **kwargs):
     """Open Halo Photonics processed Doppler lidar dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_coord : dict, optional
-        Defaults to None, no reindexing. Nested dict with optional keys
-        ``angle`` and ``range`` holding the kwargs for
-        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
-        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
-        direction=1))``. Only invoked if ``decode_coords=True``.
-    reindex_angle : dict, optional
-        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="hpl")`` instead.
     """
-    # handle kwargs, extract first_dim
+    _deprecation_warning("open_hpl_datatree", "hpl")
+
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", None)
+    optional = backend_kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
     sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    # Remap legacy kwarg name
+    if "site_as_coords" in kwargs:
+        kwargs["site_coords"] = kwargs.pop("site_as_coords")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_h5group_names(filename_or_obj)
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="hpl", **kw)
-        for swp in sweeps
-    ]
-
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional).rename(
-            {"sweep_fixed_angle": "fixed_angle"}
-        ),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return HPLBackendEntrypoint().open_datatree(
+        filename_or_obj,
+        sweep=sweep,
+        optional=optional,
+        optional_groups=optional_groups,
+        **kwargs,
+    )

@@ -21,7 +21,7 @@ from open_radar_data import DATASETS
 import xradar as xd
 ```
 
-`xd.io.open_metek_datatree` supports the Metek MRR2 processed (.pro, .ave) and raw (.raw) files. The initialized datatree will contain all vertically pointing radar data in one sweep.
+`xd.open_datatree(file, engine="metek")` supports the Metek MRR2 processed (.pro, .ave) and raw (.raw) files. The initialized datatree will contain all vertically pointing radar data in one sweep.
 
 In this example, we are loading the 60 s average files from the MRR2 sampling a rain event over the Argonne Testbed for Multiscale Observational Science at Argonne National Laboratory in the Chicago suburbs.
 
@@ -34,7 +34,7 @@ decompressed_file = mrr_test_file[:-3]
 with gzip.open(mrr_test_file, "rb") as f_in:
     with open(decompressed_file, "wb") as f_out:
         shutil.copyfileobj(f_in, f_out)
-with xd.io.open_metek_datatree(decompressed_file) as ds:
+with xd.open_datatree(decompressed_file, engine="metek") as ds:
     display(ds)
 ```
 

@@ -22,15 +22,17 @@ import xradar as xd
 
 Opening a Halo Photonics Doppler lidar .hpl file.
 
-We use the `xd.io.open_hpl_datatree` in order to load the Halo Photonics Doppler lidar data. After that we will need to enter in the latitude and longitude in order to properly georeference the data. The .hpl file does not contain the latitude, longitude, or altitude of the lidar, so these need to be entered in as keywords as a part of the  `backend_kwargs` argument to `xd.io.open_hpl_datatree`.
+We use `xd.open_datatree(file, engine="hpl")` to load the Halo Photonics Doppler lidar data. The .hpl file does not contain the latitude, longitude, or altitude of the lidar, so those need to be passed as `latitude=`, `longitude=`, and `altitude=` keyword arguments.
 
 In this example, we are using the coordinates of the Doppler lidar at the Nantucket Wastewater Management Facility, deployed as as part of the DOE Energy Efficiency and Renewable Energy Office's [3rd Wind Forecast Improvement Project](https://www2.whoi.edu/site/wfip3/).
 
 ```{code-cell}
-ds = xd.io.open_hpl_datatree(
+ds = xd.open_datatree(
     DATASETS.fetch("User1_184_20240601_013257.hpl"),
+    engine="hpl",
     sweep=[0, 1, 2, 3, 4, 5, 6, 7, 8],
-    backend_kwargs=dict(latitude=41.24276244459537, longitude=-70.1070364814594),
+    latitude=41.24276244459537,
+    longitude=-70.1070364814594,
 )
 ```
 
