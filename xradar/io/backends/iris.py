@@ -72,6 +72,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _get_reindex_coord,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 
@@ -4199,7 +4200,6 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         drop_variables=None,
         use_cftime=None,
         decode_timedelta=None,
-        group=None,
         lock=None,
         first_dim="auto",
         reindex_coord=None,
@@ -4222,8 +4222,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
             lock=lock,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
         )
@@ -4240,17 +4239,10 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         return DataTree.from_dict(groups_dict)
 
 
-_IRIS_PARAMS_DOC = """
-group : str or None, optional
-    Specific Iris product group to open (``ingest_data`` /
-    ``raw_product`` etc.). Defaults to all sweep groups.
-"""
-
 IrisBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     "Open an Iris/Sigmet RAW file as a CfRadial2-shaped dict of group datasets.",
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
-    _IRIS_PARAMS_DOC,
     LOCK_PARAM_DOC,
 )
 IrisBackendEntrypoint.open_datatree.__doc__ = (
@@ -4267,19 +4259,4 @@ def open_iris_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_iris_datatree", "iris")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # Capital-O "Optional" is legacy convention from original API
-    optional = backend_kwargs.pop("Optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return IrisBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(IrisBackendEntrypoint, filename_or_obj, kwargs)

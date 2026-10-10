@@ -60,6 +60,7 @@ from .common import (
     _deprecation_warning,
     _get_reindex_coord,
     _maybe_decode,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 
@@ -381,25 +382,15 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_cfradial1_datatree", "cfradial1")
 
-    # Bridge old kwargs to direct kwargs
-    first_dim = kwargs.pop("first_dim", "auto")
-    optional = kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    site_coords = kwargs.pop("site_as_coords", True)
-    sweep = kwargs.pop("sweep", None)
-    engine = kwargs.pop("engine", "netcdf4")
-    kwargs.setdefault("decode_timedelta", False)
-
-    return CfRadial1BackendEntrypoint().open_datatree(
-        filename_or_obj,
-        first_dim=first_dim,
-        optional=optional,
-        optional_groups=optional_groups,
-        site_coords=site_coords,
-        sweep=sweep,
-        engine=engine,
-        **kwargs,
-    )
+    # `engine` here is the inner netCDF engine, `netcdf_engine` in the backend
+    if "engine" in kwargs:
+        kwargs["netcdf_engine"] = kwargs.pop("engine")
+    backend_kwargs = kwargs.get("backend_kwargs") or {}
+    if "engine" in backend_kwargs:
+        backend_kwargs = dict(backend_kwargs)
+        backend_kwargs["netcdf_engine"] = backend_kwargs.pop("engine")
+        kwargs["backend_kwargs"] = backend_kwargs
+    return _open_legacy_datatree(CfRadial1BackendEntrypoint, filename_or_obj, kwargs)
 
 
 class CfRadial1BackendEntrypoint(BackendEntrypoint):
@@ -508,12 +499,12 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         optional=True,
         optional_groups=False,
         sweep=None,
-        engine="netcdf4",
+        netcdf_engine="netcdf4",
     ):
         # CfRadial1 opens the entire file once
         ds = open_dataset(
             filename_or_obj,
-            engine=engine,
+            engine=netcdf_engine,
             mask_and_scale=mask_and_scale,
             decode_times=decode_times,
             concat_characters=concat_characters,
@@ -577,7 +568,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
 
 
 _CFRADIAL1_PARAMS_DOC = """
-    engine : {"netcdf4", "h5netcdf"}, optional
+    netcdf_engine : {"netcdf4", "h5netcdf"}, optional
         Underlying NetCDF engine used by ``xr.open_dataset`` to read the
         CfRadial1 file. Defaults to ``"netcdf4"``.
 """

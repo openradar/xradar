@@ -30,6 +30,7 @@ from .backends.nexrad_level2 import NexradLevel2BackendEntrypoint
 from .backends.odim import OdimBackendEntrypoint
 from .backends.rainbow import RainbowBackendEntrypoint
 from .backends.uf import UFBackendEntrypoint
+from xarray import open_datatree as _xr_open_datatree
 
 #: Registry mapping engine names to backend classes that support groups.
 _ENGINE_REGISTRY = {
@@ -59,7 +60,9 @@ def open_datatree(filename_or_obj, *, engine, **kwargs):
     engine : str
         Backend engine name (e.g., ``"odim"``, ``"cfradial1"``, ``"nexradlevel2"``).
     **kwargs
-        Additional keyword arguments passed to the backend's ``open_datatree`` method.
+        Keyword arguments for :py:func:`xarray.open_datatree`: xarray options
+        such as ``chunks`` or ``cache``, and the backend options documented on
+        the engine's ``open_groups_as_dict`` (``sweep``, ``first_dim``, ...).
 
     Returns
     -------
@@ -74,8 +77,7 @@ def open_datatree(filename_or_obj, *, engine, **kwargs):
     if engine not in _ENGINE_REGISTRY:
         supported = ", ".join(sorted(_ENGINE_REGISTRY))
         raise ValueError(f"Unknown engine {engine!r}. Supported engines: {supported}")
-    backend = _ENGINE_REGISTRY[engine]()
-    return backend.open_datatree(filename_or_obj, **kwargs)
+    return _xr_open_datatree(filename_or_obj, engine=_ENGINE_REGISTRY[engine], **kwargs)
 
 
 def list_engines():

@@ -64,6 +64,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _external_stacklevel,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 
@@ -143,7 +144,7 @@ def _get_sweep_fixed_angle(sw, sweep_name: str):
             f"CfRadial2 sweep `{sweep_name}` contains multiple fixed-angle candidates "
             f"({ordered}); using `{candidates[0][0]}`.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
     if not candidates:
@@ -479,7 +480,10 @@ def _build_cfradial2_dtree_dict(
     """
     kwargs.setdefault("decode_timedelta", False)
 
-    with open_datatree(filename_or_obj, **kwargs) as tree:
+    # keep the file open while the returned datasets are in use: closing it
+    # here makes xarray reopen it for every lazy read
+    tree = open_datatree(filename_or_obj, **kwargs)
+    try:
         raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
         selected = _iter_selected_sweeps(tree, sweep)
         output_names = [f"sweep_{i}" for i in range(len(selected))]
@@ -521,6 +525,10 @@ def _build_cfradial2_dtree_dict(
             cleaned = ds.drop_vars(_STATION_VARS, errors="ignore")
             cleaned.attrs = {}
             dtree[f"sweep_{i}"] = cleaned
+    except Exception:
+        tree.close()
+        raise
+    dtree["/"].set_close(tree.close)
 
     renamed = selected != output_names or any(
         name != _normalize_sweep_name(name) for name in raw_sweep_names
@@ -529,7 +537,7 @@ def _build_cfradial2_dtree_dict(
         warnings.warn(
             "CfRadial2 sweep groups were renumbered into sequential `sweep_<n>` order.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     missing_root = (
@@ -540,7 +548,7 @@ def _build_cfradial2_dtree_dict(
             "CfRadial2 reader could not fully normalize FM301 root variables; "
             f"missing {sorted(missing_root)}.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     return dtree
@@ -624,8 +632,12 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
         optional=True,
         optional_groups=False,
         site_coords=True,
+        netcdf_engine=None,
         **kwargs,
     ):
+        if netcdf_engine is not None:
+            # `engine` is taken by xarray for the backend itself
+            kwargs["engine"] = netcdf_engine
         groups_dict = _build_cfradial2_dtree_dict(
             filename_or_obj,
             sweep=sweep,
@@ -645,7 +657,10 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        tree = DataTree.from_dict(groups_dict)
+        # from_dict copies the datasets, which drops their close hook
+        tree.set_close(groups_dict["/"]._close)
+        return tree
 
 
 _CFRADIAL2_PARAMS_DOC = """
@@ -653,6 +668,9 @@ _CFRADIAL2_PARAMS_DOC = """
         Keep ``latitude``/``longitude``/``altitude`` as coordinates on
         the root dataset. CfRadial2 stores station coords at root by
         default; pass ``False`` to drop them. Defaults to ``True``.
+    netcdf_engine : str, optional
+        netCDF engine used to read the file (e.g. ``"netcdf4"`` or
+        ``"h5netcdf"``). Defaults to ``None`` (xarray's choice).
 """
 
 CfRadial2BackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
@@ -700,4 +718,12 @@ def open_cfradial2_datatree(
         Normalized DataTree containing root metadata and sweep groups.
     """
     _deprecation_warning("open_cfradial2_datatree", "cfradial2")
-    return CfRadial2BackendEntrypoint().open_datatree(filename_or_obj, **kwargs)
+    # `engine` here is the inner netCDF engine, `netcdf_engine` in the backend
+    if "engine" in kwargs:
+        kwargs["netcdf_engine"] = kwargs.pop("engine")
+    backend_kwargs = kwargs.get("backend_kwargs") or {}
+    if "engine" in backend_kwargs:
+        backend_kwargs = dict(backend_kwargs)
+        backend_kwargs["netcdf_engine"] = backend_kwargs.pop("engine")
+        kwargs["backend_kwargs"] = backend_kwargs
+    return _open_legacy_datatree(CfRadial2BackendEntrypoint, filename_or_obj, kwargs)

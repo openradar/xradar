@@ -74,6 +74,7 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _open_legacy_datatree,
     _prepare_backend_ds,
     _resolve_sweeps,
 )
@@ -544,8 +545,7 @@ class GamicBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
         )
@@ -582,18 +582,4 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_gamic_datatree", "gamic")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # Capital-O "Optional" is the legacy GAMIC convention
-    optional = backend_kwargs.pop("Optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return GamicBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(GamicBackendEntrypoint, filename_or_obj, kwargs)
