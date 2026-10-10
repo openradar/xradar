@@ -192,7 +192,27 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
     # numpy 2 changed casting rules
     # so we need to cast to float beforehand
     data = data.astype(np.float64)
-    return (data + offset) / scale + offset2
+    return _nan_under_mask((data + offset) / scale + offset2)
+
+
+def _nan_under_mask(data):
+    """Masked decoder result with NaN under its mask (and as fill value).
+
+    The masked-array API is kept, and ``np.asarray``, ``.data`` and
+    ``.filled()`` give NaN at no-data bins instead of whatever the masked
+    arithmetic left there. The decoders return this; callers of the
+    decoders (``decode_data``, wradlib's product reader) need nothing else.
+    Masked arithmetic keeps the NaN only with the masked array on the left,
+    and ``np.sqrt`` replaces it, hence the operand order below and the
+    second call in ``decode_sqi``.
+    """
+    if not np.ma.isMaskedArray(data):
+        return data
+    return np.ma.MaskedArray(
+        np.ma.filled(data.astype(np.float64, copy=False), np.nan),
+        mask=np.ma.getmaskarray(data),
+        fill_value=np.nan,
+    )
 
 
 def decode_vel(data, **kwargs):
@@ -236,7 +256,7 @@ def decode_phidp(data, **kwargs):
 
     See 4.4.28 p.79
     """
-    return 180.0 * decode_array(data, **kwargs)
+    return decode_array(data, **kwargs) * 180.0
 
 
 def decode_phidp2(data, **kwargs):
@@ -244,7 +264,7 @@ def decode_phidp2(data, **kwargs):
 
     See 4.4.29 p.80
     """
-    return 360.0 * decode_array(data, **kwargs)
+    return decode_array(data, **kwargs) * 360.0
 
 
 def decode_sqi(data, **kwargs):
@@ -252,7 +272,7 @@ def decode_sqi(data, **kwargs):
 
     See 4.4.41 p.83
     """
-    return np.sqrt(decode_array(data, **kwargs))
+    return _nan_under_mask(np.sqrt(decode_array(data, **kwargs)))
 
 
 def decode_time(data):
