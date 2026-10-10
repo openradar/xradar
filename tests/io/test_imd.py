@@ -5,12 +5,14 @@
 """Tests for `io.backends.imd` module."""
 
 import os
+import warnings
 
 import numpy as np
 import pytest
+import xarray as xr
 from xarray import DataTree, open_dataset
 
-from xradar.io.backends import group_imd_files, open_imd_datatree, open_imd_volumes
+from xradar.io.backends import group_imd_files, imd, open_imd_datatree, open_imd_volumes
 from xradar.io.backends.imd import _conform_imd_sweep, imd_mapping
 
 
@@ -224,6 +226,62 @@ def test_open_imd_datatree_optional_groups(imd_file):
     assert expected_cal.issubset(
         rc.data_vars
     ), f"expected {expected_cal} in /radar_calibration, got {set(rc.data_vars)}"
+
+
+OPTIONAL_GROUPS = ["radar_parameters", "georeferencing_correction", "radar_calibration"]
+
+
+def test_open_imd_datatree_volume_optional_groups(imd_volume_files):
+    # create_volume only copies the sweeps, the optional groups of a volume
+    # from several files were dropped (#468)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # the files of a volume agree
+        dtree = open_imd_datatree(imd_volume_files, optional_groups=True)
+    single = open_imd_datatree(imd_volume_files[0], optional_groups=True)
+    assert len(dtree.match("sweep_*")) == len(imd_volume_files)
+    for name in OPTIONAL_GROUPS:
+        xr.testing.assert_identical(
+            dtree[name].to_dataset(inherit=False),
+            single[name].to_dataset(inherit=False),
+        )
+    assert float(dtree["radar_parameters"].ds["radar_beam_width_h"]) > 0
+    assert {"calibConst", "radarConst", "calNoise"}.issubset(
+        dtree["radar_calibration"].ds.data_vars
+    )
+    # still usable
+    assert "x" in dtree.xradar.georeference()["sweep_0"].ds
+    # not added by default
+    plain = open_imd_datatree(imd_volume_files)
+    assert not set(OPTIONAL_GROUPS) & set(plain.children)
+
+
+def test_open_imd_volumes_optional_groups(imd_volume_files):
+    tree = open_imd_volumes(imd_volume_files, optional_groups=True)
+    assert set(OPTIONAL_GROUPS).issubset(tree["vcp_00"].children)
+
+
+def test_open_imd_datatree_volume_optional_groups_differ(imd_volume_files, monkeypatch):
+    # a single set of values can't describe files that differ: first file wins
+    open_single = imd._open_single_imd_datatree
+    calls = []
+
+    def patched(filename, **kwargs):
+        tree = open_single(filename, **kwargs)
+        calls.append(filename)
+        if len(calls) == 2:
+            calib = tree["radar_calibration"].to_dataset(inherit=False)
+            tree["radar_calibration"] = DataTree(
+                calib.assign(radarConst=calib["radarConst"] + 1.0)
+            )
+        return tree
+
+    monkeypatch.setattr(imd, "_open_single_imd_datatree", patched)
+    with pytest.warns(UserWarning, match="/radar_calibration differs"):
+        dtree = open_imd_datatree(imd_volume_files, optional_groups=True)
+    first = open_single(imd_volume_files[0], optional_groups=True)
+    assert float(dtree["radar_calibration"].ds["radarConst"]) == float(
+        first["radar_calibration"].ds["radarConst"]
+    )
 
 
 def test_open_dataset_imd_reindex_angle(imd_file):
