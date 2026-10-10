@@ -185,34 +185,37 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
     data : array-like
         decoded data
     """
+    return _masked(*_decode_linear(data, scale, offset, offset2, tofloat, mask))
+
+
+def _decode_linear(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None):
+    """``decode_array`` on plain floats: the decoded values with NaN where
+    the raw word equals ``mask``, and that no-data map (``None`` without a
+    mask). The decoders finish on plain floats, so NaN carries through any
+    later arithmetic, and wrap the result once with ``_masked``."""
+    # a mask the caller passes in is kept, merged with the no-data words
+    caller_mask = np.ma.getmaskarray(data) if np.ma.isMaskedArray(data) else None
+    data = np.asarray(np.ma.getdata(data))
+    no_data = None if mask is None else data == mask
+    if caller_mask is not None:
+        no_data = caller_mask if no_data is None else no_data | caller_mask
     if tofloat:
         data = to_float(data)
-    if mask is not None:
-        data = np.ma.masked_equal(data, mask)
     # numpy 2 changed casting rules
     # so we need to cast to float beforehand
-    data = data.astype(np.float64)
-    return _nan_under_mask((data + offset) / scale + offset2)
+    values = np.asarray((data.astype(np.float64) + offset) / scale + offset2)
+    if no_data is not None:
+        values[no_data] = np.nan
+    return values, no_data
 
 
-def _nan_under_mask(data):
-    """Masked decoder result with NaN under its mask (and as fill value).
-
-    The masked-array API is kept, and ``np.asarray``, ``.data`` and
-    ``.filled()`` give NaN at no-data bins instead of whatever the masked
-    arithmetic left there. The decoders return this; callers of the
-    decoders (``decode_data``, wradlib's product reader) need nothing else.
-    Masked arithmetic keeps the NaN only with the masked array on the left,
-    and ``np.sqrt`` replaces it, hence the operand order below and the
-    second call in ``decode_sqi``.
-    """
-    if not np.ma.isMaskedArray(data):
-        return data
-    return np.ma.MaskedArray(
-        np.ma.filled(data.astype(np.float64, copy=False), np.nan),
-        mask=np.ma.getmaskarray(data),
-        fill_value=np.nan,
-    )
+def _masked(values, no_data):
+    """Decoded ``values`` as a masked array with NaN under the mask and as
+    fill value, so ``np.asarray`` and ``.filled()`` give NaN at no-data bins;
+    plain ``values`` when the type has no mask."""
+    if no_data is None:
+        return values
+    return np.ma.MaskedArray(values, mask=no_data, fill_value=np.nan)
 
 
 def decode_vel(data, **kwargs):
@@ -221,9 +224,8 @@ def decode_vel(data, **kwargs):
     See 4.4.46 p.85
     """
     nyquist = kwargs.pop("nyquist")
-    # mask = kwargs.pop('mask')
-    # data = np.ma.masked_equal(data, mask)
-    return decode_array(data, **kwargs) * nyquist
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(values * nyquist, no_data)
 
 
 def decode_width(data, **kwargs):
@@ -232,7 +234,8 @@ def decode_width(data, **kwargs):
     See 4.4.50 p.87
     """
     nyquist = kwargs.pop("nyquist")
-    return decode_array(data, **kwargs) * nyquist
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(values * nyquist, no_data)
 
 
 def decode_kdp(data, **kwargs):
@@ -256,7 +259,8 @@ def decode_phidp(data, **kwargs):
 
     See 4.4.28 p.79
     """
-    return decode_array(data, **kwargs) * 180.0
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(180.0 * values, no_data)
 
 
 def decode_phidp2(data, **kwargs):
@@ -264,7 +268,8 @@ def decode_phidp2(data, **kwargs):
 
     See 4.4.29 p.80
     """
-    return decode_array(data, **kwargs) * 360.0
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(360.0 * values, no_data)
 
 
 def decode_sqi(data, **kwargs):
@@ -272,7 +277,8 @@ def decode_sqi(data, **kwargs):
 
     See 4.4.41 p.83
     """
-    return _nan_under_mask(np.sqrt(decode_array(data, **kwargs)))
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(np.sqrt(values), no_data)
 
 
 def decode_time(data):
@@ -3948,8 +3954,8 @@ class IrisArrayWrapper(BackendArray):
             # read the data and put it into dict
             self.datastore.root.get_moment(self.group, self.name)
             data = self.datastore.ds["sweep_data"][self.name][key]
-        # decoders mask no-data bins (e.g. DB_VEL raw 0), keep them as NaN
-        # instead of losing the mask (#462)
+        # decoders mask no-data bins with NaN under the mask (#467); filling
+        # keeps them NaN even for a decoder that leaves something else (#462)
         return np.ma.filled(data, np.nan)
 
     def __getitem__(self, key):
