@@ -11,11 +11,9 @@ Reads data from Vaisala's IRIS data formats
 
 IRIS (Vaisala Sigmet Interactive Radar Information System)
 
-See the IRIS Programming Guide M212927EN-B (2024),
-https://ftp.sigmet.vaisala.com/files/manuals/10.1.0/IRIS-Radar-Programming-Guide-M212927EN.pdf.
-The decoders cite its sections and pages. The structure comments were
-written against the earlier M211318EN-F: their section numbers match the
-2024 guide, some page numbers are off by one.
+The decoders cite the IRIS Programming Guide M212927EN-B (2024),
+https://ftp.sigmet.vaisala.com/files/manuals/10.1.0/IRIS-Radar-Programming-Guide-M212927EN.pdf;
+the structure comments come from the earlier M211318EN-F.
 
 To read from IRIS files :class:`numpy:numpy.memmap` is used to get access to
 the data. The IRIS header (`PRODUCT_HDR`, `INGEST_HEADER`) is read in any case
@@ -203,33 +201,35 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
     return (data + offset) / scale + offset2
 
 
-def _nyquist(wavelength, prf, multi_prf_mode_flag=0):
-    """Nyquist velocity (m/s) from the IRIS ``wavelength`` (1/100 cm) and
-    ``prf`` (Hz), multiplied by ``multi_prf_mode_flag + 1`` (pass it for
-    ``DB_VEL`` only, the dual-PRF unfolded velocity).
+def _nyquist(wavelength, prf):
+    """Single-PRF Nyquist velocity (m/s) from the IRIS ``wavelength``
+    (1/100 cm) and ``prf`` (Hz); ``decode_vel`` applies the dual-PRF factor.
 
-    See 4.4.44 p.86 (velocity) and 4.4.48 p.87 (width, not enlarged by dual
-    PRF). Halving for alternating polarization (same sections) is not
-    applied yet (#466).
+    See 4.4.44 p.86. Halving for alternating polarization is not applied
+    yet (#466).
     """
     # division by 10000 to get from 1/100 cm to m
-    return wavelength * prf / (10000.0 * 4.0) * (multi_prf_mode_flag + 1)
+    return wavelength * prf / (10000.0 * 4.0)
 
 
 def decode_vel(data, **kwargs):
     """Decode `DB_VEL`.
 
-    See 4.4.44 p.86
+    ``nyquist`` is the single-PRF Nyquist velocity; dual-PRF modes
+    (``multi_prf_mode_flag`` 1-3) multiply it by 2-4. See 4.4.44 p.86
     """
-    nyquist = kwargs.pop("nyquist")
+    nyquist = kwargs.pop("nyquist") * (kwargs.pop("multi_prf_mode_flag", 0) + 1)
     return decode_array(data, **kwargs) * nyquist
 
 
 def decode_width(data, **kwargs):
     """Decode `DB_WIDTH`.
 
+    ``nyquist`` is the single-PRF Nyquist velocity; the width is not
+    enlarged by dual PRF, so ``multi_prf_mode_flag`` is ignored.
     See 4.4.48 p.87
     """
+    kwargs.pop("multi_prf_mode_flag", None)
     nyquist = kwargs.pop("nyquist")
     return decode_array(data, **kwargs) * nyquist
 
@@ -707,7 +707,7 @@ NDOP_PSI_STRUCT = OrderedDict(
 )
 
 # ndop_results Struct
-# 4.3.20, page 35
+# 4.3.21, page 35
 NDOP_RESULTS = OrderedDict(
     [
         ("velocity_east", UINT2),
@@ -1770,7 +1770,7 @@ STRUCTURE_HEADER_FORMAT_VERSION = OrderedDict(
 )
 
 # Sigmet data types
-# 4.9 Constants, Table 17
+# 4.9 Constants, Table 18, page 99
 
 SIGMET_DATA_TYPES = OrderedDict(
     [
@@ -3196,24 +3196,19 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
             except ValueError:
                 data = data.view(dtype)
             if prod["func"] in [decode_vel, decode_width, decode_kdp]:
-                # wavelength is normally used from product_hdr
-                # wavelength = self.product_hdr['product_end']['wavelength']
-                # but we can retrieve it from TASK_MISC_INFO, too
-                wavelength = self.ingest_header["task_configuration"]["task_misc_info"][
-                    "wavelength"
-                ]
+                # ingest data files take wavelength and PRF from the task
+                # configuration (RAW products: product_end)
+                task = self.ingest_header["task_configuration"]
+                wavelength = task["task_misc_info"]["wavelength"]
                 if prod["func"] == decode_kdp:
                     # get wavelength in cm
                     kw.update({"wavelength": wavelength / 100})
                     return prod["func"](data, **kw)
-                # PRF is normally used from product_hdr
-                # prf = self.product_hdr['product_end']['prf']
-                # but we can retrieve it from TASK_DSP_INFO, too
-                dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
-                multi_prf = (
-                    dsp_info["multi_prf_mode_flag"] if prod["func"] == decode_vel else 0
+                dsp_info = task["task_dsp_info"]
+                kw.update(
+                    nyquist=_nyquist(wavelength, dsp_info["prf"]),
+                    multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
                 )
-                kw.update({"nyquist": _nyquist(wavelength, dsp_info["prf"], multi_prf)})
 
             return prod["func"](data, **kw)
         else:
@@ -3770,12 +3765,13 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                     kw.update({"wavelength": wavelength / 100})
                     return prod["func"](data, **kw)
 
-                prf = self.product_hdr["product_end"]["prf"]
                 dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
-                multi_prf = (
-                    dsp_info["multi_prf_mode_flag"] if prod["func"] == decode_vel else 0
+                kw.update(
+                    nyquist=_nyquist(
+                        wavelength, self.product_hdr["product_end"]["prf"]
+                    ),
+                    multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
                 )
-                kw.update({"nyquist": _nyquist(wavelength, prf, multi_prf)})
 
             return prod["func"](data, **kw)
         elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:

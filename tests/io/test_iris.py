@@ -560,66 +560,69 @@ def test_iris_velocity_no_data_is_nan(iris0_file):
 
 
 def test_nyquist_matches_the_programming_guide_example():
-    """The guide's productx example (5.1.2): 10.63 cm, PRF 840/560 Hz in 2:3
-    dual-PRF mode gives Nyquist 44.65 m/s for velocity and 22.32 m/s for
-    width, computed from the higher PRF (4.4.44, 4.4.48)."""
-    assert iris._nyquist(1063, 840) == pytest.approx(22.32, abs=0.005)
-    assert iris._nyquist(1063, 840, 1) == pytest.approx(44.65, abs=0.005)
+    """Guide 5.1.2 productx example: 10.63 cm, 840/560 Hz, 2:3 dual PRF gives
+    Nyquist 22.32 m/s for width and 44.65 m/s for velocity."""
+    nyquist = iris._nyquist(1063, 840)
+    one = np.array([1], dtype="uint16")
+    kw = {"scale": 1.0, "nyquist": nyquist, "multi_prf_mode_flag": 1}
+    assert iris.decode_width(one, **kw)[0] == pytest.approx(22.32, abs=0.005)
+    assert iris.decode_vel(one, **kw)[0] == pytest.approx(44.65, abs=0.005)
 
 
-#: (wavelength 1/100 cm, PRF Hz) each decode path must read, and a decoy in
-#: the header it must not read
-_PRODUCT_END, _TASK = (533, 1000), (999, 7777)
+@pytest.mark.parametrize("multi_prf_mode_flag", [0, 1, 2, 3])
+def test_dual_prf_scales_velocity_not_width(multi_prf_mode_flag):
+    """Dual-PRF modes 1:1, 2:3, 3:4, 4:5 (task_dsp_info byte 144; the 4.4.44
+    text calls the third "4:3") multiply the velocity Nyquist by 1-4; the
+    width keeps the single-PRF one (4.4.48)."""
+    data = np.array([2, 3], dtype="uint16")
+    kw = {"scale": 1.0, "nyquist": 10.0, "multi_prf_mode_flag": multi_prf_mode_flag}
+    vel = iris.decode_vel(data, **kw)
+    np.testing.assert_allclose(vel, data * 10.0 * (multi_prf_mode_flag + 1))
+    np.testing.assert_allclose(iris.decode_width(data, **kw), data * 10.0)
 
 
-def _header_stub(cls, multi_prf_mode_flag):
-    """The headers ``decode_data`` reads for the Nyquist: ``IrisRawFile``
-    takes wavelength and PRF from ``product_end``, ``IrisIngestDataFile``
-    from the task configuration; the other header holds a decoy. (The
-    unbound method runs on this stub, so a new ``self`` attribute in
-    ``decode_data`` fails loudly here.)"""
-    raw = cls is iris.IrisRawFile
-    (end_wl, end_prf), (task_wl, task_prf) = (
-        (_PRODUCT_END, _TASK) if raw else (_TASK, _PRODUCT_END)
-    )
-    dsp_info = {"prf": task_prf, "multi_prf_mode_flag": multi_prf_mode_flag}
+def _header_stub():
+    """The headers ``decode_data`` reads for the Nyquist, with a different
+    wavelength and PRF in ``product_end`` than in the task configuration
+    (dual-PRF flag 1 in both cases)."""
+    dsp_info = {"prf": 7777, "multi_prf_mode_flag": 1}
     return SimpleNamespace(
         _rawdata=False,
-        product_hdr={"product_end": {"wavelength": end_wl, "prf": end_prf}},
+        product_hdr={"product_end": {"wavelength": 533, "prf": 1000}},
         ingest_header={
             "task_configuration": {
                 "task_dsp_info": dsp_info,
-                "task_misc_info": {"wavelength": task_wl},
+                "task_misc_info": {"wavelength": 999},
             }
         },
     )
 
 
-@pytest.mark.parametrize("multi_prf_mode_flag", [0, 1, 2, 3])
-@pytest.mark.parametrize("cls", [iris.IrisRawFile, iris.IrisIngestDataFile])
-def test_dual_prf_scales_velocity_not_width(cls, multi_prf_mode_flag):
-    """Dual-PRF modes 1:1, 2:3, 3:4, 4:5 (task_dsp_info byte 144) multiply
-    the velocity Nyquist by 1, 2, 3, 4; the width Nyquist stays the
-    single-PRF one. Each path reads its own header (2-byte words here; the
-    1-byte views differ between the paths and are covered by the file tests)."""
-    stub = _header_stub(cls, multi_prf_mode_flag=multi_prf_mode_flag)
-    data = np.array([1, 2, 3], dtype="uint16")
-    vel = {"func": iris.decode_vel, "dtype": "uint16", "fkw": {"scale": 1.0}}
-    width = {"func": iris.decode_width, "dtype": "uint16", "fkw": {"scale": 1.0}}
-    nyquist = iris._nyquist(*_PRODUCT_END)
-    np.testing.assert_allclose(
-        cls.decode_data(stub, data, vel), data * nyquist * (multi_prf_mode_flag + 1)
-    )
-    np.testing.assert_allclose(cls.decode_data(stub, data, width), data * nyquist)
+@pytest.mark.parametrize(
+    "cls, wavelength_prf",
+    [(iris.IrisRawFile, (533, 1000)), (iris.IrisIngestDataFile, (999, 7777))],
+)
+def test_decode_paths_read_their_own_headers(cls, wavelength_prf):
+    """RAW products take wavelength and PRF from ``product_end``, ingest
+    data files from the task configuration. (2-byte words, viewed the same
+    in both paths; the ingest path's 1-byte view has no file test, no
+    ingest data file fixture exists.)"""
+    data = np.array([2, 3], dtype="uint16")
+    nyquist = iris._nyquist(*wavelength_prf)
+    for func, factor in ((iris.decode_vel, 2), (iris.decode_width, 1)):
+        prod = {"func": func, "dtype": "uint16", "fkw": {"scale": 1.0}}
+        decoded = cls.decode_data(_header_stub(), data, prod)
+        np.testing.assert_allclose(decoded, data * nyquist * factor, err_msg=func)
 
 
 @pytest.mark.parametrize("cls", [iris.IrisRawFile, iris.IrisIngestDataFile])
 def test_kdp_needs_no_prf(cls):
     """``DB_KDP`` returns before the PRF lookup: it only needs the
     wavelength."""
-    stub = _header_stub(cls, multi_prf_mode_flag=0)
+    stub = _header_stub()
     del stub.ingest_header["task_configuration"]["task_dsp_info"]["prf"]
     del stub.product_hdr["product_end"]["prf"]
-    kdp = {"func": iris.decode_kdp, "dtype": "int8"}
     words = np.zeros((1, 2), dtype="int16")  # one ray of raw words (KDP 0: no data)
+    kdp = iris.SIGMET_DATA_TYPES[14]
+    assert kdp["name"] == "DB_KDP"
     assert np.isnan(cls.decode_data(stub, words, kdp)).all()
