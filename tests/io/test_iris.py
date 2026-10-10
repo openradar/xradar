@@ -761,3 +761,28 @@ def test_hvel2_has_a_dtype():
     np.testing.assert_allclose(
         _decode_entry("DB_HVEL2", [-100, 0, 100]), [-1.0, 0.0, 1.0]
     )
+
+
+@pytest.mark.parametrize("flag, factor", [(0, 1), (1, 2), (2, 3), (3, 4)])
+def test_dual_prf_factor_for_defined_flags(flag, factor):
+    assert iris._dual_prf_factor(flag) == factor
+
+
+@pytest.mark.parametrize("cls", [iris.IrisRawFile, iris.IrisIngestDataFile])
+@pytest.mark.parametrize("flag", [4, 65535])
+def test_undefined_multi_prf_flag_warns_and_uses_single_prf(cls, flag):
+    """An out-of-range multi PRF mode flag must not scale velocity (#480)."""
+    stub = SimpleNamespace(
+        _rawdata=False,
+        product_hdr={"product_end": {"wavelength": 533, "prf": 1000}},
+        ingest_header={
+            "task_configuration": {
+                "task_misc_info": {"wavelength": 533},
+                "task_dsp_info": {"prf": 1000, "multi_prf_mode_flag": flag},
+            }
+        },
+    )
+    vel = {"func": iris.decode_vel, "dtype": "uint16", "fkw": {"scale": 1.0}}
+    with pytest.warns(UserWarning, match="multi_prf_mode_flag"):
+        decoded = cls.decode_data(stub, np.array([1, 2], dtype="uint16"), vel)
+    np.testing.assert_allclose(decoded, np.array([1, 2]) * 533 * 1000 / 40000.0)

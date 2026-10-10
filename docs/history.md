@@ -2,6 +2,7 @@
 
 ## Development
 
+* FIX: IRIS ``multi_prf_mode_flag`` values outside 0-3 warn and use the single-PRF Nyquist velocity instead of scaling velocity by up to 65536 ({issue}`480`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS ``DB_HVEL2`` has a dtype (signed 2 byte, 0.01 m/s), so files carrying it no longer fail to decode ({issue}`479`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS 2-byte SQI-format types (``DB_SQI2``, ``DB_RHOHV2``, ``DB_RHOH2``, ``DB_RHOV2``, ``DB_PMI16``, ``DB_CCOR16``) decode as ``(N - 1) / 65533`` (IRIS Programming Guide 4.4.40), so raw 65534 is 1.0 ({issue}`478`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS ``DB_VELC`` decodes raw 128 as zero velocity, with 127 steps below and 126 above over +/-75 m/s (IRIS Programming Guide 4.4.42), instead of +0.3 m/s ({issue}`477`) by [@aladinor](https://github.com/aladinor)

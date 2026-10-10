@@ -237,6 +237,20 @@ def decode_width(data, **kwargs):
     return _masked(values * nyquist, no_data)
 
 
+def _dual_prf_factor(multi_prf_mode_flag):
+    """Velocity Nyquist factor for the ``task_dsp_info`` multi PRF mode flag
+    (0=1:1, 1=2:3, 2=3:4, 3=4:5: x1-x4; see 4.4.44 p.86). The guide defines
+    no other value: warn and use the single-PRF Nyquist velocity."""
+    if multi_prf_mode_flag in (0, 1, 2, 3):
+        return multi_prf_mode_flag + 1
+    warnings.warn(
+        f"xradar: IRIS multi_prf_mode_flag={multi_prf_mode_flag} is not "
+        "defined (0-3); using the single-PRF Nyquist velocity",
+        UserWarning,
+    )
+    return 1
+
+
 def decode_velc(data, **kwargs):
     """Decode `DB_VELC`.
 
@@ -3262,11 +3276,10 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
                 # division by 10000 to get from 1/100 cm to m
                 nyquist = wavelength * prf / (10000.0 * 4.0)
                 if prod["func"] == decode_vel:
-                    nyquist *= (
+                    nyquist *= _dual_prf_factor(
                         self.ingest_header["task_configuration"]["task_dsp_info"][
                             "multi_prf_mode_flag"
                         ]
-                        + 1
                     )
                 kw.update({"nyquist": nyquist})
 
@@ -3828,11 +3841,10 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 prf = self.product_hdr["product_end"]["prf"]
                 nyquist = wavelength * prf / (10000.0 * 4.0)
                 if prod["func"] == decode_vel:
-                    nyquist *= (
+                    nyquist *= _dual_prf_factor(
                         self.ingest_header["task_configuration"]["task_dsp_info"][
                             "multi_prf_mode_flag"
                         ]
-                        + 1
                     )
                 kw.update({"nyquist": nyquist})
 
