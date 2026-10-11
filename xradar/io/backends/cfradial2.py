@@ -39,6 +39,7 @@ from typing import Any
 import numpy as np
 from xarray import DataTree, Variable, open_datatree
 from xarray.backends import BackendEntrypoint
+from xarray.backends.common import datatree_from_dict_with_io_cleanup
 
 from ...model import (
     georeferencing_correction_subgroup,
@@ -480,52 +481,53 @@ def _build_cfradial2_dtree_dict(
     """
     kwargs.setdefault("decode_timedelta", False)
 
-    # read everything and close the file before returning: lazy datasets
-    # would make xarray reopen the file later, and netCDF4/HDF5 can crash
-    # when one process holds several handles on the same file
-    with open_datatree(filename_or_obj, **kwargs) as tree:
-        raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
-        selected = _iter_selected_sweeps(tree, sweep)
-        output_names = [f"sweep_{i}" for i in range(len(selected))]
-        sweep_nodes = {
-            _normalize_sweep_name(name): tree[name] for name in raw_sweep_names
-        }
+    # keep the file open while the returned datasets are in use: closing it
+    # here makes xarray reopen it for every lazy read
+    tree = open_datatree(filename_or_obj, **kwargs)
+    raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
+    selected = _iter_selected_sweeps(tree, sweep)
+    output_names = [f"sweep_{i}" for i in range(len(selected))]
+    sweep_nodes = {
+        _normalize_sweep_name(name): tree[name] for name in raw_sweep_names
+    }
 
-        missing = [name for name in selected if name not in sweep_nodes]
-        if missing:
-            raise ValueError(
-                f"Sweep group(s) missing from file `{filename_or_obj}`: {missing}"
-            )
+    missing = [name for name in selected if name not in sweep_nodes]
+    if missing:
+        raise ValueError(
+            f"Sweep group(s) missing from file `{filename_or_obj}`: {missing}"
+        )
 
-        normalized_sweeps = []
-        for output_name, source_name in zip(output_names, selected):
-            ds = _normalize_sweep_dataset(
-                sweep_nodes[source_name].to_dataset(inherit=True),
-                output_name,
-                first_dim=first_dim,
-                optional=optional,
-            )
-            normalized_sweeps.append(ds)
+    normalized_sweeps = []
+    for output_name, source_name in zip(output_names, selected):
+        ds = _normalize_sweep_dataset(
+            sweep_nodes[source_name].to_dataset(inherit=True),
+            output_name,
+            first_dim=first_dim,
+            optional=optional,
+        )
+        normalized_sweeps.append(ds)
 
-        dtree = {
-            "/": _normalize_root_dataset(
-                tree["/"].to_dataset(),
-                output_names,
-                normalized_sweeps,
-                optional=optional,
-            )
-        }
+    dtree = {
+        "/": _normalize_root_dataset(
+            tree["/"].to_dataset(),
+            output_names,
+            normalized_sweeps,
+            optional=optional,
+        )
+    }
 
-        if optional_groups:
-            for name, mapping in _SUBGROUPS.items():
-                if name in tree.children:
-                    dtree[f"/{name}"] = _normalize_subgroup(tree[name], mapping)
+    if optional_groups:
+        for name, mapping in _SUBGROUPS.items():
+            if name in tree.children:
+                dtree[f"/{name}"] = _normalize_subgroup(tree[name], mapping)
 
-        for i, ds in enumerate(normalized_sweeps):
-            cleaned = ds.drop_vars(_STATION_VARS, errors="ignore")
-            cleaned.attrs = {}
-            dtree[f"sweep_{i}"] = cleaned
-        dtree = {key: ds.load() for key, ds in dtree.items()}
+    for i, ds in enumerate(normalized_sweeps):
+        cleaned = ds.drop_vars(_STATION_VARS, errors="ignore")
+        cleaned.attrs = {}
+        dtree[f"sweep_{i}"] = cleaned
+
+    # copy _close to new dtree root
+    dtree["/"].set_close(tree._close)
 
     renamed = selected != output_names or any(
         name != _normalize_sweep_name(name) for name in raw_sweep_names
@@ -654,7 +656,8 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        # pipe dictionary through xarray io cleanup machinery
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _CFRADIAL2_PARAMS_DOC = """
