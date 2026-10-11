@@ -115,7 +115,12 @@ def test_open_imd_datatree_no_futurewarning(imd_volume_files):
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
         open_imd_datatree(imd_volume_files)
-    future = [w for w in captured if issubclass(w.category, FutureWarning) and "open_imd_datatree" in str(w.message)]
+    future = [
+        w
+        for w in captured
+        if issubclass(w.category, FutureWarning)
+        and "open_imd_datatree" in str(w.message)
+    ]
     assert future == [], f"open_imd_datatree must not warn: {future}"
 
 

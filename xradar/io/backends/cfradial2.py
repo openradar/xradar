@@ -487,9 +487,7 @@ def _build_cfradial2_dtree_dict(
     raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
     selected = _iter_selected_sweeps(tree, sweep)
     output_names = [f"sweep_{i}" for i in range(len(selected))]
-    sweep_nodes = {
-        _normalize_sweep_name(name): tree[name] for name in raw_sweep_names
-    }
+    sweep_nodes = {_normalize_sweep_name(name): tree[name] for name in raw_sweep_names}
 
     missing = [name for name in selected if name not in sweep_nodes]
     if missing:
