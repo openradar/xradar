@@ -789,8 +789,11 @@ def test_legacy_site_as_coords_maps_to_site_coords(cfradial2_file):
         xd.io.open_cfradial2_datatree, cfradial2_file, site_as_coords=False
     )
     expected = xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=False)
+    default = xd.open_datatree(cfradial2_file, engine="cfradial2")
     xr.testing.assert_identical(legacy, expected)
-    assert not legacy.identical(xd.open_datatree(cfradial2_file, engine="cfradial2"))
+    assert not legacy.identical(default)
+    for dtree in (legacy, expected, default):
+        dtree.close()
 
 
 @pytest.mark.parametrize("engine", ["cfradial1", "cfradial2"])
