@@ -480,10 +480,10 @@ def _build_cfradial2_dtree_dict(
     """
     kwargs.setdefault("decode_timedelta", False)
 
-    # keep the file open while the returned datasets are in use: closing it
-    # here makes xarray reopen it for every lazy read
-    tree = open_datatree(filename_or_obj, **kwargs)
-    try:
+    # read everything and close the file before returning: lazy datasets
+    # would make xarray reopen the file later, and netCDF4/HDF5 can crash
+    # when one process holds several handles on the same file
+    with open_datatree(filename_or_obj, **kwargs) as tree:
         raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
         selected = _iter_selected_sweeps(tree, sweep)
         output_names = [f"sweep_{i}" for i in range(len(selected))]
@@ -525,10 +525,7 @@ def _build_cfradial2_dtree_dict(
             cleaned = ds.drop_vars(_STATION_VARS, errors="ignore")
             cleaned.attrs = {}
             dtree[f"sweep_{i}"] = cleaned
-    except Exception:
-        tree.close()
-        raise
-    dtree["/"].set_close(tree.close)
+        dtree = {key: ds.load() for key, ds in dtree.items()}
 
     renamed = selected != output_names or any(
         name != _normalize_sweep_name(name) for name in raw_sweep_names
@@ -657,10 +654,7 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        tree = DataTree.from_dict(groups_dict)
-        # from_dict copies the datasets, which drops their close hook
-        tree.set_close(groups_dict["/"]._close)
-        return tree
+        return DataTree.from_dict(groups_dict)
 
 
 _CFRADIAL2_PARAMS_DOC = """
