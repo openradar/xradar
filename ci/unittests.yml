@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.11
+  - python>=3.12
   - codecov
   - cmweather
   - coverage
@@ -26,4 +26,4 @@ dependencies:
   - scipy
   - setuptools
   - xmltodict
-  - xarray >= 2026.9.0
+  - xarray>=2026.9.0
