@@ -8,6 +8,7 @@ dependencies:
   - cmweather
   - coverage
   - dask
+  - filelock
   - fsspec
   - h5netcdf
   - h5py
@@ -25,5 +26,4 @@ dependencies:
   - scipy
   - setuptools
   - xmltodict
-  - pip:
-    - xarray >= 2026.9.0
+  - xarray >= 2026.9.0

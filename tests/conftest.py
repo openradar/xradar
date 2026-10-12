@@ -26,11 +26,24 @@ def cfradial1_file(tmp_path_factory):
 @pytest.fixture(scope="session")
 def cfradial2_file(cfradial1_file, tmp_path_factory):
     """Round-trip a cfradial1 file through to_cfradial2 to get a real CfRadial2 file."""
+    from filelock import FileLock
+
     import xradar as xd
 
-    outfile = tmp_path_factory.mktemp("cfradial2") / "sample_cfradial2.nc"
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
-    xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+    # shared tmp directory for file and lockfile
+    tmp_dir = tmp_path_factory.mktemp("cfradial2")
+
+    # identical file paths for all workers
+    outfile = tmp_dir / "sample_cfradial2.nc"
+    lockfile = tmp_dir / "sample_cfradial2.nc.lock"
+
+    # synchronize worker execution
+    with FileLock(str(lockfile)):
+        if not outfile.is_file():
+            # first worker generates the file
+            dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
+            xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+
     return str(outfile)
 
 

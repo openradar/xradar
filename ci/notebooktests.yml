@@ -34,5 +34,4 @@ dependencies:
   - wradlib
   - ffmpeg
   - zarr>=3
-  - pip:
-    - xarray >= 2026.9.0
+  - xarray >= 2026.9.0
