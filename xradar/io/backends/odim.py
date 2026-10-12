@@ -38,7 +38,6 @@ import warnings
 
 import h5netcdf
 import numpy as np
-import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
@@ -55,7 +54,6 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -65,20 +63,24 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
+    HDF5_PARAMS_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
     _fix_angle,
     _get_h5group_names,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _get_reindex_coord,
     _maybe_decode,
+    _maybe_recover_surrogate,
     _prepare_backend_ds,
+    _resolve_sweeps,
 )
 
 HDF5_LOCK = SerializableLock()
@@ -227,6 +229,46 @@ def _get_time(what, point="start"):
 
 def _get_a1gate(where):
     return where["a1gate"]
+
+
+_ODIM_SOURCE_TO_GLOBAL_ATTRS = {
+    "WMO": "wmo__id",
+    "PLC": "site_name",
+    "NOD": "node",  # specific to OPERA
+    "ORG": "wmo__originating_centre",
+    "WIGOS": "wmo__wsi",
+}
+
+
+def _parse_odim_source(source):
+    """Parse ODIM /what/source string like 'K1:V1,K2:V2' into a dict."""
+    if source is None:
+        return {}
+
+    # ensure source is a string, decode if bytes
+    source = _maybe_decode(source)
+    if not isinstance(source, str):
+        source = str(source)
+
+    # ODIM-H5 stores scalar attributes as 8-bit ASCII in the file. When the
+    # original text contains UTF-8 bytes, h5netcdf decodes them with surrogate
+    # escapes, so recover the original string here when possible.
+    # e.g. "Sürgavere" is read as an ASCII string instead of UTF-8 and the invalid bytes (ü = \xc3\xbc) are encoded with
+    # surrogate escape, resulting in "S\udcc3\udcbcrgavere". This has to be recovered back to the original string.
+    source = _maybe_recover_surrogate(source)
+
+    # parse key-value pairs separated by commas, and then keys and values separated by colons
+    parsed = {}
+    for item in source.split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        key, value = item.split(":", 1)
+        key = key.strip().upper()
+        value = value.strip()
+        if key and value:
+            parsed[key] = value
+    return parsed
 
 
 class _H5NetCDFMetadata:
@@ -479,6 +521,9 @@ class _OdimH5NetCDFMetadata(_H5NetCDFMetadata):
         attrs["quantity"] = _maybe_decode(
             what.get("quantity", self._group.split("/")[-1])
         )
+        # producer-specific legend string (e.g. "64:NONMET,72:..."), kept as is
+        if "legend" in what:
+            attrs["legend"] = _maybe_decode(what["legend"])
         return attrs
 
     @property
@@ -685,17 +730,46 @@ class OdimSubStore(AbstractDataStore):
         return self.root.coordinates
 
     def get_variables(self):
-        return FrozenDict(
-            (k1, v1)
-            for k1, v1 in {
-                **dict(
-                    [
-                        self.open_store_variable(k, v)
-                        for k, v in self.ds.variables.items()
-                    ]
-                ),
-            }.items()
-        )
+        variables = {}
+        legend = None
+        for k, v in self.ds.variables.items():
+            # compound-dtype legend table (code, class) of classification
+            # quality groups (ODIM_H5 2.4), not ray data (#395)
+            if k == "legend" and v.dtype.names is not None:
+                legend = v[...]
+                continue
+            name, var = self.open_store_variable(k, v)
+            variables[name] = var
+        if legend is not None:
+            _add_legend_flag_attrs(variables, legend)
+        return FrozenDict(variables)
+
+
+def _add_legend_flag_attrs(variables, legend):
+    """Add ODIM legend table as CF flag attributes to the group's data variable.
+
+    ODIM_H5 2.3/2.4 (Section 6.2) define the legend as compound dataset
+    ``{char[64] key; char[32] value}`` with ``key`` the class name and
+    ``value`` the data value as string. Some producers (e.g. FMI) write
+    ``{int code; string class}`` instead; both layouts are handled.
+    """
+
+    def _str(x):
+        return x.decode() if isinstance(x, bytes) else str(x)
+
+    names = legend.dtype.names
+    if {"key", "value"} <= set(names):
+        codes, classes = legend["value"], legend["key"]
+    else:
+        codes, classes = (legend[field] for field in names[:2])
+    codes = np.array([float(_str(c)) for c in codes])
+    if np.all(codes == np.round(codes)):
+        codes = codes.astype("int64")
+    meanings = [_str(c).strip().replace(" ", "_") for c in classes]
+    for var in variables.values():
+        if var.ndim == 2:
+            var.attrs["flag_values"] = codes
+            var.attrs["flag_meanings"] = " ".join(meanings)
 
 
 class OdimStore(AbstractDataStore):
@@ -807,7 +881,18 @@ class OdimStore(AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {"Conventions": "ODIM_H5/V2_2"}
+        attributes = {"Conventions": "ODIM_H5/V2_2", "source": "radar"}
+
+        with self._manager.acquire_context(False) as root:
+            # try to extract additional global attributes from /what/source string, if available
+            # see _ODIM_SOURCE_TO_GLOBAL_ATTRS for mapping of ODIM keys to global attribute names
+            if "what" in root:
+                parsed = _parse_odim_source(root["what"].attrs.get("source"))
+                for odim_key, global_attr in _ODIM_SOURCE_TO_GLOBAL_ATTRS.items():
+                    value = parsed.get(odim_key)
+                    if value is not None:
+                        attributes[global_attr] = value
+
         return FrozenDict(attributes)
 
 
@@ -820,9 +905,14 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
@@ -836,6 +926,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#odim-h5"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -854,6 +945,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -895,10 +987,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "odim"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -924,9 +1015,89 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        format=None,
+        invalid_netcdf=None,
+        phony_dims="access",
+        decode_vlen_strings=True,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        sweeps = _resolve_sweeps(
+            sweep, lambda: _get_h5group_names(filename_or_obj, "odim")
+        )
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            format=format,
+            invalid_netcdf=invalid_netcdf,
+            phony_dims=phony_dims,
+            decode_vlen_strings=decode_vlen_strings,
+            first_dim=first_dim,
+            reindex_coord=reindex_coord,
+            reindex_angle=reindex_angle,
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+        )
+
+        ls_ds = [
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
+        ]
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(
+        self,
+        filename_or_obj,
+        **kwargs,
+    ):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
+
+OdimBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open an ODIM_H5 file as a CfRadial2-shaped dict of group datasets.",
+    HDF5_PARAMS_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+)
+OdimBackendEntrypoint.open_datatree.__doc__ = (
+    "Open an ODIM_H5 file as :py:class:`xarray.DataTree`.\n\n"
+    "Equivalent to "
+    "``DataTree.from_dict(self.open_groups_as_dict(filename_or_obj, **kwargs))``."
+    " See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def open_odim_datatree(filename_or_obj, **kwargs):
     """Open ODIM_H5 dataset as :py:class:`xarray.DataTree`.
+
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="odim")`` or
+        ``xr.open_datatree(file, engine="odim")`` instead.
 
     Parameters
     ----------
@@ -943,9 +1114,14 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
@@ -958,42 +1134,22 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     dtree: xarray.DataTree
         DataTree
     """
-    # handle kwargs, extract first_dim
+    _deprecation_warning("open_odim_datatree", "odim")
+
+    # Bridge old backend_kwargs to direct kwargs
     backend_kwargs = kwargs.pop("backend_kwargs", {})
     optional = backend_kwargs.pop("optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
     sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    # Translate the legacy `site_as_coords` spelling to the canonical
+    # `site_coords` kwarg the entrypoint accepts.
+    if "site_as_coords" in kwargs:
+        kwargs["site_coords"] = kwargs.pop("site_as_coords")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i+1}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_h5group_names(filename_or_obj, "odim")
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="odim", **kw)
-        for swp in sweeps
-    ]
-    # todo: apply CfRadial2 group structure below
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return OdimBackendEntrypoint().open_datatree(
+        filename_or_obj,
+        sweep=sweep,
+        optional=optional,
+        optional_groups=optional_groups,
+        **kwargs,
+    )

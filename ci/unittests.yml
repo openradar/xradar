@@ -3,18 +3,19 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.11
+  - python>=3.12
   - codecov
   - cmweather
   - coverage
   - dask
+  - filelock
   - fsspec
   - h5netcdf
   - h5py
   - lat_lon_parser
   - netCDF4
   - numpy
-  - open-radar-data>=0.7.0
+  - open-radar-data>=0.8.0
   - pip
   - pyproj
   - pytest
@@ -24,6 +25,5 @@ dependencies:
   - pytest-xdist
   - scipy
   - setuptools
-  - pip:
-    - xarray >= 2026.4.0
   - xmltodict
+  - xarray>=2026.9.0

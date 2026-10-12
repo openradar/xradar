@@ -43,7 +43,6 @@ import warnings
 from collections import OrderedDict
 
 import numpy as np
-import xarray as xr
 from xarray import DataTree
 from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
 from xarray.backends.file_manager import CachingFileManager
@@ -53,9 +52,7 @@ from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -63,16 +60,19 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
+    LOCK_PARAM_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
+    _get_reindex_coord,
+    _resolve_sweeps,
 )
 
 IRIS_LOCK = SerializableLock()
@@ -2484,6 +2484,103 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
+# HydroClass echo classifiers, keyed by the identifiers stored in
+# task_end_info "echo_class_identifiers": (IRIS method name, CF flag prefix,
+# {value: (IRIS class name as in sig_data_types.h, CF flag meaning)});
+# values listed as "Unused" are left out
+# 4.4.14, Tables 10-12, page 76f (IRIS Programming Guide M212927EN-B)
+HCLASS_CLASSIFIERS = {
+    1: (
+        "METEOCLASSIFIER",
+        "meteo",
+        {
+            0: ("MET_CLASS_THRESHOLD", "no_data"),
+            1: ("MET_CLASS_NON_MET", "non_meteorological"),
+            2: ("MET_CLASS_RAIN", "rain"),
+            3: ("MET_CLASS_WET_SNOW", "wet_snow"),
+            4: ("MET_CLASS_SNOW", "snow"),
+            5: ("MET_CLASS_GRAUPEL", "graupel"),
+            6: ("MET_CLASS_HAIL", "hail"),
+        },
+    ),
+    2: (
+        "PRECIPCLASSIFIER",
+        "precip",
+        {
+            0: ("PRE_CLASS_THRESHOLD", "no_data"),
+            1: ("PRE_CLASS_GC_AP", "ground_clutter_anomalous_propagation"),
+            2: ("PRE_CLASS_BIO", "bio_scatter"),
+            3: ("PRE_CLASS_PRECIP", "precipitation"),
+            4: ("PRE_CLASS_LARGE_DROPS", "large_drops"),
+            5: ("PRE_CLASS_LIGHT_PRECIP", "light_precipitation"),
+            6: ("PRE_CLASS_MODERATE_PRECIP", "moderate_precipitation"),
+            # named, but described as "Unused" in Table 11
+            7: ("PRE_CLASS_HEAVY_PRECIP", "heavy_precipitation"),
+        },
+    ),
+    3: (
+        "CELLCLASSIFIER",
+        "cell",
+        {
+            0: ("CELL_CLASS_STRATIFORM", "stratiform"),
+            1: ("CELL_CLASS_CONVECTION", "convection"),
+        },
+    ),
+}
+
+# bit segments (shift, number of bits) of one HydroClass byte
+# 4.4.14, page 75 (IRIS Programming Guide M212927EN-B)
+HCLASS_SEGMENTS = [(0, 3), (3, 3), (6, 2)]
+
+
+def hclass_flag_attrs(identifiers, nbytes=1):
+    """Get CF flag attributes for HydroClass data.
+
+    Each HydroClass byte holds up to three classifier results in bit segments.
+    The classifier of each segment is given by ``identifiers``, the classes
+    are described with CF ``flag_masks``, ``flag_values`` and
+    ``flag_meanings``, so that the data can be kept as stored.
+
+    Parameters
+    ----------
+    identifiers : sequence of int
+        Classifier identifiers of the bit segments, lowest bits first
+        (task_end_info ``echo_class_identifiers``).
+    nbytes : int, optional
+        Number of bytes of the data type (1 for DB_HCLASS, 2 for DB_HCLASS2).
+        Defaults to 1.
+
+    Returns
+    -------
+    attrs : dict
+        CF flag attributes, empty if no known classifier is allocated.
+    """
+    segments = [
+        (8 * byte + shift, nbits)
+        for byte in range(nbytes)
+        for shift, nbits in HCLASS_SEGMENTS
+    ]
+    dtype = np.uint8 if nbytes == 1 else np.uint16
+    masks, values, meanings = [], [], []
+    for ident, (shift, nbits) in zip(identifiers, segments, strict=False):
+        if ident not in HCLASS_CLASSIFIERS:
+            continue
+        _, prefix, classes = HCLASS_CLASSIFIERS[ident]
+        for value, (_, meaning) in classes.items():
+            if value >= 2**nbits:
+                continue
+            masks.append((2**nbits - 1) << shift)
+            values.append(value << shift)
+            meanings.append(f"{prefix}_{meaning}")
+    if not meanings:
+        return {}
+    return {
+        "flag_masks": np.array(masks, dtype=dtype),
+        "flag_values": np.array(values, dtype=dtype),
+        "flag_meanings": " ".join(meanings),
+    }
+
+
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -3671,6 +3768,12 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 kw.update({"nyquist": nyquist})
 
             return prod["func"](data, **kw)
+        elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
+            # 8-bit types without decoding function (e.g. DB_HCLASS): two
+            # range bins per 16-bit word, like the scaled 8-bit types above
+            # (DB_XHDR is already decoded into its structure)
+            rays, bins = data.shape
+            return data.view(f"(2,) {prod['dtype']}").reshape(rays, -1)[:, :bins]
         else:
             return data
 
@@ -3732,9 +3835,9 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
         ing_conf = self.ingest_header["ingest_configuration"]
         lon = ing_conf["longitude_radar"]
         lat = ing_conf["latitude_radar"]
+        # BIN4 binary angles are decoded to [0, 360), fold into [-180, 180]
         lon = lon if lon <= 180 else lon - 360
-        # todo: is this correct for southern latitudes?
-        lat = lat if lat <= 180 else lon - 360
+        lat = lat if lat <= 180 else lat - 360
 
         return (
             lon,
@@ -3781,6 +3884,9 @@ class IrisArrayWrapper(BackendArray):
         prod = [v for v in datastore.root.data_types_dict if v["name"] == name]
         if prod and prod[0]["func"] is None:
             self.dtype = np.dtype("int16")
+            # 8-bit types are unpacked to one value per range bin
+            if get_dtype_size(prod[0].get("dtype", "int16")) == 1:
+                self.dtype = np.dtype(prod[0]["dtype"])
         if name == "DB_XHDR":
             self.dtype = np.dtype("O")
         if name in ["azimuth", "elevation"]:
@@ -3798,7 +3904,10 @@ class IrisArrayWrapper(BackendArray):
         with self.datastore.lock:
             # read the data and put it into dict
             self.datastore.root.get_moment(self.group, self.name)
-            return self.datastore.ds["sweep_data"][self.name][key]
+            data = self.datastore.ds["sweep_data"][self.name][key]
+        # decoders mask no-data bins (e.g. DB_VEL raw 0), keep them as NaN
+        # instead of losing the mask (#462)
+        return np.ma.filled(data, np.nan)
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
@@ -3857,6 +3966,16 @@ class IrisStore(AbstractDataStore):
         mname = iris_mapping.get(name, name)
         mapping = sweep_vars_mapping.get(mname, {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
+        if name in ["DB_HCLASS", "DB_HCLASS2"]:
+            task_end_info = self.root.ingest_header["task_configuration"][
+                "task_end_info"
+            ]
+            attrs.update(
+                hclass_flag_attrs(
+                    bytearray(task_end_info["echo_class_identifiers"]),
+                    nbytes=1 if name == "DB_HCLASS" else 2,
+                )
+            )
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
@@ -3991,6 +4110,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
     description = "Open IRIS/Sigmet files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#iris-sigmet-data-i-o"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -4006,6 +4126,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -4042,10 +4163,9 @@ class IrisBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "iris"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         ds.attrs.pop("elevation_lower_limit", None)
         ds.attrs.pop("elevation_upper_limit", None)
@@ -4068,75 +4188,98 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        group=None,
+        lock=None,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        sweeps = _resolve_sweeps(sweep, lambda: _get_iris_group_names(filename_or_obj))
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            lock=lock,
+            first_dim=first_dim,
+            reindex_coord=reindex_coord,
+            reindex_angle=reindex_angle,
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+        )
+
+        ls_ds = [
+            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
+        ]
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return DataTree.from_dict(groups_dict)
+
+
+_IRIS_PARAMS_DOC = """
+group : str or None, optional
+    Specific Iris product group to open (``ingest_data`` /
+    ``raw_product`` etc.). Defaults to all sweep groups.
+"""
+
+IrisBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open an Iris/Sigmet RAW file as a CfRadial2-shaped dict of group datasets.",
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _IRIS_PARAMS_DOC,
+    LOCK_PARAM_DOC,
+)
+IrisBackendEntrypoint.open_datatree.__doc__ = (
+    "Open an Iris/Sigmet RAW file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def open_iris_datatree(filename_or_obj, **kwargs):
     """Open Iris/Sigmet dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="iris")`` instead.
     """
-    # handle kwargs, extract first_dim
+    _deprecation_warning("open_iris_datatree", "iris")
+
     backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = kwargs.pop("optional", True)
+    # Capital-O "Optional" is legacy convention from original API
+    optional = backend_kwargs.pop("Optional", True)
     optional_groups = kwargs.pop("optional_groups", False)
     sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    # Remap legacy kwarg name
+    if "site_as_coords" in kwargs:
+        kwargs["site_coords"] = kwargs.pop("site_as_coords")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{sw}" for sw in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_iris_group_names(filename_or_obj)
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kw)
-        for swp in sweeps
-    ]
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return IrisBackendEntrypoint().open_datatree(
+        filename_or_obj,
+        sweep=sweep,
+        optional=optional,
+        optional_groups=optional_groups,
+        **kwargs,
+    )
