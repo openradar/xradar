@@ -686,6 +686,14 @@ def test_ingest_data_no_data_reads_as_nan():
     np.testing.assert_array_equal(decoded.mask, [[True, False, False]])
 
 
+def test_shear_is_unsigned():
+    """4.4.50: subtract 128 and multiply by 0.2; 1 = -25.4, 254 = +25.2
+    (#476)."""
+    np.testing.assert_allclose(
+        _decode_raw(_ENTRIES["DB_SHEAR"], [1, 128, 200, 254]), [-25.4, 0.0, 14.4, 25.2]
+    )
+
+
 def test_decoders_keep_a_caller_mask_and_take_scalars():
     """A mask the caller passes in is merged with the no-data words, and a
     single raw word decodes too."""
