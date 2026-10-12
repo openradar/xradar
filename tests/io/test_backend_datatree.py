@@ -290,8 +290,8 @@ class TestXrOpenDatatree:
         _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_cfradial2(self, cfradial2_file):
-        dtree = xr.open_datatree(cfradial2_file, engine="cfradial2")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(cfradial2_file, engine="cfradial2") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_imd(self, imd_file):
         dtree = xr.open_datatree(imd_file, engine="imd")
@@ -714,7 +714,7 @@ def test_sweep_selection_returns_requested_sweep(engine_and_file):
         pytest.skip(f"{engine} test file holds a single sweep")
     reference = xd.open_datatree(filename, engine=engine, sweep=[0, 1])
     selected = xd.open_datatree(filename, engine=engine, sweep=[1])
-    (name,) = [c for c in selected.children if c.startswith("sweep_")]
+    (name,) = (c for c in selected.children if c.startswith("sweep_"))
     np.testing.assert_equal(
         selected[name]["sweep_fixed_angle"].values,
         reference["sweep_1"]["sweep_fixed_angle"].values,
