@@ -5,6 +5,7 @@ import os.path
 import uuid
 
 import pytest
+from filelock import FileLock
 from open_radar_data import DATASETS
 
 
@@ -20,14 +21,18 @@ def cfradial1_sgp_file():
 
 @pytest.fixture(scope="session")
 def cfradial1_file(tmp_path_factory):
-    return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    """Safely fetch the dataset across multiple xdist workers using a lock."""
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    lockfile = shared_dir / "fetch_cfradial1.lock"
+
+    # synchronize the download/cache-check across workers
+    with FileLock(str(lockfile)):
+        return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
 
 
 @pytest.fixture(scope="session")
 def cfradial2_file(cfradial1_file, tmp_path_factory):
     """Round-trip a cfradial1 file through to_cfradial2 to get a real CfRadial2 file."""
-    from filelock import FileLock
-
     import xradar as xd
 
     # shared tmp directory for file and lockfile
