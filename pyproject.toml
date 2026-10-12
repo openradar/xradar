@@ -36,6 +36,7 @@ changelog = "https://github.com/openradar/xradar/blob/main/docs/history.md"
 
 [project.entry-points."xarray.backends"]
 cfradial1 = "xradar.io.backends:CfRadial1BackendEntrypoint"
+cfradial2 = "xradar.io.backends:CfRadial2BackendEntrypoint"
 furuno = "xradar.io.backends:FurunoBackendEntrypoint"
 gamic = "xradar.io.backends:GamicBackendEntrypoint"
 iris = "xradar.io.backends:IrisBackendEntrypoint"
