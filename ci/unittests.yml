@@ -3,11 +3,12 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.11
+  - python>=3.12
   - codecov
   - cmweather
   - coverage
   - dask
+  - filelock
   - fsspec
   - h5netcdf
   - h5py
@@ -25,5 +26,4 @@ dependencies:
   - scipy
   - setuptools
   - xmltodict
-  - pip:
-    - xarray >= 2026.9.0
+  - xarray>=2026.9.0
