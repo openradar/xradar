@@ -92,21 +92,27 @@ Ready to contribute? Here's how to set up `xradar` for local development.
 
     ```bash
     source .venv/bin/activate         # Linux / macOS
+    ```
+
+    ```powershell
     .venv\Scripts\Activate.ps1        # Windows (PowerShell)
     ```
 
     `netCDF4` and `h5py` install from wheels by default. If you hit a binary
-    incompatibility, build them against your system HDF5/netCDF libraries:
+    incompatibility, rebuild them against your system HDF5/netCDF libraries
+    (`--reinstall-package` is needed because the wheels are already installed):
 
     ```bash
     # Linux: apt install build-essential libhdf5-dev libnetcdf-dev
-    uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py
+    uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py \
+        --reinstall-package netcdf4 --reinstall-package h5py
     ```
 
-    To build the documentation and run the notebooks, add the `docs` extra (it
-    brings `arm_pyart`, `wradlib`, `matplotlib`, `ipykernel` and `myst-parser`).
-    Building the docs also needs `ffmpeg` and `pandoc` from your system package
-    manager (e.g. `apt install ffmpeg pandoc`, `brew install ffmpeg pandoc` or
+    To build the documentation and run the notebooks, add the `docs` extra to
+    `dev` (it adds `arm_pyart` and `wradlib`; Sphinx, `matplotlib` and the
+    notebook tools come with `dev`). One notebook
+    (`multiple-sweeps-into-volume-scan.md`) also needs `ffmpeg` from your system
+    package manager (e.g. `apt install ffmpeg`, `brew install ffmpeg` or
     `winget install ffmpeg`):
 
     ```bash
