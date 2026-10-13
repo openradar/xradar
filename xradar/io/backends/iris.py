@@ -2322,10 +2322,14 @@ SIGMET_DATA_TYPES = OrderedDict(
             },
         ),
         # The SNR family (DB_SNR, DB_LOG, DB_CSP, DB_AH, DB_AV, DB_AZDR, 1 and
-        # 2 byte): raw 0 is masked. The 1-byte raw 0 lies below the guide's
-        # -31.5 dB floor (4.4.37), the 2-byte one decodes to -327.68 dB; on
-        # the SUR test file the raw-0 DB_SNR16 bins line up with the no-data
-        # bins of DB_DBZ2 (#475).
+        # 2 byte). 1 byte: (N - 64) / 2, the DB_DBZ format, from the -31.5 ...
+        # +95.5 dB range of guide M212927EN-B 4.4.37 (M212927EN-D prints
+        # +32.5 ... +127.5 dB, which no 8-bit 0.5 dB scale covers). 2 byte:
+        # (N - 32768) / 100, the DB_DBZ2 format, whose -327.67 ... +327.66 dB
+        # range M212927EN-D 4.4.38 states. Raw 0 is masked: the 1-byte raw 0
+        # lies below the -31.5 dB floor, the 2-byte one decodes to -327.68 dB;
+        # on the SUR test file the raw-0 DB_SNR16 bins line up with the
+        # no-data bins of DB_DBZ2 (#475).
         # Signal to Noise ratio (1 byte)
         (
             65,
