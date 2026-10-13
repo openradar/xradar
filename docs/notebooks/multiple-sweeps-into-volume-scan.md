@@ -89,7 +89,7 @@ task_files = [
     for i in radar_files[:4]
 ]
 # list of xradar datatrees
-ls_dt = [xd.io.open_iris_datatree(i).xradar.georeference() for i in task_files]
+ls_dt = [xd.open_datatree(i, engine="iris").xradar.georeference() for i in task_files]
 
 # sweeps and elevations within each task
 for i in ls_dt:
@@ -191,7 +191,7 @@ def mult_vcp(radar_files):
     """
     ls_files = [radar_files[i : i + 4] for i in range(len(radar_files)) if i % 4 == 0]
     ls_sigmet = [
-        [xd.io.open_iris_datatree(data_accessor(i)).xradar.georeference() for i in j]
+        [xd.open_datatree(data_accessor(i), engine="iris").xradar.georeference() for i in j]
         for j in ls_files
     ]
     ls_dt = [create_vcp(i) for i in ls_sigmet]

@@ -45,11 +45,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
-        numpy-version: ["1", "2"]
-        exclude:
-          - python-version: "3.13"
-            numpy-version: "1"
+        python-version: ["3.12", "3.13", "3.14"]
+        numpy-version: ["2"]
 
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
@@ -67,12 +64,17 @@ jobs:
               python=${{matrix.python-version}}
               numpy=${{matrix.numpy-version}}
               conda
+    # temporary: xarray main has the netCDF4/HDF5 segfault fix pydata/xarray#11692
+    - name: Install xarray
+      run: |
+        python -m pip install --no-deps --ignore-installed --no-cache-dir \
+        git+https://github.com/pydata/xarray.git@main
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
     - name: Version Info
       run: |
-        python -c "import xradar; print(xradar.version.version)"
+        python -c "import xradar, xarray; print(xradar.version.version, xarray.__version__)"
     - name: Test with pytest
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
@@ -163,6 +165,7 @@ jobs:
             python=${{matrix.python-version}}
             cmweather
             dask
+            filelock
             fsspec
             h5netcdf
             h5py
