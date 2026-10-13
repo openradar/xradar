@@ -316,15 +316,10 @@ def _get_radar_calibration(ds):
         subgroup = subgroup.drop_vars(drop).squeeze(calib[0])
         calib_vars = {}
         for name in subgroup.data_vars:
-            item = next(
-                filter(lambda x: x[0] in name, radar_calibration_subgroup.items()),
-                None,
-            )
-            # keep calibration variables with unknown names as they are (#419)
-            if item is None:
-                continue
-            item = item[1] if item[1] else item[0]
-            calib_vars[name] = item
+            # exact lookup, unknown names are kept as they are (#419)
+            key = name.removeprefix("r_calib_")
+            if key in radar_calibration_subgroup:
+                calib_vars[name] = radar_calibration_subgroup[key] or key
         subgroup = subgroup.rename_vars(calib_vars)
         subgroup.attrs = {}
         return subgroup

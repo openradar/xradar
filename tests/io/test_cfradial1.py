@@ -264,9 +264,9 @@ def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
     # CfRadial1 names (#419)
     import netCDF4
 
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True)
     path = tmp_path / "metadata_groups.nc"
-    xd.io.to_cfradial1(dtree, path)
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
 
     def metadata(nc):
         return {
@@ -286,9 +286,36 @@ def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
             np.testing.assert_allclose(out[name][:], src[name][:])
 
 
-def test_cfradial1_unknown_calibration_names():
+def test_cfradial1_unknown_calibration_names(tmp_path):
     # variables on the r_calib dimension with non-standard names must not
-    # break reading the radar_calibration group (#419)
+    # break reading the radar_calibration group and keep their names on
+    # export (#419)
+    import netCDF4
+
     filename = DATASETS.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
-    dtree = xd.io.open_cfradial1_datatree(filename, optional_groups=True)
-    assert "calibration_constant_hh" in dtree["radar_calibration"].ds
+    path = tmp_path / "unknown_calibration.nc"
+    with xd.io.open_cfradial1_datatree(filename, optional_groups=True) as dtree:
+        assert "calibration_constant_hh" in dtree["radar_calibration"].ds
+        xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as out:
+        assert "calibration_constant_hh" in out.variables
+        assert "r_calib_calibration_constant_hh" not in out.variables
+
+
+@pytest.mark.parametrize(
+    "names, expected",
+    [
+        (
+            ["r_calib_receiver_mismatch_loss_h", "r_calib_receiver_mismatch_loss_v"],
+            ["receiver_mismatch_loss_h", "receiver_mismatch_loss_v"],
+        ),
+        (["r_calib_noise_hc", "noise_hc_offset"], ["noise_hc", "noise_hc_offset"]),
+    ],
+)
+def test_cfradial1_calibration_names_exact_match(names, expected):
+    # calibration names are matched exactly, not as substrings (#419)
+    from xradar.io.backends.cfradial1 import _get_radar_calibration
+
+    ds = xr.Dataset({name: ("r_calib", [1.0]) for name in names})
+    calib = _get_radar_calibration(ds)
+    assert sorted(calib.data_vars) == expected

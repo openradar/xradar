@@ -33,6 +33,8 @@ from importlib.metadata import version
 import numpy as np
 import xarray as xr
 
+from ...model import radar_calibration_subgroup
+
 #: Per-sweep metadata variables that CfRadial1 stores as scalars (one value
 #: per sweep) rather than along a ray dimension.
 SWEEP_METADATA_VARS = (
@@ -102,6 +104,8 @@ CFRADIAL1_CALIBRATION_NAMES = {
     "base_1km_hx": "base_dbz_1km_hx",
     "base_1km_vx": "base_dbz_1km_vx",
 }
+#: CfRadial2.1 calibration names, as read by xradar
+CALIBRATION_NAMES = {v or k for k, v in radar_calibration_subgroup.items()}
 CFRADIAL1_METADATA_NAMES = {
     "radar_receiver_bandwidth": "radar_rx_bandwidth",
     "radar_altitude_correction": "altitude_correction",
@@ -128,9 +132,11 @@ def _map_radar_calibration(calib_ds):
     renamed_vars = {}
     for name in calib_ds.data_vars:
         data_array = calib_ds[name]
-        cf1_name = CFRADIAL1_CALIBRATION_NAMES.get(name, name)
-        if not cf1_name.startswith("r_calib_"):
-            cf1_name = "r_calib_" + cf1_name
+        # unknown names were kept as they are on read, write them back unchanged
+        if name in CALIBRATION_NAMES:
+            cf1_name = "r_calib_" + CFRADIAL1_CALIBRATION_NAMES.get(name, name)
+        else:
+            cf1_name = name
         renamed_vars[cf1_name] = xr.DataArray(
             data=data_array.data[np.newaxis, ...],
             dims=["r_calib"] + list(data_array.dims),
