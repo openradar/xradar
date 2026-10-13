@@ -199,11 +199,11 @@ def mult_vcp(radar_files):
 ```
 
 ```{code-cell}
-# let's test it using the first 24 files in the bucket. We can include more files for visualization. e.g. radar_files[:96]
-vcps_dt = mult_vcp(radar_files[:24])
+# let's test it using the first 12 files in the bucket (three volumes). We can include more files for visualization. e.g. radar_files[:96]
+vcps_dt = mult_vcp(radar_files[:12])
 ```
 
-Now we have 6 vcps in one tree-like hierarchical object.
+Now we have 3 vcps in one tree-like hierarchical object.
 
 ```{code-cell}
 list(vcps_dt.keys())
