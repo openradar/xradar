@@ -48,7 +48,7 @@
 * FIX: IRIS reader returns NaN instead of ``0.0`` for no-data velocity bins (``DB_VEL``, ``DB_VELC`` raw ``0``, IRIS Programming Guide 4.4.44); the decoder masked them, but the mask was lost in the backend array ({issue}`462`, {pull}`463`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: IRIS reader returns NaN for no-data bins (raw ``0``, IRIS Programming Guide 4.4) of reflectivity, ZDR, PHIDP, WIDTH, RHOHV/SQI, LDR and their variants, instead of real values such as -32 dBZ; ``IrisRawFile`` returns masked arrays for them with NaN under the mask, also for ``DB_VEL``/``DB_VELC`` ({issue}`465`, {pull}`467`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader fixes UINT1 dtype ``"unit8"``→``"uint8"`` ({issue}`462`, {pull}`493`) by [@Jah-yee](https://github.com/Jah-yee)
-* MNT: Add first-class [uv](https://docs.astral.sh/uv/) support: a committed ``uv.lock`` for reproducible development environments (``uv sync --extra dev``, new ``docs`` extra for the documentation and notebooks), uv install and development instructions, and a CI lint job that runs through ``setup-uv`` and checks that ``uv.lock`` is up to date ({pull}`393`) by [@syedhamidali](https://github.com/syedhamidali)
+* MNT: Add first-class [uv](https://docs.astral.sh/uv/) support: uv install and development instructions (``uv sync --extra dev``, new ``docs`` extra for the documentation and notebooks) and a CI lint job that runs through ``setup-uv`` ({pull}`393`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 

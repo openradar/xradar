@@ -104,3 +104,6 @@ ENV/
 # IDE settings
 .vscode/
 .idea/
+
+# uv resolves the environment on `uv sync`, the lockfile is not tracked
+uv.lock

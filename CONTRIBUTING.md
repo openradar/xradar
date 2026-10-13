@@ -80,8 +80,7 @@ Ready to contribute? Here's how to set up `xradar` for local development.
   - Install with [uv](https://docs.astral.sh/uv/):
 
     [Install uv](https://docs.astral.sh/uv/getting-started/installation/) if you
-    don't have it, then create the development environment from the committed
-    `uv.lock` for a reproducible set of pinned dependencies:
+    don't have it, then create the development environment:
 
     ```bash
     uv sync --extra dev
@@ -114,11 +113,6 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     uv sync --extra dev --extra docs
     uv run python -m sphinx build -j auto -b html docs/ doc-build
     ```
-
-    After changing dependencies in `requirements.txt`, `requirements_dev.txt` or
-    `requirements_docs.txt`, refresh the lockfile with `uv lock --upgrade` and
-    commit the updated `uv.lock`. CI runs `uv lock --check` and fails if the
-    lockfile is out of date.
 
 4. Create a branch for local development.
 
