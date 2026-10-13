@@ -149,10 +149,6 @@ def _calculate_angle_res(dim):
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
 
 
-#: first bytes of a gzip stream
-_GZIP_MAGIC = b"\x1f\x8b"
-
-
 def _fspath(filename_or_obj):
     """Turn a path-like into ``str``, return anything else (file-like, bytes) as is."""
     if isinstance(filename_or_obj, os.PathLike):

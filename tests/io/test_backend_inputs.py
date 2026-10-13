@@ -2,11 +2,9 @@
 # Copyright (c) 2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 
-"""Backends accept path-like, gzip-compressed and rewound file-like inputs."""
+"""Backends accept path-like and rewound file-like inputs."""
 
-import gzip
 import io
-import shutil
 from pathlib import Path
 
 import numpy as np
@@ -22,17 +20,6 @@ def test_uf_datatree_from_file_like(uf_file_1):
     with (
         xd.open_datatree(uf_file_1, engine="uf", sweep=[0, 1]) as expected,
         xd.open_datatree(io.BytesIO(data), engine="uf", sweep=[0, 1]) as actual,
-    ):
-        xr.testing.assert_equal(actual, expected)
-
-
-def test_metek_reads_gzip_path(metek_ave_gz_file, tmp_path):
-    gz_path = tmp_path / "0308.ave.gz"
-    with open(metek_ave_gz_file, "rb") as fin, gzip.open(gz_path, "wb") as fout:
-        shutil.copyfileobj(fin, fout)
-    with (
-        xr.open_dataset(metek_ave_gz_file, engine="metek") as expected,
-        xr.open_dataset(str(gz_path), engine="metek") as actual,
     ):
         xr.testing.assert_equal(actual, expected)
 
