@@ -94,7 +94,7 @@ def test_to_cfradial1_with_different_range_shapes(nexradlevel2_bzfile):
 
 def test_to_cfradial1_error_with_different_range_bin_sizes(gamic_file):
     with xd.io.open_gamic_datatree(gamic_file) as dtree:
-        with pytest.raises(MergeError):
+        with pytest.raises(MergeError, match="gate geometry.*reindex_range"):
             xd.transform.to_cfradial1(dtree)
 
 

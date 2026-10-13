@@ -247,7 +247,9 @@ def _combine_sweeps(dtree, dim0=None):
         if not np.allclose(rng, longest[: rng.size]):
             raise xr.MergeError(
                 "CfRadial1 export requires the same range gate geometry "
-                "(first gate and gate spacing) in all sweeps."
+                "(first gate and gate spacing) in all sweeps. Use "
+                "`xradar.util.reindex_range` to bring the sweeps onto one range "
+                "before exporting."
             )
         # snap onto one range coordinate, the outer join below is exact
         sweep_datasets[i] = sweep_ds.assign_coords(
