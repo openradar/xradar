@@ -29,7 +29,7 @@ import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
 from .transform import to_cfradial1, to_cfradial2
-from .util import map_over_sweeps
+from .util import is_sweep, map_over_sweeps
 
 
 def accessor_constructor(self, xarray_obj):
@@ -73,7 +73,7 @@ class XradarDataArrayAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataArray objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, target_crs=None
     ) -> xr.DataArray:
         """
         Parameters
@@ -83,6 +83,9 @@ class XradarDataArrayAccessor(XradarAccessor):
             WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
+        target_crs: pyproj.CRS or int or str, optional
+            Coordinate reference system to reproject x, y to (e.g. ``4326`` for
+            geographic lon/lat). If not provided, radar-native AEQD is used.
         Returns
         -------
         da = xr.DataArray
@@ -94,6 +97,7 @@ class XradarDataArrayAccessor(XradarAccessor):
             get_x_y_z,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            target_crs=target_crs,
         )
 
     def add_crs(self) -> xr.DataArray:
@@ -123,7 +127,7 @@ class XradarDataSetAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.Dataset objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, target_crs=None
     ) -> xr.Dataset:
         """
         Add georeference information to an xarray dataset
@@ -134,6 +138,9 @@ class XradarDataSetAccessor(XradarAccessor):
             WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
+        target_crs: pyproj.CRS or int or str, optional
+            Coordinate reference system to reproject x, y to (e.g. ``4326`` for
+            geographic lon/lat). If not provided, radar-native AEQD is used.
         Returns
         -------
         da = xarray.Dataset
@@ -144,6 +151,7 @@ class XradarDataSetAccessor(XradarAccessor):
             get_x_y_z,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            target_crs=target_crs,
         )
 
     def add_crs(self) -> xr.DataSet:
@@ -167,6 +175,13 @@ class XradarDataSetAccessor(XradarAccessor):
         radar = self.xarray_obj
         return radar.pipe(get_crs)
 
+    def is_sweep(self, strict=False):
+        """Check whether the Dataset holds a radar sweep.
+
+        See :func:`xradar.util.is_sweep`.
+        """
+        return is_sweep(self.xarray_obj, strict=strict)
+
     def to_cfradial2_datatree(self):
         """Convert a CfRadial1 Dataset to CfRadial2 DataTree."""
         return to_cfradial2(self.xarray_obj)
@@ -185,7 +200,7 @@ class XradarDataTreeAccessor(XradarAccessor):
     """Adds a number of xradar specific methods to xarray.DataTree objects."""
 
     def georeference(
-        self, earth_radius=None, effective_radius_fraction=None
+        self, earth_radius=None, effective_radius_fraction=None, target_crs=None
     ) -> xr.DataTree:
         """
         Add georeference information to an xradar datatree object
@@ -196,6 +211,9 @@ class XradarDataTreeAccessor(XradarAccessor):
             WGS84 ellipsoid.
         effective_radius_fraction: float
             Fraction of earth to use for the effective radius (default is 4/3).
+        target_crs: pyproj.CRS or int or str, optional
+            Coordinate reference system to reproject x, y to (e.g. ``4326`` for
+            geographic lon/lat). If not provided, radar-native AEQD is used.
         Returns
         -------
         da = xarray.DataTree
@@ -206,6 +224,7 @@ class XradarDataTreeAccessor(XradarAccessor):
             get_x_y_z_tree,
             earth_radius=earth_radius,
             effective_radius_fraction=effective_radius_fraction,
+            target_crs=target_crs,
         )
 
     def add_crs(self) -> xr.DataTree:
@@ -218,6 +237,13 @@ class XradarDataTreeAccessor(XradarAccessor):
         """
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
+
+    def is_sweep(self, strict=False):
+        """Check whether the DataTree node holds a radar sweep.
+
+        See :func:`xradar.util.is_sweep`.
+        """
+        return is_sweep(self.xarray_obj, strict=strict)
 
     def map_over_sweeps(self, func, *args, **kwargs):
         """

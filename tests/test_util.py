@@ -62,6 +62,62 @@ def test_reindex_angle():
     np.testing.assert_array_equal(ds_out.azimuth.values, np.arange(0.5, 360, 1.0))
 
 
+def _range_sweep(start, res, ngates):
+    # range dtype follows the given start/res
+    dtype = np.result_type(start, res)
+    rng = (start + np.arange(ngates, dtype=dtype) * res).astype(dtype)
+    data = np.arange(4 * ngates, dtype="float32").reshape(4, ngates)
+    return xr.Dataset(
+        {"DBZH": (("azimuth", "range"), data, {"_FillValue": np.float32(np.nan)})},
+        coords={
+            "azimuth": [45.0, 135.0, 225.0, 315.0],
+            "range": ("range", rng, {"units": "meters"}),
+        },
+    )
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_reindex_range(dtype):
+    # range coordinates of two sweeps differ by floating point jitter
+    ds0 = _range_sweep(dtype(306.8817), dtype(59.9414), 10)
+    ds1 = _range_sweep(dtype(306.9028), dtype(59.9414), 10)
+    assert ds0.range.dtype == dtype
+    with pytest.raises(AssertionError):
+        np.testing.assert_array_equal(ds0.range, ds1.range)
+
+    start, stop = ds0.range[0].item(), ds0.range[-1].item()
+    res = ds0.range.diff("range").median().item()
+    out0 = util.reindex_range(ds0, start, stop, res)
+    out1 = util.reindex_range(ds1, start, stop, res)
+
+    xr.testing.assert_equal(out0.range, out1.range)
+    assert out0.sizes["range"] == 10
+    assert out0.range.dtype == ds0.range.dtype
+    assert out0.range.attrs["units"] == "meters"
+    assert out0.range.attrs["spacing_is_constant"] == "true"
+    np.testing.assert_array_equal(out0.DBZH.values, ds0.DBZH.values)
+    np.testing.assert_array_equal(out1.DBZH.values, ds1.DBZH.values)
+
+    # concatenation no longer creates an outer join along range
+    combined = xr.concat([out0, out1], dim="volume_time")
+    assert combined.sizes["range"] == 10
+    assert not np.isnan(combined.DBZH).any()
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int32, np.int64])
+def test_reindex_range_defaults_and_fill(dtype):
+    ds = _range_sweep(dtype(250), dtype(500), 6)
+    assert ds.range.dtype == dtype
+    xr.testing.assert_equal(util.reindex_range(ds), ds)
+
+    # extend grid beyond data: missing gates are filled with _FillValue
+    out = util.reindex_range(ds, stop_range=250.0 + 7 * 500.0)
+    assert out.sizes["range"] == 8
+    assert out.range.dtype == dtype
+    np.testing.assert_array_equal(out.DBZH.values[:, :6], ds.DBZH.values)
+    assert np.isnan(out.DBZH.values[:, 6:]).all()
+
+
 def test_extract_angle_parameters():
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
     ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
@@ -266,10 +322,9 @@ def test_ipol_time2(missing, a1gate, rot):
             dsx.pipe(util.ipol_time, direction=direction)
 
 
-def test_get_sweep_keys():
+def test_get_sweep_keys(cfradial1_sgp_file):
     # Test finding sweep keys
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-    dtree = io.open_cfradial1_datatree(filename)
+    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
     # set a fake group
     dtree["sneep_1"] = dtree["sweep_1"]
     keys = util.get_sweep_keys(dtree)
@@ -283,12 +338,9 @@ def test_get_sweep_keys():
     ]
 
 
-def test_apply_to_sweeps():
-    # Fetch the sample radar file
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-
+def test_apply_to_sweeps(cfradial1_sgp_file):
     # Open the radar file into a DataTree object
-    dtree = io.open_cfradial1_datatree(filename)
+    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
 
     # Define a simple function to test with apply_to_sweeps
     def dummy_function(ds):
@@ -325,44 +377,41 @@ def test_apply_to_sweeps():
         util.apply_to_sweeps(dtree, error_function)
 
 
-def test_apply_to_sweeps_inherit_false(cfradial1_sgp_dtree):
+def test_apply_to_sweeps_inherit_false(cfradial1_sgp_file):
     """inherit=False prevents root coords from leaking onto sweeps."""
+    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
     root_coords = {"latitude", "longitude", "altitude"}
 
     def identity(ds):
         return ds
 
     # Default (inherit="all_coords"): root coords appear on sweeps
-    result_default = util.apply_to_sweeps(cfradial1_sgp_dtree, identity)
+    result_default = util.apply_to_sweeps(dtree, identity)
     sweep_ds = result_default["sweep_0"].to_dataset(inherit=False)
     inherited = root_coords & set(sweep_ds.coords)
     assert inherited, "Default should inherit root coords"
 
     # inherit=False: root coords stay on root only
-    result_no_inherit = util.apply_to_sweeps(
-        cfradial1_sgp_dtree, identity, inherit=False
-    )
+    result_no_inherit = util.apply_to_sweeps(dtree, identity, inherit=False)
     sweep_ds = result_no_inherit["sweep_0"].to_dataset(inherit=False)
     leaked = root_coords & (set(sweep_ds.coords) | set(sweep_ds.data_vars))
     assert not leaked, f"inherit=False should not leak root coords: {leaked}"
 
 
-def test_apply_to_sweeps_inherit_via_map_over_sweeps(cfradial1_sgp_dtree):
+def test_apply_to_sweeps_inherit_via_map_over_sweeps(cfradial1_sgp_file):
     """inherit parameter works through map_over_sweeps accessor."""
+    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
     root_coords = {"latitude", "longitude", "altitude"}
 
-    result = cfradial1_sgp_dtree.xradar.map_over_sweeps(lambda ds: ds, inherit=False)
+    result = dtree.xradar.map_over_sweeps(lambda ds: ds, inherit=False)
     sweep_ds = result["sweep_0"].to_dataset(inherit=False)
     leaked = root_coords & (set(sweep_ds.coords) | set(sweep_ds.data_vars))
     assert not leaked, f"inherit=False via accessor should not leak: {leaked}"
 
 
-def test_apply_to_volume():
-    # Fetch the sample radar file
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-
+def test_apply_to_volume(cfradial1_sgp_file):
     # Open the radar file into a DataTree object
-    dtree = io.open_cfradial1_datatree(filename)
+    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
 
     # Define a simple function to test with apply_to_volume
     def dummy_function(ds):
@@ -427,15 +476,12 @@ def test_apply_to_volume():
         util.apply_to_volume(dtree, error_function)
 
 
-def test_map_over_sweeps_decorator_dummy_function():
+def test_map_over_sweeps_decorator_dummy_function(cfradial1_sgp_file):
     """
     Test applying a dummy function to all sweep nodes using the map_over_sweeps decorator.
     """
-    # Fetch the sample radar file
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-
     # Open the radar file into a DataTree object
-    dtree = xd.io.open_cfradial1_datatree(filename)
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_sgp_file)
 
     # Use the decorator on the dummy function
     @xd.map_over_sweeps
@@ -620,3 +666,84 @@ def test_create_volume():
     )
     assert volume.ds.time_coverage_start == "2023-04-20T06:50:01Z"
     assert volume.ds.time_coverage_end == "2023-04-20T06:59:46Z"
+
+
+@pytest.mark.parametrize("first_dim", ["auto", "time"])
+def test_is_sweep_backends(odim_file, cfradial1_file, first_dim):
+    dtree = io.open_odim_datatree(odim_file, first_dim=first_dim, optional_groups=True)
+    # the root and the metadata groups are no sweeps
+    assert not util.is_sweep(dtree)
+    assert not util.is_sweep(dtree["radar_parameters"])
+    for node in ["sweep_0", "sweep_5"]:
+        assert util.is_sweep(dtree[node])
+        assert util.is_sweep(dtree[node].to_dataset(), strict=True)
+        assert dtree[node].to_dataset().xradar.is_sweep()
+        assert dtree[node].xradar.is_sweep(strict=True)
+    assert not dtree.xradar.is_sweep()
+    # still a sweep after georeferencing (2D x, y, z coordinates)
+    assert util.is_sweep(dtree.xradar.georeference()["sweep_0"])
+
+    dtree = io.open_cfradial1_datatree(cfradial1_file, first_dim=first_dim)
+    assert util.is_sweep(dtree["sweep_0"], strict=True)
+
+
+def test_is_sweep_structure():
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
+    assert util.is_sweep(ds)
+    # mandatory sweep metadata is missing
+    assert not util.is_sweep(ds, strict=True)
+    ds_meta = ds.assign(
+        sweep_number=0,
+        sweep_mode="azimuth_surveillance",
+        follow_mode="none",
+        prt_mode="fixed",
+        sweep_fixed_angle=1.0,
+    )
+    assert util.is_sweep(ds_meta, strict=True)
+    assert ds_meta.xradar.is_sweep(strict=True)
+
+    # no range dimension
+    assert not util.is_sweep(ds.isel(range=0))
+    # no data variable along (ray, range)
+    assert not util.is_sweep(ds.drop_vars("DBZH"))
+    # angles missing or not along the ray dimension
+    assert not util.is_sweep(ds.drop_vars("elevation"))
+    assert not util.is_sweep(ds.assign(azimuth=("range", np.arange(10.0))))
+    # two candidate ray dimensions
+    assert not util.is_sweep(
+        ds.assign(extra=(("azimuth", "elevation"), np.ones((2, 3))))
+    )
+    # no Dataset
+    assert not util.is_sweep(ds.DBZH)
+    assert not util.is_sweep(None)
+
+
+def test_get_ray_dim():
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    assert util.get_ray_dim(ds) == "time"
+    assert util.get_ray_dim(ds.swap_dims(time="azimuth")) == "azimuth"
+    rhi = model.create_sweep_dataset(shape=(36, 10), azimuth=10.0, sweep="RHI")
+    assert util.get_ray_dim(rhi.swap_dims(time="elevation")) == "elevation"
+    # no range dimension
+    assert util.get_ray_dim(ds.isel(range=0)) is None
+    # both azimuth and elevation dimensions
+    both = xr.Dataset({"x": (("azimuth", "elevation", "range"), np.ones((2, 2, 2)))})
+    with pytest.raises(ValueError, match="Ambiguous ray dimension"):
+        util.get_ray_dim(both)
+    # range, but no ray dimension
+    with pytest.raises(ValueError, match="No CfRadial2/FM301 compliant dimension"):
+        util.get_ray_dim(xr.Dataset({"x": (("ray", "range"), np.ones((2, 3)))}))
+
+
+def test_is_sweep_stacked():
+    # a time series of a sweep is not a single sweep (semantics: #449)
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
+    ds = ds.swap_dims(time="azimuth")
+    assert util.is_sweep(ds)
+    stacked = xr.concat([ds.drop_vars("time")] * 2, dim="time")
+    assert util.get_ray_dim(stacked) == "azimuth"
+    assert not util.is_sweep(stacked)
+    # range dimension, but no ray dimension
+    assert not util.is_sweep(ds.rename(azimuth="ray"))

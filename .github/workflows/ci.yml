@@ -45,11 +45,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
-        numpy-version: ["1", "2"]
-        exclude:
-          - python-version: "3.13"
-            numpy-version: "1"
+        python-version: ["3.12", "3.13", "3.14"]
+        numpy-version: ["2"]
 
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
@@ -67,16 +64,17 @@ jobs:
               python=${{matrix.python-version}}
               numpy=${{matrix.numpy-version}}
               conda
-    - name: Install xarray dev
+    # temporary: xarray main has the netCDF4/HDF5 segfault fix pydata/xarray#11692
+    - name: Install xarray
       run: |
-        python -m pip install --no-deps --no-cache-dir \
+        python -m pip install --no-deps --ignore-installed --no-cache-dir \
         git+https://github.com/pydata/xarray.git@main
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
     - name: Version Info
       run: |
-        python -c "import xradar; print(xradar.version.version)"
+        python -c "import xradar, xarray; print(xradar.version.version, xarray.__version__)"
     - name: Test with pytest
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
@@ -120,10 +118,6 @@ jobs:
               python=${{matrix.python-version}}
               numpy=${{matrix.numpy-version}}
               conda
-    - name: Install xarray dev
-      run: |
-        python -m pip install --no-deps --no-cache-dir \
-        git+https://github.com/pydata/xarray.git@main
     - name: Install xradar
       run: |
         python -m pip install . --no-deps
@@ -171,12 +165,13 @@ jobs:
             python=${{matrix.python-version}}
             cmweather
             dask
+            filelock
             fsspec
             h5netcdf
             h5py
             lat_lon_parser
             netCDF4
-            open-radar-data>=0.6.0
+            open-radar-data>=0.8.0
             packaging
             pandas
             pip
@@ -209,6 +204,8 @@ jobs:
     name: test build distribution for testpypi
     needs: [lint, build_0]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     defaults:
       run:
         shell: bash -l {0}

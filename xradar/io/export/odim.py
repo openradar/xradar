@@ -37,6 +37,8 @@ import sys
 import h5py
 import numpy as np
 
+from ..backends.odim import _ODIM_SOURCE_TO_GLOBAL_ATTRS
+
 
 def _write_odim(source, destination):
     """Writes ODIM_H5 Attributes.
@@ -135,6 +137,20 @@ def _write_odim_dataspace(source, destination, compression, compression_opts):
             ds.attrs.create("IMAGE_VERSION", version, dtype=H5T_C_S1_VER)
 
 
+def _get_odim_source(attrs):
+    """Build the ODIM ``what/source`` string from global attributes.
+
+    Reverse of the mapping used by the ODIM reader
+    (:data:`xradar.io.backends.odim._ODIM_SOURCE_TO_GLOBAL_ATTRS`).
+    """
+    pairs = [
+        f"{key}:{attrs[name]}"
+        for key, name in _ODIM_SOURCE_TO_GLOBAL_ATTRS.items()
+        if attrs.get(name) not in (None, "")
+    ]
+    return ",".join(pairs) or None
+
+
 def to_odim(
     dtree,
     filename,
@@ -153,8 +169,11 @@ def to_odim(
 
     Keyword Arguments
     -----------------
-    source : str
-        mandatory radar identifier (see ODIM documentation)
+    source : str, optional
+        Radar identifiers for ``what/source`` (see ODIM documentation), at least
+        one of NOD, RAD or WMO. Defaults to the identifiers stored in the global
+        attributes by the ODIM reader (``wmo__id``, ``node``, ``site_name``,
+        ``wmo__originating_centre``, ``wmo__wsi``).
     optional_how : boolean
         True to include optional how attributes, defaults to False
     compression : str
@@ -162,16 +181,19 @@ def to_odim(
     compression_opts : compression strategy
         options as needed by above filter, defaults to 6
     """
+    root = dtree["/"]
+
+    if source is None:
+        source = _get_odim_source(root.attrs)
     has_identifier = False
     if source is not None:
         has_identifier = any(key in source for key in ["NOD", "WMO", "RAD"])
     if not has_identifier:
         raise ValueError(
-            "Please provide the source parameter with at least one"
-            "of the mandatory radar identifier (NOD, RAD, WMO)"
+            "Please provide the source parameter with at least one "
+            "of the mandatory radar identifiers (NOD, RAD, WMO), "
+            f"got {source!r}."
         )
-
-    root = dtree["/"]
 
     h5 = h5py.File(filename, "w")
 

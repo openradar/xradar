@@ -17,6 +17,7 @@ import xradar
 datamodel
 importers
 exporters
+notebooks/Open-Datatree-Engine
 notebooks/Accessors
 notebooks/Mapping_Sweeps
 notebooks/CfRadial1_Model_Transformation
@@ -37,6 +38,7 @@ notebooks/MRR
 notebooks/NexradLevel2
 notebooks/nexrad_read_chunks
 notebooks/UF
+notebooks/IMD
 ```
 
 ```{toctree}
@@ -44,12 +46,14 @@ notebooks/UF
 :caption: Examples
 
 notebooks/Assign_GeoCoords
+notebooks/Georeference_TargetCRS
 notebooks/CfRadial1_Export
 notebooks/Read-plot-Sigmet-data-from-AWS
 notebooks/plot-ppi
 notebooks/angle_reindexing
 notebooks/NDPointIndex
 notebooks/Multi-Volume-Concatenation
+notebooks/Gridding
 notebooks/multiple-sweeps-into-volume-scan
 notebooks/Transform
 ```

@@ -79,20 +79,47 @@ except Exception:
     pass
 
 if chunk_paths:
-    print(f"Using live S3 chunks: {len(chunk_paths)} files")
+    print(f"Found {len(chunk_paths)} live S3 chunks")
     for p in chunk_paths[:3]:
         print(f"  {p.split('/')[-1]}")
     print(f"  ... {chunk_paths[-1].split('/')[-1]}")
 else:
-    print("S3 bucket empty or unreachable, using open-radar-data fixture")
+    print("S3 bucket unreachable, using open-radar-data fixture")
 ```
 
 ## Download / load chunk bytes
 
+Real-time S3 chunks age out one at a time, and the newest volume is still
+being written, so a listing can be unusable in two different ways:
+
+1. It is missing the start (S) chunk that carries the AR2V volume header —
+   `open_nexradlevel2_datatree` raises `ValueError`.
+2. It has *only* the S chunk, or otherwise no complete sweep yet. That
+   parses fine and returns a `DataTree` with **no sweep groups** — no
+   exception is raised.
+
+Catching `ValueError` alone misses case 2, so we check that the listing
+actually yielded sweeps and fall back to the open-radar-data fixture
+otherwise.
+
 ```{code-cell}
+all_bytes = None
+
 if chunk_paths:
-    all_bytes = [fs.open(p, "rb").read() for p in chunk_paths]
-else:
+    candidate = [fs.open(p, "rb").read() for p in chunk_paths]
+    try:
+        probe = xd.io.open_nexradlevel2_datatree(candidate)
+        if any(group.startswith("/sweep") for group in probe.groups):
+            all_bytes = candidate
+        else:
+            print(
+                f"S3 listing has no complete sweep yet "
+                f"({len(candidate)} chunk(s)); using fixture"
+            )
+    except ValueError as e:
+        print(f"S3 listing rejected: {e}")
+
+if all_bytes is None:
     import tarfile
     from pathlib import Path
 
@@ -115,7 +142,7 @@ When all chunks (S through E) are available, passing the list to
 complete volume file.
 
 ```{code-cell}
-dtree = xd.io.open_nexradlevel2_datatree(all_bytes)
+dtree = xd.open_datatree(all_bytes, engine="nexradlevel2")
 display(dtree)
 ```
 
@@ -143,8 +170,7 @@ partial_chunks = all_bytes[:15]
 
 with warnings.catch_warnings(record=True) as w:
     warnings.simplefilter("always")
-    dtree_drop = xd.io.open_nexradlevel2_datatree(
-        partial_chunks, incomplete_sweep="drop"
+    dtree_drop = xd.open_datatree(partial_chunks, engine="nexradlevel2", incomplete_sweep="drop"
     )
 
 # Show warnings
@@ -189,7 +215,7 @@ This is useful for visualization and monitoring where you want to see all
 available data as soon as it arrives.
 
 ```{code-cell}
-dtree_pad = xd.io.open_nexradlevel2_datatree(partial_chunks, incomplete_sweep="pad")
+dtree_pad = xd.open_datatree(partial_chunks, engine="nexradlevel2", incomplete_sweep="pad")
 
 sweep_groups_pad = list(dtree_pad.match("sweep_*").keys())
 print(f"Sweeps available (pad mode): {sweep_groups_pad}")
@@ -227,7 +253,7 @@ are still missing.
 ```{code-cell}
 early_chunks = all_bytes[:5]
 
-dtree_early = xd.io.open_nexradlevel2_datatree(early_chunks, incomplete_sweep="pad")
+dtree_early = xd.open_datatree(early_chunks, engine="nexradlevel2", incomplete_sweep="pad")
 
 sweep_groups_early = list(dtree_early.match("sweep_*").keys())
 print(f"Sweeps from 5 chunks: {sweep_groups_early}")

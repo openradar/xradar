@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.11
+  - python>=3.12
   - cartopy
   - cmweather
   - codecov
@@ -18,7 +18,7 @@ dependencies:
   - netCDF4
   - notebook
   - numpy
-  - open-radar-data>=0.6.0
+  - open-radar-data>=0.8.0
   - pip
   - pyproj
   - pytest
@@ -28,10 +28,10 @@ dependencies:
   - pytest-xdist
   - scipy
   - setuptools
-  - pip:
-    - xarray @ git+https://github.com/pydata/xarray.git@main
   - xmltodict
   - boto3
   - arm_pyart
+  - wradlib
   - ffmpeg
-  - zarr<3
+  - zarr>=3
+  - xarray>=2026.9.0

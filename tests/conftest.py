@@ -5,6 +5,7 @@ import os.path
 import uuid
 
 import pytest
+from filelock import FileLock
 from open_radar_data import DATASETS
 
 
@@ -14,16 +15,41 @@ def file_or_filelike(request):
 
 
 @pytest.fixture(scope="session")
-def cfradial1_sgp_dtree():
-    import xradar as xd
-
-    filename = DATASETS.fetch("sample_sgp_data.nc")
-    return xd.io.open_cfradial1_datatree(filename)
+def cfradial1_sgp_file():
+    return DATASETS.fetch("sample_sgp_data.nc")
 
 
 @pytest.fixture(scope="session")
 def cfradial1_file(tmp_path_factory):
-    return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    """Safely fetch the dataset across multiple xdist workers using a lock."""
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    lockfile = shared_dir / "fetch_cfradial1.lock"
+
+    # synchronize the download/cache-check across workers
+    with FileLock(str(lockfile)):
+        return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+
+
+@pytest.fixture(scope="session")
+def cfradial2_file(cfradial1_file, tmp_path_factory):
+    """Round-trip a cfradial1 file through to_cfradial2 to get a real CfRadial2 file."""
+    import xradar as xd
+
+    # shared tmp directory for file and lockfile
+    tmp_dir = tmp_path_factory.mktemp("cfradial2")
+
+    # identical file paths for all workers
+    outfile = tmp_dir / "sample_cfradial2.nc"
+    lockfile = tmp_dir / "sample_cfradial2.nc.lock"
+
+    # synchronize worker execution
+    with FileLock(str(lockfile)):
+        if not outfile.is_file():
+            # first worker generates the file
+            dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
+            xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+
+    return str(outfile)
 
 
 @pytest.fixture(scope="session")
@@ -39,6 +65,21 @@ def odim_file():
 @pytest.fixture(scope="session")
 def odim_file2():
     return DATASETS.fetch("T_PAGZ35_C_ENMI_20170421090837.hdf")
+
+
+@pytest.fixture(scope="session")
+def odim_file3():
+    return DATASETS.fetch("T_PAZA63_C_LFPW_20230420065041.h5")
+
+
+@pytest.fixture(scope="session")
+def odim_file4():
+    return DATASETS.fetch("202506090955_fianj_PVOL.h5")
+
+
+@pytest.fixture(scope="session")
+def odim_file5():
+    return DATASETS.fetch("SUR.202506091000.VOL.h5")
 
 
 @pytest.fixture(scope="session")
@@ -84,6 +125,17 @@ def iris1_file():
 @pytest.fixture(scope="session")
 def nexradlevel2_file():
     return DATASETS.fetch("KATX20130717_195021_V06")
+
+
+@pytest.fixture(scope="session")
+def nexradlevel2_ldm_stride_file():
+    """KILX volume with an over-120-message LDM (#376 regression fixture).
+
+    LDM 49 of this file contains 120 MSG_31 + 2 MSG_2 = 122 messages.
+    Pre-fix, xradar's mod-120 stride dropped the trailing 2 MSG_31s,
+    yielding sweep_10 = 358 (on-wire is 360).
+    """
+    return DATASETS.fetch("KILX20230629_154426_V06")
 
 
 @pytest.fixture(scope="session")
@@ -236,6 +288,19 @@ def uf_file_3(tmp_path_factory):
 @pytest.fixture(scope="session")
 def hpl_file():
     return DATASETS.fetch("User1_100_20240714_122137.hpl")
+
+
+@pytest.fixture(scope="session")
+def imd_file():
+    return DATASETS.fetch("IMD/JPR220822135253-IMD-B.nc")
+
+
+@pytest.fixture(scope="session")
+def imd_volume_files():
+    return [
+        DATASETS.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
+        for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
+    ]
 
 
 @pytest.fixture
