@@ -315,7 +315,7 @@ def decode_string(data):
 SINT1 = {"fmt": "b", "dtype": "int8"}
 SINT2 = {"fmt": "h", "dtype": "int16"}
 SINT4 = {"fmt": "i", "dtype": "int32"}
-UINT1 = {"fmt": "B", "dtype": "unit8"}
+UINT1 = {"fmt": "B", "dtype": "uint8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "uint32"}
 FLT4 = {"fmt": "f", "dtype": "float32"}
@@ -2213,7 +2213,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIH",
                 "dtype": "uint8",
                 "func": decode_phidp,
-                "fkw": {"mask": 0.0},
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Phi H to V (2 byte)
@@ -2233,7 +2233,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIV",
                 "dtype": "uint8",
                 "func": decode_phidp,
-                "fkw": {"mask": 0.0},
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Phi V to H (2 byte)
