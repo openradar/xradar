@@ -91,10 +91,22 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     `netCDF4` and `h5py` are built from source here so that both use the same
     system HDF5 library. Their wheels bundle their own HDF5 builds, and mixing
     HDF5 versions in one process is a known source of hard to debug problems
-    (conda-forge avoids this by building everything against one HDF5). The
-    flags are only needed once; a later `uv sync --extra dev` keeps the installed packages. If you
-    cannot install the system libraries (for example on Windows), use the conda
-    environment above instead.
+    (conda-forge avoids this by building everything against one HDF5).
+
+    Things to be aware of with this route:
+
+    - The build uses the first HDF5 it finds. With more than one HDF5 installed
+      (for example MacPorts and Homebrew, or a system and a conda one) `h5py` and
+      `netCDF4` can end up on different libraries, or `h5py` warns that it runs
+      against another HDF5 than it was built with. Check with
+      `uv run python -c "import h5py, netCDF4; print(h5py.version.hdf5_version, netCDF4.__hdf5libversion__)"`;
+      both versions should be the same.
+    - The flags are not remembered. If `h5py` or `netCDF4` changes version (for
+      after the lock is updated with `uv lock --upgrade`) a plain
+      `uv sync` installs the wheels again; repeat the command above with
+      `--reinstall-package netcdf4 --reinstall-package h5py`.
+    - If you cannot install the system libraries (for example on Windows), or you
+      want the setup the project is tested with, use the conda environment above.
 
     This creates a `.venv/` with xradar installed as an editable package plus the
     full development toolchain. Prefix commands with `uv run` to use it without
