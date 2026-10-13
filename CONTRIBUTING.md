@@ -77,26 +77,59 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     conda activate xradar-dev
     ```
 
-  - Install with uv (Linux):
+  - Install with [uv](https://docs.astral.sh/uv/):
+
+    [Install uv](https://docs.astral.sh/uv/getting-started/installation/) if you
+    don't have it, then create the development environment:
 
     ```bash
-    sudo apt install build-essential ffmpeg libhdf5-dev libnetcdf-dev pandoc
-    sudo snap install astral-uv --classic
-    uv python install 3.13
-    uv venv --python 3.13
-    source .venv/bin/activate
-    uv pip install -e .[dev] --no-binary=netcdf4 --no-binary=h5py
+    # Linux: apt install build-essential libhdf5-dev libnetcdf-dev
+    # macOS: brew install hdf5 netcdf
+    uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py
     ```
 
-  - Install with uv (Windows):
+    `netCDF4` and `h5py` are built from source here so that both use the same
+    system HDF5 library. Their wheels bundle their own HDF5 builds, and mixing
+    HDF5 versions in one process is a known source of hard to debug problems
+    (conda-forge avoids this by building everything against one HDF5).
+
+    Things to be aware of with this route:
+
+    - The build uses the first HDF5 it finds. With more than one HDF5 installed
+      (for example MacPorts and Homebrew, or a system and a conda one) `h5py` and
+      `netCDF4` can end up on different libraries, or `h5py` warns that it runs
+      against another HDF5 than it was built with. Check with
+      `uv run python -c "import h5py, netCDF4; print(h5py.version.hdf5_version, netCDF4.__hdf5libversion__)"`;
+      both versions should be the same.
+    - The flags are not remembered. If `h5py` or `netCDF4` changes version (for
+      after the lock is updated with `uv lock --upgrade`) a plain
+      `uv sync` installs the wheels again; repeat the command above with
+      `--reinstall-package netcdf4 --reinstall-package h5py`.
+    - If you cannot install the system libraries (for example on Windows), or you
+      want the setup the project is tested with, use the conda environment above.
+
+    This creates a `.venv/` with xradar installed as an editable package plus the
+    full development toolchain. Prefix commands with `uv run` to use it without
+    activating (e.g. `uv run pytest`), or activate it directly:
+
+    ```bash
+    source .venv/bin/activate         # Linux / macOS
+    ```
 
     ```powershell
-    winget install ffmpeg
-    winget install uv
-    uv python install 3.13
-    uv venv --python 3.13
-    .venv\Scripts\Activate.ps1
-    uv pip install -e .[dev]
+    .venv\Scripts\Activate.ps1        # Windows (PowerShell)
+    ```
+
+    To build the documentation and run the notebooks, add the `docs` extra to
+    `dev` (it adds `arm_pyart` and `wradlib`; Sphinx, `matplotlib` and the
+    notebook tools come with `dev`). One notebook
+    (`multiple-sweeps-into-volume-scan.md`) also needs `ffmpeg` from your system
+    package manager (e.g. `apt install ffmpeg`, `brew install ffmpeg` or
+    `winget install ffmpeg`):
+
+    ```bash
+    uv sync --extra dev --extra docs   # after the sync above
+    uv run python -m sphinx build -j auto -b html docs/ doc-build
     ```
 
 4. Create a branch for local development.

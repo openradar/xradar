@@ -65,6 +65,7 @@ readme = {file = ["README.md", "docs/history.md"], content-type = "text/markdown
 
 [tool.setuptools.dynamic.optional-dependencies]
 dev = { file = "requirements_dev.txt"}
+docs = { file = "requirements_docs.txt"}
 
 [tool.setuptools_scm]
 write_to = "xradar/version.py"

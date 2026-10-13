@@ -23,6 +23,31 @@ To install xradar into your conda environment, run this command:
 
 You might also use the `conda` drop-in `mamba`. Of course you can omit `-c conda-forge` if you are already on that channel.
 
+## With uv
+
+If you use [uv](https://docs.astral.sh/uv/), you can install xradar into a
+project or a standalone environment:
+
+```bash
+$ uv add xradar          # add to the current uv project
+$ uv pip install xradar  # install into the active environment
+```
+
+The `netCDF4` and `h5py` wheels each bundle their own HDF5 library. If you run
+into problems that look like HDF5 version conflicts, install them against one
+system HDF5 or use the conda-forge installation above:
+
+```bash
+$ uv pip install --no-binary netCDF4,h5py \
+    --reinstall-package netCDF4 --reinstall-package h5py netCDF4 h5py
+```
+
+To run xradar in a throwaway environment without installing it permanently:
+
+```bash
+$ uv run --with xradar python -c "import xradar; print(xradar.__version__)"
+```
+
 ## From sources
 
 The sources for xradar can be downloaded from the [Github repo](https://github.com/openradar/xradar).
