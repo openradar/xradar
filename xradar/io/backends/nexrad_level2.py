@@ -55,6 +55,7 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _GZIP_MAGIC,
     _STATION_VARS,
     LOCK_PARAM_DOC,
     REINDEX_PARAMS_DOC,
@@ -98,8 +99,6 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
-#: gzip magic number, only used for a hint when the input is not readable
-_GZIP_MAGIC = b"\x1f\x8b"
 
 
 def _concatenate_chunks(file_list):

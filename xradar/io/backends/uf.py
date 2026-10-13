@@ -172,6 +172,12 @@ class UFFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the object may have been read before (e.g. sweep discovery)
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):

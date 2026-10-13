@@ -149,6 +149,26 @@ def _calculate_angle_res(dim):
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
 
 
+#: first bytes of a gzip stream
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _fspath(filename_or_obj):
+    """Turn a path-like into ``str``, return anything else (file-like, bytes) as is."""
+    if isinstance(filename_or_obj, os.PathLike):
+        return os.fspath(filename_or_obj)
+    return filename_or_obj
+
+
+def _apply_fix_second_angle(ds):
+    """Replace the secondary angle of a sweep by its median (no-op for non-sweeps)."""
+    if "sweep_mode" not in ds:
+        return ds
+    dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+    dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
+    return ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
+
+
 def _fix_angle(da):
     # fix elevation outliers
     if len(set(da.values)) > 1:
