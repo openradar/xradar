@@ -258,6 +258,68 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path):
     assert "elevation" in dtree["sweep_1"].ds.dims
 
 
+def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path):
+    # the export is padded to (time, range), so the ragged index variables
+    # must not be written (#416)
+    dtree = xd.io.open_cfradial1_datatree(cfradial1n_file)
+    # source-style global flag, must be flipped as the export is padded
+    dtree.attrs["n_gates_vary"] = "true"
+    path = tmp_path / "variable_gates.nc"
+    xd.io.to_cfradial1(dtree, path)
+
+    with xr.open_dataset(path, decode_timedelta=False) as out:
+        assert "ray_n_gates" not in out.variables
+        assert "ray_start_index" not in out.variables
+        assert "n_points" not in out.dims
+        assert out.attrs["n_gates_vary"] == "false"
+
+    back = xd.io.open_cfradial1_datatree(path)
+    for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
+        nrange = dtree[sweep].ds.sizes["range"]
+        np.testing.assert_array_equal(
+            back[sweep].ds.DBZ.values[:, :nrange], dtree[sweep].ds.DBZ.values
+        )
+
+
+def test_cfradial1_export_strings_as_char_arrays(odim_file, tmp_path):
+    # string variables must be char arrays (not NC_STRING) and "None"
+    # placeholders must not be written as global attributes (#417)
+    import netCDF4
+
+    dtree = xd.io.open_odim_datatree(odim_file, sweep=[0, 1])
+    path = tmp_path / "odim_cf1.nc"
+    xd.io.to_cfradial1(dtree, path)
+
+    with netCDF4.Dataset(path) as nc:
+        for name in ["time_coverage_start", "instrument_type", "prt_mode"]:
+            assert nc[name].dtype == np.dtype("S1"), name
+        assert netCDF4.chartostring(nc["time_coverage_start"][:]) == str(
+            dtree.ds.time_coverage_start.values
+        )
+        attrs = {k: nc.getncattr(k) for k in nc.ncattrs()}
+    assert "None" not in attrs.values()
+    assert not attrs["history"].startswith(("None", ":"))
+
+
+def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path):
+    # netCDF attributes can't be bool; CfRadial uses "true"/"false" (#418)
+    import netCDF4
+
+    dtree = xd.io.open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 2])
+    bool_attrs = [k for k, v in dtree.attrs.items() if isinstance(v, (bool, np.bool_))]
+    assert bool_attrs
+    path = tmp_path / "nexrad_cf1.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as nc:
+        for name in bool_attrs:
+            assert nc.getncattr(name) == str(bool(dtree.attrs[name])).lower()
+    back = xd.io.open_cfradial1_datatree(path)
+    np.testing.assert_array_equal(
+        back["sweep_0"].ds.DBZH.values[:, : dtree["sweep_0"].ds.sizes["range"]],
+        dtree["sweep_0"].ds.DBZH.values,
+    )
+
+
 def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
     # CfRadial 1.4: "Cf/Radial" plus the sub-conventions used, whose variables
     # carry a meta_group attribute (#388)
@@ -283,3 +345,39 @@ def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
         assert nc["prt_mode"].meta_group == "instrument_parameters"
         assert nc["r_calib_index"].meta_group == "radar_calibration"
         assert "meta_group" not in nc["DBZ"].ncattrs()
+
+
+@pytest.mark.parametrize(
+    "optional_groups, calibs",
+    [(False, True), (True, False)],
+    ids=["default", "no-calibs"],
+)
+def test_cfradial1_export_without_calibration(cfradial1_file, optional_groups, calibs):
+    # without r_calib variables there is no r_calib dimension, so r_calib_index
+    # is kept untagged and radar_calibration is not listed (#388)
+    with xd.io.open_cfradial1_datatree(
+        cfradial1_file, optional_groups=optional_groups
+    ) as dtree:
+        ds = cf1_export._build_cfradial1_dataset(dtree, calibs=calibs)
+    assert "meta_group" not in ds["r_calib_index"].attrs
+    assert "radar_calibration" not in ds.attrs["Conventions"].split()
+
+
+def test_cfradial1_meta_groups():
+    # tags follow CfRadial 1.4 Section 5, not the variable name prefix, and
+    # only sub-conventions of the specification go into Conventions (#388)
+    ds = xr.Dataset(
+        {
+            "radar_measured_sky_noise": ((), 1.0),
+            "radar_beam_width_h": ((), 1.0),
+            "radar_echo_class": ((), 1.0),
+            "custom": ((), 1.0, {"meta_group": "not_a_sub_convention"}),
+        },
+        coords={"frequency": ("frequency", [2.8e9])},
+    )
+    groups = cf1_export._add_meta_groups(ds)
+    assert groups == ["instrument_parameters", "radar_parameters"]
+    assert ds["radar_measured_sky_noise"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["frequency"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["radar_beam_width_h"].attrs["meta_group"] == "radar_parameters"
+    assert "meta_group" not in ds["radar_echo_class"].attrs

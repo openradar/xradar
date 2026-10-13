@@ -27,7 +27,7 @@ Example::
 
 """
 
-__all__ = ["open_cfradial2_datatree"]
+__all__ = ["CfRadial2BackendEntrypoint", "open_cfradial2_datatree"]
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
@@ -38,6 +38,8 @@ from typing import Any
 
 import numpy as np
 from xarray import DataTree, Variable, open_datatree
+from xarray.backends import BackendEntrypoint
+from xarray.backends.common import datatree_from_dict_with_io_cleanup
 
 from ...model import (
     georeferencing_correction_subgroup,
@@ -57,7 +59,15 @@ from ...model import (
     required_root_vars,
     sweep_vars_mapping,
 )
-from .common import _STATION_VARS, _apply_site_as_coords
+from .common import (
+    _STATION_VARS,
+    _apply_site_as_coords,
+    _compose_docstring,
+    _deprecation_warning,
+    _external_stacklevel,
+    _open_legacy_datatree,
+    _resolve_sweeps,
+)
 
 _ROOT_ATTR_RENAMES = {
     "RadarName": "instrument_name",
@@ -135,7 +145,7 @@ def _get_sweep_fixed_angle(sw, sweep_name: str):
             f"CfRadial2 sweep `{sweep_name}` contains multiple fixed-angle candidates "
             f"({ordered}); using `{candidates[0][0]}`.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
     if not candidates:
@@ -166,19 +176,20 @@ def _iter_selected_sweeps(tree: DataTree, sweep: Any) -> list[str]:
     )
     if sweep is None:
         return available
-    if isinstance(sweep, str):
-        return [_normalize_sweep_name(sweep)]
-    if isinstance(sweep, int):
-        return [f"sweep_{sweep}"]
-    if isinstance(sweep, Iterable):
-        selected: list[str] = []
-        for item in sweep:
-            if isinstance(item, int):
-                selected.append(f"sweep_{item}")
-            else:
-                selected.append(_normalize_sweep_name(item))
-        return selected
-    raise TypeError("sweep must be None, int, str or an iterable of ints/strings")
+    if isinstance(sweep, Iterable) and not isinstance(sweep, (str, list, tuple)):
+        # released in v0.12.0; every other engine takes only lists/tuples, and
+        # e.g. a set has no defined order
+        warnings.warn(
+            f"Passing sweep as {type(sweep).__name__} is deprecated and will be "
+            "removed in a future version, pass a list or tuple instead.",
+            FutureWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        sweep = list(sweep)
+    return [
+        _normalize_sweep_name(name)
+        for name in _resolve_sweeps(sweep, lambda: available)
+    ]
 
 
 def _coerce_scalar_dataarray(ds, name: str, value: Any):
@@ -454,13 +465,229 @@ def _normalize_subgroup(node: DataTree, mapping: dict[str, str | None]):
     return ds
 
 
+def _build_cfradial2_dtree_dict(
+    filename_or_obj: str | PathLike[str],
+    *,
+    sweep: Any = None,
+    first_dim: str = "time",
+    optional: bool = True,
+    optional_groups: bool = False,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Build the dict[str, Dataset] of normalized CfRadial2 groups.
+
+    Used by :class:`CfRadial2BackendEntrypoint` to assemble the DataTree
+    before `DataTree.from_dict(...)` is applied.
+    """
+    kwargs.setdefault("decode_timedelta", False)
+
+    # keep the file open while the returned datasets are in use: closing it
+    # here makes xarray reopen it for every lazy read
+    tree = open_datatree(filename_or_obj, **kwargs)
+    raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
+    selected = _iter_selected_sweeps(tree, sweep)
+    output_names = [f"sweep_{i}" for i in range(len(selected))]
+    sweep_nodes = {_normalize_sweep_name(name): tree[name] for name in raw_sweep_names}
+
+    missing = [name for name in selected if name not in sweep_nodes]
+    if missing:
+        raise ValueError(
+            f"Sweep group(s) missing from file `{filename_or_obj}`: {missing}"
+        )
+
+    normalized_sweeps = []
+    for output_name, source_name in zip(output_names, selected):
+        ds = _normalize_sweep_dataset(
+            sweep_nodes[source_name].to_dataset(inherit=True),
+            output_name,
+            first_dim=first_dim,
+            optional=optional,
+        )
+        normalized_sweeps.append(ds)
+
+    dtree = {
+        "/": _normalize_root_dataset(
+            tree["/"].to_dataset(),
+            output_names,
+            normalized_sweeps,
+            optional=optional,
+        )
+    }
+
+    if optional_groups:
+        for name, mapping in _SUBGROUPS.items():
+            if name in tree.children:
+                dtree[f"/{name}"] = _normalize_subgroup(tree[name], mapping)
+
+    for i, ds in enumerate(normalized_sweeps):
+        cleaned = ds.drop_vars(_STATION_VARS, errors="ignore")
+        cleaned.attrs = {}
+        dtree[f"sweep_{i}"] = cleaned
+
+    # copy _close to new dtree root
+    dtree["/"].set_close(tree._close)
+
+    renamed = selected != output_names or any(
+        name != _normalize_sweep_name(name) for name in raw_sweep_names
+    )
+    if renamed:
+        warnings.warn(
+            "CfRadial2 sweep groups were renumbered into sequential `sweep_<n>` order.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+    missing_root = (
+        required_root_vars - set(dtree["/"].data_vars) - set(dtree["/"].coords)
+    )
+    if missing_root:
+        warnings.warn(
+            "CfRadial2 reader could not fully normalize FM301 root variables; "
+            f"missing {sorted(missing_root)}.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+    return dtree
+
+
+class CfRadial2BackendEntrypoint(BackendEntrypoint):
+    """Xarray BackendEntrypoint for CfRadial2/FM301 grouped datasets.
+
+    Keyword Arguments
+    -----------------
+    sweep : int, str, iterable, optional
+        Sweep selection. Defaults to all available sweeps.
+    first_dim : str
+        Can be ``time`` or ``auto``. Defaults to ``time``.
+    optional : bool
+        Keep optional root variables when available. Defaults to ``True``.
+    optional_groups : bool
+        Include root metadata subgroups if present. Defaults to ``False``.
+    kwargs : dict
+        Additional kwargs are fed to :py:func:`xarray.open_datatree`.
+    """
+
+    description = "Open CfRadial2/FM301 grouped datasets in Xarray"
+    url = "https://xradar.rtfd.io/en/latest/io.html#cfradial2"
+    supports_groups = True
+
+    def open_dataset(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=False,
+        group="sweep_0",
+        first_dim="time",
+        optional=True,
+    ):
+        with open_datatree(
+            filename_or_obj,
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+        ) as tree:
+            # Map canonical sweep names (`sweep_2`) to actual node names
+            # (`sweep_02`, `sweep2`, ...), matching the DataTree path.
+            sweep_lookup = {
+                _normalize_sweep_name(name): name
+                for name in tree.children
+                if name.startswith("sweep")
+            }
+            source = sweep_lookup.get(group, group)
+            if source != "/" and source not in tree.children:
+                raise ValueError(
+                    f"Group `{group}` missing from file `{filename_or_obj}`."
+                )
+            ds = tree[source].to_dataset(inherit=True)
+            if group.startswith("sweep_"):
+                ds = _normalize_sweep_dataset(
+                    ds,
+                    _normalize_sweep_name(source),
+                    first_dim=first_dim,
+                    optional=optional,
+                )
+            ds.load()
+        return ds
+
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        sweep=None,
+        first_dim="time",
+        optional=True,
+        optional_groups=False,
+        site_coords=True,
+        netcdf_engine=None,
+        **kwargs,
+    ):
+        if netcdf_engine is not None:
+            # `engine` is taken by xarray for the backend itself
+            kwargs["engine"] = netcdf_engine
+        groups_dict = _build_cfradial2_dtree_dict(
+            filename_or_obj,
+            sweep=sweep,
+            first_dim=first_dim,
+            optional=optional,
+            optional_groups=optional_groups,
+            **kwargs,
+        )
+        # CfRadial2 places station coords at root by default. Honor
+        # site_coords=False by dropping them, matching the per-sweep
+        # contract used by odim/gamic/cfradial1.
+        if not site_coords:
+            groups_dict["/"] = groups_dict["/"].drop_vars(
+                _STATION_VARS, errors="ignore"
+            )
+        return groups_dict
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        # pipe dictionary through xarray io cleanup machinery
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+_CFRADIAL2_PARAMS_DOC = """
+    site_coords : bool, optional
+        Keep ``latitude``/``longitude``/``altitude`` as coordinates on
+        the root dataset. CfRadial2 stores station coords at root by
+        default; pass ``False`` to drop them. Defaults to ``True``.
+    netcdf_engine : str, optional
+        netCDF engine used to read the file (e.g. ``"netcdf4"`` or
+        ``"h5netcdf"``). Defaults to ``None`` (xarray's choice).
+"""
+
+CfRadial2BackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a CfRadial2/FM301 grouped file as a dict of normalized group datasets.\n"
+    "    Best-effort normalization of common institutional variations is\n"
+    "    applied so the result matches xradar's FM301-oriented layout.",
+    _CFRADIAL2_PARAMS_DOC,
+)
+CfRadial2BackendEntrypoint.open_datatree.__doc__ = (
+    "Open a CfRadial2/FM301 grouped file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
+
 def open_cfradial2_datatree(
     filename_or_obj: str | PathLike[str], **kwargs: Any
 ) -> DataTree:
     """Open a CfRadial2-like grouped dataset as :py:class:`xarray.DataTree`.
 
-    The reader performs best-effort normalization of common CfRadial2/FM301
-    naming and metadata differences. It is not a full FM301 validator.
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="cfradial2")`` or
+        ``xr.open_datatree(file, engine="cfradial2")`` instead.
 
     Parameters
     ----------
@@ -485,73 +712,13 @@ def open_cfradial2_datatree(
     xarray.DataTree
         Normalized DataTree containing root metadata and sweep groups.
     """
-    sweep = kwargs.pop("sweep", None)
-    first_dim = kwargs.pop("first_dim", "time")
-    optional = kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    kwargs.update(decode_timedelta=kwargs.pop("decode_timedelta", False))
-
-    with open_datatree(filename_or_obj, **kwargs) as tree:
-        raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
-        selected = _iter_selected_sweeps(tree, sweep)
-        output_names = [f"sweep_{i}" for i in range(len(selected))]
-        sweep_nodes = {
-            _normalize_sweep_name(name): tree[name] for name in raw_sweep_names
-        }
-
-        missing = [name for name in selected if name not in sweep_nodes]
-        if missing:
-            raise ValueError(
-                f"Sweep group(s) missing from file `{filename_or_obj}`: {missing}"
-            )
-
-        normalized_sweeps = []
-        for output_name, source_name in zip(output_names, selected):
-            ds = _normalize_sweep_dataset(
-                sweep_nodes[source_name].to_dataset(inherit=True),
-                output_name,
-                first_dim=first_dim,
-                optional=optional,
-            )
-            normalized_sweeps.append(ds)
-
-        dtree = {
-            "/": _normalize_root_dataset(
-                tree["/"].to_dataset(),
-                output_names,
-                normalized_sweeps,
-                optional=optional,
-            )
-        }
-
-        if optional_groups:
-            for name, mapping in _SUBGROUPS.items():
-                if name in tree.children:
-                    dtree[f"/{name}"] = _normalize_subgroup(tree[name], mapping)
-
-        for i, ds in enumerate(normalized_sweeps):
-            cleaned = ds.drop_vars(_STATION_VARS, errors="ignore")
-            cleaned.attrs = {}
-            dtree[f"sweep_{i}"] = cleaned
-
-    normalized = selected != output_names or any(
-        name != _normalize_sweep_name(name) for name in raw_sweep_names
-    )
-    if normalized:
-        warnings.warn(
-            "CfRadial2 sweep groups were renumbered into sequential `sweep_<n>` order.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    root_ds = dtree["/"]
-    missing_root = required_root_vars - set(root_ds.data_vars) - set(root_ds.coords)
-    if missing_root:
-        warnings.warn(
-            "CfRadial2 reader could not fully normalize FM301 root variables; "
-            f"missing {sorted(missing_root)}.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    return DataTree.from_dict(dtree)
+    _deprecation_warning("open_cfradial2_datatree", "cfradial2")
+    # `engine` here is the inner netCDF engine, `netcdf_engine` in the backend
+    if "engine" in kwargs:
+        kwargs["netcdf_engine"] = kwargs.pop("engine")
+    backend_kwargs = kwargs.get("backend_kwargs") or {}
+    if "engine" in backend_kwargs:
+        backend_kwargs = dict(backend_kwargs)
+        backend_kwargs["netcdf_engine"] = backend_kwargs.pop("engine")
+        kwargs["backend_kwargs"] = backend_kwargs
+    return _open_legacy_datatree(CfRadial2BackendEntrypoint, filename_or_obj, kwargs)
