@@ -713,6 +713,17 @@ def test_raw_zero_decodes_as_the_manual_says(entry):
     assert np.isfinite(decoded[1])  # a data word is never masked
 
 
+@pytest.mark.parametrize("name", ["DB_PHIH", "DB_PHIV"])
+def test_phih_phiv_decode_like_phidp(name):
+    """4.4.24: same format as DB_PHIDP (#474)."""
+    assert _ENTRIES[name]["fkw"] == _ENTRIES["DB_PHIDP"]["fkw"]
+    np.testing.assert_allclose(
+        _decode_raw(_ENTRIES[name], [1, 128, 254]),
+        [0.0, 90.0, 179.2913],
+        atol=1e-4,
+    )
+
+
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt
 @pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
 def test_no_data_bins_are_nan(fixture, request):

@@ -79,6 +79,7 @@ from .common import (
     _get_reindex_coord,
     _maybe_decode,
     _maybe_recover_surrogate,
+    _open_legacy_datatree,
     _prepare_backend_ds,
     _resolve_sweeps,
 )
@@ -1010,8 +1011,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
         )
@@ -1090,20 +1090,4 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_odim_datatree", "odim")
 
-    # Bridge old backend_kwargs to direct kwargs
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Translate the legacy `site_as_coords` spelling to the canonical
-    # `site_coords` kwarg the entrypoint accepts.
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return OdimBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(OdimBackendEntrypoint, filename_or_obj, kwargs)
