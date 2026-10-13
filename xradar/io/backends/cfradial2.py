@@ -311,13 +311,19 @@ def _derive_range_attrs(ds):
 
 
 def _normalize_root_attrs(ds):
+    time_attrs = get_time_attrs()
+    # time_coverage_* hold ISO strings in CfRadial files, a "units" attribute
+    # would make xarray try to decode them as numbers when read back
+    string_time_attrs = {k: v for k, v in time_attrs.items() if k != "units"}
     for name, attrs in {
         "latitude": get_latitude_attrs(),
         "longitude": get_longitude_attrs(),
         "altitude": get_altitude_attrs(),
-        "time_coverage_start": get_time_attrs(),
-        "time_coverage_end": get_time_attrs(),
+        "time_coverage_start": time_attrs,
+        "time_coverage_end": time_attrs,
     }.items():
+        if name in ds and ds[name].dtype.kind in "USO":
+            attrs = string_time_attrs
         ds = _update_var_attrs(ds, name, attrs)
     return ds
 
@@ -357,6 +363,9 @@ def _normalize_dataset_var_attrs(ds):
         if da.ndim == 2 and set(da.dims) == {"time", "range"}:
             attrs = dict(da.attrs)
             attrs.setdefault("coordinates", "elevation azimuth range")
+            # xarray moves the "coordinates" attribute of the file to the
+            # encoding, both together make the writer raise on re-export
+            da.encoding.pop("coordinates", None)
             if name in sweep_vars_mapping:
                 moment_attrs = get_moment_attrs(name)
                 moment_attrs.update(attrs)

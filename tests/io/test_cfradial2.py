@@ -426,3 +426,121 @@ def test_cfradial2_non_sequence_sweep_warning_points_at_caller(cfradial2_file):
         dtree = xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0})
     assert record[0].filename == __file__
     dtree.close()
+
+
+def _assert_same_tree(first, second):
+    # the export appends to the history of the root on every write
+    assert list(first.subtree_with_keys) and [
+        p for p, _ in first.subtree_with_keys
+    ] == [p for p, _ in second.subtree_with_keys]
+    for (path, node1), (_, node2) in zip(
+        first.subtree_with_keys, second.subtree_with_keys
+    ):
+        ds1 = node1.to_dataset(inherit=False).load()
+        ds2 = node2.to_dataset(inherit=False).load()
+        for ds in (ds1, ds2):
+            ds.attrs.pop("history", None)
+        xr.testing.assert_identical(ds1, ds2)
+
+
+@pytest.mark.parametrize(
+    "engine, fixture",
+    [
+        ("cfradial1", "cfradial1_file"),
+        ("odim", "odim_file"),
+        ("nexradlevel2", "nexradlevel2_file"),
+        ("uf", "uf_file_1"),
+    ],
+)
+def test_cfradial2_repeated_roundtrip_is_stable(engine, fixture, request, tmp_path):
+    # read -> write -> read must not change the datasets, however often it is
+    # repeated; this includes data read back from a CfRadial2 file, which
+    # keeps CF settings in the encoding (attributes and encoding must not clash)
+    filename = request.getfixturevalue(fixture)
+    trees = []
+    with xd.open_datatree(filename, engine=engine) as source:
+        current = source
+        for i in range(3):
+            outfile = tmp_path / f"roundtrip_{i}.nc"
+            xd.io.to_cfradial2(current, outfile)
+            current = xd.open_datatree(outfile, engine="cfradial2")
+            trees.append(current)
+    try:
+        _assert_same_tree(trees[0], trees[1])
+        _assert_same_tree(trees[1], trees[2])
+    finally:
+        for tree in trees:
+            tree.close()
+
+
+def test_cfradial2_export_writes_sweep_group_names(odim_file, tmp_path):
+    # some readers fill sweep_group_name with the sweep numbers, the file must
+    # list the names of the sweep groups
+    with xd.open_datatree(odim_file, engine="odim") as dtree:
+        assert dtree.ds["sweep_group_name"].dtype.kind not in "USO"
+        numbers = dtree.ds["sweep_group_name"].values.copy()
+        outfile = tmp_path / "names.nc"
+        xd.io.to_cfradial2(dtree, outfile)
+        # the input is left alone
+        np.testing.assert_array_equal(dtree.ds["sweep_group_name"].values, numbers)
+    with xr.open_datatree(outfile) as written:
+        names = [str(n) for n in written.ds["sweep_group_name"].values]
+        assert names == [f"sweep_{i}" for i in range(len(numbers))]
+        assert names == [k for k in written.children if k.startswith("sweep_")]
+
+
+def test_cfradial2_resolve_attrs_encoding():
+    times = np.array(["2026-01-01T00:00:00", "2026-01-01T00:00:01"], "datetime64[ns]")
+    ds = xr.Dataset(
+        {"DBZH": (("time", "range"), np.zeros((2, 3)))},
+        coords={"time": times, "range": np.arange(3.0)},
+    )
+    # decoded times keep their units in the encoding, an attribute would make
+    # the writer fail
+    ds["time"].attrs["units"] = "seconds since 2026-01-01T00:00:00Z"
+    ds["range"].attrs["units"] = "meters"
+    # coordinates: the attribute wins
+    ds["DBZH"].attrs["coordinates"] = "elevation azimuth range"
+    ds["DBZH"].encoding["coordinates"] = "time range"
+    original = ds["time"].attrs.copy()
+
+    out = export_cf2._resolve_attrs_encoding(ds)
+
+    assert "units" not in out["time"].attrs
+    assert out["time"].encoding["units"] == "seconds since 2026-01-01T00:00:00Z"
+    assert out["range"].attrs["units"] == "meters"
+    assert out["DBZH"].attrs["coordinates"] == "elevation azimuth range"
+    assert "coordinates" not in out["DBZH"].encoding
+    # the input is not modified
+    assert ds["time"].attrs == original
+    assert ds["DBZH"].encoding["coordinates"] == "time range"
+
+    # units already in the encoding win over the attribute
+    ds = ds.copy()
+    ds["time"].encoding["units"] = "seconds since 2000-01-01"
+    out = export_cf2._resolve_attrs_encoding(ds)
+    assert "units" not in out["time"].attrs
+    assert out["time"].encoding["units"] == "seconds since 2000-01-01"
+
+
+def test_cfradial2_reader_string_time_coverage_has_no_units(cfradial2_file):
+    # time_coverage_* are ISO strings, a "units" attribute would make xarray
+    # try to decode them as numbers when the written file is read again
+    with xd.open_datatree(cfradial2_file, engine="cfradial2") as dtree:
+        for name in ("time_coverage_start", "time_coverage_end"):
+            if dtree.ds[name].dtype.kind in "USO":
+                assert "units" not in dtree.ds[name].attrs
+
+
+def test_cfradial2_export_bool_global_attrs(nexradlevel2_file, tmp_path):
+    # netCDF attributes can't be bool (NEXRAD carries several)
+    import netCDF4
+
+    with xd.open_datatree(nexradlevel2_file, engine="nexradlevel2") as dtree:
+        bools = [k for k, v in dtree.attrs.items() if isinstance(v, (bool, np.bool_))]
+        assert bools
+        outfile = tmp_path / "bools.nc"
+        xd.io.to_cfradial2(dtree, outfile)
+    with netCDF4.Dataset(outfile) as nc:
+        for name in bools:
+            assert nc.getncattr(name) in ("true", "false")

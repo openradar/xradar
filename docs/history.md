@@ -48,6 +48,7 @@
 * FIX: IRIS reader returns NaN instead of ``0.0`` for no-data velocity bins (``DB_VEL``, ``DB_VELC`` raw ``0``, IRIS Programming Guide 4.4.44); the decoder masked them, but the mask was lost in the backend array ({issue}`462`, {pull}`463`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: IRIS reader returns NaN for no-data bins (raw ``0``, IRIS Programming Guide 4.4) of reflectivity, ZDR, PHIDP, WIDTH, RHOHV/SQI, LDR and their variants, instead of real values such as -32 dBZ; ``IrisRawFile`` returns masked arrays for them with NaN under the mask, also for ``DB_VEL``/``DB_VELC`` ({issue}`465`, {pull}`467`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader fixes UINT1 dtype ``"unit8"``→``"uint8"`` ({issue}`462`, {pull}`493`) by [@Jah-yee](https://github.com/Jah-yee)
+* FIX: CfRadial2 data can be exported repeatedly, read -> write -> read leaves the datasets unchanged: data read back from a CfRadial2 file no longer fails on export (``coordinates`` and time ``units`` in attributes and in the encoding), decoded time ``units`` of the UF reader and the boolean global attributes of NEXRAD are written, ``time_coverage_start/end`` strings no longer get a time ``units`` attribute (the written file could not be read again), and the export writes the names of the sweep groups to ``sweep_group_name`` where a reader filled in the sweep numbers by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
