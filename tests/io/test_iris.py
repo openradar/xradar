@@ -52,7 +52,7 @@ def test_decode_bin_angle():
     assert iris.decode_bin_angle(2000000000, 4) == 167.63806343078613
 
 
-def decode_array():
+def test_decode_array():
     data = np.arange(0, 11)
     np.testing.assert_array_equal(
         iris.decode_array(data),
@@ -695,6 +695,14 @@ def test_ingest_data_no_data_reads_as_nan():
     assert isinstance(decoded, np.ma.MaskedArray)
     np.testing.assert_array_equal(np.asarray(decoded), [[np.nan, -31.0, 32.0]])
     np.testing.assert_array_equal(decoded.mask, [[True, False, False]])
+
+
+def test_shear_is_unsigned():
+    """4.4.50: subtract 128 and multiply by 0.2; 1 = -25.4, 254 = +25.2
+    (#476)."""
+    np.testing.assert_allclose(
+        _decode_raw(_ENTRIES["DB_SHEAR"], [1, 128, 200, 254]), [-25.4, 0.0, 14.4, 25.2]
+    )
 
 
 def test_decoders_keep_a_caller_mask_and_take_scalars():
