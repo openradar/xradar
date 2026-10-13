@@ -2,6 +2,7 @@
 # Copyright (c) 2022-2025, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import os.path
+import shutil
 import uuid
 
 import pytest
@@ -31,7 +32,7 @@ def cfradial1_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def cfradial2_file(cfradial1_file, tmp_path_factory):
+def _cfradial2_source(cfradial1_file, tmp_path_factory):
     """Round-trip a cfradial1 file through to_cfradial2 to get a real CfRadial2 file."""
     import xradar as xd
 
@@ -50,6 +51,19 @@ def cfradial2_file(cfradial1_file, tmp_path_factory):
             xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
 
     return str(outfile)
+
+
+@pytest.fixture
+def cfradial2_file(_cfradial2_source, tmp_path):
+    """A private copy of the CfRadial2 file for every test.
+
+    Tests share no path, so a handle that is still alive from an earlier test
+    (or waiting for garbage collection) can't meet the next open of the same
+    file, which crashes netCDF4/HDF5 with xarray 2026.9.0 (pydata/xarray#11692).
+    """
+    path = tmp_path / "sample_cfradial2.nc"
+    shutil.copyfile(_cfradial2_source, path)
+    return str(path)
 
 
 @pytest.fixture(scope="session")
