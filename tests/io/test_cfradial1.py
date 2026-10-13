@@ -31,18 +31,18 @@ def test_cfradial1_dataset_has_close(cfradial1_file):
     ds.close()
 
 
-def test_compare_sweeps(temp_file):
+def test_compare_sweeps(temp_file, closing):
     # Fetch the radar data file
     filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
 
     # Open the data tree
     # todo: implement a roundtrip function
-    dtree = xd.io.open_cfradial1_datatree(filename)
+    dtree = closing(xd.io.open_cfradial1_datatree(filename))
     # Save the modified data tree to the temporary file
     xd.io.to_cfradial1(dtree.copy(), temp_file, calibs=True)
 
     # Open the modified data tree
-    dtree1 = xd.io.open_cfradial1_datatree(temp_file)
+    dtree1 = closing(xd.io.open_cfradial1_datatree(temp_file))
     # todo: check, if we can use xarray machinery for
     #  testing tree equality
     # Compare the values of the DataArrays for all sweeps
@@ -148,9 +148,9 @@ def test_cfradial1_export_helper_empty_sweep_info_and_time_fallback():
     assert mapped["DBZ"].dims == ("time", "range")
 
 
-def test_cfradial1_export_auto_filename(tmp_path, monkeypatch):
+def test_cfradial1_export_auto_filename(tmp_path, monkeypatch, closing):
     filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = xd.io.open_cfradial1_datatree(filename)
+    dtree = closing(xd.io.open_cfradial1_datatree(filename))
 
     # filename=None derives the name from instrument_name + first timestamp
     monkeypatch.chdir(tmp_path)
@@ -222,12 +222,12 @@ def _ragged_cfradial1_dataset():
 
 
 @pytest.mark.parametrize("chunks", [None, {}])
-def test_cfradial1_variable_gates_within_sweep(tmp_path, chunks):
+def test_cfradial1_variable_gates_within_sweep(tmp_path, chunks, closing):
     ds, ngates, start = _ragged_cfradial1_dataset()
     path = tmp_path / "ragged_cfradial1.nc"
     ds.to_netcdf(path)
 
-    trees = [xd.io.open_cfradial1_datatree(path, first_dim="time")]
+    trees = [closing(xd.io.open_cfradial1_datatree(path, first_dim="time"))]
     with xr.open_dataset(path, chunks=chunks) as src:
         trees.append(src.xradar.to_cfradial2_datatree())
 
@@ -245,11 +245,11 @@ def test_cfradial1_variable_gates_within_sweep(tmp_path, chunks):
                 assert np.isnan(swp.DBZ.values[i, n:]).all()
 
 
-def test_cfradial1_rhi_sweep_dimension(tmp_path):
+def test_cfradial1_rhi_sweep_dimension(tmp_path, closing):
     ds, _, _ = _ragged_cfradial1_dataset()
     path = tmp_path / "ragged_cfradial1.nc"
     ds.to_netcdf(path)
-    dtree = xd.io.open_cfradial1_datatree(path)
+    dtree = closing(xd.io.open_cfradial1_datatree(path))
     assert "azimuth" in dtree["sweep_0"].ds.dims
     assert "elevation" in dtree["sweep_1"].ds.dims
     with xr.open_dataset(path, chunks={}) as src:
@@ -258,10 +258,10 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path):
     assert "elevation" in dtree["sweep_1"].ds.dims
 
 
-def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path):
+def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path, closing):
     # the export is padded to (time, range), so the ragged index variables
     # must not be written (#416)
-    dtree = xd.io.open_cfradial1_datatree(cfradial1n_file)
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1n_file))
     # source-style global flag, must be flipped as the export is padded
     dtree.attrs["n_gates_vary"] = "true"
     path = tmp_path / "variable_gates.nc"
@@ -273,7 +273,7 @@ def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path):
         assert "n_points" not in out.dims
         assert out.attrs["n_gates_vary"] == "false"
 
-    back = xd.io.open_cfradial1_datatree(path)
+    back = closing(xd.io.open_cfradial1_datatree(path))
     for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
         nrange = dtree[sweep].ds.sizes["range"]
         np.testing.assert_array_equal(
@@ -281,12 +281,12 @@ def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path):
         )
 
 
-def test_cfradial1_export_strings_as_char_arrays(odim_file, tmp_path):
+def test_cfradial1_export_strings_as_char_arrays(odim_file, tmp_path, closing):
     # string variables must be char arrays (not NC_STRING) and "None"
     # placeholders must not be written as global attributes (#417)
     import netCDF4
 
-    dtree = xd.io.open_odim_datatree(odim_file, sweep=[0, 1])
+    dtree = closing(xd.io.open_odim_datatree(odim_file, sweep=[0, 1]))
     path = tmp_path / "odim_cf1.nc"
     xd.io.to_cfradial1(dtree, path)
 
@@ -301,7 +301,7 @@ def test_cfradial1_export_strings_as_char_arrays(odim_file, tmp_path):
     assert not attrs["history"].startswith(("None", ":"))
 
 
-def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path):
+def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path, closing):
     # netCDF attributes can't be bool; CfRadial uses "true"/"false" (#418)
     import netCDF4
 
@@ -313,7 +313,7 @@ def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path):
     with netCDF4.Dataset(path) as nc:
         for name in bool_attrs:
             assert nc.getncattr(name) == str(bool(dtree.attrs[name])).lower()
-    back = xd.io.open_cfradial1_datatree(path)
+    back = closing(xd.io.open_cfradial1_datatree(path))
     np.testing.assert_array_equal(
         back["sweep_0"].ds.DBZH.values[:, : dtree["sweep_0"].ds.sizes["range"]],
         dtree["sweep_0"].ds.DBZH.values,
