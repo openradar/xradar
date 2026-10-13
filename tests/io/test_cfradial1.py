@@ -337,7 +337,7 @@ def test_cfradial1_export_duplicate_ray_times(cfradial1_file, tmp_path):
         assert out.sizes["time"] == sum(nrays)
         np.testing.assert_array_equal(out.sweep_start_ray_index, [0, nrays[0]])
         np.testing.assert_array_equal(
-            out.sweep_end_ray_index.values[-1], sum(nrays) - 1
+            out.sweep_end_ray_index, [nrays[0] - 1, sum(nrays) - 1]
         )
 
     back = xd.io.open_cfradial1_datatree(path)
@@ -346,3 +346,41 @@ def test_cfradial1_export_duplicate_ray_times(cfradial1_file, tmp_path):
             back[sweep].ds.DBZ.values[:, : dtree[sweep].ds.sizes["range"]],
             dtree[sweep].ds.DBZ.values,
         )
+
+
+def test_cfradial1_export_pads_missing_gates_with_nan(nexradlevel2_file, tmp_path):
+    # packed moments (uint8, no _FillValue) must be padded with NaN on export,
+    # not with raw 0 that decodes to valid data (-33 dBZ)
+    dtree = xd.io.open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
+    nrange = dtree["sweep_1"].ds.sizes["range"]
+    assert nrange < dtree["sweep_0"].ds.sizes["range"]
+    path = tmp_path / "padded.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with xd.io.open_cfradial1_datatree(path) as back:
+        dbzh = back["sweep_1"].ds.DBZH.values
+    assert np.isnan(dbzh[:, nrange:]).all()
+    np.testing.assert_array_equal(dbzh[:, :nrange], dtree["sweep_1"].ds.DBZH.values)
+
+
+def test_cfradial1_export_range_within_tolerance(cfradial1_file, tmp_path):
+    # a range that differs by less than the tolerance of the geometry check is
+    # snapped, it must not interleave gates in the outer join
+    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, sweep=[0, 1])
+    nrange = dtree["sweep_0"].ds.sizes["range"]
+    node = dtree["sweep_1"]
+    ds = node.to_dataset(inherit=False)
+    node.dataset = ds.assign_coords(range=ds.range + 1e-3)
+    path = tmp_path / "range_tolerance.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with xr.open_dataset(path, decode_timedelta=False) as out:
+        assert out.sizes["range"] == nrange
+
+
+def test_cfradial1_export_single_sweep_keeps_scalars(odim_file3, tmp_path):
+    # one sweep is not concatenated, its scalars must not get a time dimension
+    dtree = xd.io.open_odim_datatree(odim_file3)
+    assert dtree["sweep_0"].ds.nyquist_velocity.dims == ()
+    path = tmp_path / "single_sweep.nc"
+    xd.io.to_cfradial1(dtree, path)
+    with xr.open_dataset(path, decode_timedelta=False) as out:
+        assert out.nyquist_velocity.dims == ()

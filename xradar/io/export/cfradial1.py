@@ -234,34 +234,50 @@ def _combine_sweeps(dtree, dim0=None):
 
         # Strip per-sweep attrs that may vary across sweeps (e.g.
         # NEXRAD ICD waveform_type, super_resolution) to avoid
-        # merge conflicts in combine_by_coords below.
+        # merge conflicts in xr.concat below.
         sweep_ds.attrs = {}
 
         sweep_datasets.append(sweep_ds)
 
     # CfRadial1 holds one range coordinate for the whole volume, so all sweeps
     # must share the gate geometry (they may differ in number of gates)
-    longest = max(sweep_datasets, key=lambda ds: ds.sizes["range"]).range.values
-    for sweep_ds in sweep_datasets:
+    longest = max((ds.range.values for ds in sweep_datasets), key=len)
+    for i, sweep_ds in enumerate(sweep_datasets):
         rng = sweep_ds.range.values
         if not np.allclose(rng, longest[: rng.size]):
             raise xr.MergeError(
                 "CfRadial1 export requires the same range gate geometry "
                 "(first gate and gate spacing) in all sweeps."
             )
+        # snap onto one range coordinate, the outer join below is exact
+        sweep_datasets[i] = sweep_ds.assign_coords(
+            range=sweep_ds.range.copy(data=longest[: rng.size])
+        )
 
     # concatenate positionally along time in sweep order (matching
     # sweep_start/end_ray_index), rays with identical timestamps must not be
     # merged by aligning on time values (#415); range is outer-joined
-    combined = xr.concat(
-        sweep_datasets,
-        dim="time",
-        data_vars="all",
-        coords="minimal",
-        compat="no_conflicts",
-        join="outer",
-        combine_attrs="no_conflicts",
-    )
+    # (a single sweep stays as it is: concat would broadcast its scalars)
+    if len(sweep_datasets) == 1:
+        combined = sweep_datasets[0]
+    else:
+        combined = xr.concat(
+            sweep_datasets,
+            dim="time",
+            data_vars="all",
+            coords="minimal",
+            compat="no_conflicts",
+            join="outer",
+            combine_attrs="no_conflicts",
+        )
+
+    # concat keeps the first sweep's encoding; packed moments without a
+    # _FillValue would write the NaN padding of shorter sweeps as valid data
+    if any(ds.sizes["range"] < longest.size for ds in sweep_datasets):
+        for var in combined.variables.values():
+            if "range" in var.dims and "_FillValue" not in var.encoding:
+                for key in ("dtype", "scale_factor", "add_offset"):
+                    var.encoding.pop(key, None)
 
     # These are re-added from ``sweep_info`` below with a ``sweep`` dimension.
     combined = combined.drop_vars(SWEEP_INFO_VARS, errors="ignore")
