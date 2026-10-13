@@ -10,13 +10,19 @@ ensuring that:
 - Reviewers are not overburdened
 - Contributions can be maintained
 - The submitter can vouch for and explain all changes
-- Developers can acquire new skills
+- Developers can acquire new skills[^skills]
+- Contributions do not put the project's license at risk
 
 This policy applies regardless of whether the code was written by hand, with AI
 assistance, or generated entirely by an AI tool. It is adapted from the
 [xarray AI Usage Policy](https://github.com/pydata/xarray/blob/main/doc/contribute/ai-policy.md)
 and aligns with similar efforts across the scientific Python ecosystem, with
-xradar-specific additions for CI, packaging, and dependency changes.
+xradar-specific additions for CI, packaging, and dependency changes, copyright
+and licensing, and disclosure of AI usage.
+
+[^skills]:
+    Over-reliance on AI tools has been shown to
+    [hinder skill formation amongst software developers](https://arxiv.org/abs/2601.20245).
 
 ## Core Principle: Changes
 
@@ -24,6 +30,8 @@ If you submit a pull request, you are responsible for understanding and having
 fully reviewed the changes. You must be able to explain why each change is
 correct and how it fits into the project. Strive to minimize changes to ease the
 burden on reviewers — avoid including unnecessary or loosely related changes.
+AI tools tend to produce verbose code, tests, and text; more code is more code
+to maintain, so keep contributions concise.
 
 If you are unsure about the best way forward, open a draft PR and use it to
 discuss the approach with maintainers before expanding the scope.
@@ -53,6 +61,10 @@ If you used AI to generate code, you are expected to have read it critically and
 tested it. As with a hand-written PR, the description should explain the
 approach and reasoning behind the changes. Do not leave it to reviewers to
 figure out what the code does and why.
+
+AI tools can also help you review your own changes, for example by running a
+second, independent model over the diff. That can be a useful extra check, but
+it does not replace your own review: you remain responsible for every line.
 
 #### Not Acceptable
 
@@ -116,6 +128,27 @@ supply-chain-style contributions. Maintainers may ask that AI not be used for
 these changes, or that an issue-first discussion happen before any code is
 generated.
 
+## Copyright and Licensing
+
+xradar is distributed under the MIT license. By submitting a contribution, you
+confirm that you have the right to submit it under that license, whether or not
+AI tools were involved.
+
+It is not yet settled whether AI-generated code can be copyrighted, or whether
+it can be a derivative of the code the model was trained on. AI tools can
+reproduce existing code, including code under incompatible (e.g. copyleft)
+licenses, without saying so. Therefore:
+
+- Do not submit AI-generated code that you recognize, or suspect, as copied or
+  closely adapted from another project. If you deliberately port code from
+  another project, say so in the PR, credit the source, and make sure its
+  license is compatible with MIT, exactly as you would for hand-written code.
+- Be especially careful with larger, self-contained pieces of generated code
+  (complete algorithms, format decoders, lookup tables), which are the most
+  likely to be reproduced from training data.
+- Maintainers may ask you to rewrite, or may decline, AI-generated code whose
+  origin is unclear, and may remove such code later if a problem comes to light.
+
 ## Documentation
 
 The same core principles apply to both code and documentation. You must review
@@ -134,3 +167,10 @@ known (for example: "Claude Opus 4.7", "Cursor with GPT-5.1"). This is not
 required, but it helps reviewers calibrate their attention and helps the
 community develop shared intuition about where AI tools work well and where
 they struggle on radar-data work.
+
+## Revisiting This Policy
+
+AI tools, community practice, and the legal situation around AI-generated code
+are all changing quickly. Maintainers will revisit this policy regularly, at
+least once per release cycle, and update it as needed. Suggestions are welcome
+via an issue.

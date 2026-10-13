@@ -48,7 +48,8 @@ xradar contributors may use AI tools as part of their workflow. Please read the
 [AI Usage Policy](https://github.com/openradar/xradar/blob/main/docs/ai_policy.md)
 before submitting an AI-assisted contribution. In short: you are responsible
 for every line of code in your PR, PR descriptions and review replies must be
-your own words, and large AI-assisted changes — as well as CI, packaging, and
+your own words, you must have the right to contribute the code under xradar's
+MIT license, and changes that are hard to review — as well as CI, packaging, and
 dependency changes — should start with an issue rather than a surprise diff.
 
 ## Get Started!
