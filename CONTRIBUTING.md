@@ -104,8 +104,21 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py
     ```
 
-    After changing dependencies in `requirements.txt` / `requirements_dev.txt`,
-    refresh the lockfile with `uv lock` and commit the updated `uv.lock`.
+    To build the documentation and run the notebooks, add the `docs` extra (it
+    brings `arm_pyart`, `wradlib`, `matplotlib`, `ipykernel` and `myst-parser`).
+    Building the docs also needs `ffmpeg` and `pandoc` from your system package
+    manager (e.g. `apt install ffmpeg pandoc`, `brew install ffmpeg pandoc` or
+    `winget install ffmpeg`):
+
+    ```bash
+    uv sync --extra dev --extra docs
+    uv run python -m sphinx build -j auto -b html docs/ doc-build
+    ```
+
+    After changing dependencies in `requirements.txt`, `requirements_dev.txt` or
+    `requirements_docs.txt`, refresh the lockfile with `uv lock --upgrade` and
+    commit the updated `uv.lock`. CI runs `uv lock --check` and fails if the
+    lockfile is out of date.
 
 4. Create a branch for local development.
 

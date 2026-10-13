@@ -22,6 +22,9 @@ jobs:
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
         with:
           python-version: "3.13"
+      - name: Check that uv.lock is up to date
+        run: |
+          uv lock --check
       - name: Black style check
         run: |
           uvx --from "black[jupyter]" black --check .
