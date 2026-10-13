@@ -94,7 +94,7 @@ ds.DBZH.sortby("azimuth").plot(y="azimuth")
 Furuno scn/scnx files consist only of one sweep. But we might load and combine several sweeps into one DataTree.
 
 ```{code-cell}
-dtree = xd.io.open_furuno_datatree(filename_scn)
+dtree = xd.open_datatree(filename_scn, engine="furuno")
 display(dtree)
 ```
 
