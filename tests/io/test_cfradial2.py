@@ -138,6 +138,7 @@ def test_open_cfradial2_normalizes_common_aliases(temp_file):
     assert "azimuth" in sweep.coords
     assert "elevation" in sweep.coords
     assert "frequency" in sweep.coords
+    dtree.close()
     assert sweep["sweep_number"].item() == 0
     assert sweep["sweep_mode"].item() == "azimuth_surveillance"
     assert sweep["follow_mode"].item() == "none"
@@ -171,16 +172,16 @@ def test_open_dataset_missing_group_raises(cfradial2_file):
 
 def test_xr_open_datatree_cfradial2_engine(cfradial2_file):
     """End-to-end: `xr.open_datatree(file, engine="cfradial2")` returns a DataTree."""
-    dtree = xr.open_datatree(cfradial2_file, engine="cfradial2")
-    assert isinstance(dtree, xr.DataTree)
-    assert any(name.startswith("sweep_") for name in dtree.children)
+    with xr.open_datatree(cfradial2_file, engine="cfradial2") as dtree:
+        assert isinstance(dtree, xr.DataTree)
+        assert any(name.startswith("sweep_") for name in dtree.children)
 
 
 def test_xd_open_datatree_cfradial2_engine(cfradial2_file):
     """End-to-end: `xd.open_datatree(file, engine="cfradial2")` returns a DataTree."""
-    dtree = xd.open_datatree(cfradial2_file, engine="cfradial2")
-    assert isinstance(dtree, xr.DataTree)
-    assert any(name.startswith("sweep_") for name in dtree.children)
+    with xd.open_datatree(cfradial2_file, engine="cfradial2") as dtree:
+        assert isinstance(dtree, xr.DataTree)
+        assert any(name.startswith("sweep_") for name in dtree.children)
 
 
 @pytest.mark.parametrize(
@@ -404,6 +405,7 @@ def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file):
 
     assert "radar_parameters" in dtree.children
     assert "radar_receiver_bandwidth" in dtree["radar_parameters"].data_vars
+    dtree.close()
 
     with pytest.raises(ValueError, match="missing from file"):
         xd.io.open_cfradial2_datatree(outfile, engine="netcdf4", sweep="sweep_9")
@@ -415,10 +417,12 @@ def test_cfradial2_non_sequence_sweep_deprecated(cfradial2_file, sweep):
         dtree = xd.open_datatree(cfradial2_file, engine="cfradial2", sweep=sweep)
     assert list(dtree.match("sweep_*")) == ["sweep_0"]
     assert record[0].filename == __file__
+    dtree.close()
 
 
 def test_cfradial2_non_sequence_sweep_warning_points_at_caller(cfradial2_file):
     # same through xarray's entry point, which is one call deeper
     with pytest.warns(FutureWarning, match="pass a list or tuple") as record:
-        xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0})
+        dtree = xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0})
     assert record[0].filename == __file__
+    dtree.close()
