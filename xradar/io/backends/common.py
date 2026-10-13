@@ -149,6 +149,18 @@ def _calculate_angle_res(dim):
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
 
 
+class _ManagedStoreMixin:
+    """Give a backend store the ``close`` of the file it holds.
+
+    The stores keep their file in ``self._manager`` (an xarray file manager);
+    without this ``Dataset.close()`` was a no-op and the file stayed open
+    until the manager was garbage collected. Requires ``self._manager``.
+    """
+
+    def close(self, **kwargs):
+        self._manager.close(**kwargs)
+
+
 def _fix_angle(da):
     # fix elevation outliers
     if len(set(da.values)) > 1:
@@ -477,6 +489,38 @@ def _prepare_backend_ds(ds):
     return ds
 
 
+def _keep_close(new, source):
+    """Give ``new`` the file close of ``source`` and return it.
+
+    ``drop_vars``, ``drop_attrs`` and similar build a new dataset without the
+    close, so closing the tree would no longer close the file (#471, #502).
+    """
+    new.set_close(source._close)
+    return new
+
+
+def _open_sweeps(open_sweep, sweeps):
+    """Open every sweep with ``open_sweep(sweep)`` and return the datasets.
+
+    If one fails, the sweeps already open are closed instead of being left to
+    the garbage collector (#471, #502).
+    """
+    datasets = []
+    try:
+        for sweep in sweeps:
+            datasets.append(open_sweep(sweep))
+    except Exception:
+        _close_all(datasets)
+        raise
+    return datasets
+
+
+def _close_all(objs):
+    """Close every dataset or tree in ``objs``."""
+    for obj in objs:
+        obj.close()
+
+
 def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     """Build CfRadial2 groups dict from a list of sweep Datasets.
 
@@ -495,23 +539,28 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     groups_dict : dict[str, xr.Dataset]
         Dictionary with CfRadial2 group structure.
     """
-    groups_dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    # station vars belong to the root only, also when sweeps carry them as coords
-    sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
-    if optional_groups:
-        groups_dict["/radar_parameters"] = _get_subgroup(
-            sweeps, radar_parameters_subgroup
-        )
-        groups_dict["/georeferencing_correction"] = _get_subgroup(
-            sweeps, georeferencing_correction_subgroup
-        )
-        groups_dict["/radar_calibration"] = _get_radar_calibration(
-            sweeps, radar_calibration_subgroup
-        )
-    for i, ds in enumerate(sweeps):
-        groups_dict[f"/sweep_{i}"] = ds.drop_attrs(deep=False)
+    try:
+        groups_dict = {
+            "/": _get_required_root_dataset(ls_ds, optional=optional),
+        }
+        # station vars belong to the root only, also when sweeps carry them as coords
+        sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                sweeps, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                sweeps, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                sweeps, radar_calibration_subgroup
+            )
+    except Exception:
+        # nothing holds the sweeps' files yet: close them (#471, #502)
+        _close_all(ls_ds)
+        raise
+    for i, (ds, source) in enumerate(zip(sweeps, ls_ds, strict=True)):
+        groups_dict[f"/sweep_{i}"] = _keep_close(ds.drop_attrs(deep=False), source)
     return groups_dict
 
 
