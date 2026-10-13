@@ -325,9 +325,9 @@ def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
     # carry a meta_group attribute (#388)
     import netCDF4
 
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True)
     path = tmp_path / "cf14.nc"
-    xd.io.to_cfradial1(dtree, path)
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
     with netCDF4.Dataset(path) as nc:
         assert nc.version == "1.4"
         conventions = nc.Conventions.split()
