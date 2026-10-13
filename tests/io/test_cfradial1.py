@@ -384,3 +384,43 @@ def test_cfradial1_export_single_sweep_keeps_scalars(odim_file3, tmp_path):
     xd.io.to_cfradial1(dtree, path)
     with xr.open_dataset(path, decode_timedelta=False) as out:
         assert out.nyquist_velocity.dims == ()
+
+
+def test_cfradial1_export_sweeps_packed_differently(odim_file, tmp_path):
+    # ODIM sweeps have their own scale_factor/add_offset; the packing of the
+    # first sweep must not be applied to the others (values were clipped)
+    outfile = tmp_path / "odim_cf1.nc"
+    with xd.open_datatree(odim_file, engine="odim") as dtree:
+        packings = {
+            (
+                dtree[sweep]["KDP"].encoding["scale_factor"],
+                dtree[sweep]["KDP"].encoding["add_offset"],
+            )
+            for sweep in dtree.match("sweep_*")
+        }
+        assert len(packings) > 1
+        xd.io.to_cfradial1(dtree, outfile)
+
+        with xd.open_datatree(outfile, engine="cfradial1") as back:
+            for sweep in dtree.match("sweep_*"):
+                for name, var in dtree[sweep].data_vars.items():
+                    if var.ndim != 2 or var.dtype.kind != "f":
+                        continue
+                    expected = var.values
+                    result = back[sweep][name].values[:, : expected.shape[1]]
+                    np.testing.assert_allclose(
+                        result, expected, rtol=1e-6, equal_nan=True, err_msg=name
+                    )
+
+
+def test_cfradial1_export_sweep_attrs_differ(uf_file_1, tmp_path):
+    # variable attributes that differ between sweeps (here the time units of
+    # the UF reader) don't make the export fail
+    outfile = tmp_path / "uf_cf1.nc"
+    with xd.open_datatree(uf_file_1, engine="uf") as dtree:
+        units = {dtree[s]["time"].attrs.get("units") for s in dtree.match("sweep_*")}
+        assert len(units) > 1
+        nsweeps = len(list(dtree.match("sweep_*")))
+        xd.io.to_cfradial1(dtree, outfile)
+    with xd.open_datatree(outfile, engine="cfradial1") as back:
+        assert len(list(back.match("sweep_*"))) == nsweeps

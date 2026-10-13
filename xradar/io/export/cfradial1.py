@@ -257,7 +257,9 @@ def _combine_sweeps(dtree, dim0=None):
     # concatenate positionally along time in sweep order (matching
     # sweep_start/end_ray_index), rays with identical timestamps must not be
     # merged by aligning on time values (#415); range is outer-joined
-    # (a single sweep stays as it is: concat would broadcast its scalars)
+    # (a single sweep stays as it is: concat would broadcast its scalars).
+    # Attributes that differ between sweeps (e.g. a1gate of the azimuth, the
+    # time units) are dropped.
     if len(sweep_datasets) == 1:
         combined = sweep_datasets[0]
     else:
@@ -268,16 +270,28 @@ def _combine_sweeps(dtree, dim0=None):
             coords="minimal",
             compat="no_conflicts",
             join="outer",
-            combine_attrs="no_conflicts",
+            combine_attrs="drop_conflicts",
         )
 
-    # concat keeps the first sweep's encoding; packed moments without a
-    # _FillValue would write the NaN padding of shorter sweeps as valid data
-    if any(ds.sizes["range"] < longest.size for ds in sweep_datasets):
-        for var in combined.variables.values():
-            if "range" in var.dims and "_FillValue" not in var.encoding:
-                for key in ("dtype", "scale_factor", "add_offset"):
-                    var.encoding.pop(key, None)
+    # concat keeps the encoding of the first sweep. Packing (integer dtype with
+    # scale_factor/add_offset) is only valid for the data it was made for:
+    # - sweeps packed differently (e.g. ODIM, scale and offset per sweep) would
+    #   be clipped or shifted with the packing of the first sweep
+    # - packed moments without a _FillValue would write the NaN padding of
+    #   shorter sweeps as valid data
+    packing = ("dtype", "scale_factor", "add_offset", "_FillValue")
+    padded = any(ds.sizes["range"] < longest.size for ds in sweep_datasets)
+    for name, var in combined.variables.items():
+        encodings = {
+            tuple(str(ds.variables[name].encoding.get(key)) for key in packing)
+            for ds in sweep_datasets
+            if name in ds.variables
+        }
+        differs = len(encodings) > 1
+        unfilled = padded and "range" in var.dims and "_FillValue" not in var.encoding
+        if differs or unfilled:
+            for key in packing[:3] + (("_FillValue",) if differs else ()):
+                var.encoding.pop(key, None)
 
     # These are re-added from ``sweep_info`` below with a ``sweep`` dimension.
     combined = combined.drop_vars(SWEEP_INFO_VARS, errors="ignore")
