@@ -33,6 +33,11 @@ $ uv add xradar          # add to the current uv project
 $ uv pip install xradar  # install into the active environment
 ```
 
+The `netCDF4` and `h5py` wheels each bundle their own HDF5 library. If you run
+into problems that look like HDF5 version conflicts, install them against one
+system HDF5 (`uv pip install --no-binary netCDF4,h5py netCDF4 h5py`) or use the
+conda-forge installation above.
+
 To run xradar in a throwaway environment without installing it permanently:
 
 ```bash

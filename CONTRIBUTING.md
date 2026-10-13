@@ -83,8 +83,18 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     don't have it, then create the development environment:
 
     ```bash
-    uv sync --extra dev
+    # Linux: apt install build-essential libhdf5-dev libnetcdf-dev
+    # macOS: brew install hdf5 netcdf
+    uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py
     ```
+
+    `netCDF4` and `h5py` are built from source here so that both use the same
+    system HDF5 library. Their wheels bundle their own HDF5 builds, and mixing
+    HDF5 versions in one process is a known source of hard to debug problems
+    (conda-forge avoids this by building everything against one HDF5). The
+    flags are only needed once; a later `uv sync --extra dev` keeps the installed packages. If you
+    cannot install the system libraries (for example on Windows), use the conda
+    environment above instead.
 
     This creates a `.venv/` with xradar installed as an editable package plus the
     full development toolchain. Prefix commands with `uv run` to use it without
@@ -98,16 +108,6 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     .venv\Scripts\Activate.ps1        # Windows (PowerShell)
     ```
 
-    `netCDF4` and `h5py` install from wheels by default. If you hit a binary
-    incompatibility, rebuild them against your system HDF5/netCDF libraries
-    (`--reinstall-package` is needed because the wheels are already installed):
-
-    ```bash
-    # Linux: apt install build-essential libhdf5-dev libnetcdf-dev
-    uv sync --extra dev --no-binary-package netcdf4 --no-binary-package h5py \
-        --reinstall-package netcdf4 --reinstall-package h5py
-    ```
-
     To build the documentation and run the notebooks, add the `docs` extra to
     `dev` (it adds `arm_pyart` and `wradlib`; Sphinx, `matplotlib` and the
     notebook tools come with `dev`). One notebook
@@ -116,7 +116,7 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     `winget install ffmpeg`):
 
     ```bash
-    uv sync --extra dev --extra docs
+    uv sync --extra dev --extra docs   # after the sync above
     uv run python -m sphinx build -j auto -b html docs/ doc-build
     ```
 
