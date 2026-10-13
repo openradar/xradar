@@ -26,6 +26,7 @@ import cartopy.crs as ccrs
 import cmweather  # noqa
 import fsspec
 import matplotlib.pyplot as plt
+import numpy as np
 import xarray as xr
 from IPython.display import HTML
 from matplotlib.animation import FuncAnimation
@@ -88,7 +89,7 @@ task_files = [
     for i in radar_files[:4]
 ]
 # list of xradar datatrees
-ls_dt = [xd.io.open_iris_datatree(i).xradar.georeference() for i in task_files]
+ls_dt = [xd.open_datatree(i, engine="iris").xradar.georeference() for i in task_files]
 
 # sweeps and elevations within each task
 for i in ls_dt:
@@ -190,7 +191,7 @@ def mult_vcp(radar_files):
     """
     ls_files = [radar_files[i : i + 4] for i in range(len(radar_files)) if i % 4 == 0]
     ls_sigmet = [
-        [xd.io.open_iris_datatree(data_accessor(i)).xradar.georeference() for i in j]
+        [xd.open_datatree(data_accessor(i), engine="iris").xradar.georeference() for i in j]
         for j in ls_files
     ]
     ls_dt = [create_vcp(i) for i in ls_sigmet]
@@ -263,6 +264,25 @@ Tree-like hierarchical data can be stored using ARCO format.
 
 ```{code-cell}
 zarr_store = "./multiple_vcp_test.zarr"
+
+
+def fill_masked(ds):
+    # Zarr v3 codecs cannot serialize numpy MaskedArrays (the IRIS reader
+    # returns masked moments such as ``VRADH``); fill the masked entries so
+    # every variable is a plain ndarray before writing.
+    ds = ds.copy()
+    for name, var in ds.variables.items():
+        if isinstance(var.data, np.ma.MaskedArray):
+            fill = (
+                np.nan
+                if np.issubdtype(var.dtype, np.floating)
+                else var.data.fill_value
+            )
+            ds[name].data = var.data.filled(fill)
+    return ds
+
+
+vcps_dt = vcps_dt.map_over_datasets(fill_masked)
 _ = vcps_dt.to_zarr(zarr_store)
 ```
 

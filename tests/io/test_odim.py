@@ -347,3 +347,60 @@ def test_open_odim_datatree_optional_groups(odim_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize("layout", ["fmi", "odim"])
+def test_open_odim_quality_legend(odim_file, tmp_path, layout):
+    # quality groups with compound-dtype legend tables must not be merged as
+    # ray data (#395). "odim": ODIM_H5 2.3/2.4 Section 6.2
+    # {char[64] key; char[32] value}, "fmi": {int64 code; string class}
+    import shutil
+
+    import h5py
+
+    path = tmp_path / "odim_quality_legend.h5"
+    shutil.copy(odim_file, path)
+    entries = [(60, "NONMET.BIOL.INSECT"), (72, "NONMET.CLUTTER.CCOR"), (246, "NOISE")]
+    if layout == "fmi":
+        legend_dtype = np.dtype([("code", ">i8"), ("class", h5py.string_dtype())])
+        legend = np.array(entries, dtype=legend_dtype)
+    else:
+        legend_dtype = np.dtype([("key", "S64"), ("value", "S32")])
+        legend = np.array(
+            [(name.encode(), str(code).encode()) for code, name in entries],
+            dtype=legend_dtype,
+        )
+    with h5py.File(path, "a") as f:
+        shape = f["dataset1/data1/data"].shape
+        n = 1
+        while f"quality{n}" in f["dataset1"]:
+            n += 1
+        qual = f.create_group(f"dataset1/quality{n}")
+        what = qual.create_group("what")
+        what.attrs.update(
+            quantity=np.bytes_("ECHO_CLASS"),
+            gain=1.0,
+            offset=0.0,
+            nodata=255.0,
+            undetect=0.0,
+            legend=np.bytes_("72:NONMET.CLUTTER.CCOR,60:NONMET.BIOL.INSECT,246:NOISE"),
+        )
+        qual.create_dataset("data", data=np.full(shape, 72, dtype="uint8"))
+        qual.create_dataset("legend", data=legend)
+
+    dtree = open_odim_datatree(path, sweep=0)
+    ds = dtree["sweep_0"].ds
+    assert "legend" not in ds.variables
+    assert ds.ECHO_CLASS.dims == ds.DBZH.dims
+    flag_values = ds.ECHO_CLASS.attrs["flag_values"]
+    np.testing.assert_array_equal(flag_values, [60, 72, 246])
+    assert flag_values.dtype == np.dtype("int64")
+    assert ds.ECHO_CLASS.attrs["flag_meanings"] == (
+        "NONMET.BIOL.INSECT NONMET.CLUTTER.CCOR NOISE"
+    )
+    # the producer's what/legend string is kept as is
+    assert ds.ECHO_CLASS.attrs["legend"] == (
+        "72:NONMET.CLUTTER.CCOR,60:NONMET.BIOL.INSECT,246:NOISE"
+    )
+    assert "flag_values" not in ds.DBZH.attrs
+    assert "flag_values" not in ds.CLASS.attrs
