@@ -294,7 +294,11 @@ def _combine_sweeps(dtree, dim0=None):
                 var.encoding.pop(key, None)
 
     # These are re-added from ``sweep_info`` below with a ``sweep`` dimension.
-    combined = combined.drop_vars(SWEEP_INFO_VARS, errors="ignore")
+    # (sweep_group_name is no CfRadial1 variable, e.g. the HPL reader has it in
+    # every sweep and the written file could not be read again)
+    combined = combined.drop_vars(
+        [*SWEEP_INFO_VARS, "sweep_group_name"], errors="ignore"
+    )
 
     georef_coords = ["latitude", "longitude", "altitude", "spatial_ref", "crs_wkt"]
     combined = combined.drop_vars(georef_coords, errors="ignore")
