@@ -52,7 +52,7 @@ def test_decode_bin_angle():
     assert iris.decode_bin_angle(2000000000, 4) == 167.63806343078613
 
 
-def decode_array():
+def test_decode_array():
     data = np.arange(0, 11)
     np.testing.assert_array_equal(
         iris.decode_array(data),
