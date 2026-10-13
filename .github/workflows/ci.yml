@@ -45,11 +45,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
-        numpy-version: ["1", "2"]
-        exclude:
-          - python-version: "3.13"
-            numpy-version: "1"
+        python-version: ["3.12", "3.13", "3.14"]
+        numpy-version: ["2"]
 
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
@@ -163,6 +160,7 @@ jobs:
             python=${{matrix.python-version}}
             cmweather
             dask
+            filelock
             fsspec
             h5netcdf
             h5py
