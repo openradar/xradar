@@ -80,6 +80,7 @@ from .common import (
     _calculate_angle_res,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_fmt_string,
     _get_reindex_coord,
     _open_legacy_datatree,
@@ -306,6 +307,7 @@ class FurunoFile:
         self._loaddata = kwargs.get("loaddata", True)
         self._obsmode = kwargs.get("obsmode", None)
         self._fp = None
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             if filename.endswith(".gz"):
