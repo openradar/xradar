@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2025, openradar developers.
+# Copyright (c) 2022-2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
 import contextlib
 import os.path
@@ -9,6 +9,14 @@ import uuid
 import pytest
 from filelock import FileLock
 from open_radar_data import DATASETS
+
+
+# silence FutureWarning
+def pytest_configure(config):
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:`open_.*_datatree` is deprecated:FutureWarning",
+    )
 
 
 @pytest.fixture(params=["file", "filelike"])
