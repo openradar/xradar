@@ -30,9 +30,9 @@ from xradar.model import (
 )
 
 
-def test_open_cfradial1_datatree(cfradial1_file):
-    dtree = open_cfradial1_datatree(
-        cfradial1_file, first_dim="time", site_as_coords=False
+def test_open_cfradial1_datatree(cfradial1_file, closing):
+    dtree = closing(
+        open_cfradial1_datatree(cfradial1_file, first_dim="time", site_as_coords=False)
     )
     attrs = dtree.attrs
 
@@ -107,8 +107,8 @@ def test_open_cfradial1_dataset(cfradial1_file):
 
 
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
-def test_open_odim_datatree_sweep(odim_file, sweep):
-    dtree = open_odim_datatree(odim_file, sweep=sweep)
+def test_open_odim_datatree_sweep(odim_file, sweep, closing):
+    dtree = closing(open_odim_datatree(odim_file, sweep=sweep))
     if isinstance(sweep, (str, int)):
         lswp = len([sweep])
     else:
@@ -116,8 +116,8 @@ def test_open_odim_datatree_sweep(odim_file, sweep):
     assert len(dtree.match("sweep_*")) == lswp
 
 
-def test_open_odim_datatree(odim_file):
-    dtree = open_odim_datatree(odim_file)
+def test_open_odim_datatree(odim_file, closing):
+    dtree = closing(open_odim_datatree(odim_file))
     # root_attrs
     attrs = dtree.attrs
     assert attrs["Conventions"] == "ODIM_H5/V2_2"
@@ -254,8 +254,8 @@ def test_open_odim_store(odim_file):
 
 
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
-def test_open_gamic_datatree_sweep(gamic_file, sweep):
-    dtree = open_gamic_datatree(gamic_file, sweep=sweep)
+def test_open_gamic_datatree_sweep(gamic_file, sweep, closing):
+    dtree = closing(open_gamic_datatree(gamic_file, sweep=sweep))
     if isinstance(sweep, (str, int)):
         lswp = len([sweep])
     else:
@@ -263,8 +263,8 @@ def test_open_gamic_datatree_sweep(gamic_file, sweep):
     assert len(dtree.match("sweep_*")) == lswp
 
 
-def test_open_gamic_datatree(gamic_file):
-    dtree = open_gamic_datatree(gamic_file)
+def test_open_gamic_datatree(gamic_file, closing):
+    dtree = closing(open_gamic_datatree(gamic_file))
 
     # root_attrs
     attrs = dtree.attrs
@@ -739,8 +739,8 @@ def test_open_iris1_dataset(iris1_file):
 @pytest.mark.parametrize(
     "compression, compression_opts", [("gzip", 0), ("gzip", 6), ("gzip", 9)]
 )
-def test_odim_roundtrip(odim_file2, temp_file, compression, compression_opts):
-    dtree = open_odim_datatree(odim_file2)
+def test_odim_roundtrip(odim_file2, temp_file, compression, compression_opts, closing):
+    dtree = closing(open_odim_datatree(odim_file2))
     xradar.io.to_odim(
         dtree,
         temp_file,
@@ -748,14 +748,14 @@ def test_odim_roundtrip(odim_file2, temp_file, compression, compression_opts):
         compression=compression,
         compression_opts=compression_opts,
     )
-    dtree2 = open_odim_datatree(temp_file, reindex_angle=False)
+    dtree2 = closing(open_odim_datatree(temp_file, reindex_angle=False))
     for d0, d1 in zip(dtree.groups, dtree2.groups):
         xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
 
 
-def test_odim_optional_how(odim_file2, make_temp_file):
+def test_odim_optional_how(odim_file2, make_temp_file, closing):
     temp_file = make_temp_file()
-    dtree = open_odim_datatree(odim_file2)
+    dtree = closing(open_odim_datatree(odim_file2))
     xradar.io.to_odim(
         dtree,
         temp_file,
@@ -796,14 +796,14 @@ def test_odim_optional_how(odim_file2, make_temp_file):
         assert "stopelA" not in ds_how
 
 
-def test_write_odim_source_from_attrs(odim_file, odim_file2, make_temp_file):
+def test_write_odim_source_from_attrs(odim_file, odim_file2, make_temp_file, closing):
     # identifiers stored by the ODIM reader are written back (#98)
-    dtree = open_odim_datatree(odim_file2)
+    dtree = closing(open_odim_datatree(odim_file2))
     temp_file = make_temp_file()
     xradar.io.to_odim(dtree, temp_file)
     with h5py.File(temp_file) as f:
         assert f["what"].attrs["source"].decode() == "WMO:01104,NOD:norst"
-    dtree2 = open_odim_datatree(temp_file)
+    dtree2 = closing(open_odim_datatree(temp_file))
     assert dtree2.attrs["wmo__id"] == "01104"
     assert dtree2.attrs["node"] == "norst"
 
@@ -814,13 +814,13 @@ def test_write_odim_source_from_attrs(odim_file, odim_file2, make_temp_file):
         assert f["what"].attrs["source"].decode() == "NOD:xxxxx"
 
     # only PLC is stored, no mandatory identifier
-    dtree = open_odim_datatree(odim_file)
+    dtree = closing(open_odim_datatree(odim_file))
     with pytest.raises(ValueError, match="got 'PLC:T/Hills'"):
         xradar.io.to_odim(dtree, make_temp_file())
 
 
-def test_write_odim_source_all_identifiers(make_temp_file):
-    dtree = open_odim_datatree(DATASETS.fetch("202506090955_fianj_PVOL.h5"))
+def test_write_odim_source_all_identifiers(make_temp_file, closing):
+    dtree = closing(open_odim_datatree(DATASETS.fetch("202506090955_fianj_PVOL.h5")))
     temp_file = make_temp_file()
     xradar.io.to_odim(dtree, temp_file)
     with h5py.File(temp_file) as f:
@@ -958,8 +958,8 @@ def test_open_datamet_datatree(datamet_file):
 
 
 @pytest.mark.parametrize("first_dim", ["time", "auto"])
-def test_cfradfial2_roundtrip(cfradial1_file, make_temp_file, first_dim):
-    dtree0 = open_cfradial1_datatree(cfradial1_file, first_dim=first_dim)
+def test_cfradfial2_roundtrip(cfradial1_file, make_temp_file, first_dim, closing):
+    dtree0 = closing(open_cfradial1_datatree(cfradial1_file, first_dim=first_dim))
     # first write to cfradial2
     outfile = make_temp_file()
     xradar.io.to_cfradial2(dtree0.copy(), outfile)
@@ -981,9 +981,9 @@ def test_cfradfial2_roundtrip(cfradial1_file, make_temp_file, first_dim):
                 xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
 
 
-def test_cfradial_n_points_file(cfradial1n_file):
-    dtree = open_cfradial1_datatree(
-        cfradial1n_file, first_dim="auto", site_as_coords=False
+def test_cfradial_n_points_file(cfradial1n_file, closing):
+    dtree = closing(
+        open_cfradial1_datatree(cfradial1n_file, first_dim="auto", site_as_coords=False)
     )
     attrs = dtree.attrs
 
@@ -1041,7 +1041,6 @@ def test_cfradial_n_points_file(cfradial1n_file):
         assert ds.sweep_mode == "azimuth_surveillance"
 
 
-@pytest.mark.run(order=1)
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
@@ -1169,7 +1168,6 @@ def test_iris_dask_load(iris0_file):
     dsc.load()
 
 
-@pytest.mark.run(order=1)
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "uf_files", ["uf_file_1", "uf_file_2", "uf_file_3"], indirect=True
@@ -1304,8 +1302,8 @@ STATION_VARS = {"latitude", "longitude", "altitude"}
 class TestStationCoordsOnRoot:
     """Verify station coords are on root and not on sweep nodes in DataTree."""
 
-    def test_odim_station_coords_on_root(self, odim_file):
-        dtree = open_odim_datatree(odim_file)
+    def test_odim_station_coords_on_root(self, odim_file, closing):
+        dtree = closing(open_odim_datatree(odim_file))
         assert STATION_VARS <= set(dtree.ds.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
@@ -1320,16 +1318,16 @@ class TestStationCoordsOnRoot:
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
 
-    def test_gamic_station_coords_on_root(self, gamic_file):
-        dtree = open_gamic_datatree(gamic_file)
+    def test_gamic_station_coords_on_root(self, gamic_file, closing):
+        dtree = closing(open_gamic_datatree(gamic_file))
         assert STATION_VARS <= set(dtree.ds.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
 
-    def test_cfradial1_station_coords_on_root(self, cfradial1_file):
-        dtree = open_cfradial1_datatree(cfradial1_file)
+    def test_cfradial1_station_coords_on_root(self, cfradial1_file, closing):
+        dtree = closing(open_cfradial1_datatree(cfradial1_file))
         assert STATION_VARS <= set(dtree.ds.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
             sweep_ds = dtree[name].ds
@@ -1345,11 +1343,11 @@ class TestStationCoordsOnRoot:
         ("hpl_file", "open_hpl_datatree"),
     ],
 )
-def test_sweep_list_matches_sweep_int(request, fixture, opener):
+def test_sweep_list_matches_sweep_int(request, fixture, opener, closing):
     # sweep=[0] must select the same sweep as sweep=0 and "sweep_0" (#412)
     filename = request.getfixturevalue(fixture)
     open_datatree = getattr(xradar.io, opener)
-    expected = open_datatree(filename, sweep=0)["sweep_0"].ds
+    expected = closing(open_datatree(filename, sweep=0))["sweep_0"].ds
     for sweep in ([0], ["sweep_0"]):
-        dtree = open_datatree(filename, sweep=sweep)
+        dtree = closing(open_datatree(filename, sweep=sweep))
         xr.testing.assert_identical(dtree["sweep_0"].ds, expected)

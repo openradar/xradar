@@ -1,6 +1,7 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2025, openradar developers.
+# Copyright (c) 2022-2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
+import contextlib
 import os.path
 import shutil
 import uuid
@@ -10,9 +11,49 @@ from filelock import FileLock
 from open_radar_data import DATASETS
 
 
+# silence FutureWarning
+def pytest_configure(config):
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:`open_.*_datatree` is deprecated:FutureWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:.*is incomplete and is padded to a full angle grid:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:CfRadial2 sweep groups were renumbered:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:All sweeps are incomplete:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:Dropped \d+ incomplete sweep:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:Rays might miss on beginning:UserWarning",
+    )
+
+
 @pytest.fixture(params=["file", "filelike"])
 def file_or_filelike(request):
     return request.param
+
+
+@pytest.fixture
+def closing():
+    """Close every dataset or tree passed through it when the test ends.
+
+    Leaked files are otherwise closed by the garbage collector at an arbitrary
+    point, which can crash HDF5 while another file is being opened (#502).
+    Usage: ``dtree = closing(xd.open_datatree(...))``.
+    """
+    with contextlib.ExitStack() as stack:
+        yield stack.enter_context
 
 
 @pytest.fixture(scope="session")
@@ -46,9 +87,12 @@ def _cfradial2_source(cfradial1_file, tmp_path_factory):
     # synchronize worker execution
     with FileLock(str(lockfile)):
         if not outfile.is_file():
-            # first worker generates the file
-            dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
-            xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+            # first worker generates the file; close the source right away
+            # instead of leaving it open for the whole session (#502)
+            with xd.io.open_cfradial1_datatree(
+                cfradial1_file, first_dim="time"
+            ) as dtree:
+                xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
 
     return str(outfile)
 
