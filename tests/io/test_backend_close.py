@@ -8,12 +8,14 @@ import io
 import os
 import shutil
 import warnings
+from functools import partial
 from pathlib import Path
 
 import pytest
 import xarray as xr
 
 import xradar as xd
+from xradar.io.backends import cfradial1, common
 
 _PROC_FD = Path("/proc/self/fd")
 
@@ -174,3 +176,100 @@ def test_cfradial2_closes_file_when_opening_fails(cfradial2_file, tmp_path, swee
     with pytest.raises((TypeError, ValueError)):
         xd.open_datatree(filename, engine="cfradial2", sweep=sweep)
     assert _open_handles(filename) == 0
+
+
+def test_call_all_calls_every_function_when_one_raises():
+    # one failing close must not leave the other files open
+    calls = []
+
+    def failing():
+        calls.append("failing")
+        raise OSError("close failed")
+
+    with pytest.raises(OSError, match="close failed"):
+        common._call_all([failing, partial(calls.append, "ok")])
+    assert sorted(calls) == ["failing", "ok"]
+
+
+def _no_root(*args, **kwargs):
+    raise KeyError("root")
+
+
+def test_open_sweeps_closes_the_open_sweeps_when_one_fails():
+    closed = []
+
+    def open_sweep(sweep):
+        if sweep == 2:
+            raise ValueError("bad sweep")
+        ds = xr.Dataset()
+        ds.set_close(partial(closed.append, sweep))
+        return ds
+
+    with pytest.raises(ValueError, match="bad sweep"):
+        common._open_sweeps(open_sweep, [0, 1, 2])
+    assert closed == [0, 1]
+
+
+def test_a_failing_close_does_not_hide_the_open_error():
+    closed = []
+
+    def open_sweep(sweep):
+        if sweep == 2:
+            raise ValueError("bad sweep")
+        ds = xr.Dataset()
+        ds.set_close(partial(closed.append, sweep) if sweep else _failing_close)
+        return ds
+
+    with pytest.raises(ValueError, match="bad sweep"):
+        common._open_sweeps(open_sweep, [0, 1, 2])
+    assert closed == [1]
+
+
+def _failing_close():
+    raise OSError("close failed")
+
+
+def test_build_groups_dict_closes_the_sweeps_when_it_fails(monkeypatch):
+    closed = []
+    sweeps = [xr.Dataset(), xr.Dataset()]
+    for i, ds in enumerate(sweeps):
+        ds.set_close(partial(closed.append, i))
+
+    monkeypatch.setattr(common, "_get_required_root_dataset", _no_root)
+    with pytest.raises(KeyError, match="root"):
+        common._build_groups_dict(sweeps)
+    assert closed == [0, 1]
+
+
+def _broken_imd_file(tmp_path):
+    """A file named like an IMD volume that is not netCDF; it sorts after the
+    real volume's stem, so it is opened last."""
+    path = tmp_path / "private" / "zzz.nc"
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(b"not a netCDF file")
+    return path
+
+
+@pytest.mark.skipif(not _PROC_FD.is_dir(), reason="needs /proc/self/fd")
+@pytest.mark.parametrize("opener", ["open_imd_datatree", "open_imd_volumes"])
+def test_imd_closes_the_open_files_when_one_fails(opener, imd_volume_files, tmp_path):
+    files = [_private_copy(f, tmp_path) for f in imd_volume_files[:2]]
+    with pytest.raises(OSError) as excinfo:
+        getattr(xd.io, opener)([*files, _broken_imd_file(tmp_path)])
+    # the traceback still holds what was opened: only close() releases it
+    assert [_open_handles(f) for f in files] == [0, 0]
+    del excinfo  # bound only to keep the traceback alive above
+
+
+@pytest.mark.skipif(not _PROC_FD.is_dir(), reason="needs /proc/self/fd")
+def test_cfradial1_closes_file_when_building_groups_fails(
+    cfradial1_file, tmp_path, monkeypatch
+):
+    filename = _private_copy(cfradial1_file, tmp_path)
+
+    monkeypatch.setattr(cfradial1, "_get_required_root_dataset", _no_root)
+    with pytest.raises(KeyError, match="root") as excinfo:
+        xd.open_datatree(str(filename), engine="cfradial1")
+    # the traceback still holds the dataset: only close() releases the file
+    assert _open_handles(filename) == 0
+    del excinfo  # bound only to keep the traceback alive above
