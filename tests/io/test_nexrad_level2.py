@@ -882,13 +882,15 @@ def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
     assert "latitude" not in dtree.ds.data_vars
 
 
-def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file):
+def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file, closing):
     """Single-dataset access via open_dataset still has lat/lon/alt with site_as_coords=True."""
-    ds = xarray.open_dataset(
-        nexradlevel2_file,
-        engine=NexradLevel2BackendEntrypoint,
-        group="sweep_0",
-        site_as_coords=True,
+    ds = closing(
+        xarray.open_dataset(
+            nexradlevel2_file,
+            engine=NexradLevel2BackendEntrypoint,
+            group="sweep_0",
+            site_as_coords=True,
+        )
     )
     assert "latitude" in ds.coords
     assert "longitude" in ds.coords

@@ -54,6 +54,7 @@ from .common import (
     _STATION_VARS,
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
+    _apply_fix_second_angle,
     _apply_reindex_coord,
     _apply_site_as_coords,
     _compose_docstring,
@@ -475,6 +476,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         if decode_coords and reindex_coord:
             ds = _apply_reindex_coord(ds, reindex_coord)
 
+        if fix_second_angle and first_dim == "auto":
+            ds = _apply_fix_second_angle(ds)
+
         # ensure close works
         ds._close = store.close
 
@@ -552,6 +556,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         for i, sw_ds in enumerate(sweep_datasets):
             if decode_coords and reindex_coord:
                 sw_ds = _apply_reindex_coord(sw_ds, reindex_coord)
+            # the same fix as open_dataset applies to a sweep group
+            if fix_second_angle and first_dim == "auto":
+                sw_ds = _apply_fix_second_angle(sw_ds)
             # Drop station coords from per-sweep datasets — they live on root.
             sw = sw_ds.drop_vars(_STATION_VARS, errors="ignore")
             groups_dict[f"/sweep_{i}"] = sw.drop_attrs(deep=False)

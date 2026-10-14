@@ -46,6 +46,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _open_legacy_datatree,
     _resolve_single_sweep,
 )
@@ -234,6 +235,7 @@ class MRR2File:
             self.open(file_name)
 
     def open(self, filename_or_obj):
+        filename_or_obj = _fspath(filename_or_obj)
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
             self._fp = filename_or_obj
