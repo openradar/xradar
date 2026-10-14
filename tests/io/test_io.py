@@ -1041,7 +1041,6 @@ def test_cfradial_n_points_file(cfradial1n_file, closing):
         assert ds.sweep_mode == "azimuth_surveillance"
 
 
-@pytest.mark.run(order=1)
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
@@ -1169,7 +1168,6 @@ def test_iris_dask_load(iris0_file):
     dsc.load()
 
 
-@pytest.mark.run(order=1)
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
     "uf_files", ["uf_file_1", "uf_file_2", "uf_file_3"], indirect=True
