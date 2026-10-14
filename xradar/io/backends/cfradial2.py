@@ -65,6 +65,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _external_stacklevel,
+    _keep_close,
     _open_legacy_datatree,
     _resolve_sweeps,
 )
@@ -493,6 +494,33 @@ def _build_cfradial2_dtree_dict(
     # keep the file open while the returned datasets are in use: closing it
     # here makes xarray reopen it for every lazy read
     tree = open_datatree(filename_or_obj, **kwargs)
+    try:
+        return _normalize_cfradial2_tree(
+            tree,
+            filename_or_obj,
+            sweep=sweep,
+            first_dim=first_dim,
+            optional=optional,
+            optional_groups=optional_groups,
+        )
+    except Exception:
+        # nothing holds the file yet (an invalid ``sweep``, a missing group),
+        # so close it here instead of leaving it to the garbage collector
+        tree.close()
+        raise
+
+
+def _normalize_cfradial2_tree(
+    tree: DataTree,
+    filename_or_obj: Any,
+    *,
+    sweep: Any,
+    first_dim: str,
+    optional: bool,
+    optional_groups: bool,
+) -> dict[str, Any]:
+    """Normalize the groups of an opened CfRadial2 ``tree``; the returned root
+    dataset takes over closing the file."""
     raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
     selected = _iter_selected_sweeps(tree, sweep)
     output_names = [f"sweep_{i}" for i in range(len(selected))]
@@ -656,8 +684,10 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
         # site_coords=False by dropping them, matching the per-sweep
         # contract used by odim/gamic/cfradial1.
         if not site_coords:
-            groups_dict["/"] = groups_dict["/"].drop_vars(
-                _STATION_VARS, errors="ignore"
+            root = groups_dict["/"]
+            # the root holds the file's close (#471, #502)
+            groups_dict["/"] = _keep_close(
+                root.drop_vars(_STATION_VARS, errors="ignore"), root
             )
         return groups_dict
 

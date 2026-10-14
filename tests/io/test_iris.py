@@ -682,6 +682,17 @@ def _raw_words(raw, sweep, name, nbins):
     return words.reshape(words.shape[0], -1)[:, :nbins]
 
 
+def test_hvel2_decodes_like_vvel2():
+    """The guide has no DB_HVEL2 section: signed 0.01 m/s like DB_VVEL2
+    (4.4.46) (#479); the sign is checked here, raw 0 by the generic test."""
+    hvel2 = {k: v for k, v in _ENTRIES["DB_HVEL2"].items() if k != "name"}
+    vvel2 = {k: v for k, v in _ENTRIES["DB_VVEL2"].items() if k != "name"}
+    assert hvel2 == vvel2
+    np.testing.assert_allclose(
+        _decode_raw(_ENTRIES["DB_HVEL2"], [-100, 0, 100]), [-1.0, 0.0, 1.0]
+    )
+
+
 def test_no_data_masks_follow_the_manual():
     """The table masks raw 0 for exactly the no-data types above, and every
     type with a decoder is classified once."""
@@ -696,7 +707,7 @@ def test_no_data_masks_follow_the_manual():
 
 @pytest.mark.parametrize(
     "entry",
-    [e for e in _ENTRIES.values() if e["func"] is not None and e.get("dtype")],
+    [e for e in _ENTRIES.values() if e["func"] is not None],
     ids=lambda e: e["name"],
 )
 def test_raw_zero_decodes_as_the_manual_says(entry):
@@ -722,6 +733,16 @@ def test_phih_phiv_decode_like_phidp(name):
         [0.0, 90.0, 179.2913],
         atol=1e-4,
     )
+
+
+@pytest.mark.parametrize(
+    "name", ["DB_SQI2", "DB_RHOHV2", "DB_RHOH2", "DB_RHOV2", "DB_PMI16", "DB_CCOR16"]
+)
+def test_sqi2_format_scale(name):
+    """4.4.40: (N - 1) / 65533, 65534 = 1.00000 (#478)."""
+    decoded = _decode_raw(_ENTRIES[name], [1, 128, 65533, 65534])
+    np.testing.assert_allclose(decoded, [0.0, 0.00194, 0.99998, 1.0], atol=5e-6)
+    assert decoded[-1] == 1.0  # exactly one, not just within atol
 
 
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt

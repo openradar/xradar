@@ -77,23 +77,24 @@ def minimal_dtree():
     )
 
 
-def test_open_cfradial2_roundtrip(cfradial1_file, temp_file):
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
+def test_open_cfradial2_roundtrip(cfradial1_file, temp_file, closing):
     outfile = temp_file.with_suffix(".nc")
-    xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+    with xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time") as dtree:
+        xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+        expected = (
+            dtree["sweep_0"]
+            .ds["DBZ"]
+            .drop_vars(["latitude", "longitude", "altitude"], errors="ignore")
+            .load()
+        )
 
-    dtree2 = xd.io.open_cfradial2_datatree(outfile, engine="netcdf4")
+    dtree2 = closing(xd.io.open_cfradial2_datatree(outfile, engine="netcdf4"))
 
     assert isinstance(dtree2, xr.DataTree)
     assert "sweep_0" in dtree2.children
     assert "DBZ" in dtree2["sweep_0"].data_vars
     # cfradial1 attaches station coords to each sweep; cfradial2 places them
-    # at root only. Drop them on the left so the DBZ comparison succeeds.
-    expected = (
-        dtree["sweep_0"]
-        .ds["DBZ"]
-        .drop_vars(["latitude", "longitude", "altitude"], errors="ignore")
-    )
+    # at root only, so ``expected`` drops them for the DBZ comparison.
     xr.testing.assert_equal(expected, dtree2["sweep_0"].ds["DBZ"])
     assert "latitude" in dtree2.ds.coords
     assert dtree2.ds["latitude"].attrs["standard_name"] == "latitude"
@@ -105,13 +106,17 @@ def test_open_cfradial2_roundtrip(cfradial1_file, temp_file):
     dtree2.close()
 
 
-def test_open_cfradial2_sweep_selection_and_first_dim(cfradial1_file, temp_file):
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time")
+def test_open_cfradial2_sweep_selection_and_first_dim(
+    cfradial1_file, temp_file, closing
+):
     outfile = temp_file.with_suffix(".nc")
-    xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+    with xd.io.open_cfradial1_datatree(cfradial1_file, first_dim="time") as dtree:
+        xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
 
-    dtree2 = xd.io.open_cfradial2_datatree(
-        outfile, engine="netcdf4", sweep=1, first_dim="auto"
+    dtree2 = closing(
+        xd.io.open_cfradial2_datatree(
+            outfile, engine="netcdf4", sweep=1, first_dim="auto"
+        )
     )
 
     assert list(dtree2.children) == ["sweep_0"]
@@ -123,14 +128,14 @@ def test_open_cfradial2_sweep_selection_and_first_dim(cfradial1_file, temp_file)
     dtree2.close()
 
 
-def test_open_cfradial2_normalizes_common_aliases(temp_file):
+def test_open_cfradial2_normalizes_common_aliases(temp_file, closing):
     outfile = temp_file.with_suffix(".nc")
     _write_institutional_cfradial2(outfile)
 
     with pytest.warns(
         UserWarning, match="renumbered into sequential `sweep_<n>` order"
     ):
-        dtree = xd.io.open_cfradial2_datatree(outfile, engine="netcdf4")
+        dtree = closing(xd.io.open_cfradial2_datatree(outfile, engine="netcdf4"))
 
     sweep = dtree["sweep_0"].ds
     assert "time" in sweep.coords
@@ -159,9 +164,9 @@ def test_open_cfradial2_invalid_path():
 
 def test_open_dataset_sweep_group(cfradial2_file):
     """`xr.open_dataset(engine="cfradial2", group="sweep_0")` returns a normalized sweep."""
-    ds = xr.open_dataset(cfradial2_file, engine="cfradial2", group="sweep_0")
-    assert "azimuth" in ds.coords
-    assert "range" in ds.coords
+    with xr.open_dataset(cfradial2_file, engine="cfradial2", group="sweep_0") as ds:
+        assert "azimuth" in ds.coords
+        assert "range" in ds.coords
 
 
 def test_open_dataset_missing_group_raises(cfradial2_file):
@@ -371,7 +376,7 @@ def test_cfradial2_helper_sweep_normalization_branches():
     assert cf2._infer_sweep_mode(xr.Dataset(attrs={"ScanType": 1})) == "rhi"
 
 
-def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file):
+def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file, closing):
     outfile = temp_file.with_suffix(".nc")
 
     root = xr.Dataset(attrs={"RadarName": "warn-radar"})
@@ -399,8 +404,10 @@ def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file):
     with pytest.warns(
         UserWarning, match="could not fully normalize FM301 root variables"
     ):
-        dtree = xd.io.open_cfradial2_datatree(
-            outfile, engine="netcdf4", optional_groups=True
+        dtree = closing(
+            xd.io.open_cfradial2_datatree(
+                outfile, engine="netcdf4", optional_groups=True
+            )
         )
 
     assert "radar_parameters" in dtree.children
@@ -412,18 +419,20 @@ def test_open_cfradial2_optional_groups_and_missing_root_warning(temp_file):
 
 
 @pytest.mark.parametrize("sweep", [{0}, range(1), (i for i in [0])])
-def test_cfradial2_non_sequence_sweep_deprecated(cfradial2_file, sweep):
+def test_cfradial2_non_sequence_sweep_deprecated(cfradial2_file, sweep, closing):
     with pytest.warns(FutureWarning, match="pass a list or tuple") as record:
-        dtree = xd.open_datatree(cfradial2_file, engine="cfradial2", sweep=sweep)
+        dtree = closing(
+            xd.open_datatree(cfradial2_file, engine="cfradial2", sweep=sweep)
+        )
     assert list(dtree.match("sweep_*")) == ["sweep_0"]
     assert record[0].filename == __file__
     dtree.close()
 
 
-def test_cfradial2_non_sequence_sweep_warning_points_at_caller(cfradial2_file):
+def test_cfradial2_non_sequence_sweep_warning_points_at_caller(cfradial2_file, closing):
     # same through xarray's entry point, which is one call deeper
     with pytest.warns(FutureWarning, match="pass a list or tuple") as record:
-        dtree = xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0})
+        dtree = closing(xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0}))
     assert record[0].filename == __file__
     dtree.close()
 

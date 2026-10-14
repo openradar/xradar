@@ -35,8 +35,12 @@ from collections import OrderedDict, defaultdict
 import dateutil
 import numpy as np
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -58,6 +62,8 @@ from xradar.io.backends.common import (
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _keep_close,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
     _resolve_sweeps,
 )
@@ -172,6 +178,12 @@ class UFFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the object may have been read before (e.g. sweep discovery)
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -558,7 +570,7 @@ class UFArrayWrapper(BackendArray):
         )
 
 
-class UFStore(AbstractDataStore):
+class UFStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading UF sweeps via xradar."""
 
     def __init__(self, manager, group=None, lock=UF_LOCK):
@@ -820,6 +832,10 @@ class UFBackendEntrypoint(BackendEntrypoint):
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
 
+        # swap_dims, sortby and reindex above build new datasets without the
+        # store's close; set it last so ds.close() releases the file (#471)
+        ds.set_close(store.close)
+
         return ds
 
     def open_groups_as_dict(
@@ -884,12 +900,12 @@ class UFBackendEntrypoint(BackendEntrypoint):
             )
         for sweep_path, ds in sweep_dict.items():
             sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
-            groups_dict[f"/{sweep_path}"] = sw
+            groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
         return groups_dict
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 UFBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
@@ -1095,5 +1111,8 @@ def open_sweeps_as_dict(
             # assign geo-coords
             group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
+            # ensure close works: the steps above build new datasets, and
+            # xarray 2026.9.0 drops the close in some of them (#471, #502)
+            group_ds.set_close(store.close)
             groups_dict[path_group] = group_ds
     return groups_dict
