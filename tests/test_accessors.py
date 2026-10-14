@@ -132,12 +132,12 @@ def test_crs_datatree():
     ), "CRS coordinate is missing in DataTree"
 
 
-def test_map_over_sweeps_apply_dummy_function(cfradial1_sgp_file):
+def test_map_over_sweeps_apply_dummy_function(cfradial1_sgp_file, closing):
     """
     Test applying a dummy function to all sweep nodes using map_over_sweeps.
     """
     # Open the radar file into a DataTree object
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_sgp_file))
 
     # Define a simple dummy function that adds a constant field to the dataset
     def dummy_function(ds):
@@ -163,12 +163,12 @@ def test_map_over_sweeps_apply_dummy_function(cfradial1_sgp_file):
     assert np.all(np.isclose(non_nan_values, 0))
 
 
-def test_map_over_sweeps_non_sweep_nodes(cfradial1_sgp_file):
+def test_map_over_sweeps_non_sweep_nodes(cfradial1_sgp_file, closing):
     """
     Test that non-sweep nodes remain unchanged when using map_over_sweeps.
     """
     # Open the radar file into a DataTree object and add a non-sweep node
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_sgp_file))
     non_sweep_data = xr.Dataset({"non_sweep_data": ("dim", np.arange(10))})
     dtree["non_sweep_node"] = non_sweep_data
 
@@ -205,10 +205,10 @@ def test_map_over_sweeps_invalid_input():
         tree.xradar.map_over_sweeps(invalid_rain_rate, ref_field="INVALID_FIELD")
 
 
-def test_accessor_to_cfradial1():
+def test_accessor_to_cfradial1(closing):
     """Test the accessor function to convert DataTree to CfRadial1 Dataset."""
     file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = xd.io.open_cfradial1_datatree(file)
+    dtree = closing(xd.io.open_cfradial1_datatree(file))
 
     # Use accessor method to convert to CfRadial1
     ds_cf1 = dtree.xradar.to_cfradial1_dataset()
@@ -227,10 +227,10 @@ def test_accessor_to_cfradial1():
     ), "Missing sweep_mode in CfRadial1 dataset"
 
 
-def test_accessor_to_cfradial2():
+def test_accessor_to_cfradial2(closing):
     """Test the accessor function to convert CfRadial1 Dataset back to DataTree."""
     file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = xd.io.open_cfradial1_datatree(file, optional_groups=True)
+    dtree = closing(xd.io.open_cfradial1_datatree(file, optional_groups=True))
 
     # Convert to CfRadial1 dataset
     ds_cf1 = dtree.xradar.to_cfradial1_dataset()
