@@ -2,6 +2,7 @@
 
 ## Development
 
+* CI: Run the CI workflow on ``merge_group`` events so a merge queue can be enabled for ``main`` ({issue}`515`) by [@aladinor](https://github.com/aladinor)
 * FIX: ``Dataset.close()`` and ``DataTree.close()`` release the file for every backend, also after ``georeference()``/``add_crs()`` and when opening fails (most backends left files open until garbage collection, which can crash HDF5); CfRadial1 caches its data once ({issue}`471`, {issue}`502`, {pull}`472`) by [@aladinor](https://github.com/aladinor)
 * MNT: CI unit tests use released xarray again, and test jobs time out after 30 minutes ({issue}`495`, {pull}`510`) by [@aladinor](https://github.com/aladinor)
 * FIX: DataMet, Furuno, IRIS (also ``open_iris_datatree``) and Metek accept ``pathlib.Path`` (as HPL and Rainbow do), UF reads datatrees from file-like objects (sweep discovery consumed the object without rewinding), and the CfRadial1 backend applies ``fix_second_angle`` to sweep groups in ``open_dataset`` and ``open_datatree`` (it was accepted but ignored) ({pull}`509`) by [@aladinor](https://github.com/aladinor)
