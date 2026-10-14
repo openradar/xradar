@@ -440,3 +440,43 @@ def test_cfradial1_export_drops_sweep_group_name(hpl_file, tmp_path):
         assert "sweep_group_name" not in nc.variables
     with xd.open_datatree(outfile, engine="cfradial1") as back:
         assert len(list(back.match("sweep_*"))) == nsweeps
+
+
+@pytest.mark.parametrize(
+    "engine, fixture", [("cfradial1", "cfradial1_file"), ("odim", "odim_file")]
+)
+def test_cfradial1_export_repeated_with_optional_groups(
+    engine, fixture, request, tmp_path
+):
+    # data read with optional_groups=True from a file written by xradar can be
+    # exported again, and the groups survive any number of round trips
+    filename = request.getfixturevalue(fixture)
+    groups = ("radar_parameters", "radar_calibration", "georeferencing_correction")
+    with xd.open_datatree(filename, engine=engine, optional_groups=True) as source:
+        current = source
+        trees = []
+        for i in range(3):
+            outfile = tmp_path / f"optional_{i}.nc"
+            xd.io.to_cfradial1(current, outfile)
+            current = xd.open_datatree(
+                outfile, engine="cfradial1", optional_groups=True
+            )
+            trees.append(current)
+    try:
+        for tree in trees:
+            assert all(group in tree.children for group in groups)
+        for first, second in zip(trees[:-1], trees[1:]):
+            assert list(first.subtree_with_keys) and [
+                p for p, _ in first.subtree_with_keys
+            ] == [p for p, _ in second.subtree_with_keys]
+            for (_, node1), (_, node2) in zip(
+                first.subtree_with_keys, second.subtree_with_keys
+            ):
+                ds1 = node1.to_dataset(inherit=False).load()
+                ds2 = node2.to_dataset(inherit=False).load()
+                for ds in (ds1, ds2):
+                    ds.attrs.pop("history", None)
+                xr.testing.assert_identical(ds1, ds2)
+    finally:
+        for tree in trees:
+            tree.close()

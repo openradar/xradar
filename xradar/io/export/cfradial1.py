@@ -436,19 +436,31 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     # unpack n_points, which isn't written (#416).
     cfradial1_ds = cfradial1_ds.drop_vars(RAGGED_LAYOUT_VARS, errors="ignore")
 
+    # The optional groups of data read from a file hold copies of latitude,
+    # longitude and altitude (own or inherited from the root). They are in the
+    # dataset from the root already, merging them raised a MergeError for data
+    # read with ``optional_groups=True`` from a written CfRadial1 file.
+    station = ["latitude", "longitude", "altitude"]
+
     # Handle calibration parameters
     if calibs and "radar_calibration" in dtree:
-        calib_ds = _map_radar_calibration(dtree["radar_calibration"].to_dataset())
-        cfradial1_ds.update(calib_ds)
+        calib_ds = _map_radar_calibration(
+            dtree["radar_calibration"].to_dataset(inherit=False)
+        )
+        cfradial1_ds.update(calib_ds.drop_vars(station, errors="ignore"))
 
     # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
-        cfradial1_ds.update(radar_params)
+        radar_params = dtree["radar_parameters"].to_dataset(inherit=False)
+        cfradial1_ds.update(
+            radar_params.drop_vars(station, errors="ignore").reset_coords()
+        )
 
     if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
-        cfradial1_ds.update(radar_georef)
+        radar_georef = dtree["georeferencing_correction"].to_dataset(inherit=False)
+        cfradial1_ds.update(
+            radar_georef.drop_vars(station, errors="ignore").reset_coords()
+        )
 
     # CfRadial1 stores strings as char arrays; unicode/object strings would be
     # written as NC_STRING, which e.g. Py-ART can't read (#417)
