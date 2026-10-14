@@ -51,6 +51,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _ManagedStoreMixin,
+    _fspath,
     _open_legacy_datatree,
     _open_sweeps,
     _resolve_single_sweep,
@@ -241,6 +242,7 @@ class MRR2File:
             self.open(file_name)
 
     def open(self, filename_or_obj):
+        filename_or_obj = _fspath(filename_or_obj)
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
             # a caller's file object: never closed here (_owns_fp stays False)

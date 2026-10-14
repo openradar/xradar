@@ -31,7 +31,6 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import io
-import os
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
@@ -65,6 +64,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
     _ManagedStoreMixin,
     _open_legacy_datatree,
@@ -284,8 +284,7 @@ class HplFile:
         self._fp = None
         # close only a file opened here, never the caller's file object
         self._owns_fp = False
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        filename = _fspath(filename)
         if isinstance(filename, str):
             self._fp = open(filename)
             self._owns_fp = True

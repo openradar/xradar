@@ -60,6 +60,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
     _ManagedStoreMixin,
     _open_legacy_datatree,
@@ -100,6 +101,7 @@ def convert_value(value):
 
 class DataMetFile:
     def __init__(self, filename):
+        filename = _fspath(filename)
         self.filename = filename
         # Handle .tar.gz case
         if self.filename.endswith(".gz"):

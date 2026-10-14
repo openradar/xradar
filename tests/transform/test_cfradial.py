@@ -48,8 +48,8 @@ def test_to_cfradial2(cfradial1_file):
             assert ds_cf1.attrs[key] == val, f"Attr {key!r} mismatch after round-trip"
 
 
-def test_to_cfradial2_root_only_dataset_reopens_source(cfradial1_file):
-    ds = xr.open_dataset(cfradial1_file, engine="cfradial1")
+def test_to_cfradial2_root_only_dataset_reopens_source(cfradial1_file, closing):
+    ds = closing(xr.open_dataset(cfradial1_file, engine="cfradial1"))
 
     dtree = xd.transform.to_cfradial2(ds)
 
@@ -58,8 +58,8 @@ def test_to_cfradial2_root_only_dataset_reopens_source(cfradial1_file):
     assert "sweep_0" in dtree
 
 
-def test_to_cfradial2_root_only_dataset_without_source_errors(cfradial1_file):
-    ds = xr.open_dataset(cfradial1_file, engine="cfradial1").copy()
+def test_to_cfradial2_root_only_dataset_without_source_errors(cfradial1_file, closing):
+    ds = closing(xr.open_dataset(cfradial1_file, engine="cfradial1")).copy()
     ds.encoding = {}
 
     with pytest.raises(ValueError, match="does not retain a readable"):
@@ -98,9 +98,9 @@ def test_to_cfradial1_error_with_different_range_bin_sizes(gamic_file):
             xd.transform.to_cfradial1(dtree)
 
 
-def test_to_cfradial1_after_map_over_sweeps_where(tmp_path):
+def test_to_cfradial1_after_map_over_sweeps_where(tmp_path, closing):
     file = DATASETS.fetch("swx_20120520_0641.nc")
-    dtree = xd.io.open_cfradial1_datatree(file)
+    dtree = closing(xd.io.open_cfradial1_datatree(file))
 
     def filter_radar(
         ds,
@@ -122,5 +122,5 @@ def test_to_cfradial1_after_map_over_sweeps_where(tmp_path):
 
     outfile = tmp_path / "filtered_cfradial1.nc"
     xd.io.to_cfradial1(filtered, outfile)
-    reopened = xd.io.open_cfradial1_datatree(outfile)
+    reopened = closing(xd.io.open_cfradial1_datatree(outfile))
     assert "sweep_0" in reopened
