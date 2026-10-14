@@ -1998,7 +1998,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOHV2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0, "mask": 0.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Fully corrected reflectivity (2 byte)
@@ -2028,7 +2028,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SQI2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0, "mask": 0.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # PHIdp (differential phase)(2 byte)
@@ -2212,7 +2212,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOH2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0, "mask": 0.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Rho V to H (1 byte)
@@ -2232,7 +2232,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOV2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0, "mask": 0.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Phi H to V (1 byte)
@@ -2436,7 +2436,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PMI16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0, "mask": 0.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # The log receiver signal-to-noise ratio (1 byte)
@@ -2496,7 +2496,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CCOR16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0, "mask": 0.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zh (1 byte)
