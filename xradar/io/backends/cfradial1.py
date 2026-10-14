@@ -35,9 +35,9 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import reprlib
 
 import numpy as np
-from xarray import Dataset, DataTree, open_dataset
+from xarray import Dataset, open_dataset
 from xarray.backends import NetCDF4DataStore
-from xarray.backends.common import BackendEntrypoint
+from xarray.backends.common import BackendEntrypoint, datatree_from_dict_with_io_cleanup
 from xarray.backends.store import StoreBackendEntrypoint
 
 from ...model import (
@@ -60,6 +60,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _get_reindex_coord,
+    _keep_close,
     _maybe_decode,
     _open_legacy_datatree,
     _resolve_sweeps,
@@ -394,6 +395,48 @@ def open_cfradial1_datatree(filename_or_obj, **kwargs):
     return _open_legacy_datatree(CfRadial1BackendEntrypoint, filename_or_obj, kwargs)
 
 
+def _cfradial1_groups(
+    ds,
+    sweeps,
+    *,
+    first_dim,
+    optional,
+    optional_groups,
+    site_coords,
+    reindex_coord,
+    decode_coords,
+    fix_second_angle,
+):
+    """Split the CfRadial1 dataset ``ds`` into the CfRadial2 groups dict."""
+    groups_dict = {
+        "/": _get_required_root_dataset(ds, optional=optional),
+    }
+    if optional_groups:
+        groups_dict["/radar_parameters"] = _get_subgroup(ds, radar_parameters_subgroup)
+        groups_dict["/georeferencing_correction"] = _get_subgroup(
+            ds, georeferencing_correction_subgroup
+        )
+        groups_dict["/radar_calibration"] = _get_radar_calibration(ds)
+
+    sweep_datasets = _get_sweep_groups(
+        ds,
+        sweep=sweeps,
+        first_dim=first_dim,
+        optional=optional,
+        site_as_coords=site_coords,
+    ).values()
+    for i, sw_ds in enumerate(sweep_datasets):
+        if decode_coords and reindex_coord:
+            sw_ds = _apply_reindex_coord(sw_ds, reindex_coord)
+        # the same fix as open_dataset applies to a sweep group
+        if fix_second_angle and first_dim == "auto":
+            sw_ds = _apply_fix_second_angle(sw_ds)
+        # Drop station coords from per-sweep datasets — they live on root.
+        sw = sw_ds.drop_vars(_STATION_VARS, errors="ignore")
+        groups_dict[f"/sweep_{i}"] = sw.drop_attrs(deep=False)
+    return groups_dict
+
+
 class CfRadial1BackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for CfRadial1 data.
 
@@ -516,6 +559,9 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
             drop_variables=drop_variables,
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
+            # xr.open_datatree caches the result; a second cache layer here
+            # would hold the data twice
+            cache=False,
         )
 
         available = [f"sweep_{i}" for i in range(ds.sizes["sweep"])]
@@ -530,39 +576,23 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
             ds.close()
             raise
 
-        groups_dict = {
-            "/": _get_required_root_dataset(ds, optional=optional),
-        }
-        if optional_groups:
-            groups_dict["/radar_parameters"] = _get_subgroup(
-                ds, radar_parameters_subgroup
-            )
-            groups_dict["/georeferencing_correction"] = _get_subgroup(
-                ds, georeferencing_correction_subgroup
-            )
-            groups_dict["/radar_calibration"] = _get_radar_calibration(ds)
-
-        sweep_datasets = list(
-            _get_sweep_groups(
+        try:
+            groups_dict = _cfradial1_groups(
                 ds,
-                sweep=sweeps,
+                sweeps,
                 first_dim=first_dim,
                 optional=optional,
-                site_as_coords=site_coords,
-            ).values()
-        )
-
-        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
-        for i, sw_ds in enumerate(sweep_datasets):
-            if decode_coords and reindex_coord:
-                sw_ds = _apply_reindex_coord(sw_ds, reindex_coord)
-            # the same fix as open_dataset applies to a sweep group
-            if fix_second_angle and first_dim == "auto":
-                sw_ds = _apply_fix_second_angle(sw_ds)
-            # Drop station coords from per-sweep datasets — they live on root.
-            sw = sw_ds.drop_vars(_STATION_VARS, errors="ignore")
-            groups_dict[f"/sweep_{i}"] = sw.drop_attrs(deep=False)
-
+                optional_groups=optional_groups,
+                site_coords=site_coords,
+                reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+                decode_coords=decode_coords,
+                fix_second_angle=fix_second_angle,
+            )
+        except Exception:
+            ds.close()
+            raise
+        # the groups are new datasets; the root keeps the file's close (#471, #502)
+        _keep_close(groups_dict["/"], ds)
         return groups_dict
 
     def open_datatree(
@@ -571,7 +601,7 @@ class CfRadial1BackendEntrypoint(BackendEntrypoint):
         **kwargs,
     ):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _CFRADIAL1_PARAMS_DOC = """
