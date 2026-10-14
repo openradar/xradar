@@ -724,6 +724,16 @@ def test_phih_phiv_decode_like_phidp(name):
     )
 
 
+@pytest.mark.parametrize(
+    "name", ["DB_SQI2", "DB_RHOHV2", "DB_RHOH2", "DB_RHOV2", "DB_PMI16", "DB_CCOR16"]
+)
+def test_sqi2_format_scale(name):
+    """4.4.40: (N - 1) / 65533, 65534 = 1.00000 (#478)."""
+    decoded = _decode_raw(_ENTRIES[name], [1, 128, 65533, 65534])
+    np.testing.assert_allclose(decoded, [0.0, 0.00194, 0.99998, 1.0], atol=5e-6)
+    assert decoded[-1] == 1.0  # exactly one, not just within atol
+
+
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt
 @pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
 def test_no_data_bins_are_nan(fixture, request):
