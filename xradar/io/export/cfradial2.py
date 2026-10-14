@@ -42,14 +42,20 @@ from .cfradial1 import _encode_bool_attrs
 
 
 def _resolve_attrs_encoding(ds):
-    """Make attributes and encoding consistent so the netCDF writer accepts them.
+    """Make the time ``units`` and ``calendar`` consistent so the netCDF writer
+    accepts them.
 
-    Data read from a CfRadial2 file keeps CF settings such as the time ``units``
-    and the ``coordinates`` of a variable in the encoding, while xradar's own
-    metadata may also set them as attributes. xarray refuses to write both, so
-    a second export of data read back from a file would fail. The attribute
-    wins for ``coordinates``, the encoding for the time ``units``/``calendar``
-    (they describe how the stored values are decoded).
+    Data read back from a CfRadial2 file keeps the ``units`` of decoded times in
+    the encoding, while xradar's own metadata may also set them as attributes
+    (and some readers, e.g. UF, only set them as attributes on decoded times).
+    xarray refuses to write both, so a second export of data read back from a
+    file would fail. The encoding wins, as it describes how the stored values
+    are decoded.
+
+    Note
+    ----
+    This works around backends that don't follow the internal standard (units in
+    the encoding of decoded times). It can go once all backends conform.
     """
     ds = ds.copy()
     for var in ds.variables.values():
@@ -59,8 +65,6 @@ def _resolve_attrs_encoding(ds):
                 var.encoding.setdefault(key, var.attrs[key])
             if key in var.attrs and key in var.encoding:
                 del var.attrs[key]
-        if "coordinates" in var.attrs:
-            var.encoding.pop("coordinates", None)
     return ds
 
 

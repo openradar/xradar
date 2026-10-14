@@ -508,9 +508,6 @@ def test_cfradial2_resolve_attrs_encoding():
     # the writer fail
     ds["time"].attrs["units"] = "seconds since 2026-01-01T00:00:00Z"
     ds["range"].attrs["units"] = "meters"
-    # coordinates: the attribute wins
-    ds["DBZH"].attrs["coordinates"] = "elevation azimuth range"
-    ds["DBZH"].encoding["coordinates"] = "time range"
     original = ds["time"].attrs.copy()
 
     out = export_cf2._resolve_attrs_encoding(ds)
@@ -518,11 +515,8 @@ def test_cfradial2_resolve_attrs_encoding():
     assert "units" not in out["time"].attrs
     assert out["time"].encoding["units"] == "seconds since 2026-01-01T00:00:00Z"
     assert out["range"].attrs["units"] == "meters"
-    assert out["DBZH"].attrs["coordinates"] == "elevation azimuth range"
-    assert "coordinates" not in out["DBZH"].encoding
     # the input is not modified
     assert ds["time"].attrs == original
-    assert ds["DBZH"].encoding["coordinates"] == "time range"
 
     # units already in the encoding win over the attribute
     ds = ds.copy()
@@ -539,6 +533,22 @@ def test_cfradial2_reader_string_time_coverage_has_no_units(cfradial2_file):
         for name in ("time_coverage_start", "time_coverage_end"):
             if dtree.ds[name].dtype.kind in "USO":
                 assert "units" not in dtree.ds[name].attrs
+
+
+def test_cfradial2_root_attrs_only_time_coverage_gets_string_time_attrs():
+    # string typed variables other than time_coverage_* keep their own attributes
+    ds = xr.Dataset(
+        {
+            "longitude": ((), "8.5"),
+            "latitude": ((), 50.0),
+            "time_coverage_start": ((), "2026-01-01T00:00:00Z"),
+        }
+    )
+    out = cf2._normalize_root_attrs(ds)
+    assert out["time_coverage_start"].attrs == {"standard_name": "time"}
+    assert out["longitude"].attrs.get("standard_name") == "longitude"
+    assert out["longitude"].attrs.get("units") == "degrees_east"
+    assert out["latitude"].attrs.get("standard_name") == "latitude"
 
 
 def test_cfradial2_export_bool_global_attrs(nexradlevel2_file, tmp_path):

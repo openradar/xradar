@@ -323,8 +323,9 @@ def _normalize_root_attrs(ds):
         "time_coverage_start": time_attrs,
         "time_coverage_end": time_attrs,
     }.items():
-        if name in ds and ds[name].dtype.kind in "USO":
-            attrs = string_time_attrs
+        if name.startswith("time_coverage_") and name in ds:
+            if ds[name].dtype.kind in "USO":
+                attrs = string_time_attrs
         ds = _update_var_attrs(ds, name, attrs)
     return ds
 
