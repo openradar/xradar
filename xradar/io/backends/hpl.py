@@ -31,7 +31,6 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import io
-import os
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
@@ -61,6 +60,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
     _open_legacy_datatree,
     _resolve_sweeps,
@@ -276,8 +276,7 @@ class HplFile:
         longitude = kwargs.pop("longitude", 0)
         altitude = kwargs.pop("altitude", 0)
         self._fp = None
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        filename = _fspath(filename)
         if isinstance(filename, str):
             self._fp = open(filename)
             self._filename = filename
