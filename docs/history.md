@@ -53,6 +53,7 @@
 * MNT: IRIS decoders cite the IRIS Programming Guide M212927EN-B (2024); one Nyquist helper for both decode paths, with the dual-PRF factor applied in ``decode_vel`` only ({issue}`466`, {pull}`470`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader returns NaN for no-data bins (raw ``0``, IRIS Programming Guide 4.4) of reflectivity, ZDR, PHIDP, WIDTH, RHOHV/SQI, LDR and their variants, instead of real values such as -32 dBZ; ``IrisRawFile`` returns masked arrays for them with NaN under the mask, also for ``DB_VEL``/``DB_VELC`` ({issue}`465`, {pull}`467`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader fixes UINT1 dtype ``"unit8"``→``"uint8"`` ({issue}`462`, {pull}`493`) by [@Jah-yee](https://github.com/Jah-yee)
+* FIX: CfRadial1 export no longer drops rays that share a timestamp; sweeps are concatenated in order along ``time`` instead of being aligned on time values, which silently merged such rays (e.g. 7200 → 1080 rays); sweeps with fewer gates are padded with NaN (also in packed moments), moments packed differently per sweep (ODIM) keep their values, attributes that differ between sweeps (UF time units) no longer fail the export, ``sweep_group_name`` (in every HPL sweep) is not written as it made the file unreadable, and per-ray variables keep their ``time`` dimension ({issue}`415`, {pull}`420`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
