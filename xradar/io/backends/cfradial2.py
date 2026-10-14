@@ -65,6 +65,7 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _external_stacklevel,
+    _keep_close,
     _open_legacy_datatree,
     _resolve_sweeps,
 )
@@ -358,13 +359,20 @@ def _derive_range_attrs(ds):
 
 
 def _normalize_root_attrs(ds):
+    time_attrs = get_time_attrs()
+    # time_coverage_* hold ISO strings in CfRadial files, a "units" attribute
+    # would make xarray try to decode them as numbers when read back
+    string_time_attrs = {k: v for k, v in time_attrs.items() if k != "units"}
     for name, attrs in {
         "latitude": get_latitude_attrs(),
         "longitude": get_longitude_attrs(),
         "altitude": get_altitude_attrs(),
-        "time_coverage_start": get_time_attrs(),
-        "time_coverage_end": get_time_attrs(),
+        "time_coverage_start": time_attrs,
+        "time_coverage_end": time_attrs,
     }.items():
+        if name.startswith("time_coverage_") and name in ds:
+            if ds[name].dtype.kind in "USO":
+                attrs = string_time_attrs
         ds = _update_var_attrs(ds, name, attrs)
     return ds
 
@@ -404,6 +412,9 @@ def _normalize_dataset_var_attrs(ds):
         if da.ndim == 2 and set(da.dims) == {"time", "range"}:
             attrs = dict(da.attrs)
             attrs.setdefault("coordinates", "elevation azimuth range")
+            # xarray moves the "coordinates" attribute of the file to the
+            # encoding, both together make the writer raise on re-export
+            da.encoding.pop("coordinates", None)
             if name in sweep_vars_mapping:
                 moment_attrs = get_moment_attrs(name)
                 moment_attrs.update(attrs)
@@ -532,9 +543,36 @@ def _build_cfradial2_dtree_dict(
     # keep the file open while the returned datasets are in use: closing it
     # here makes xarray reopen it for every lazy read
     tree = open_datatree(filename_or_obj, **kwargs)
+    try:
+        return _normalize_cfradial2_tree(
+            tree,
+            filename_or_obj,
+            sweep=sweep,
+            first_dim=first_dim,
+            optional=optional,
+            optional_groups=optional_groups,
+        )
+    except Exception:
+        # nothing holds the file yet (an invalid ``sweep``, a missing group),
+        # so close it here instead of leaving it to the garbage collector
+        tree.close()
+        raise
+
+
+def _normalize_cfradial2_tree(
+    tree: DataTree,
+    filename_or_obj: Any,
+    *,
+    sweep: Any,
+    first_dim: str,
+    optional: bool,
+    optional_groups: bool,
+) -> dict[str, Any]:
+    """Normalize the groups of an opened CfRadial2 ``tree``; the returned root
+    dataset takes over closing the file."""
     available = _available_sweeps(tree)
     if not available:
-        tree.close()
+        # the caller closes the tree on any error
         raise ValueError(
             f"No sweep groups found in `{filename_or_obj}`: expected groups "
             "listed in the root `sweep_group_name` or named `sweep_<n>`."
@@ -718,8 +756,10 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
         # site_coords=False by dropping them, matching the per-sweep
         # contract used by odim/gamic/cfradial1.
         if not site_coords:
-            groups_dict["/"] = groups_dict["/"].drop_vars(
-                _STATION_VARS, errors="ignore"
+            root = groups_dict["/"]
+            # the root holds the file's close (#471, #502)
+            groups_dict["/"] = _keep_close(
+                root.drop_vars(_STATION_VARS, errors="ignore"), root
             )
         return groups_dict
 
