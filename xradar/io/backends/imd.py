@@ -68,6 +68,7 @@ from .common import (
     SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
+    _call_all,
     _close_all,
     _compose_docstring,
     _get_reindex_coord,
@@ -870,12 +871,6 @@ def open_imd_volumes(paths, **kwargs):
 def _closers(tree):
     """The file closers of every node of ``tree``."""
     return [node._close for node in tree.subtree if node._close is not None]
-
-
-def _call_all(functions):
-    """Call every function in ``functions``."""
-    for function in functions:
-        function()
 
 
 # Files matching `<stem>.nc` or `<stem>.nc.<digits>`. The stem -- everything

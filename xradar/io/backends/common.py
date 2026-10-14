@@ -21,6 +21,7 @@ import struct
 import textwrap
 import warnings
 from collections import OrderedDict
+from contextlib import ExitStack, suppress
 from pathlib import Path, PurePosixPath
 
 import h5netcdf
@@ -531,10 +532,22 @@ def _open_sweeps(open_sweep, sweeps):
     return datasets
 
 
+def _call_all(functions):
+    """Call every function in ``functions``, also when one raises, so one
+    failing close does not leave the other files open; errors are chained."""
+    with ExitStack() as stack:
+        for function in functions:
+            stack.callback(function)
+
+
 def _close_all(objs):
-    """Close every dataset or tree in ``objs``."""
+    """Close every dataset or tree in ``objs`` while an error is handled.
+
+    A failing close is dropped, so it does not hide the error being handled.
+    """
     for obj in objs:
-        obj.close()
+        with suppress(Exception):
+            obj.close()
 
 
 def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
