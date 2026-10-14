@@ -580,10 +580,14 @@ def _header_stub():
     )
 
 
-@pytest.mark.parametrize(
+#: each decode path with the wavelength and PRF it reads from ``_header_stub``
+_DECODE_PATHS = pytest.mark.parametrize(
     "cls, wavelength_prf",
     [(iris.IrisRawFile, (533, 1000)), (iris.IrisIngestDataFile, (999, 7777))],
 )
+
+
+@_DECODE_PATHS
 def test_decode_paths_read_their_own_headers(cls, wavelength_prf):
     """RAW products take wavelength and PRF from ``product_end``, ingest
     data files from the task configuration. (2-byte words, viewed the same
@@ -595,6 +599,22 @@ def test_decode_paths_read_their_own_headers(cls, wavelength_prf):
         prod = {"func": func, "dtype": "uint16", "fkw": {"scale": 1.0}}
         decoded = cls.decode_data(_header_stub(), data, prod)
         np.testing.assert_allclose(decoded, data * nyquist * factor, err_msg=func)
+
+
+@_DECODE_PATHS
+@pytest.mark.parametrize("flag", [4, 65535])
+def test_undefined_multi_prf_flag_warns_and_uses_single_prf(cls, wavelength_prf, flag):
+    """task_dsp_info defines flags 0-3 only; any other value must not scale
+    the velocity (#480)."""
+    stub = _header_stub()
+    stub.ingest_header["task_configuration"]["task_dsp_info"][
+        "multi_prf_mode_flag"
+    ] = flag
+    data = np.array([2, 3], dtype="uint16")
+    vel = {"func": iris.decode_vel, "dtype": "uint16", "fkw": {"scale": 1.0}}
+    with pytest.warns(UserWarning, match="multi_prf_mode_flag"):
+        decoded = cls.decode_data(stub, data, vel)
+    np.testing.assert_allclose(decoded, data * iris._nyquist(*wavelength_prf))
 
 
 @pytest.mark.parametrize("cls", [iris.IrisRawFile, iris.IrisIngestDataFile])
