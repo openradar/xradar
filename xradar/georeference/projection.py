@@ -126,9 +126,12 @@ def add_crs_tree(radar, datum="WGS84"):
     """
     for key in list(radar.children):
         if "sweep" in key:
-            radar[key].ds = add_crs(
-                radar[key].to_dataset(inherit="all_coords"), datum=datum
-            )
+            node = radar[key]
+            # the new dataset has no close; keep the node's, so that closing
+            # the tree still closes the file (#471, #502)
+            close = node._close
+            node.ds = add_crs(node.to_dataset(inherit="all_coords"), datum=datum)
+            node.set_close(close)
     return radar
 
 

@@ -45,8 +45,12 @@ import warnings
 from collections import OrderedDict
 
 import numpy as np
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -75,7 +79,9 @@ from .common import (
     _deprecation_warning,
     _fspath,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _open_sweeps,
     _resolve_sweeps,
 )
 
@@ -3977,7 +3983,7 @@ class IrisArrayWrapper(BackendArray):
         )
 
 
-class IrisStore(AbstractDataStore):
+class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading IRIS sweeps via xradar.
 
     Ported from wradlib.
@@ -4285,16 +4291,17 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 IrisBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
