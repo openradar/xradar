@@ -682,6 +682,17 @@ def _raw_words(raw, sweep, name, nbins):
     return words.reshape(words.shape[0], -1)[:, :nbins]
 
 
+def test_hvel2_decodes_like_vvel2():
+    """The guide has no DB_HVEL2 section: signed 0.01 m/s like DB_VVEL2
+    (4.4.46) (#479); the sign is checked here, raw 0 by the generic test."""
+    hvel2 = {k: v for k, v in _ENTRIES["DB_HVEL2"].items() if k != "name"}
+    vvel2 = {k: v for k, v in _ENTRIES["DB_VVEL2"].items() if k != "name"}
+    assert hvel2 == vvel2
+    np.testing.assert_allclose(
+        _decode_raw(_ENTRIES["DB_HVEL2"], [-100, 0, 100]), [-1.0, 0.0, 1.0]
+    )
+
+
 def test_no_data_masks_follow_the_manual():
     """The table masks raw 0 for exactly the no-data types above, and every
     type with a decoder is classified once."""
@@ -696,7 +707,7 @@ def test_no_data_masks_follow_the_manual():
 
 @pytest.mark.parametrize(
     "entry",
-    [e for e in _ENTRIES.values() if e["func"] is not None and e.get("dtype")],
+    [e for e in _ENTRIES.values() if e["func"] is not None],
     ids=lambda e: e["name"],
 )
 def test_raw_zero_decodes_as_the_manual_says(entry):
