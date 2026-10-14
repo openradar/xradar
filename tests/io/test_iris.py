@@ -7,6 +7,7 @@
 Ported from wradlib.
 """
 
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -605,16 +606,22 @@ def test_decode_paths_read_their_own_headers(cls, wavelength_prf):
 @pytest.mark.parametrize("flag", [4, 65535])
 def test_undefined_multi_prf_flag_warns_and_uses_single_prf(cls, wavelength_prf, flag):
     """task_dsp_info defines flags 0-3 only; any other value must not scale
-    the velocity (#480)."""
+    the velocity (#480). The width ignores the flag, so it does not warn."""
     stub = _header_stub()
     stub.ingest_header["task_configuration"]["task_dsp_info"][
         "multi_prf_mode_flag"
     ] = flag
     data = np.array([2, 3], dtype="uint16")
+    nyquist = iris._nyquist(*wavelength_prf)
     vel = {"func": iris.decode_vel, "dtype": "uint16", "fkw": {"scale": 1.0}}
-    with pytest.warns(UserWarning, match="multi_prf_mode_flag"):
+    with pytest.warns(UserWarning, match=f"multi_prf_mode_flag={flag} is not defined"):
         decoded = cls.decode_data(stub, data, vel)
-    np.testing.assert_allclose(decoded, data * iris._nyquist(*wavelength_prf))
+    np.testing.assert_allclose(decoded, data * nyquist)
+    width = {**vel, "func": iris.decode_width}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        decoded = cls.decode_data(stub, data, width)
+    np.testing.assert_allclose(decoded, data * nyquist)
 
 
 @pytest.mark.parametrize("cls", [iris.IrisRawFile, iris.IrisIngestDataFile])

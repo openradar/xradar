@@ -252,7 +252,6 @@ def _dual_prf_factor(multi_prf_mode_flag):
         f"xradar: IRIS multi_prf_mode_flag={multi_prf_mode_flag} is not "
         "defined (0-3); using the single-PRF Nyquist velocity",
         UserWarning,
-        stacklevel=2,
     )
     return 1
 
