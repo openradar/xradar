@@ -480,3 +480,66 @@ def test_cfradial1_export_repeated_with_optional_groups(
     finally:
         for tree in trees:
             tree.close()
+
+
+def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
+    # CfRadial 1.4: "Cf/Radial" plus the sub-conventions used, whose variables
+    # carry a meta_group attribute (#388)
+    import netCDF4
+
+    path = tmp_path / "cf14.nc"
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as nc:
+        assert nc.version == "1.4"
+        conventions = nc.Conventions.split()
+        assert conventions[0] == "Cf/Radial"
+        groups = {
+            nc[v].meta_group for v in nc.variables if "meta_group" in nc[v].ncattrs()
+        }
+        assert set(conventions[1:]) == groups
+        assert {
+            "instrument_parameters",
+            "radar_parameters",
+            "radar_calibration",
+            "geometry_correction",
+        } <= groups
+        assert nc["prt_mode"].meta_group == "instrument_parameters"
+        assert nc["r_calib_index"].meta_group == "radar_calibration"
+        assert "meta_group" not in nc["DBZ"].ncattrs()
+
+
+@pytest.mark.parametrize(
+    "optional_groups, calibs",
+    [(False, True), (True, False)],
+    ids=["default", "no-calibs"],
+)
+def test_cfradial1_export_without_calibration(cfradial1_file, optional_groups, calibs):
+    # without r_calib variables there is no r_calib dimension, so r_calib_index
+    # is kept untagged and radar_calibration is not listed (#388)
+    with xd.io.open_cfradial1_datatree(
+        cfradial1_file, optional_groups=optional_groups
+    ) as dtree:
+        ds = cf1_export._build_cfradial1_dataset(dtree, calibs=calibs)
+    assert "meta_group" not in ds["r_calib_index"].attrs
+    assert "radar_calibration" not in ds.attrs["Conventions"].split()
+
+
+def test_cfradial1_meta_groups():
+    # tags follow CfRadial 1.4 Section 5, not the variable name prefix, and
+    # only sub-conventions of the specification go into Conventions (#388)
+    ds = xr.Dataset(
+        {
+            "radar_measured_sky_noise": ((), 1.0),
+            "radar_beam_width_h": ((), 1.0),
+            "radar_echo_class": ((), 1.0),
+            "custom": ((), 1.0, {"meta_group": "not_a_sub_convention"}),
+        },
+        coords={"frequency": ("frequency", [2.8e9])},
+    )
+    groups = cf1_export._add_meta_groups(ds)
+    assert groups == ["instrument_parameters", "radar_parameters"]
+    assert ds["radar_measured_sky_noise"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["frequency"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["radar_beam_width_h"].attrs["meta_group"] == "radar_parameters"
+    assert "meta_group" not in ds["radar_echo_class"].attrs
