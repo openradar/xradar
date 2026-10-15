@@ -43,7 +43,7 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "filterwarnings",
-        r"ignore:.*radar_calibration values differ between the sweeps:UserWarning",
+        r"ignore:.*values differ between the sweeps:UserWarning",
     )
 
 
