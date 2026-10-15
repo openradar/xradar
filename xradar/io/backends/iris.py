@@ -106,6 +106,7 @@ iris_mapping = {
     "DB_PHIDP2": "PHIDP",
     "DB_SQI": "SQIH",
     "DB_SQI2": "SQIH",
+    "DB_SNR8": "SNRH",
     "DB_SNR16": "SNRH",
     "DB_RHOHV": "RHOHV",
     "DB_RHOHV2": "RHOHV",
