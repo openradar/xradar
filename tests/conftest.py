@@ -37,6 +37,10 @@ def pytest_configure(config):
         "filterwarnings",
         r"ignore:Rays might miss on beginning:UserWarning",
     )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:.*IRIS multi_prf_mode_flag=\d+ is not defined:UserWarning",
+    )
 
 
 @pytest.fixture(params=["file", "filelike"])
