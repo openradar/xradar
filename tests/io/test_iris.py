@@ -7,13 +7,16 @@
 Ported from wradlib.
 """
 
+import io
 import warnings
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends import iris, open_iris_datatree
 from xradar.util import _get_data_file
 
@@ -378,6 +381,114 @@ def test_open_iris_datatree_optional_groups(iris0_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+# IRIS Programming Guide 4.3.50 (task_calib_info) and 4.3.57 (task_misc_info)
+_TASK_METADATA = [
+    # file, beam width, receiver bandwidth (Hz), radar constant H/V (dB),
+    # noise H/V (dBm), I0 calibration value H/V (dBm)
+    (
+        "cor-main131125105503.RAW2049",
+        (0.95, 0.95),
+        1.048e6,
+        (67.1, 70.1),
+        (-81.4, -81.78),
+        (-108.66, -108.99),
+    ),
+    (
+        "SUR210819000227.RAWKPJV",
+        (0.95, 0.95),
+        559e3,
+        (63.2, 66.2),
+        (-82.39, -83.09),
+        (-108.55, -114.02),
+    ),
+    # unset receiver bandwidth (0 kHz) is left out
+    (
+        "RAW_NA_000_125_20080411181219",
+        (1.1, 1.1),
+        None,
+        (68.58, 71.58),
+        (-74.61, -75.33),
+        (-109.17, -109.55),
+    ),
+]
+
+
+@pytest.mark.parametrize("kind", ["path", "bytesio"])
+@pytest.mark.parametrize(
+    "name, beam, bandwidth, constant, noise, i0",
+    _TASK_METADATA,
+    ids=["cor-main", "SUR", "RAW_NA"],
+)
+def test_iris_task_metadata(name, beam, bandwidth, constant, noise, i0, kind, closing):
+    # the in-memory case used to fail: the header was read from a second opened
+    # copy of the buffer, which had been read already
+    filename = DATASETS.fetch(name)
+    if kind == "bytesio":
+        with open(filename, "rb") as fh:
+            filename = io.BytesIO(fh.read())
+    dtree = closing(
+        xd.open_datatree(filename, engine="iris", sweep=0, optional_groups=True)
+    )
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, beam[0], rtol=1e-6)
+    np.testing.assert_allclose(params.radar_beam_width_v, beam[1], rtol=1e-6)
+    if bandwidth is None:
+        assert "radar_receiver_bandwidth" not in params
+    else:
+        np.testing.assert_allclose(params.radar_receiver_bandwidth, bandwidth)
+    calib = dtree["radar_calibration"].ds
+    np.testing.assert_allclose(calib.radar_constant_h, constant[0])
+    np.testing.assert_allclose(calib.radar_constant_v, constant[1])
+    np.testing.assert_allclose(calib.noise_hc, noise[0])
+    np.testing.assert_allclose(calib.noise_vc, noise[1])
+    np.testing.assert_allclose(calib.i0_dbm_hc, i0[0])
+    np.testing.assert_allclose(calib.i0_dbm_vc, i0[1])
+    # the values are no attributes of the root or of the sweeps
+    names = {"radar_constant_h", "noise_hc", "radar_beam_width_h"}
+    assert not names & set(dtree.attrs)
+    assert not names & set(dtree["sweep_0"].attrs)
+
+
+def test_iris_task_metadata_of_a_selected_sweep(iris0_file, closing):
+    # the values come from the task configuration: any sweep selection has them
+    dtree = closing(
+        xd.open_datatree(iris0_file, engine="iris", sweep=[1], optional_groups=True)
+    )
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 67.1)
+
+
+def test_iris_store_task_metadata_skips_unset_values():
+    from xradar.io.backends.iris import IrisStore
+
+    def store(misc, calib):
+        task = {"task_misc_info": misc, "task_calib_info": calib}
+        return SimpleNamespace(
+            root=SimpleNamespace(ingest_header={"task_configuration": task})
+        )
+
+    # 0 is an unset configuration (and a missing field is left out)
+    calibration = IrisStore.get_calibration_parameters(
+        store({}, {"horizontal_radar_constant": 0, "vertical_radar_constant": 6710})
+    )
+    assert dict(calibration) == {"radar_constant_v": pytest.approx(67.1)}
+    parameters = IrisStore.get_radar_parameters(
+        store(
+            {"horizontal_beam_width": 0.95, "vertical_beam_width": 0},
+            {"receiver_bandwidth": 0},
+        )
+    )
+    assert dict(parameters) == {"radar_beam_width_h": 0.95}
+    parameters = IrisStore.get_radar_parameters(store({}, {"receiver_bandwidth": 1048}))
+    assert dict(parameters) == {"radar_receiver_bandwidth": 1.048e6}
+
+
+def test_receiver_bandwidth_is_unsigned():
+    # 4.3.50 byte 60 is UINT2, as in product_end (4.3.25); SINT2 turned values
+    # above 32767 kHz negative
+    assert dict(iris.TASK_CALIB_INFO)["receiver_bandwidth"] is iris.UINT2
+    assert dict(iris.PRODUCT_END)["receiver_bandwidth"] is iris.UINT2
 
 
 def test_first_loaded_moment_aligned_with_others(iris0_file):

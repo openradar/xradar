@@ -1532,7 +1532,7 @@ TASK_CALIB_INFO = OrderedDict(
         ("vertical_noise_calibration", SINT2),
         ("horizontal_radar_constant", SINT2),
         ("vertical_radar_constant", SINT2),
-        ("receiver_bandwidth", SINT2),
+        ("receiver_bandwidth", UINT2),
         ("flags_2", UINT16_T),
         ("spare_3", {"fmt": "256s"}),
     ]
@@ -4008,6 +4008,29 @@ class IrisArrayWrapper(BackendArray):
         )
 
 
+# IRIS Programming Guide M212927EN-B, 4.3.50 (task_calib_info) and 4.3.57
+# (task_misc_info), mapped to the CfRadial 2.1 names of radar_calibration
+# (Section 7.3) and radar_parameters (Section 7.1).
+# iris field: (xradar name, factor). A value of 0 is an unset configuration (the
+# manual's summary of such a task prints "Radar constant: 0.00/0.00 dB, Receiver
+# bandwidth 0 kHz") and is left out.
+_IRIS_CALIBRATION = {  # task_calib_info, in 1/100 dB or 1/100 dBm
+    "horizontal_radar_constant": ("radar_constant_h", 0.01),
+    "vertical_radar_constant": ("radar_constant_v", 0.01),
+    "horizontal_noise_calibration": ("noise_hc", 0.01),
+    "vertical_noise_calibration": ("noise_vc", 0.01),
+    "horizontal_io_cal_value": ("i0_dbm_hc", 0.01),
+    "vertical_io_cal_value": ("i0_dbm_vc", 0.01),
+}
+_IRIS_PARAMETERS = {
+    # task_misc_info, in degrees
+    ("task_misc_info", "horizontal_beam_width"): ("radar_beam_width_h", 1),
+    ("task_misc_info", "vertical_beam_width"): ("radar_beam_width_v", 1),
+    # task_calib_info, in kHz, as s-1
+    ("task_calib_info", "receiver_bandwidth"): ("radar_receiver_bandwidth", 1e3),
+}
+
+
 class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading IRIS sweeps via xradar.
 
@@ -4186,6 +4209,29 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         ]["task_description"]
         return FrozenDict(attributes)
 
+    def get_calibration_parameters(self):
+        """Calibration values of the task configuration, with their xradar names."""
+        calib = self.root.ingest_header["task_configuration"]["task_calib_info"]
+        return FrozenDict(
+            {
+                name: value * factor
+                for field, (name, factor) in _IRIS_CALIBRATION.items()
+                if (value := calib.get(field))
+            }
+        )
+
+    def get_radar_parameters(self):
+        """Beam widths and receiver bandwidth of the task configuration, with
+        their xradar names."""
+        task = self.root.ingest_header["task_configuration"]
+        return FrozenDict(
+            {
+                name: value * factor
+                for (block, field), (name, factor) in _IRIS_PARAMETERS.items()
+                if (value := task.get(block, {}).get(field))
+            }
+        )
+
 
 def _get_iris_group_names(filename):
     sid, opener = _check_iris_file(filename)
@@ -4288,6 +4334,8 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_calibration_parameters())
+        ds.attrs.update(store.get_radar_parameters())
 
         # ensure close works
         ds._close = store.close
