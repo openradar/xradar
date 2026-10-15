@@ -46,6 +46,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import glob as _glob
 import os
 import re
+import warnings
 from functools import partial
 
 import numpy as np
@@ -689,6 +690,36 @@ def _open_single_imd_datatree(filename, **kwargs):
     )
 
 
+#: optional CfRadial2 groups of a single-file tree
+_IMD_OPTIONAL_GROUPS = (
+    "radar_parameters",
+    "georeferencing_correction",
+    "radar_calibration",
+)
+
+
+def _attach_optional_groups(volume, sweep_trees):
+    """Attach the optional groups of the sweep files to a combined volume.
+
+    :func:`xradar.util.create_volume` only copies the sweeps, so the optional
+    groups of the single-file trees are lost. They hold volume-level metadata
+    that is the same in all files of a volume; the groups of the first file
+    are used, with a warning if the files differ.
+    """
+    for name in _IMD_OPTIONAL_GROUPS:
+        # no inherited coordinates, the root of a single-file tree has
+        # ``sweep: 1`` which does not align with the volume
+        groups = [tree[name].to_dataset(inherit=False) for tree in sweep_trees]
+        if not all(groups[0].equals(other) for other in groups[1:]):
+            warnings.warn(
+                f"/{name} differs between the files, using the values of the "
+                "first file.",
+                UserWarning,
+                stacklevel=3,
+            )
+        volume[name] = DataTree(groups[0])
+
+
 def open_imd_datatree(filename_or_obj, **kwargs):
     """Open IMD radar file(s) as a :py:class:`xarray.DataTree`.
 
@@ -736,7 +767,9 @@ def open_imd_datatree(filename_or_obj, **kwargs):
         ``site_coords`` is accepted as an alias.
     optional_groups : bool
         Include ``/radar_parameters``, ``/georeferencing_correction`` and
-        ``/radar_calibration`` subgroups. Defaults to ``False``.
+        ``/radar_calibration`` subgroups. Defaults to ``False``. With multiple
+        files they are taken from the first file, with a ``UserWarning`` if
+        the files differ.
     time_coverage_start, time_coverage_end, min_angle, max_angle, volume_number
         Forwarded to :func:`xradar.util.create_volume` when multi-file
         input is provided.
@@ -785,6 +818,8 @@ def open_imd_datatree(filename_or_obj, **kwargs):
             sw_ds = volume[key].to_dataset()
             sw_ds["sweep_number"] = xr.DataArray(i)
             volume[key] = DataTree(sw_ds)
+        if kwargs.get("optional_groups"):
+            _attach_optional_groups(volume, sweep_trees)
         # create_volume builds new nodes (and may drop or reorder sweeps), so
         # closing the volume closes every source file instead (#471, #502);
         # keep only the file closers, not the source trees and their data
