@@ -13,6 +13,7 @@ import pytest
 import xarray
 from xarray import DataTree
 
+import xradar as xd
 from xradar.io.backends.uf import (
     UFBackendEntrypoint,
     UFFile,
@@ -121,7 +122,7 @@ def test_open_uf_file(uf_file_1):
                 ("PulseWidth", -32768),
                 ("BeamWidthH", 0.953125),
                 ("BeamWidthV", 0.953125),
-                ("BandWidth", -156.234375),
+                ("BandWidth", -9999),
                 ("Polarization", 0),
                 ("WaveLength", 3.171875),
                 ("SampleSize", 64),
@@ -393,6 +394,40 @@ def test_open_uf_datatree_optional_groups(uf_file_1):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+def test_open_uf_datatree_radar_parameters(uf_file_1, uf_file_2):
+    # beam widths in 1/64 degree, receiver bandwidth in MHz (-9999: missing)
+    dtree = open_uf_datatree(uf_file_1, optional_groups=True)
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 0.953125)
+    np.testing.assert_allclose(params.radar_beam_width_v, 0.953125)
+    assert "radar_receiver_bandwidth" not in params
+
+    dtree = open_uf_datatree(uf_file_2, optional_groups=True, sweep=[1])
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, 1.0)
+    np.testing.assert_allclose(params.radar_receiver_bandwidth, 1e6)
+
+
+def test_uf_radar_parameters_not_in_root_or_sweep_attrs(uf_file_2, closing):
+    dtree = closing(xd.open_datatree(uf_file_2, engine="uf", optional_groups=True))
+    names = ("radar_beam_width_h", "radar_beam_width_v", "radar_receiver_bandwidth")
+    for name in names:
+        assert name not in dtree.attrs
+        assert name in dtree["radar_parameters"].ds
+        assert name not in dtree["sweep_0"].attrs
+    # without the optional groups the values are not in the tree at all
+    dtree = closing(xd.open_datatree(uf_file_2, engine="uf"))
+    assert not any(name in dtree.attrs for name in names)
+
+
+def test_uf_bandwidth_is_the_raw_word(uf_file_2):
+    # CHILL writes 1 (MHz), the parser must not scale it
+    with UFFile(uf_file_2) as ufh:
+        first = next(iter(ufh.ray_headers.values()))[0]
+        widths = {f["BandWidth"] for f in first["dhead"]["fields"].values()}
+        assert widths == {1}
 
 
 def test_uf_unsupported_input_type():
