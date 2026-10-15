@@ -21,6 +21,7 @@ import reprlib
 import struct
 import textwrap
 import warnings
+import zlib
 from collections import OrderedDict
 from contextlib import ExitStack, suppress
 from pathlib import Path, PurePosixPath
@@ -113,6 +114,19 @@ def _apply_reindex_coord(ds, reindex_coord):
     return ds
 
 
+#: Errors raised when an input can't be read: a missing file, a directory or no
+#: permission (``OSError``), a closed stream (``ValueError``), an unseekable one
+#: (``io.UnsupportedOperation``, an ``OSError``), a truncated (``EOFError``) or
+#: corrupt (``zlib.error``, ``gzip.BadGzipFile`` is an ``OSError``) gzip file.
+#: Other exceptions (``TypeError``, ``AttributeError``, ...) point to a bug and are
+#: not caught.
+_UNREADABLE_ERRORS = (OSError, ValueError, EOFError, zlib.error)
+
+#: Errors the netCDF3/HDF5 parsers raise for truncated or corrupt files (found
+#: by truncating and flipping bytes of sample files), in addition to the above.
+_CORRUPT_FILE_ERRORS = (*_UNREADABLE_ERRORS, IndexError, KeyError, RuntimeError)
+
+
 def _read_head(filename_or_obj, size=512, decompress=False):
     """Read the first bytes of a file without consuming file-like objects.
 
@@ -149,7 +163,7 @@ def _read_head(filename_or_obj, size=512, decompress=False):
         if decompress and head[:2] == b"\x1f\x8b":
             head = _gunzip_head(filename_or_obj, size)
         return head
-    except Exception:
+    except _UNREADABLE_ERRORS:
         return None
 
 
@@ -214,7 +228,7 @@ def _read_nc_header(filename_or_obj):
         # netCDF3 classic
         with xr.open_dataset(source, engine="scipy", decode_cf=False) as ds:
             return dict(ds.attrs), set(ds.variables), set()
-    except Exception:
+    except _CORRUPT_FILE_ERRORS:
         return None
     finally:
         if pos is not None:

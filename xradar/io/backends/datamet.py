@@ -26,6 +26,7 @@ import gzip
 import io
 import os
 import tarfile
+import zlib
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -401,7 +402,9 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
         try:
             with tarfile.open(filename_or_obj) as tar:
                 names = {os.path.normpath(name) for name in tar.getnames()}
-        except Exception:
+        except (OSError, tarfile.TarError, EOFError, zlib.error):
+            # not a (readable) tar archive: missing file, directory, truncated
+            # or corrupt archive
             return False
         return "navigation.txt" in names
 

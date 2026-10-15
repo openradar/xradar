@@ -4199,7 +4199,9 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             return True
         try:
             return _check_iris_file(os.fspath(filename_or_obj))[1] is IrisRawFile
-        except Exception:
+        except (OSError, KeyError, struct.error):
+            # unreadable, or not a known IRIS structure (truncated header,
+            # unknown identifier or product type)
             return False
 
     def open_dataset(

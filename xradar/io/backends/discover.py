@@ -72,11 +72,11 @@ def discover_engine(filename_or_obj):
         filename_or_obj = os.fspath(filename_or_obj)
     engines = list_xradar_engines()
     for engine in engines:
-        try:
-            if plugins.get_backend(engine).guess_can_open(filename_or_obj):
-                return engine
-        except Exception:
-            continue
+        # guess_can_open returns False for inputs it can't read (missing,
+        # truncated or corrupt files, see ``_UNREADABLE_ERRORS``); anything
+        # else it raises is a bug and is not hidden here
+        if plugins.get_backend(engine).guess_can_open(filename_or_obj):
+            return engine
     raise ValueError(
         f"None of the xradar engines ({', '.join(engines)}) can open "
         f"{filename_or_obj!r}."
