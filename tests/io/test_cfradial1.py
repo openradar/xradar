@@ -440,3 +440,106 @@ def test_cfradial1_export_drops_sweep_group_name(hpl_file, tmp_path):
         assert "sweep_group_name" not in nc.variables
     with xd.open_datatree(outfile, engine="cfradial1") as back:
         assert len(list(back.match("sweep_*"))) == nsweeps
+
+
+@pytest.mark.parametrize(
+    "engine, fixture", [("cfradial1", "cfradial1_file"), ("odim", "odim_file")]
+)
+def test_cfradial1_export_repeated_with_optional_groups(
+    engine, fixture, request, tmp_path
+):
+    # data read with optional_groups=True from a file written by xradar can be
+    # exported again, and the groups survive any number of round trips
+    filename = request.getfixturevalue(fixture)
+    groups = ("radar_parameters", "radar_calibration", "georeferencing_correction")
+    with xd.open_datatree(filename, engine=engine, optional_groups=True) as source:
+        current = source
+        trees = []
+        for i in range(3):
+            outfile = tmp_path / f"optional_{i}.nc"
+            xd.io.to_cfradial1(current, outfile)
+            current = xd.open_datatree(
+                outfile, engine="cfradial1", optional_groups=True
+            )
+            trees.append(current)
+    try:
+        for tree in trees:
+            assert all(group in tree.children for group in groups)
+        for first, second in zip(trees[:-1], trees[1:]):
+            assert list(first.subtree_with_keys) and [
+                p for p, _ in first.subtree_with_keys
+            ] == [p for p, _ in second.subtree_with_keys]
+            for (_, node1), (_, node2) in zip(
+                first.subtree_with_keys, second.subtree_with_keys
+            ):
+                ds1 = node1.to_dataset(inherit=False).load()
+                ds2 = node2.to_dataset(inherit=False).load()
+                for ds in (ds1, ds2):
+                    ds.attrs.pop("history", None)
+                xr.testing.assert_identical(ds1, ds2)
+    finally:
+        for tree in trees:
+            tree.close()
+
+
+def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
+    # CfRadial 1.4: "Cf/Radial" plus the sub-conventions used, whose variables
+    # carry a meta_group attribute (#388)
+    import netCDF4
+
+    path = tmp_path / "cf14.nc"
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as nc:
+        assert nc.version == "1.4"
+        conventions = nc.Conventions.split()
+        assert conventions[0] == "Cf/Radial"
+        groups = {
+            nc[v].meta_group for v in nc.variables if "meta_group" in nc[v].ncattrs()
+        }
+        assert set(conventions[1:]) == groups
+        assert {
+            "instrument_parameters",
+            "radar_parameters",
+            "radar_calibration",
+            "geometry_correction",
+        } <= groups
+        assert nc["prt_mode"].meta_group == "instrument_parameters"
+        assert nc["r_calib_index"].meta_group == "radar_calibration"
+        assert "meta_group" not in nc["DBZ"].ncattrs()
+
+
+@pytest.mark.parametrize(
+    "optional_groups, calibs",
+    [(False, True), (True, False)],
+    ids=["default", "no-calibs"],
+)
+def test_cfradial1_export_without_calibration(cfradial1_file, optional_groups, calibs):
+    # without r_calib variables there is no r_calib dimension, so r_calib_index
+    # is kept untagged and radar_calibration is not listed (#388)
+    with xd.io.open_cfradial1_datatree(
+        cfradial1_file, optional_groups=optional_groups
+    ) as dtree:
+        ds = cf1_export._build_cfradial1_dataset(dtree, calibs=calibs)
+    assert "meta_group" not in ds["r_calib_index"].attrs
+    assert "radar_calibration" not in ds.attrs["Conventions"].split()
+
+
+def test_cfradial1_meta_groups():
+    # tags follow CfRadial 1.4 Section 5, not the variable name prefix, and
+    # only sub-conventions of the specification go into Conventions (#388)
+    ds = xr.Dataset(
+        {
+            "radar_measured_sky_noise": ((), 1.0),
+            "radar_beam_width_h": ((), 1.0),
+            "radar_echo_class": ((), 1.0),
+            "custom": ((), 1.0, {"meta_group": "not_a_sub_convention"}),
+        },
+        coords={"frequency": ("frequency", [2.8e9])},
+    )
+    groups = cf1_export._add_meta_groups(ds)
+    assert groups == ["instrument_parameters", "radar_parameters"]
+    assert ds["radar_measured_sky_noise"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["frequency"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["radar_beam_width_h"].attrs["meta_group"] == "radar_parameters"
+    assert "meta_group" not in ds["radar_echo_class"].attrs

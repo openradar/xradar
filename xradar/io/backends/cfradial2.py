@@ -166,15 +166,45 @@ def _normalize_sweep_name(name: str) -> str:
     return name
 
 
+def _decode_name(value) -> str:
+    value = value.decode() if isinstance(value, bytes) else str(value)
+    return value.strip()
+
+
+def _sweep_number_key(name: str):
+    suffix = _normalize_sweep_name(name).split("_", 1)[-1]
+    return int(suffix) if suffix.isdigit() else np.inf
+
+
+def _available_sweeps(tree: DataTree) -> dict[str, str]:
+    """Map (normalized) sweep names to the group names in the file.
+
+    CfRadial2 lists the sweep groups in the root ``sweep_group_name`` variable
+    (CfRadial 2.1, Sections 3 and 5); group names need not be ``sweep_<n>``.
+    Without that variable, or if it holds no group names (some readers store the
+    sweep numbers), the ``sweep_*`` groups are used.
+    """
+    raw_names = []
+    if "sweep_group_name" in tree.ds:
+        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
+        raw_names = [name for name in listed if name in tree.children]
+        missing = [name for name in listed if name not in tree.children]
+        if raw_names and missing:
+            warnings.warn(
+                f"Sweep group(s) listed in `sweep_group_name` but missing: {missing}",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+    if not raw_names:
+        raw_names = sorted(
+            (child for child in tree.children if child.startswith("sweep_")),
+            key=_sweep_number_key,
+        )
+    return {_normalize_sweep_name(name): name for name in raw_names}
+
+
 def _iter_selected_sweeps(tree: DataTree, sweep: Any) -> list[str]:
-    available = sorted(
-        (
-            _normalize_sweep_name(child)
-            for child in tree.children
-            if child.startswith("sweep_")
-        ),
-        key=lambda x: int(x.split("_", 1)[1]),
-    )
+    available = list(_available_sweeps(tree))
     if sweep is None:
         return available
     if isinstance(sweep, Iterable) and not isinstance(sweep, (str, list, tuple)):
@@ -187,9 +217,23 @@ def _iter_selected_sweeps(tree: DataTree, sweep: Any) -> list[str]:
             stacklevel=_external_stacklevel(),
         )
         sweep = list(sweep)
-    return [
+    selected = [
         _normalize_sweep_name(name)
         for name in _resolve_sweeps(sweep, lambda: available)
+    ]
+    if all(name.startswith("sweep_") for name in available):
+        return selected
+    # integers select by position if the groups are not named sweep_<n>
+    return [
+        (
+            available[int(name.split("_", 1)[1])]
+            if name not in available
+            and name.split("_", 1)[1].isdigit()
+            and int(name.split("_", 1)[1]) < len(available)
+            and not isinstance(sweep, str)
+            else name
+        )
+        for name in selected
     ]
 
 
@@ -285,6 +329,9 @@ def _rename_using_mapping(ds, mapping: dict[str, str | None]):
 
 
 def _infer_sweep_mode(ds):
+    # CfRadial2 stores sweep_mode as variable (e.g. Radx), some files as attribute
+    if "sweep_mode" in ds.variables and ds["sweep_mode"].size == 1:
+        return _decode_name(np.ravel(ds["sweep_mode"].values)[0])
     mode = ds.attrs.get("sweep_mode")
     if mode is not None:
         return str(mode)
@@ -312,13 +359,20 @@ def _derive_range_attrs(ds):
 
 
 def _normalize_root_attrs(ds):
+    time_attrs = get_time_attrs()
+    # time_coverage_* hold ISO strings in CfRadial files, a "units" attribute
+    # would make xarray try to decode them as numbers when read back
+    string_time_attrs = {k: v for k, v in time_attrs.items() if k != "units"}
     for name, attrs in {
         "latitude": get_latitude_attrs(),
         "longitude": get_longitude_attrs(),
         "altitude": get_altitude_attrs(),
-        "time_coverage_start": get_time_attrs(),
-        "time_coverage_end": get_time_attrs(),
+        "time_coverage_start": time_attrs,
+        "time_coverage_end": time_attrs,
     }.items():
+        if name.startswith("time_coverage_") and name in ds:
+            if ds[name].dtype.kind in "USO":
+                attrs = string_time_attrs
         ds = _update_var_attrs(ds, name, attrs)
     return ds
 
@@ -358,6 +412,9 @@ def _normalize_dataset_var_attrs(ds):
         if da.ndim == 2 and set(da.dims) == {"time", "range"}:
             attrs = dict(da.attrs)
             attrs.setdefault("coordinates", "elevation azimuth range")
+            # xarray moves the "coordinates" attribute of the file to the
+            # encoding, both together make the writer raise on re-export
+            da.encoding.pop("coordinates", None)
             if name in sweep_vars_mapping:
                 moment_attrs = get_moment_attrs(name)
                 moment_attrs.update(attrs)
@@ -399,8 +456,9 @@ def _normalize_sweep_dataset(ds, sweep_name: str, first_dim: str, optional: bool
 
     if "sweep_number" not in ds:
         ds["sweep_number"] = Variable((), int(sweep_name.split("_", 1)[1]))
-    if "sweep_mode" not in ds:
-        ds["sweep_mode"] = Variable((), mode)
+    # store the decoded mode (files may hold it as bytes/char variable)
+    mode_attrs = ds["sweep_mode"].attrs if "sweep_mode" in ds else {}
+    ds["sweep_mode"] = Variable((), mode, mode_attrs)
     if "follow_mode" not in ds:
         ds["follow_mode"] = Variable((), "none")
     if "prt_mode" not in ds:
@@ -512,10 +570,26 @@ def _normalize_cfradial2_tree(
 ) -> dict[str, Any]:
     """Normalize the groups of an opened CfRadial2 ``tree``; the returned root
     dataset takes over closing the file."""
-    raw_sweep_names = [name for name in tree.children if name.startswith("sweep_")]
+    available = _available_sweeps(tree)
+    if not available:
+        # the caller closes the tree on any error
+        raise ValueError(
+            f"No sweep groups found in `{filename_or_obj}`: expected groups "
+            "listed in the root `sweep_group_name` or named `sweep_<n>`."
+        )
+    raw_sweep_names = list(available.values())
     selected = _iter_selected_sweeps(tree, sweep)
     output_names = [f"sweep_{i}" for i in range(len(selected))]
-    sweep_nodes = {_normalize_sweep_name(name): tree[name] for name in raw_sweep_names}
+    sweep_nodes = {name: tree[raw] for name, raw in available.items()}
+    # fixed angles of the root group, indexed like sweep_group_name
+    root_fixed = {}
+    if "sweep_fixed_angle" in tree.ds and "sweep_group_name" in tree.ds:
+        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
+        values = np.ravel(tree.ds["sweep_fixed_angle"].values)
+        root_fixed = {
+            _normalize_sweep_name(name): value
+            for name, value in zip(listed, values, strict=False)
+        }
 
     missing = [name for name in selected if name not in sweep_nodes]
     if missing:
@@ -525,8 +599,15 @@ def _normalize_cfradial2_tree(
 
     normalized_sweeps = []
     for output_name, source_name in zip(output_names, selected):
+        sweep_ds = sweep_nodes[source_name].to_dataset(inherit=True)
+        if (
+            source_name in root_fixed
+            and "sweep_fixed_angle" not in sweep_ds
+            and "fixed_angle" not in sweep_ds
+        ):
+            sweep_ds["sweep_fixed_angle"] = Variable((), root_fixed[source_name])
         ds = _normalize_sweep_dataset(
-            sweep_nodes[source_name].to_dataset(inherit=True),
+            sweep_ds,
             output_name,
             first_dim=first_dim,
             optional=optional,
