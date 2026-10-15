@@ -62,9 +62,11 @@ from xradar.io.backends.common import (
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _input_kind,
     _keep_close,
     _ManagedStoreMixin,
     _open_legacy_datatree,
+    _read_head,
     _resolve_sweeps,
 )
 from xradar.model import (
@@ -766,6 +768,13 @@ class UFBackendEntrypoint(BackendEntrypoint):
     description = "Open Universal Format (UF) files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#uf-data-i-o"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """Universal Format, ``UF`` at the start of the first record."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        head = _read_head(filename_or_obj, 8)
+        return head is not None and b"UF" in (head[0:2], head[4:6])
 
     def open_dataset(
         self,

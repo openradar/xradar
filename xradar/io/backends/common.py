@@ -12,6 +12,7 @@ Currently, all private and not part of the public API.
 
 """
 
+import gzip
 import inspect
 import io
 import numbers
@@ -20,6 +21,7 @@ import reprlib
 import struct
 import textwrap
 import warnings
+import zlib
 from collections import OrderedDict
 from contextlib import ExitStack, suppress
 from pathlib import Path, PurePosixPath
@@ -110,6 +112,127 @@ def _apply_reindex_coord(ds, reindex_coord):
     if (rng := reindex_coord.get("range")) is not None:
         ds = ds.pipe(util.reindex_range, **rng)
     return ds
+
+
+#: Errors raised when an input can't be read: a missing file, a directory or no
+#: permission (``OSError``), a closed stream (``ValueError``), an unseekable one
+#: (``io.UnsupportedOperation``, an ``OSError``), a truncated (``EOFError``) or
+#: corrupt (``zlib.error``, ``gzip.BadGzipFile`` is an ``OSError``) gzip file.
+#: Other exceptions (``TypeError``, ``AttributeError``, ...) point to a bug and are
+#: not caught.
+_UNREADABLE_ERRORS = (OSError, ValueError, EOFError, zlib.error)
+
+#: Errors the netCDF3/HDF5 parsers raise for truncated or corrupt files (found
+#: by truncating and flipping bytes of sample files), in addition to the above.
+_CORRUPT_FILE_ERRORS = (*_UNREADABLE_ERRORS, IndexError, KeyError, RuntimeError)
+
+
+def _read_head(filename_or_obj, size=512, decompress=False):
+    """Read the first bytes of a file without consuming file-like objects.
+
+    Used by the backends' ``guess_can_open``. Returns ``None`` if the input
+    can't be read.
+
+    Parameters
+    ----------
+    filename_or_obj : str, os.PathLike, bytes or file-like
+    size : int
+        Number of bytes to read.
+    decompress : bool
+        Read gzip-compressed files decompressed.
+    """
+    try:
+        if isinstance(filename_or_obj, (bytes, bytearray)):
+            head = bytes(filename_or_obj[:size])
+        elif isinstance(filename_or_obj, (list, tuple)):
+            # e.g. NEXRAD Level II chunks
+            first = filename_or_obj[0] if filename_or_obj else b""
+            head = bytes(first[:size]) if isinstance(first, (bytes, bytearray)) else b""
+        elif isinstance(filename_or_obj, (str, os.PathLike)):
+            with open(filename_or_obj, "rb") as fh:
+                head = fh.read(size)
+        elif hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+            pos = filename_or_obj.tell()
+            filename_or_obj.seek(0)
+            head = filename_or_obj.read(size)
+            filename_or_obj.seek(pos)
+        else:
+            return None
+        if isinstance(head, str):
+            head = head.encode(errors="replace")
+        if decompress and head[:2] == b"\x1f\x8b":
+            head = _gunzip_head(filename_or_obj, size)
+        return head
+    except _UNREADABLE_ERRORS:
+        return None
+
+
+def _input_kind(filename_or_obj):
+    """Kind of input given to a backend, used by ``guess_can_open``.
+
+    Returns one of ``"path"``, ``"bytes"``, ``"chunks"`` (list of bytes),
+    ``"text"`` (text file-like), ``"file"`` (binary file-like) or ``None``.
+    """
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        return "path"
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return "bytes"
+    if isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (bytes, bytearray)) for item in filename_or_obj
+    ):
+        return "chunks"
+    if isinstance(filename_or_obj, io.TextIOBase):
+        return "text"
+    if hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+        return "file"
+    return None
+
+
+def _gunzip_head(filename_or_obj, size):
+    """Read the first ``size`` decompressed bytes of a gzip-compressed input."""
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        with gzip.open(filename_or_obj) as fh:
+            return fh.read(size)
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return gzip.GzipFile(fileobj=io.BytesIO(filename_or_obj)).read(size)
+    pos = filename_or_obj.tell()
+    try:
+        filename_or_obj.seek(0)
+        return gzip.GzipFile(fileobj=filename_or_obj).read(size)
+    finally:
+        filename_or_obj.seek(pos)
+
+
+def _is_hdf5(head):
+    return head is not None and head[:8] == b"\x89HDF\r\n\x1a\n"
+
+
+def _read_nc_header(filename_or_obj):
+    """Get root attributes, variable and group names of a netCDF/HDF5 file.
+
+    Returns ``(attrs, variables, groups)`` or ``None`` if the input isn't a
+    readable netCDF/HDF5 file. The position of file-like objects is restored.
+    """
+    head = _read_head(filename_or_obj, 8)
+    if head is None or not (_is_hdf5(head) or head[:3] == b"CDF"):
+        return None
+    source = filename_or_obj
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+    pos = source.tell() if _input_kind(source) == "file" else None
+    try:
+        if _is_hdf5(head):
+            with h5netcdf.File(source, "r", phony_dims="access") as fh:
+                attrs = {k: _maybe_decode(v) for k, v in fh.attrs.items()}
+                return attrs, set(fh.variables), set(fh.groups)
+        # netCDF3 classic
+        with xr.open_dataset(source, engine="scipy", decode_cf=False) as ds:
+            return dict(ds.attrs), set(ds.variables), set()
+    except _CORRUPT_FILE_ERRORS:
+        return None
+    finally:
+        if pos is not None:
+            source.seek(pos)
 
 
 def _maybe_decode(attr):
@@ -461,9 +584,14 @@ def _get_required_root_dataset(ls_ds, optional=True):
     return root
 
 
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+def _get_subgroup(ls_ds: list[xr.Dataset], subdict, attrs=False):
     """Get iris-sigmet root metadata group.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
+
+    With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
+    added as well (for backends which have the values as attributes, e.g. of the
+    ``how`` groups); variables win. Each name takes the value of the first sweep
+    which has it; a warning names the values the sweeps disagree about.
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -473,20 +601,68 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
         rename = meta_vars[k]
         if rename:
             subgroup = subgroup.rename_vars({k: rename})
+    if attrs and ls_ds:
+        values, differing = _collect_attrs(ls_ds, meta_vars)
+        _warn_differing("radar_parameters", differing)
+        values = {
+            (meta_vars[k] or k): xr.DataArray(v)
+            for k, v in values.items()
+            if (meta_vars[k] or k) not in subgroup
+        }
+        subgroup = xr.merge([subgroup, xr.Dataset(values)])
     subgroup.attrs = {}
     return subgroup
 
 
+def _same_value(a, b):
+    try:
+        return bool(np.array_equal(a, b, equal_nan=True))
+    except TypeError:  # e.g. strings
+        return bool(a == b)
+
+
+def _collect_attrs(ls_ds, names):
+    """Values of the attributes ``names`` of the sweeps.
+
+    Each name takes the value of the first sweep which has it (sweeps can have
+    different names, e.g. when a value is no number in one of them). Returns the
+    values and the names the sweeps disagree about.
+    """
+    values, differing = {}, []
+    for ds in ls_ds:
+        for key in sorted(ds.attrs.keys() & names.keys()):
+            value = ds.attrs[key]
+            if key not in values:
+                values[key] = value
+            elif key not in differing and not _same_value(values[key], value):
+                differing.append(key)
+    return values, differing
+
+
+def _warn_differing(group, differing):
+    if differing:
+        warnings.warn(
+            f"xradar: {group} values differ between the sweeps "
+            f"({', '.join(differing)}); the values of the first selected sweep "
+            "are used.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
 def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    if extract_vars:
-        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
-        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
-    else:
+    """Get radar calibration root metadata group.
+
+    The values are attributes of the sweeps. Each name takes the value of the
+    first sweep which has it. If the sweeps disagree about a value, e.g. for
+    calibrations of different pulse widths or the noise level of each cut, the
+    value of the first sweep is used and a warning names those values.
+    """
+    values, differing = _collect_attrs(ls_ds, subdict)
+    _warn_differing("radar_calibration", differing)
+    if not values:
         return xr.Dataset()
+    return xr.Dataset({key: xr.DataArray(value) for key, value in values.items()})
 
 
 def _prepare_backend_ds(ds):
@@ -576,7 +752,7 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
         sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
         if optional_groups:
             groups_dict["/radar_parameters"] = _get_subgroup(
-                sweeps, radar_parameters_subgroup
+                sweeps, radar_parameters_subgroup, attrs=True
             )
             groups_dict["/georeferencing_correction"] = _get_subgroup(
                 sweeps, georeferencing_correction_subgroup
