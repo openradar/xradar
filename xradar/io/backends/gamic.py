@@ -76,6 +76,7 @@ from .common import (
     _get_reindex_coord,
     _input_kind,
     _ManagedStoreMixin,
+    _maybe_decode,
     _open_legacy_datatree,
     _open_sweeps,
     _prepare_backend_ds,
@@ -264,6 +265,15 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
+def _to_float(value):
+    """GAMIC stores most values as strings (units in ``<name>__unit``); ``None``
+    if the value is no number."""
+    try:
+        return float(_maybe_decode(value))
+    except (TypeError, ValueError):
+        return None
+
+
 class GamicStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
@@ -383,13 +393,32 @@ class GamicStore(_ManagedStoreMixin, AbstractDataStore):
         return FrozenDict(_attributes)
 
     def get_calibration_parameters(self):
-        calib_vars = [
-            var
-            for var in dict(self.root.how).keys()
-            if var in radar_calibration_subgroup
-        ]
-        calibration = {var: self.root.how[var] for var in calib_vars}
+        """Calibration values of the scan ``how``, as numbers with their xradar
+        names; values which are no numbers are left out."""
+        calibration = {}
+        for var, value in dict(self.root.how).items():
+            if var not in radar_calibration_subgroup:
+                continue
+            value = _to_float(value)
+            if value is not None:
+                calibration[radar_calibration_subgroup[var] or var] = value
         return FrozenDict(calibration)
+
+    def get_radar_parameters(self):
+        """Beam widths of the top-level ``how`` in degrees, as ``radar_parameters``
+        names: ``azimuth_beam`` is the horizontal and ``elevation_beam`` the vertical
+        width of the antenna pattern; values which are no numbers are left out."""
+        with self._manager.acquire_context(False) as root:
+            how = dict(root["how"].attrs) if "how" in root else {}
+        parameters = {}
+        for name, key in (
+            ("radar_beam_width_h", "azimuth_beam"),
+            ("radar_beam_width_v", "elevation_beam"),
+        ):
+            value = _to_float(how.get(key))
+            if value is not None:
+                parameters[name] = value
+        return FrozenDict(parameters)
 
 
 class GamicBackendEntrypoint(BackendEntrypoint):
@@ -511,6 +540,7 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
         ds.attrs.update(store.get_calibration_parameters())
+        ds.attrs.update(store.get_radar_parameters())
 
         # ensure close works
         ds._close = store.close

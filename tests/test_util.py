@@ -560,10 +560,12 @@ def test_get_radar_calibration(closing):
     ]
     subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
     assert len(subgroup.variables) == 6
-    assert subgroup["noise_power_h"] == "-3.8298"
-    assert subgroup["rx_loss_h"] == "3"
-    assert subgroup["ant_gain_v"] == "43"
-    assert subgroup["ant_gain_h"] == "43"
+    # numeric values; the antenna gain has the name of the model, the values of
+    # which the meaning is not known keep their GAMIC names
+    assert subgroup["noise_power_h"] == -3.8298
+    assert subgroup["rx_loss_h"] == 3.0
+    assert subgroup["antenna_gain_v"] == 43.0
+    assert subgroup["antenna_gain_h"] == 43.0
 
 
 def test_get_subgroup(closing):
