@@ -521,9 +521,9 @@ UF_FIELD_HEADER = OrderedDict(
         ("PulseWidth", SINT2),  # Pulse width in meters
         ("BeamWidthH", BIN2),  # Horizontal Beam width in 1/64 of degree
         ("BeamWidthV", BIN2),
-        # Receiver bandwidth: the raw word, MHz in the UF documentation. Other
-        # writers differ (Py-ART writes MHz * 16, the IRIS guide says MHz * 64 (?)),
-        # and -9999 or 0 is missing.
+        # Receiver bandwidth: the raw word. The scale depends on the writer (MHz in
+        # the UF specification, MHz * 16 for Py-ART, "MHz * 64 ?" in the IRIS
+        # guide), -9999 is missing; it is not mapped to a radar parameter.
         ("BandWidth", SINT2),
         ("Polarization", SINT2),
         ("WaveLength", BIN2),  # Wavelength in 1/64 of a cm
@@ -757,24 +757,23 @@ class UFStore(_ManagedStoreMixin, AbstractDataStore):
         )
 
     def get_radar_parameters(self):
-        """Beam widths and receiver bandwidth of the field headers of the first ray,
-        with their xradar names.
+        """Beam widths of the field headers of the first ray, with their xradar names.
 
-        UF field header words 8-10 (https://www.eol.ucar.edu/content/standard-data-formats):
-        beam widths in degrees (x 64 in the file) and the receiver bandwidth in MHz,
-        as Hz here. Each takes the first valid (> 0) value of the fields of the ray;
-        -9999 and 0 are missing.
+        UF field header words 8 and 9 (https://www.eol.ucar.edu/content/standard-data-formats)
+        are the horizontal and vertical beam width in degrees (x 64 in the file).
+        Each takes the first valid (> 0) value of the fields of the ray; -9999 and
+        0 are missing. The receiver bandwidth (word 10) is not mapped, its scale
+        differs between writers.
         """
         parameters = {}
         for header in self.ds["sweep_data"].values():
-            for name, key, factor in (
-                ("radar_beam_width_h", "BeamWidthH", 1.0),
-                ("radar_beam_width_v", "BeamWidthV", 1.0),
-                ("radar_receiver_bandwidth", "BandWidth", 1e6),
+            for name, key in (
+                ("radar_beam_width_h", "BeamWidthH"),
+                ("radar_beam_width_v", "BeamWidthV"),
             ):
                 value = header.get(key)
                 if name not in parameters and value is not None and value > 0:
-                    parameters[name] = float(value) * factor
+                    parameters[name] = float(value)
         return FrozenDict(parameters)
 
     def get_attrs(self):

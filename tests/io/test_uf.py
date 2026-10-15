@@ -7,6 +7,7 @@
 import io
 import os
 from collections import OrderedDict
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -17,6 +18,7 @@ import xradar as xd
 from xradar.io.backends.uf import (
     UFBackendEntrypoint,
     UFFile,
+    UFStore,
     open_uf_datatree,
 )
 
@@ -396,23 +398,39 @@ def test_open_uf_datatree_optional_groups(uf_file_1):
     assert "radar_calibration" in dtree.children
 
 
-def test_open_uf_datatree_radar_parameters(uf_file_1, uf_file_2):
-    # beam widths in 1/64 degree, receiver bandwidth in MHz (-9999: missing)
-    dtree = open_uf_datatree(uf_file_1, optional_groups=True)
+@pytest.mark.parametrize(
+    "fixture, width", [("uf_file_1", 0.953125), ("uf_file_2", 1.0)]
+)
+def test_open_uf_datatree_radar_parameters(fixture, width, request, closing):
+    # beam widths in 1/64 degree; the receiver bandwidth scale depends on the
+    # writer (MHz, MHz * 16, MHz * 64), it is not mapped
+    filename = request.getfixturevalue(fixture)
+    dtree = closing(
+        xd.open_datatree(filename, engine="uf", sweep=0, optional_groups=True)
+    )
     params = dtree["radar_parameters"].ds
-    np.testing.assert_allclose(params.radar_beam_width_h, 0.953125)
-    np.testing.assert_allclose(params.radar_beam_width_v, 0.953125)
+    np.testing.assert_allclose(params.radar_beam_width_h, width)
+    np.testing.assert_allclose(params.radar_beam_width_v, width)
     assert "radar_receiver_bandwidth" not in params
 
-    dtree = open_uf_datatree(uf_file_2, optional_groups=True, sweep=[1])
-    params = dtree["radar_parameters"].ds
-    np.testing.assert_allclose(params.radar_beam_width_h, 1.0)
-    np.testing.assert_allclose(params.radar_receiver_bandwidth, 1e6)
+
+def test_uf_radar_parameters_first_valid_field():
+    # -9999 and 0 are missing, the next field of the ray can have the value
+    fields = {
+        "DZ": {"BeamWidthH": -9999, "BeamWidthV": 0},
+        "VR": {"BeamWidthH": 0.953125, "BeamWidthV": 1.5},
+        "ZD": {"BeamWidthH": 2.0, "BeamWidthV": 2.0},
+    }
+    store = SimpleNamespace(ds={"sweep_data": fields})
+    assert UFStore.get_radar_parameters(store) == {
+        "radar_beam_width_h": 0.953125,
+        "radar_beam_width_v": 1.5,
+    }
 
 
 def test_uf_radar_parameters_not_in_root_or_sweep_attrs(uf_file_2, closing):
     dtree = closing(xd.open_datatree(uf_file_2, engine="uf", optional_groups=True))
-    names = ("radar_beam_width_h", "radar_beam_width_v", "radar_receiver_bandwidth")
+    names = ("radar_beam_width_h", "radar_beam_width_v")
     for name in names:
         assert name not in dtree.attrs
         assert name in dtree["radar_parameters"].ds
