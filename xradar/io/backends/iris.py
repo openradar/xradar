@@ -11,7 +11,9 @@ Reads data from Vaisala's IRIS data formats
 
 IRIS (Vaisala Sigmet Interactive Radar Information System)
 
-See M211318EN-F Programming Guide ftp://ftp.sigmet.com/outgoing/manuals/
+The decoders cite the IRIS Programming Guide M212927EN-B (2024),
+https://ftp.sigmet.vaisala.com/files/manuals/10.1.0/IRIS-Radar-Programming-Guide-M212927EN.pdf;
+the structure comments come from the earlier M211318EN-F.
 
 To read from IRIS files :class:`numpy:numpy.memmap` is used to get access to
 the data. The IRIS header (`PRODUCT_HDR`, `INGEST_HEADER`) is read in any case
@@ -38,14 +40,18 @@ import contextlib
 import copy
 import datetime as dt
 import io
+import os
 import struct
 import warnings
 from collections import OrderedDict
 
 import numpy as np
-import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -54,7 +60,6 @@ from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -62,18 +67,25 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
+    LOCK_PARAM_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
-    _get_radar_calibration,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _input_kind,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _open_sweeps,
+    _read_head,
+    _resolve_sweeps,
 )
 
 IRIS_LOCK = SerializableLock()
@@ -134,7 +146,7 @@ def to_float(data):
 
     Note
     ----
-    DB_FLIQUID2 decoding see IRIS manuals, 4.4.12 - Page 75
+    DB_FLIQUID2 decoding, see 4.4.12 p.74
 
     """
     exp = data >> 12
@@ -175,50 +187,108 @@ def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None)
     Parameters
     ----------
     data : array-like
-    scale : int
-    offset: int
-    offset2: int
-    tofloat: bool
+        raw words
+    scale : float
+    offset : float
+    offset2 : float
+    tofloat : bool
+        decode the words as 16-bit IRIS floating point first (``to_float``)
+    mask : number, optional
+        raw word meaning "no data"; those bins are masked in the result
 
     Returns
     -------
     data : array-like
         decoded data
     """
+    return _masked(*_decode_linear(data, scale, offset, offset2, tofloat, mask))
+
+
+def _decode_linear(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None):
+    """``decode_array`` on plain floats: the decoded values with NaN where
+    the raw word equals ``mask``, and that no-data map (``None`` without a
+    mask). The decoders finish on plain floats, so NaN carries through any
+    later arithmetic, and wrap the result once with ``_masked``."""
+    # a mask the caller passes in is kept, merged with the no-data words
+    caller_mask = np.ma.getmaskarray(data) if np.ma.isMaskedArray(data) else None
+    data = np.asarray(np.ma.getdata(data))
+    no_data = None if mask is None else data == mask
+    if caller_mask is not None:
+        no_data = caller_mask if no_data is None else no_data | caller_mask
     if tofloat:
         data = to_float(data)
-    if mask is not None:
-        data = np.ma.masked_equal(data, mask)
     # numpy 2 changed casting rules
     # so we need to cast to float beforehand
-    data = data.astype(np.float64)
-    return (data + offset) / scale + offset2
+    values = np.asarray((data.astype(np.float64) + offset) / scale + offset2)
+    if no_data is not None:
+        values[no_data] = np.nan
+    return values, no_data
+
+
+def _masked(values, no_data):
+    """Decoded ``values`` as a masked array with NaN under the mask and as
+    fill value, so ``np.asarray`` and ``.filled()`` give NaN at no-data bins;
+    plain ``values`` when the type has no mask."""
+    if no_data is None:
+        return values
+    return np.ma.MaskedArray(values, mask=no_data, fill_value=np.nan)
+
+
+def _nyquist(wavelength, prf):
+    """Single-PRF Nyquist velocity (m/s) from the IRIS ``wavelength``
+    (1/100 cm) and ``prf`` (Hz); ``decode_vel`` applies the dual-PRF factor.
+
+    See 4.4.44 p.86. Halving for alternating polarization is not applied
+    yet (#473).
+    """
+    # division by 10000 to get from 1/100 cm to m
+    return wavelength * prf / (10000.0 * 4.0)
+
+
+def _dual_prf_factor(multi_prf_mode_flag):
+    """Velocity Nyquist factor for the ``task_dsp_info`` multi PRF mode flag
+    (0=1:1, 1=2:3, 2=3:4, 3=4:5: x1-x4; see 4.4.44 p.86). The guide defines
+    no other value: warn and use the single-PRF Nyquist velocity (#480)."""
+    if multi_prf_mode_flag in (0, 1, 2, 3):
+        return multi_prf_mode_flag + 1
+    warnings.warn(
+        f"xradar: IRIS multi_prf_mode_flag={multi_prf_mode_flag} is not "
+        "defined (0-3); using the single-PRF Nyquist velocity",
+        UserWarning,
+    )
+    return 1
 
 
 def decode_vel(data, **kwargs):
     """Decode `DB_VEL`.
 
-    See 4.4.46 p.85
+    ``nyquist`` is the single-PRF Nyquist velocity, multiplied by the dual-PRF
+    factor of ``multi_prf_mode_flag`` (``_dual_prf_factor``). See 4.4.44 p.86
     """
-    nyquist = kwargs.pop("nyquist")
-    # mask = kwargs.pop('mask')
-    # data = np.ma.masked_equal(data, mask)
-    return decode_array(data, **kwargs) * nyquist
+    nyquist = kwargs.pop("nyquist") * _dual_prf_factor(
+        kwargs.pop("multi_prf_mode_flag", 0)
+    )
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(values * nyquist, no_data)
 
 
 def decode_width(data, **kwargs):
     """Decode `DB_WIDTH`.
 
-    See 4.4.50 p.87
+    ``nyquist`` is the single-PRF Nyquist velocity; the width is not
+    enlarged by dual PRF, so ``multi_prf_mode_flag`` is ignored.
+    See 4.4.48 p.87
     """
+    kwargs.pop("multi_prf_mode_flag", None)
     nyquist = kwargs.pop("nyquist")
-    return decode_array(data, **kwargs) * nyquist
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(values * nyquist, no_data)
 
 
 def decode_kdp(data, **kwargs):
     """Decode `DB_KDP`.
 
-    See 4.4.20 p.77
+    See 4.4.18 p.78
     """
     wavelength = kwargs.pop("wavelength")
     zero = data == -128
@@ -234,25 +304,28 @@ def decode_kdp(data, **kwargs):
 def decode_phidp(data, **kwargs):
     """Decode `DB_PHIDP`.
 
-    See 4.4.28 p.79
+    See 4.4.26 p.80
     """
-    return 180.0 * decode_array(data, **kwargs)
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(180.0 * values, no_data)
 
 
 def decode_phidp2(data, **kwargs):
     """Decode `DB_PHIDP2`.
 
-    See 4.4.29 p.80
+    See 4.4.27 p.81
     """
-    return 360.0 * decode_array(data, **kwargs)
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(360.0 * values, no_data)
 
 
 def decode_sqi(data, **kwargs):
     """Decode `DB_SQI`
 
-    See 4.4.41 p.83
+    See 4.4.39 p.84
     """
-    return np.sqrt(decode_array(data, **kwargs))
+    values, no_data = _decode_linear(data, **kwargs)
+    return _masked(np.sqrt(values), no_data)
 
 
 def decode_time(data):
@@ -289,7 +362,7 @@ def decode_string(data):
 SINT1 = {"fmt": "b", "dtype": "int8"}
 SINT2 = {"fmt": "h", "dtype": "int16"}
 SINT4 = {"fmt": "i", "dtype": "int32"}
-UINT1 = {"fmt": "B", "dtype": "unit8"}
+UINT1 = {"fmt": "B", "dtype": "uint8"}
 UINT2 = {"fmt": "H", "dtype": "uint16"}
 UINT4 = {"fmt": "I", "dtype": "uint32"}
 FLT4 = {"fmt": "f", "dtype": "float32"}
@@ -468,6 +541,7 @@ def _get_iris_memmap_handle(filename):
 
 
 def _check_iris_file(filename):
+    filename = _fspath(filename)
     with _get_iris_memmap_handle(filename) as fh:
         head = _unpack_dictionary(fh[0:LEN_STRUCTURE_HEADER], STRUCTURE_HEADER, False)
         structure_identifier = STRUCTURE_HEADER_IDENTIFIERS[
@@ -688,7 +762,7 @@ NDOP_PSI_STRUCT = OrderedDict(
 )
 
 # ndop_results Struct
-# 4.3.20, page 35
+# 4.3.21, page 35
 NDOP_RESULTS = OrderedDict(
     [
         ("velocity_east", UINT2),
@@ -1751,7 +1825,7 @@ STRUCTURE_HEADER_FORMAT_VERSION = OrderedDict(
 )
 
 # Sigmet data types
-# 4.9 Constants, Table 17
+# 4.9 Constants, Table 18, page 99
 
 SIGMET_DATA_TYPES = OrderedDict(
     [
@@ -1764,7 +1838,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBT",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected H reflectivity (1 byte)
@@ -1774,7 +1848,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZ",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Velocity (1 byte)
@@ -1794,7 +1868,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_WIDTH",
                 "dtype": "uint8",
                 "func": decode_width,
-                "fkw": {"scale": 256.0},
+                "fkw": {"scale": 256.0, "mask": 0.0},
             },
         ),
         # Differential reflectivity (1 byte)
@@ -1804,7 +1878,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDR",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 16.0, "offset": -128.0},
+                "fkw": {"scale": 16.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # Old Rainfall rate (stored as dBZ), not used
@@ -1816,7 +1890,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZC",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Uncorrected reflectivity (2 byte)
@@ -1826,7 +1900,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBT2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Corrected reflectivity (2 byte)
@@ -1836,7 +1910,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZ2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Velocity (2 byte)
@@ -1846,7 +1920,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_VEL2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Width (2 byte)
@@ -1856,7 +1930,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_WIDTH2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0},
+                "fkw": {"scale": 100.0, "mask": 0.0},
             },
         ),
         # Differential reflectivity (2 byte)
@@ -1866,7 +1940,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDR2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Rainfall rate (2 byte)
@@ -1876,7 +1950,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RAINRATE2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 10000.0, "offset": -1.0, "tofloat": True},
+                "fkw": {"scale": 10000.0, "offset": -1.0, "tofloat": True, "mask": 0.0},
             },
         ),
         # Kdp (specific differential phase)(1 byte)
@@ -1888,7 +1962,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_KDP2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # PHIdp (differential phase)(1 byte)
@@ -1898,7 +1972,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIDP",
                 "dtype": "uint8",
                 "func": decode_phidp,
-                "fkw": {"scale": 254.0, "offset": -1},
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Corrected Velocity (1 byte)
@@ -1907,13 +1981,11 @@ SIGMET_DATA_TYPES = OrderedDict(
             {
                 "name": "DB_VELC",
                 "dtype": "uint8",
+                # 4.4.42: +/- 75 m/s with 128 as zero velocity, one step size
+                # on both sides as in DB_VEL; raw 254 is +74.4 m/s, not the
+                # +75.0 of the guide's table (#477)
                 "func": decode_array,
-                "fkw": {
-                    "offset": -1,
-                    "scale": 253.0 / 150,
-                    "offset2": -75,
-                    "mask": 0.0,
-                },
+                "fkw": {"scale": 127 / 75.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # SQI (1 byte)
@@ -1923,7 +1995,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SQI",
                 "dtype": "uint8",
                 "func": decode_sqi,
-                "fkw": {"scale": 253.0, "offset": -1},
+                "fkw": {"scale": 253.0, "offset": -1, "mask": 0.0},
             },
         ),
         # RhoHV(0) (1 byte)
@@ -1933,7 +2005,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOHV",
                 "dtype": "uint8",
                 "func": decode_sqi,
-                "fkw": {"scale": 253.0, "offset": -1},
+                "fkw": {"scale": 253.0, "offset": -1, "mask": 0.0},
             },
         ),
         # RhoHV(0) (2 byte)
@@ -1943,7 +2015,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOHV2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Fully corrected reflectivity (2 byte)
@@ -1953,7 +2025,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZC2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Corrected Velocity (2 byte)
@@ -1963,7 +2035,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_VELC2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # SQI (2 byte)
@@ -1973,7 +2045,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SQI2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # PHIdp (differential phase)(2 byte)
@@ -1983,7 +2055,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIDP2",
                 "dtype": "uint16",
                 "func": decode_phidp2,
-                "fkw": {"scale": 65534.0, "offset": -1.0},
+                "fkw": {"scale": 65534.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # LDR H to V (1 byte)
@@ -1993,7 +2065,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRH",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0},
+                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0, "mask": 0.0},
             },
         ),
         # LDR H to V (2 byte)
@@ -2003,7 +2075,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRH2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # LDR V to H (1 byte)
@@ -2013,7 +2085,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRV",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0},
+                "fkw": {"scale": 5.0, "offset": -1.0, "offset2": -45.0, "mask": 0.0},
             },
         ),
         # LDR V to H (2 byte)
@@ -2023,7 +2095,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LDRV2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Individual flag bits for each bin
@@ -2039,7 +2111,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_HEIGHT",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 10.0, "offset": -1.0},
+                "fkw": {"scale": 10.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Linear liquid (.001mm) (2 byte)
@@ -2049,7 +2121,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_VIL2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 1000.0, "offset": -1.0},
+                "fkw": {"scale": 1000.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Data type is not applicable
@@ -2059,9 +2131,9 @@ SIGMET_DATA_TYPES = OrderedDict(
             35,
             {
                 "name": "DB_SHEAR",
-                "dtype": "int8",
+                "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 5.0, "offset": -128.0},
+                "fkw": {"scale": 5.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # Divergence (.001 10**-4) (2-byte)
@@ -2109,7 +2181,15 @@ SIGMET_DATA_TYPES = OrderedDict(
             },
         ),
         # Horizontal velocity (.01 m/s) (2-byte)
-        (42, {"name": "DB_HVEL2", "func": decode_array, "fkw": {"scale": 100.0}}),
+        (
+            42,
+            {
+                "name": "DB_HVEL2",
+                "dtype": "int16",
+                "func": decode_array,
+                "fkw": {"scale": 100.0},
+            },
+        ),
         # Horizontal wind direction (.1 degree) (2-byte)
         (
             43,
@@ -2137,7 +2217,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_TIME2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 60.0, "offset": -32768},
+                "fkw": {"scale": 60.0, "offset": -32768, "mask": 0.0},
             },
         ),
         # Rho H to V (1 byte)
@@ -2147,7 +2227,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOH",
                 "dtype": "uint8",
                 "func": decode_sqi,
-                "fkw": {"scale": 253.0, "offset": -1},
+                "fkw": {"scale": 253.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Rho H to V (2 byte)
@@ -2157,7 +2237,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOH2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Rho V to H (1 byte)
@@ -2167,7 +2247,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOV",
                 "dtype": "uint8",
                 "func": decode_sqi,
-                "fkw": {"scale": 253.0, "offset": -1},
+                "fkw": {"scale": 253.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Rho V to H (2 byte)
@@ -2177,11 +2257,19 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_RHOV2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Phi H to V (1 byte)
-        (50, {"name": "DB_PHIH", "dtype": "uint8", "func": decode_phidp}),
+        (
+            50,
+            {
+                "name": "DB_PHIH",
+                "dtype": "uint8",
+                "func": decode_phidp,
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
+            },
+        ),
         # Phi H to V (2 byte)
         (
             51,
@@ -2189,11 +2277,19 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIH2",
                 "dtype": "uint16",
                 "func": decode_phidp2,
-                "fkw": {"scale": 65534.0, "offset": -1.0},
+                "fkw": {"scale": 65534.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Phi V to H (1 byte)
-        (52, {"name": "DB_PHIV", "dtype": "uint8", "func": decode_phidp}),
+        (
+            52,
+            {
+                "name": "DB_PHIV",
+                "dtype": "uint8",
+                "func": decode_phidp,
+                "fkw": {"scale": 254.0, "offset": -1, "mask": 0.0},
+            },
+        ),
         # Phi V to H (2 byte)
         (
             53,
@@ -2201,7 +2297,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PHIV2",
                 "dtype": "uint16",
                 "func": decode_phidp2,
-                "fkw": {"scale": 65534.0, "offset": -1.0},
+                "fkw": {"scale": 65534.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # User type, unspecified data (2 byte)
@@ -2217,7 +2313,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDRC",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 16.0, "offset": -128.0},
+                "fkw": {"scale": 16.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # Corrected Differential reflectivity (2 byte)
@@ -2227,13 +2323,18 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_ZDRC2",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Temperature (2 byte)
         (59, {"name": "DB_TEMPERATURE16", "dtype": "uint16", "func": None}),
         # Vertically Integrated Reflectivity (2 byte)
         (60, {"name": "DB_VIR16", "dtype": "uint16", "func": None}),
+        # The V and E reflectivity types (DB_DBTV*, DB_DBZV*, DB_DBTE*, DB_DBZE*)
+        # have no format section in the IRIS Programming Guide. Their raw 0 is
+        # masked from data, not from the guide: on IDEAM volumes it is a
+        # no-data marker that lines up with the no-data bins of DB_DBZ/DB_DBT
+        # (#467).
         # Total V Power (1 byte)
         (
             61,
@@ -2241,7 +2342,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTV8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Total V Power (2 byte)
@@ -2251,7 +2352,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTV16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected V Reflectivity (1 byte)
@@ -2261,7 +2362,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZV8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected V Reflectivity (2 byte)
@@ -2271,7 +2372,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZV16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Signal to Noise ratio (1 byte)
@@ -2302,6 +2403,7 @@ SIGMET_DATA_TYPES = OrderedDict(
         (69, {"name": "DB_VILD16", "dtype": "uint16", "func": None}),
         # Turbulence (2 byte)
         (70, {"name": "DB_TURB16", "dtype": "uint16", "func": None}),
+        # (raw 0 masked from IDEAM data, see DB_DBTV8 above)
         # Total Power Enhanced (via H+V or HV) (1 byte)
         (
             71,
@@ -2309,7 +2411,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTE8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Total Power Enhanced (via H+V or HV) (2 byte)
@@ -2319,7 +2421,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBTE16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected Reflectivity Enhanced (1 byte)
@@ -2329,7 +2431,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZE8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -64.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Clutter Corrected Reflectivity Enhanced (2 byte)
@@ -2339,7 +2441,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_DBZE16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 100.0, "offset": -32768.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Polarimetric meteo index (1 byte)
@@ -2349,7 +2451,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PMI8",
                 "dtype": "uint8",
                 "func": decode_sqi,
-                "fkw": {"scale": 253.0, "offset": -1},
+                "fkw": {"scale": 253.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Polarimetric meteo index (2 byte)
@@ -2359,7 +2461,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_PMI16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # The log receiver signal-to-noise ratio (1 byte)
@@ -2409,7 +2511,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CCOR8",
                 "dtype": "uint8",
                 "func": decode_sqi,
-                "fkw": {"scale": 253.0, "offset": -1},
+                "fkw": {"scale": 253.0, "offset": -1, "mask": 0.0},
             },
         ),
         # Cross correlation, uncorrected rhohv (2 byte)
@@ -2419,7 +2521,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CCOR16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 65536.0, "offset": -1.0},
+                "fkw": {"scale": 65533.0, "offset": -1.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zh (1 byte)
@@ -2955,6 +3057,7 @@ class IrisFile(IrisFileBase, IrisStructureHeader):
         self._debug = kwargs.get("debug", False)
         self._rawdata = kwargs.get("rawdata", False)
         self._loaddata = kwargs.get("loaddata", True)
+        filename = _fspath(filename)
         self._fp = None
         self._filename = filename
         if isinstance(filename, str):
@@ -3177,30 +3280,19 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
             except ValueError:
                 data = data.view(dtype)
             if prod["func"] in [decode_vel, decode_width, decode_kdp]:
-                # wavelength is normally used from product_hdr
-                # wavelength = self.product_hdr['product_end']['wavelength']
-                # but we can retrieve it from TASK_MISC_INFO, too
-                wavelength = self.ingest_header["task_configuration"]["task_misc_info"][
-                    "wavelength"
-                ]
+                # ingest data files take wavelength and PRF from the task
+                # configuration (RAW products: product_end)
+                task = self.ingest_header["task_configuration"]
+                wavelength = task["task_misc_info"]["wavelength"]
                 if prod["func"] == decode_kdp:
                     # get wavelength in cm
                     kw.update({"wavelength": wavelength / 100})
                     return prod["func"](data, **kw)
-                # PRF is normally used from product_hdr
-                # prf = self.product_hdr['product_end']['prf']
-                # but we can retrieve it from TASK_DSP_INFO, too
-                prf = self.ingest_header["task_configuration"]["task_dsp_info"]["prf"]
-                # division by 10000 to get from 1/100 cm to m
-                nyquist = wavelength * prf / (10000.0 * 4.0)
-                if prod["func"] == decode_vel:
-                    nyquist *= (
-                        self.ingest_header["task_configuration"]["task_dsp_info"][
-                            "multi_prf_mode_flag"
-                        ]
-                        + 1
-                    )
-                kw.update({"nyquist": nyquist})
+                dsp_info = task["task_dsp_info"]
+                kw.update(
+                    nyquist=_nyquist(wavelength, dsp_info["prf"]),
+                    multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
+                )
 
             return prod["func"](data, **kw)
         else:
@@ -3757,16 +3849,13 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                     kw.update({"wavelength": wavelength / 100})
                     return prod["func"](data, **kw)
 
-                prf = self.product_hdr["product_end"]["prf"]
-                nyquist = wavelength * prf / (10000.0 * 4.0)
-                if prod["func"] == decode_vel:
-                    nyquist *= (
-                        self.ingest_header["task_configuration"]["task_dsp_info"][
-                            "multi_prf_mode_flag"
-                        ]
-                        + 1
-                    )
-                kw.update({"nyquist": nyquist})
+                dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
+                kw.update(
+                    nyquist=_nyquist(
+                        wavelength, self.product_hdr["product_end"]["prf"]
+                    ),
+                    multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
+                )
 
             return prod["func"](data, **kw)
         elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
@@ -3906,8 +3995,8 @@ class IrisArrayWrapper(BackendArray):
             # read the data and put it into dict
             self.datastore.root.get_moment(self.group, self.name)
             data = self.datastore.ds["sweep_data"][self.name][key]
-        # decoders mask no-data bins (e.g. DB_VEL raw 0), keep them as NaN
-        # instead of losing the mask (#462)
+        # decoders mask no-data bins with NaN under the mask (#467); filling
+        # keeps them NaN even for a decoder that leaves something else (#462)
         return np.ma.filled(data, np.nan)
 
     def __getitem__(self, key):
@@ -3919,7 +4008,7 @@ class IrisArrayWrapper(BackendArray):
         )
 
 
-class IrisStore(AbstractDataStore):
+class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading IRIS sweeps via xradar.
 
     Ported from wradlib.
@@ -4111,6 +4200,23 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
     description = "Open IRIS/Sigmet files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#iris-sigmet-data-i-o"
+    supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """IRIS/Sigmet RAW file (``product_hdr`` structure, RAW product)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes", "file"):
+            return False
+        head = _read_head(filename_or_obj, 2)
+        if head is None or len(head) < 2 or struct.unpack("<h", head)[0] != 27:
+            return False
+        if not isinstance(filename_or_obj, (str, os.PathLike)):
+            return True
+        try:
+            return _check_iris_file(os.fspath(filename_or_obj))[1] is IrisRawFile
+        except (OSError, KeyError, struct.error):
+            # unreadable, or not a known IRIS structure (truncated header,
+            # unknown identifier or product type)
+            return False
 
     def open_dataset(
         self,
@@ -4188,80 +4294,75 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        lock=None,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        sweeps = _resolve_sweeps(sweep, lambda: _get_iris_group_names(filename_or_obj))
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            lock=lock,
+            first_dim=first_dim,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+        )
+
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+IrisBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open an Iris/Sigmet RAW file as a CfRadial2-shaped dict of group datasets.",
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    LOCK_PARAM_DOC,
+)
+IrisBackendEntrypoint.open_datatree.__doc__ = (
+    "Open an Iris/Sigmet RAW file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def open_iris_datatree(filename_or_obj, **kwargs):
     """Open Iris/Sigmet dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_coord : dict, optional
-        Defaults to None, no reindexing. Nested dict with optional keys
-        ``angle`` and ``range`` holding the kwargs for
-        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
-        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
-        direction=1))``. Only invoked if ``decode_coords=True``.
-    reindex_angle : dict, optional
-        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="iris")`` instead.
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    _deprecation_warning("open_iris_datatree", "iris")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{sw}" for sw in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_iris_group_names(filename_or_obj)
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="iris", **kw)
-        for swp in sweeps
-    ]
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return _open_legacy_datatree(IrisBackendEntrypoint, filename_or_obj, kwargs)

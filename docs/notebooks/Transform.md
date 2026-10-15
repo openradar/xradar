@@ -28,7 +28,7 @@ import xradar as xd
 
 ```{code-cell}
 file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-dtree = xd.io.open_cfradial1_datatree(file)
+dtree = xd.open_datatree(file, engine="cfradial1")
 display(dtree)
 ```
 
