@@ -33,6 +33,12 @@ from importlib.metadata import version
 import numpy as np
 import xarray as xr
 
+from ...model import (
+    georeferencing_correction_subgroup,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
+)
+
 #: Per-sweep metadata variables that CfRadial1 stores as scalars (one value
 #: per sweep) rather than along a ray dimension.
 SWEEP_METADATA_VARS = (
@@ -131,6 +137,89 @@ def _sweep_group_names(dtree):
     return [name for name in dtree.groups if "sweep" in name]
 
 
+#: CfRadial2.1 calibration names, as read by xradar (the ones that get the
+#: ``r_calib_`` prefix on export, other names are written back unchanged)
+CALIBRATION_NAMES = {v or k for k, v in radar_calibration_subgroup.items()}
+
+#: CfRadial version written by the exporter (#388)
+CFRADIAL1_VERSION = "1.4"
+
+#: instrument_parameters sub-convention variables (CfRadial 1.4, Section 5.1)
+INSTRUMENT_PARAMETERS = {
+    "frequency",
+    "follow_mode",
+    "pulse_width",
+    "prt_mode",
+    "prt",
+    "prt_ratio",
+    "polarization_mode",
+    "nyquist_velocity",
+    "unambiguous_range",
+    "n_samples",
+    "rx_range_resolution",
+    "prt_sequence",
+    "polarization_sequence",
+    "radar_measured_sky_noise",
+    "radar_measured_cold_noise",
+    "radar_measured_hot_noise",
+}
+
+#: radar_parameters sub-convention variables (CfRadial 1.4, Section 5.2),
+#: including the CfRadial1 aliases xradar reads
+RADAR_PARAMETERS = set(radar_parameters_subgroup) | {
+    "radar_measured_transmit_power_h",
+    "radar_measured_transmit_power_v",
+}
+
+#: geometry_correction sub-convention variables (CfRadial 1.4, Section 5.7),
+#: including the CfRadial2.1 names xradar uses internally
+GEOMETRY_CORRECTION = set(georeferencing_correction_subgroup)
+
+#: sub-conventions (CfRadial 1.4, Section 3), in the order they are listed in
+#: ``Conventions``
+SUB_CONVENTIONS = [
+    "instrument_parameters",
+    "radar_parameters",
+    "lidar_parameters",
+    "radar_calibration",
+    "lidar_calibration",
+    "platform_velocity",
+    "geometry_correction",
+]
+
+
+def _meta_group(name):
+    """Return the CfRadial1 sub-convention (``meta_group``) of a variable."""
+    if name in INSTRUMENT_PARAMETERS:
+        return "instrument_parameters"
+    if name in GEOMETRY_CORRECTION:
+        return "geometry_correction"
+    if name.startswith("r_calib_"):
+        return "radar_calibration"
+    if name in RADAR_PARAMETERS:
+        return "radar_parameters"
+    return None
+
+
+def _add_meta_groups(ds):
+    """Tag sub-convention variables with ``meta_group``, return the groups used."""
+    groups = set()
+    # coordinates too, e.g. frequency
+    for name, var in ds.variables.items():
+        # the specification decides for known variables, otherwise keep a
+        # meta_group from the source (e.g. Radx) if it names a sub-convention
+        group = _meta_group(name) or var.attrs.get("meta_group")
+        # radar_calibration needs the r_calib dimension (Section 5.4.1), so
+        # r_calib_index alone does not make a radar_calibration sub-convention
+        if group == "radar_calibration" and "r_calib" not in ds.dims:
+            var.attrs.pop("meta_group", None)
+            continue
+        if group in SUB_CONVENTIONS:
+            var.attrs["meta_group"] = group
+            groups.add(group)
+    return [group for group in SUB_CONVENTIONS if group in groups]
+
+
 def _map_radar_calibration(calib_ds):
     """
     Map calibration parameters to the CfRadial1 ``r_calib_*`` layout.
@@ -149,7 +238,12 @@ def _map_radar_calibration(calib_ds):
     renamed_vars = {}
     for name in calib_ds.data_vars:
         data_array = calib_ds[name]
-        renamed_vars["r_calib_" + name] = xr.DataArray(
+        # unknown names were kept as they are on read, write them back unchanged
+        if name in CALIBRATION_NAMES:
+            cf1_name = "r_calib_" + name
+        else:
+            cf1_name = name
+        renamed_vars[cf1_name] = xr.DataArray(
             data=data_array.data[np.newaxis, ...],
             dims=["r_calib"] + list(data_array.dims),
             coords={"r_calib": [0]},
@@ -247,9 +341,12 @@ def _combine_sweeps(dtree, dim0=None):
         if not np.allclose(rng, longest[: rng.size]):
             raise xr.MergeError(
                 "CfRadial1 export requires the same range gate geometry "
-                "(first gate and gate spacing) in all sweeps. Use "
-                "`xradar.util.reindex_range` to bring the sweeps onto one range "
-                "before exporting."
+                "(first gate and gate spacing) in all sweeps. The sweeps can be "
+                "reindexed onto one range with `xradar.util.reindex_range` (or "
+                "`reindex_coord=dict(range=dict(...))` when opening), but that "
+                "takes the nearest gate without averaging: gates are dropped or "
+                "repeated, and gates farther than half a gate spacing from the "
+                "new grid are filled with NaN."
             )
         # snap onto one range coordinate, the outer join below is exact
         sweep_datasets[i] = sweep_ds.assign_coords(
@@ -436,19 +533,31 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     # unpack n_points, which isn't written (#416).
     cfradial1_ds = cfradial1_ds.drop_vars(RAGGED_LAYOUT_VARS, errors="ignore")
 
+    # The optional groups of data read from a file hold copies of latitude,
+    # longitude and altitude (own or inherited from the root). They are in the
+    # dataset from the root already, merging them raised a MergeError for data
+    # read with ``optional_groups=True`` from a written CfRadial1 file.
+    station = ["latitude", "longitude", "altitude"]
+
     # Handle calibration parameters
     if calibs and "radar_calibration" in dtree:
-        calib_ds = _map_radar_calibration(dtree["radar_calibration"].to_dataset())
-        cfradial1_ds.update(calib_ds)
+        calib_ds = _map_radar_calibration(
+            dtree["radar_calibration"].to_dataset(inherit=False)
+        )
+        cfradial1_ds.update(calib_ds.drop_vars(station, errors="ignore"))
 
     # Add additional parameters if they exist in dtree
     if "radar_parameters" in dtree:
-        radar_params = dtree["radar_parameters"].to_dataset().reset_coords()
-        cfradial1_ds.update(radar_params)
+        radar_params = dtree["radar_parameters"].to_dataset(inherit=False)
+        cfradial1_ds.update(
+            radar_params.drop_vars(station, errors="ignore").reset_coords()
+        )
 
     if "georeferencing_correction" in dtree:
-        radar_georef = dtree["georeferencing_correction"].to_dataset().reset_coords()
-        cfradial1_ds.update(radar_georef)
+        radar_georef = dtree["georeferencing_correction"].to_dataset(inherit=False)
+        cfradial1_ds.update(
+            radar_georef.drop_vars(station, errors="ignore").reset_coords()
+        )
 
     # CfRadial1 stores strings as char arrays; unicode/object strings would be
     # written as NC_STRING, which e.g. Py-ART can't read (#417)
@@ -460,8 +569,11 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     }
     # netCDF attributes can't be bool, CfRadial uses "true"/"false" (#418)
     cfradial1_ds = _encode_bool_attrs(cfradial1_ds)
-    cfradial1_ds.attrs["Conventions"] = "Cf/Radial"
-    cfradial1_ds.attrs["version"] = "1.2"
+    # CfRadial 1.4 (Section 4.1): "Cf/Radial" plus the sub-conventions used,
+    # whose variables carry a ``meta_group`` attribute (Section 5) (#388)
+    sub_conventions = _add_meta_groups(cfradial1_ds)
+    cfradial1_ds.attrs["Conventions"] = " ".join(["Cf/Radial", *sub_conventions])
+    cfradial1_ds.attrs["version"] = CFRADIAL1_VERSION
     if "n_gates_vary" in cfradial1_ds.attrs:
         cfradial1_ds.attrs["n_gates_vary"] = "false"
     xradar_version = version("xradar")

@@ -33,10 +33,39 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 from importlib.metadata import version
 
+import numpy as np
 import xarray as xr
 
 from ...model import conform_cfradial2_sweep_group
 from ...util import has_import
+from .cfradial1 import _encode_bool_attrs
+
+
+def _resolve_attrs_encoding(ds):
+    """Make the time ``units`` and ``calendar`` consistent so the netCDF writer
+    accepts them.
+
+    Data read back from a CfRadial2 file keeps the ``units`` of decoded times in
+    the encoding, while xradar's own metadata may also set them as attributes
+    (and some readers, e.g. UF, only set them as attributes on decoded times).
+    xarray refuses to write both, so a second export of data read back from a
+    file would fail. The encoding wins, as it describes how the stored values
+    are decoded.
+
+    Note
+    ----
+    This works around backends that don't follow the internal standard (units in
+    the encoding of decoded times). It can go once all backends conform.
+    """
+    ds = ds.copy()
+    for var in ds.variables.values():
+        for key in ("units", "calendar"):
+            if key in var.attrs and var.dtype.kind in "mM":
+                # decoded times: the writer wants the units in the encoding
+                var.encoding.setdefault(key, var.attrs[key])
+            if key in var.attrs and key in var.encoding:
+                del var.attrs[key]
+    return ds
 
 
 def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
@@ -90,7 +119,31 @@ def to_cfradial2(dtree, filename, engine=None, timestep=None, deepcopy=False):
                 )
             )
 
+    # netCDF attributes can't be bool, and attributes must not clash with the
+    # encoding of the variables (data read back from a CfRadial2 file)
+    for node in dtree.subtree:
+        node.dataset = _encode_bool_attrs(
+            _resolve_attrs_encoding(node.to_dataset(inherit=False))
+        )
+
     root = dtree["/"]
+    # CfRadial2 lists the names of the sweep groups in sweep_group_name, some
+    # readers fill it with the sweep numbers
+    sweep_names = [name for name in dtree.children if name.startswith("sweep_")]
+    sweep_names.sort(key=lambda x: int(x.split("_", 1)[1]) if x[6:].isdigit() else 0)
+    if (
+        "sweep_group_name" in root.dataset
+        and root.dataset["sweep_group_name"].dtype.kind not in "USO"
+    ):
+        group_names = root.dataset["sweep_group_name"]
+        if group_names.size == len(sweep_names):
+            root.dataset = root.dataset.assign(
+                sweep_group_name=xr.DataArray(
+                    np.array(sweep_names, dtype=str),
+                    dims=group_names.dims,
+                    attrs=group_names.attrs,
+                )
+            )
     # fix Conventions
     root.attrs["Conventions"] = "Cf/Radial"
     root.attrs["version"] = "2.0"

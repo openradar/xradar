@@ -440,3 +440,219 @@ def test_cfradial1_export_drops_sweep_group_name(hpl_file, tmp_path):
         assert "sweep_group_name" not in nc.variables
     with xd.open_datatree(outfile, engine="cfradial1") as back:
         assert len(list(back.match("sweep_*"))) == nsweeps
+
+
+@pytest.mark.parametrize(
+    "engine, fixture", [("cfradial1", "cfradial1_file"), ("odim", "odim_file")]
+)
+def test_cfradial1_export_repeated_with_optional_groups(
+    engine, fixture, request, tmp_path
+):
+    # data read with optional_groups=True from a file written by xradar can be
+    # exported again, and the groups survive any number of round trips
+    filename = request.getfixturevalue(fixture)
+    groups = ("radar_parameters", "radar_calibration", "georeferencing_correction")
+    with xd.open_datatree(filename, engine=engine, optional_groups=True) as source:
+        current = source
+        trees = []
+        for i in range(3):
+            outfile = tmp_path / f"optional_{i}.nc"
+            xd.io.to_cfradial1(current, outfile)
+            current = xd.open_datatree(
+                outfile, engine="cfradial1", optional_groups=True
+            )
+            trees.append(current)
+    try:
+        for tree in trees:
+            assert all(group in tree.children for group in groups)
+        for first, second in zip(trees[:-1], trees[1:]):
+            assert list(first.subtree_with_keys) and [
+                p for p, _ in first.subtree_with_keys
+            ] == [p for p, _ in second.subtree_with_keys]
+            for (_, node1), (_, node2) in zip(
+                first.subtree_with_keys, second.subtree_with_keys
+            ):
+                ds1 = node1.to_dataset(inherit=False).load()
+                ds2 = node2.to_dataset(inherit=False).load()
+                for ds in (ds1, ds2):
+                    ds.attrs.pop("history", None)
+                xr.testing.assert_identical(ds1, ds2)
+    finally:
+        for tree in trees:
+            tree.close()
+
+
+def test_cfradial1_export_version_and_sub_conventions(cfradial1_file, tmp_path):
+    # CfRadial 1.4: "Cf/Radial" plus the sub-conventions used, whose variables
+    # carry a meta_group attribute (#388)
+    import netCDF4
+
+    path = tmp_path / "cf14.nc"
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as nc:
+        assert nc.version == "1.4"
+        conventions = nc.Conventions.split()
+        assert conventions[0] == "Cf/Radial"
+        groups = {
+            nc[v].meta_group for v in nc.variables if "meta_group" in nc[v].ncattrs()
+        }
+        assert set(conventions[1:]) == groups
+        assert {
+            "instrument_parameters",
+            "radar_parameters",
+            "radar_calibration",
+            "geometry_correction",
+        } <= groups
+        assert nc["prt_mode"].meta_group == "instrument_parameters"
+        assert nc["r_calib_index"].meta_group == "radar_calibration"
+        assert "meta_group" not in nc["DBZ"].ncattrs()
+
+
+@pytest.mark.parametrize(
+    "optional_groups, calibs",
+    [(False, True), (True, False)],
+    ids=["default", "no-calibs"],
+)
+def test_cfradial1_export_without_calibration(cfradial1_file, optional_groups, calibs):
+    # without r_calib variables there is no r_calib dimension, so r_calib_index
+    # is kept untagged and radar_calibration is not listed (#388)
+    with xd.io.open_cfradial1_datatree(
+        cfradial1_file, optional_groups=optional_groups
+    ) as dtree:
+        ds = cf1_export._build_cfradial1_dataset(dtree, calibs=calibs)
+    assert "meta_group" not in ds["r_calib_index"].attrs
+    assert "radar_calibration" not in ds.attrs["Conventions"].split()
+
+
+def test_cfradial1_meta_groups():
+    # tags follow CfRadial 1.4 Section 5, not the variable name prefix, and
+    # only sub-conventions of the specification go into Conventions (#388)
+    ds = xr.Dataset(
+        {
+            "radar_measured_sky_noise": ((), 1.0),
+            "radar_beam_width_h": ((), 1.0),
+            "radar_echo_class": ((), 1.0),
+            "custom": ((), 1.0, {"meta_group": "not_a_sub_convention"}),
+        },
+        coords={"frequency": ("frequency", [2.8e9])},
+    )
+    groups = cf1_export._add_meta_groups(ds)
+    assert groups == ["instrument_parameters", "radar_parameters"]
+    assert ds["radar_measured_sky_noise"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["frequency"].attrs["meta_group"] == "instrument_parameters"
+    assert ds["radar_beam_width_h"].attrs["meta_group"] == "radar_parameters"
+    assert "meta_group" not in ds["radar_echo_class"].attrs
+
+
+def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
+    # radar_parameters, radar_calibration and georeferencing_correction are
+    # written with the names of the CfRadial 1.4 tables (Sections 5.2, 5.4 and
+    # 5.7), not with the aliases other software uses (Radx: radar_rx_bandwidth,
+    # r_calib_base_dbz_1km_hc, altitude_correction, eastward_velocity_correction;
+    # the reader accepts both) (#419)
+    import netCDF4
+
+    path = tmp_path / "metadata_groups.nc"
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
+
+    aliases = {
+        "radar_receiver_bandwidth": "radar_rx_bandwidth",
+        "r_calib_base_1km_hc": "r_calib_base_dbz_1km_hc",
+        "radar_altitude_correction": "altitude_correction",
+        "eastward_ground_speed_correction": "eastward_velocity_correction",
+    }
+    with netCDF4.Dataset(cfradial1_file) as src, netCDF4.Dataset(path) as out:
+        for table_name, alias in aliases.items():
+            assert alias in src.variables  # the file uses the aliases
+            assert table_name in out.variables
+            assert alias not in out.variables
+            np.testing.assert_allclose(out[table_name][:], src[alias][:])
+
+    # the written file reads back to the same names
+    with xd.io.open_cfradial1_datatree(path, optional_groups=True) as back:
+        assert "radar_receiver_bandwidth" in back["radar_parameters"].ds
+        assert "base_1km_hc" in back["radar_calibration"].ds
+        assert "radar_altitude_correction" in back["georeferencing_correction"].ds
+
+
+def test_cfradial1_unknown_calibration_names(tmp_path):
+    # variables on the r_calib dimension with non-standard names must not
+    # break reading the radar_calibration group and keep their names on
+    # export (#419)
+    import netCDF4
+
+    filename = DATASETS.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
+    path = tmp_path / "unknown_calibration.nc"
+    with xd.io.open_cfradial1_datatree(filename, optional_groups=True) as dtree:
+        assert "calibration_constant_hh" in dtree["radar_calibration"].ds
+        xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as out:
+        assert "calibration_constant_hh" in out.variables
+        assert "r_calib_calibration_constant_hh" not in out.variables
+
+
+@pytest.mark.parametrize(
+    "names, expected",
+    [
+        (
+            ["r_calib_receiver_mismatch_loss_h", "r_calib_receiver_mismatch_loss_v"],
+            ["receiver_mismatch_loss_h", "receiver_mismatch_loss_v"],
+        ),
+        (["r_calib_noise_hc", "noise_hc_offset"], ["noise_hc", "noise_hc_offset"]),
+    ],
+)
+def test_cfradial1_calibration_names_exact_match(names, expected):
+    # calibration names are matched exactly, not as substrings (#419)
+    from xradar.io.backends.cfradial1 import _get_radar_calibration
+
+    ds = xr.Dataset({name: ("r_calib", [1.0]) for name in names})
+    calib = _get_radar_calibration(ds)
+    assert sorted(calib.data_vars) == expected
+
+
+def test_cfradial1_export_split_cuts(nexradlevel2_file, tmp_path):
+    # NEXRAD split cuts: same elevation, different moments; combining the
+    # per-sweep metadata conflicted on sweep_number (#418)
+    dtree = xd.io.open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
+    # bool attributes are handled separately (#423)
+    dtree.attrs = {
+        k: v for k, v in dtree.attrs.items() if not isinstance(v, (bool, np.bool_))
+    }
+    assert "VRADH" not in dtree["sweep_0"].ds and "VRADH" in dtree["sweep_1"].ds
+    path = tmp_path / "split_cuts.nc"
+    xd.io.to_cfradial1(dtree, path)
+    back = xd.io.open_cfradial1_datatree(path, first_dim="time")
+    for i, sweep in enumerate(["sweep_0", "sweep_1"]):
+        src = dtree[sweep].ds.sortby("time")
+        out = back[sweep].ds
+        assert int(out.sweep_number) == i
+        assert float(out.sweep_fixed_angle) == float(src.sweep_fixed_angle)
+        np.testing.assert_array_equal(
+            out.DBZH.values[:, : src.sizes["range"]], src.DBZH.values
+        )
+    np.testing.assert_array_equal(
+        back["sweep_1"].ds.VRADH.values[:, : dtree["sweep_1"].ds.sizes["range"]],
+        dtree["sweep_1"].ds.sortby("time").VRADH.values,
+    )
+
+
+def test_cfradial1_export_range_geometry(gamic_file, tmp_path):
+    # sweeps with different gate spacing can't share one range coordinate,
+    # CfRadial 1.4 section 2.5 asks for one geometry, the message points to
+    # reindexing and says what that does
+    dtree = xd.io.open_gamic_datatree(gamic_file)
+    with pytest.raises(ValueError, match="gate geometry.*nearest gate") as err:
+        xd.io.to_cfradial1(dtree, tmp_path / "gamic.nc")
+    assert "reindex_range" in str(err.value)
+
+    dtree = xd.io.open_gamic_datatree(
+        gamic_file,
+        reindex_coord=dict(
+            range=dict(start_range=75.0, stop_range=150000.0, range_res=150.0)
+        ),
+    )
+    xd.io.to_cfradial1(dtree, tmp_path / "gamic.nc")
+    back = xd.io.open_cfradial1_datatree(tmp_path / "gamic.nc")
+    np.testing.assert_allclose(back["sweep_9"].ds.range.diff("range"), 150.0)
