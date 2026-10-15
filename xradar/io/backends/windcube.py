@@ -76,6 +76,8 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _external_stacklevel,
+    _input_kind,
+    _read_nc_header,
     _resolve_sweeps,
 )
 
@@ -469,6 +471,16 @@ class WindCubeBackendEntrypoint(BackendEntrypoint):
     description = "Open Vaisala WindCube lidar NetCDF-4 files in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#windcube"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """WindCube NetCDF-4 file (root ``title`` with "WindCube": "WindCube data",
+        older files "Leosphere Windcube data")."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return "windcube" in str(header[0].get("title", "")).lower()
 
     def open_dataset(
         self,

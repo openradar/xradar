@@ -22,6 +22,7 @@ Xarray Backends
 .. automodule:: xradar.io.backends.metek
 .. automodule:: xradar.io.backends.uf
 .. automodule:: xradar.io.backends.imd
+.. automodule:: xradar.io.backends.discover
 .. automodule:: xradar.io.backends.windcube
 
 """
@@ -39,6 +40,7 @@ from .datamet import *  # noqa
 from .metek import *  # noqa
 from .uf import *  # noqa
 from .imd import *  # noqa
+from .discover import *  # noqa
 from .windcube import *  # noqa
 
 __all__ = [s for s in dir() if not s.startswith("_")]

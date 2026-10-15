@@ -478,8 +478,22 @@ def test_open_windcube_time_reference(windcube_file_old):
         assert dtree["sweep_0"].ds.time.values[0] == expected
 
 
-def test_windcube_entrypoint_has_no_guess_can_open():
-    # the engine is chosen explicitly; guessing would have to open every file
-    assert WindCubeBackendEntrypoint.guess_can_open is (
-        xr.backends.BackendEntrypoint.guess_can_open
-    )
+def test_windcube_guess_can_open(windcube_file, windcube_file_old, tmp_path):
+    entrypoint = WindCubeBackendEntrypoint()
+    assert entrypoint.guess_can_open(windcube_file)
+    # the title of older files is "Leosphere Windcube data"
+    assert entrypoint.guess_can_open(windcube_file_old)
+    with open(windcube_file, "rb") as fh:
+        assert entrypoint.guess_can_open(fh)
+        assert fh.tell() == 0
+    assert xd.io.discover_engine(windcube_file) == "windcube"
+
+    # other NetCDF-4/HDF5, text and unreadable input are not claimed
+    other = tmp_path / "other.nc"
+    xr.Dataset({"a": 1}).to_netcdf(other, engine="h5netcdf")
+    text = tmp_path / "other.txt"
+    text.write_text("no netcdf")
+    truncated = tmp_path / "truncated.nc"
+    truncated.write_bytes(windcube_file.read_bytes()[:2000])
+    for filename in (other, text, truncated, tmp_path / "missing.nc", 12345):
+        assert not entrypoint.guess_can_open(filename)
