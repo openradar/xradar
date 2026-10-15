@@ -1,16 +1,59 @@
 #!/usr/bin/env python
-# Copyright (c) 2022-2025, openradar developers.
+# Copyright (c) 2022-2026, openradar developers.
 # Distributed under the MIT License. See LICENSE for more info.
+import contextlib
 import os.path
+import shutil
 import uuid
 
 import pytest
+from filelock import FileLock
 from open_radar_data import DATASETS
+
+
+# silence FutureWarning
+def pytest_configure(config):
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:`open_.*_datatree` is deprecated:FutureWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:.*is incomplete and is padded to a full angle grid:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:CfRadial2 sweep groups were renumbered:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:All sweeps are incomplete:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:Dropped \d+ incomplete sweep:UserWarning",
+    )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:Rays might miss on beginning:UserWarning",
+    )
 
 
 @pytest.fixture(params=["file", "filelike"])
 def file_or_filelike(request):
     return request.param
+
+
+@pytest.fixture
+def closing():
+    """Close every dataset or tree passed through it when the test ends.
+
+    Leaked files are otherwise closed by the garbage collector at an arbitrary
+    point, which can crash HDF5 while another file is being opened (#502).
+    Usage: ``dtree = closing(xd.open_datatree(...))``.
+    """
+    with contextlib.ExitStack() as stack:
+        yield stack.enter_context
 
 
 @pytest.fixture(scope="session")
@@ -20,7 +63,51 @@ def cfradial1_sgp_file():
 
 @pytest.fixture(scope="session")
 def cfradial1_file(tmp_path_factory):
-    return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+    """Safely fetch the dataset across multiple xdist workers using a lock."""
+    shared_dir = tmp_path_factory.getbasetemp().parent
+    lockfile = shared_dir / "fetch_cfradial1.lock"
+
+    # synchronize the download/cache-check across workers
+    with FileLock(str(lockfile)):
+        return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+
+
+@pytest.fixture(scope="session")
+def _cfradial2_source(cfradial1_file, tmp_path_factory):
+    """Round-trip a cfradial1 file through to_cfradial2 to get a real CfRadial2 file."""
+    import xradar as xd
+
+    # shared tmp directory for file and lockfile
+    tmp_dir = tmp_path_factory.mktemp("cfradial2")
+
+    # identical file paths for all workers
+    outfile = tmp_dir / "sample_cfradial2.nc"
+    lockfile = tmp_dir / "sample_cfradial2.nc.lock"
+
+    # synchronize worker execution
+    with FileLock(str(lockfile)):
+        if not outfile.is_file():
+            # first worker generates the file; close the source right away
+            # instead of leaving it open for the whole session (#502)
+            with xd.io.open_cfradial1_datatree(
+                cfradial1_file, first_dim="time"
+            ) as dtree:
+                xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
+
+    return str(outfile)
+
+
+@pytest.fixture
+def cfradial2_file(_cfradial2_source, tmp_path):
+    """A private copy of the CfRadial2 file for every test.
+
+    Tests share no path, so a handle that is still alive from an earlier test
+    (or waiting for garbage collection) can't meet the next open of the same
+    file, which crashes netCDF4/HDF5 with xarray 2026.9.0 (pydata/xarray#11692).
+    """
+    path = tmp_path / "sample_cfradial2.nc"
+    shutil.copyfile(_cfradial2_source, path)
+    return str(path)
 
 
 @pytest.fixture(scope="session")
