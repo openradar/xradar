@@ -66,9 +66,11 @@ from .common import (
     _deprecation_warning,
     _fspath,
     _get_reindex_coord,
+    _input_kind,
     _ManagedStoreMixin,
     _open_legacy_datatree,
     _open_sweeps,
+    _read_head,
     _resolve_sweeps,
 )
 
@@ -552,6 +554,13 @@ class HPLBackendEntrypoint(BackendEntrypoint):
     description = "Backend for reading Halo Photonics Doppler lidar processed data"
     url = "https://xradar.rtfd.io/en/latest/io.html#metek"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """Halo Photonics ``.hpl`` (text header starting with ``Filename:``)."""
+        if _input_kind(filename_or_obj) not in ("path", "text"):
+            return False
+        head = _read_head(filename_or_obj, 64)
+        return head is not None and head.startswith(b"Filename:")
 
     def open_dataset(
         self,

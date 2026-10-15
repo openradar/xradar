@@ -73,7 +73,9 @@ from .common import (
     _compose_docstring,
     _get_reindex_coord,
     _get_subgroup,
+    _input_kind,
     _keep_close,
+    _read_nc_header,
     _resolve_single_sweep,
 )
 
@@ -438,6 +440,15 @@ class IMDBackendEntrypoint(BackendEntrypoint):
     # `xr.open_datatree(file, engine="imd")` to materialize the synthetic
     # `/` + `/sweep_0` CfRadial2 layout from the single-sweep file.
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """IMD IRIS-netCDF file (``radialAzim`` and ``elevationAngle``)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return {"radialAzim", "elevationAngle"}.issubset(header[1])
 
     def open_dataset(
         self,
