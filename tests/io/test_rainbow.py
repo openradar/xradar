@@ -8,14 +8,17 @@ Ported from wradlib.
 """
 
 import datetime
+import warnings
 import zlib
 from io import BytesIO
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import xmltodict
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends import open_rainbow_datatree, rainbow
 
 
@@ -292,3 +295,155 @@ def test_rainbow_pathlib(rainbow_file):
         pathlib.Path(rainbow_file), engine="rainbow", group="sweep_0"
     ) as ds:
         assert ds.sizes["range"] == 400
+
+
+@pytest.mark.parametrize(
+    "fixture, sweep, expected",
+    [
+        # Rainbow 5.36: beam width from sensorinfo, radar constants per pulse
+        # width ("77.20 74.09 71.03" with pw_index 1), nothing else
+        (
+            "rainbow_file",
+            0,
+            dict(
+                radar_beam_width_h=1.326,
+                radar_beam_width_v=1.326,
+                radar_constant_h=74.09,
+                radar_constant_v=74.26,
+            ),
+        ),
+        # Rainbow 5.59, slices 0-5 (PRF 500/600 Hz)
+        (
+            "rainbow_file2",
+            0,
+            dict(
+                radar_beam_width_h=0.97,
+                radar_beam_width_v=0.96,
+                radar_antenna_gain_h=45.31,
+                radar_antenna_gain_v=45.19,
+                radar_receiver_bandwidth=600e3,
+                radar_constant_h=66.467,
+                radar_constant_v=66.686,
+                xmit_power_h=83.35920,  # 216.7286 kW in dBm
+                xmit_power_v=83.41547,  # 219.5568 kW
+            ),
+        ),
+        # slices 6-10 (PRF 1200 Hz): +3.01 dB and twice the bandwidth, as the
+        # pulse width is halved
+        (
+            "rainbow_file2",
+            6,
+            dict(
+                radar_beam_width_h=0.97,
+                radar_beam_width_v=0.96,
+                radar_antenna_gain_h=45.31,
+                radar_antenna_gain_v=45.19,
+                radar_receiver_bandwidth=1.2e6,
+                radar_constant_h=69.477,
+                radar_constant_v=69.696,
+                xmit_power_h=83.35920,
+                xmit_power_v=83.41547,
+            ),
+        ),
+    ],
+    ids=["5.36", "5.59-slice0", "5.59-slice6"],
+)
+def test_rainbow_slice_metadata(fixture, sweep, expected, request, closing):
+    filename = request.getfixturevalue(fixture)
+    dtree = closing(
+        xd.open_datatree(filename, engine="rainbow", sweep=sweep, optional_groups=True)
+    )
+    found = {
+        **{k: float(v) for k, v in dtree["radar_parameters"].ds.data_vars.items()},
+        **{k: float(v) for k, v in dtree["radar_calibration"].ds.data_vars.items()},
+    }
+    assert set(found) == set(expected)
+    for name, value in expected.items():
+        np.testing.assert_allclose(found[name], value, rtol=1e-6, err_msg=name)
+    # the values are no attributes of the root or the sweeps
+    assert not set(expected) & set(dtree.attrs)
+    assert not set(expected) & set(dtree["sweep_0"].attrs)
+
+
+def test_rainbow_slice_metadata_differs_between_slices(rainbow_file2, closing):
+    # the calibration changes with the pulse width: the groups hold the values of
+    # the first selected slice, and a warning names the ones that differ
+    with pytest.warns(UserWarning, match="radar_parameters values differ") as record:
+        dtree = closing(
+            xd.open_datatree(
+                rainbow_file2, engine="rainbow", sweep=[6, 0], optional_groups=True
+            )
+        )
+    messages = " ".join(str(w.message) for w in record)
+    assert "radar_receiver_bandwidth" in messages
+    assert "radar_constant_h, radar_constant_v" in messages
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 69.477)
+    np.testing.assert_allclose(
+        dtree["radar_parameters"].ds.radar_receiver_bandwidth, 1.2e6
+    )
+    # slices which agree do not warn
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        closing(
+            xd.open_datatree(
+                rainbow_file2, engine="rainbow", sweep=[0, 1], optional_groups=True
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "index", "expected"),
+    [
+        ("66.467", 0, 66.467),
+        ("77.20 74.09 71.03", 2, 71.03),
+        # no value for that pulse width: none, not the last one
+        ("66.467", 1, None),
+        ("77.20 74.09 71.03", 5, None),
+        (None, 0, None),
+        ("n/a", 0, None),
+        ("", 0, None),
+    ],
+)
+def test_rainbow_get_float(value, index, expected):
+    assert rainbow._get_float(value, index) == expected
+
+
+class _StubStore(rainbow.RainbowStore):
+    """Store on a given header, without a file."""
+
+    def __init__(self, slc, pargroup=None, sensorinfo=None):
+        self._group = 0
+        self._stub = SimpleNamespace(
+            slices=[slc],
+            header={"scan": {} if pargroup is None else {"pargroup": pargroup}},
+            sensorinfo=sensorinfo,
+        )
+
+    @property
+    def root(self):
+        return self._stub
+
+
+def test_rainbow_store_metadata_edge_cases():
+    # no pargroup, the slice has the values
+    store = _StubStore({"spbhorbeam": "0.9", "spbverbeam": "0", "rxbandwidth": "0"})
+    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 0.9}
+    # a slice key without value falls back on the pargroup, 0 is "not set"
+    store = _StubStore({"spbantgain": None}, pargroup={"spbantgain": "45.3"})
+    assert dict(store.get_radar_parameters()) == {"radar_antenna_gain_h": 45.3}
+    # a missing beam width falls back on sensorinfo
+    store = _StubStore({}, sensorinfo={"beamwidth": "1.3"})
+    assert dict(store.get_radar_parameters()) == {
+        "radar_beam_width_h": 1.3,
+        "radar_beam_width_v": 1.3,
+    }
+    # not positive transmitter power: no value (and no NaN with a warning)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        store = _StubStore({"gdrx5txpowkwh": "-5", "gdrx5txpowkwv": "0"})
+        assert dict(store.get_calibration_parameters()) == {}
+    # the radar constant of the pulse width, none if there is no such value
+    store = _StubStore({"rspdphradconst": "77.2 74.1", "pw_index": "1"})
+    assert dict(store.get_calibration_parameters()) == {"radar_constant_h": 74.1}
+    store = _StubStore({"rspdphradconst": "77.2", "pw_index": "1"})
+    assert dict(store.get_calibration_parameters()) == {}

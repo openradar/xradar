@@ -602,6 +602,38 @@ class RainbowArrayWrapper(BackendArray):
         )
 
 
+# Rainbow slice (or pargroup) values mapped to the CfRadial 2.1 names of
+# radar_parameters (Section 7.1) and radar_calibration (Section 7.3), without a
+# public format description: only what is clear from names and values.
+# rainbow name: (xradar name, factor); 0 is "not set" for these and left out.
+_RAINBOW_PARAMETERS = {
+    "spbhorbeam": ("radar_beam_width_h", 1),  # degrees
+    "spbverbeam": ("radar_beam_width_v", 1),
+    "spbantgain": ("radar_antenna_gain_h", 1),  # dB
+    "spbdpvantgain": ("radar_antenna_gain_v", 1),
+    "rxbandwidth": ("radar_receiver_bandwidth", 1),  # Hz (s-1)
+}
+# radar constants (dB), one per pulse width: the one of the slice's `pw_index`
+_RAINBOW_RADAR_CONSTANTS = {
+    "rspdphradconst": "radar_constant_h",
+    "rspdpvradconst": "radar_constant_v",
+}
+# transmitter power in kW, as dBm
+_RAINBOW_TX_POWER = {"gdrx5txpowkwh": "xmit_power_h", "gdrx5txpowkwv": "xmit_power_v"}
+
+
+def _get_float(value, index=0):
+    """Float from a Rainbow header value, which may hold several values.
+
+    Returns ``None`` if the value is missing, no number or has no value at
+    ``index``.
+    """
+    try:
+        return float(str(value).split()[index])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading RAINBOW5 sweeps via wradlib."""
 
@@ -798,6 +830,40 @@ class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     def get_attrs(self):
         return FrozenDict()
 
+    def _slice_value(self, name, index=0):
+        """Value of the slice, or of the ``pargroup`` if the slice has none."""
+        value = self.root.slices[self._group].get(name)
+        if value is None:
+            value = self.root.header["scan"].get("pargroup", {}).get(name)
+        return _get_float(value, index)
+
+    def get_radar_parameters(self):
+        """Beam widths, antenna gains and receiver bandwidth of the slice, with
+        their xradar names. The beam width falls back on ``sensorinfo``."""
+        parameters = {}
+        for name, (xradar_name, factor) in _RAINBOW_PARAMETERS.items():
+            value = self._slice_value(name)
+            if value is None and xradar_name.startswith("radar_beam_width"):
+                value = _get_float((self.root.sensorinfo or {}).get("beamwidth"))
+            if value is not None and value > 0:
+                parameters[xradar_name] = value * factor
+        return FrozenDict(parameters)
+
+    def get_calibration_parameters(self):
+        """Radar constants (of the pulse width of the slice) and transmitter
+        power of the slice, with their xradar names."""
+        calibration = {}
+        pw_index = int(self._slice_value("pw_index") or 0)
+        for name, xradar_name in _RAINBOW_RADAR_CONSTANTS.items():
+            value = self._slice_value(name, pw_index)
+            if value is not None and np.isfinite(value):
+                calibration[xradar_name] = value
+        for name, xradar_name in _RAINBOW_TX_POWER.items():
+            value = self._slice_value(name)
+            if value is not None and value > 0:
+                calibration[xradar_name] = float(10 * np.log10(value * 1e6))
+        return FrozenDict(calibration)
+
 
 class RainbowBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Rainbow5 data."""
@@ -874,6 +940,8 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_radar_parameters())
+        ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works
         ds._close = store.close
