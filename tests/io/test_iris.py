@@ -850,6 +850,7 @@ def test_snr16_on_the_test_file(iris1_file):
     (#475)."""
     with open_dataset(iris1_file, engine="iris", group="sweep_0") as ds:
         snr, dbz = ds.SNRH.values, ds.DBZH.values
+        assert ds.SNRH.attrs["units"] == "dB"
     assert -60 < np.nanmin(snr) < np.nanmax(snr) < 75
     assert np.isnan(snr).any()
     assert not (np.isnan(snr) & ~np.isnan(dbz)).any()
