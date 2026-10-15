@@ -881,3 +881,23 @@ def test_snr16_on_the_test_file(iris1_file):
     assert -60 < np.nanmin(snr) < np.nanmax(snr) < 75
     assert np.isnan(snr).any()
     assert not (np.isnan(snr) & ~np.isnan(dbz)).any()
+
+
+def test_snr8_matches_reflectivity_on_arouca(iris_arouca_file):
+    """IRIS computes DBZ = C + SNR + 20 log10(r) + gas * r, so the 1-byte
+    SNR scale (N - 64) / 2 must close that equation to within the rounding
+    of two 0.5 dB values for almost all bins (#475)."""
+    with iris.IrisRawFile(iris_arouca_file, loaddata=False) as raw:
+        task = raw.ingest_header["task_configuration"]
+    cal = task["task_calib_info"]["calibration_reflectivity"] / 16
+    gas = task["task_dsp_info"]["gas_attenuation"] / 1e5  # dB/km
+    with open_dataset(iris_arouca_file, engine="iris", group="sweep_0") as ds:
+        snr, dbz = ds.SNRH.values, ds.DBZH.values
+        r = ds.range.values / 1000.0
+    ok = ~np.isnan(snr) & ~np.isnan(dbz)
+    resid = (dbz - snr - 20 * np.log10(r) - gas * r - cal)[ok]
+    # 7882 bins, median -0.01, 97 % within 0.5 dB; main's (N - 63) / 2
+    # gives median -0.51 and 46 %
+    assert resid.size > 5000
+    assert np.abs(np.median(resid)) < 0.05
+    assert np.mean(np.abs(resid) <= 0.5) > 0.95
