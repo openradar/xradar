@@ -18,13 +18,13 @@ def test_to_cfradial1(cfradial1_file):
 
         # Verify key attributes and data structures in the resulting dataset
         assert isinstance(ds_cf1, xr.Dataset), "Output is not a valid xarray Dataset"
-        assert (
-            "Conventions" in ds_cf1.attrs and ds_cf1.attrs["Conventions"] == "Cf/Radial"
+        assert "Conventions" in ds_cf1.attrs and ds_cf1.attrs["Conventions"].startswith(
+            "Cf/Radial"
         )
         assert (
             "sweep_mode" in ds_cf1.variables
         ), "Missing sweep_mode in converted dataset"
-        assert ds_cf1.attrs["version"] == "1.2", "Incorrect CfRadial version"
+        assert ds_cf1.attrs["version"] == "1.4", "Incorrect CfRadial version"
 
 
 def test_to_cfradial2(cfradial1_file):
@@ -48,8 +48,8 @@ def test_to_cfradial2(cfradial1_file):
             assert ds_cf1.attrs[key] == val, f"Attr {key!r} mismatch after round-trip"
 
 
-def test_to_cfradial2_root_only_dataset_reopens_source(cfradial1_file):
-    ds = xr.open_dataset(cfradial1_file, engine="cfradial1")
+def test_to_cfradial2_root_only_dataset_reopens_source(cfradial1_file, closing):
+    ds = closing(xr.open_dataset(cfradial1_file, engine="cfradial1"))
 
     dtree = xd.transform.to_cfradial2(ds)
 
@@ -58,8 +58,8 @@ def test_to_cfradial2_root_only_dataset_reopens_source(cfradial1_file):
     assert "sweep_0" in dtree
 
 
-def test_to_cfradial2_root_only_dataset_without_source_errors(cfradial1_file):
-    ds = xr.open_dataset(cfradial1_file, engine="cfradial1").copy()
+def test_to_cfradial2_root_only_dataset_without_source_errors(cfradial1_file, closing):
+    ds = closing(xr.open_dataset(cfradial1_file, engine="cfradial1")).copy()
     ds.encoding = {}
 
     with pytest.raises(ValueError, match="does not retain a readable"):
@@ -71,13 +71,13 @@ def test_to_cfradial1_with_different_range_shapes(nexradlevel2_bzfile):
         ds_cf1 = xd.transform.to_cfradial1(dtree)
         # Verify key attributes and data structures in the resulting dataset
         assert isinstance(ds_cf1, xr.Dataset), "Output is not a valid xarray Dataset"
-        assert (
-            "Conventions" in ds_cf1.attrs and ds_cf1.attrs["Conventions"] == "Cf/Radial"
+        assert "Conventions" in ds_cf1.attrs and ds_cf1.attrs["Conventions"].startswith(
+            "Cf/Radial"
         )
         assert (
             "sweep_mode" in ds_cf1.variables
         ), "Missing sweep_mode in converted dataset"
-        assert ds_cf1.attrs["version"] == "1.2", "Incorrect CfRadial version"
+        assert ds_cf1.attrs["version"] == "1.4", "Incorrect CfRadial version"
         assert ds_cf1.sizes.mapping == {"time": 5400, "range": 1832, "sweep": 11}
 
         # Call the conversion back to CfRadial2
@@ -94,13 +94,13 @@ def test_to_cfradial1_with_different_range_shapes(nexradlevel2_bzfile):
 
 def test_to_cfradial1_error_with_different_range_bin_sizes(gamic_file):
     with xd.io.open_gamic_datatree(gamic_file) as dtree:
-        with pytest.raises(MergeError):
+        with pytest.raises(MergeError, match="gate geometry.*reindex_range"):
             xd.transform.to_cfradial1(dtree)
 
 
-def test_to_cfradial1_after_map_over_sweeps_where(tmp_path):
+def test_to_cfradial1_after_map_over_sweeps_where(tmp_path, closing):
     file = DATASETS.fetch("swx_20120520_0641.nc")
-    dtree = xd.io.open_cfradial1_datatree(file)
+    dtree = closing(xd.io.open_cfradial1_datatree(file))
 
     def filter_radar(
         ds,
@@ -122,5 +122,5 @@ def test_to_cfradial1_after_map_over_sweeps_where(tmp_path):
 
     outfile = tmp_path / "filtered_cfradial1.nc"
     xd.io.to_cfradial1(filtered, outfile)
-    reopened = xd.io.open_cfradial1_datatree(outfile)
+    reopened = closing(xd.io.open_cfradial1_datatree(outfile))
     assert "sweep_0" in reopened

@@ -32,7 +32,7 @@ filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
 ```
 
 ```{code-cell}
-radar = xd.io.open_cfradial1_datatree(filename, first_dim="auto")
+radar = xd.open_datatree(filename, engine="cfradial1", first_dim="auto")
 display(radar)
 ```
 
