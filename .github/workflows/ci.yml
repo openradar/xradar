@@ -15,11 +15,11 @@ jobs:
     name: lint and style checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Install dependencies
@@ -36,6 +36,8 @@ jobs:
   build_0:
     name: xradar unit tests - linux
     runs-on: ubuntu-latest
+    # a hang fails the job instead of holding it for GitHub's 6 hours
+    timeout-minutes: 30
     needs: [lint]
     defaults:
       run:
@@ -45,19 +47,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
-        numpy-version: ["1", "2"]
-        exclude:
-          - python-version: "3.13"
-            numpy-version: "1"
+        python-version: ["3.12", "3.13", "3.14"]
+        numpy-version: ["2"]
 
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
         persist-credentials: false
     - name: Install micromamba environment
-      uses: mamba-org/setup-micromamba@b09ef9b599704322748535812ca03efb2625677b  # v2.0.5
+      uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
       with:
           environment-name: xradar-unit-tests
           environment-file: ${{env.CONDA_ENV_FILE}}
@@ -72,12 +71,12 @@ jobs:
         python -m pip install . --no-deps
     - name: Version Info
       run: |
-        python -c "import xradar; print(xradar.version.version)"
+        python -c "import xradar, xarray; print(xradar.version.version, xarray.__version__)"
     - name: Test with pytest
       run: |
         pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24  # v5.4.3
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         files: ./coverage_unit.xml
         flags: unittests
@@ -89,6 +88,8 @@ jobs:
   build_1:
     name: xradar notebook tests - linux
     runs-on: ubuntu-latest
+    # a hang fails the job instead of holding it for GitHub's 6 hours
+    timeout-minutes: 30
     needs: [lint]
     defaults:
       run:
@@ -101,12 +102,12 @@ jobs:
         python-version: ["3.13"]
         numpy-version: ["2"]
     steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
         persist-credentials: false
     - name: Install micromamba environment
-      uses: mamba-org/setup-micromamba@b09ef9b599704322748535812ca03efb2625677b  # v2.0.5
+      uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
       with:
           environment-name: xradar-notebook-tests
           environment-file: ${{env.CONDA_ENV_FILE}}
@@ -126,7 +127,7 @@ jobs:
       run: |
         pytest -n auto --dist loadscope --verbose --durations=15 --cov-report xml:coverage_notebook.xml --cov=xradar --pyargs docs/notebooks
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24  # v5.4.3
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         files: ./coverage_notebook.xml
         flags: notebooktests
@@ -138,6 +139,8 @@ jobs:
   build_2:
     name: xarray nightly tests - linux
     runs-on: ubuntu-latest
+    # a hang fails the job instead of holding it for GitHub's 6 hours
+    timeout-minutes: 30
     needs: [ lint ]
     continue-on-error: true
     defaults:
@@ -149,12 +152,12 @@ jobs:
         python-version: [ "3.13" ]
         numpy-version: [ "2" ]
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Install micromamba environment
-        uses: mamba-org/setup-micromamba@b09ef9b599704322748535812ca03efb2625677b  # v2.0.5
+        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
         with:
           environment-name: xradar-unit-tests
           cache-environment: true
@@ -163,6 +166,7 @@ jobs:
             python=${{matrix.python-version}}
             cmweather
             dask
+            filelock
             fsspec
             h5netcdf
             h5py
@@ -207,12 +211,12 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Install dependencies
@@ -226,13 +230,13 @@ jobs:
           python -m build
           cp dist/xradar*.gz xradar1.gz
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: xradar-1-${{github.event.number}}
           path: xradar1.gz
       - name: Upload to TestPyPI (Trusted Publisher)
         if: ${{ github.event_name == 'push' }}
-        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist
@@ -245,12 +249,12 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Install dependencies
@@ -262,7 +266,7 @@ jobs:
           python -m build
           cp dist/xradar*.gz dist/xradar0.gz
       - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: xradar-0-${{github.event.number}}
           path: dist/xradar0.gz

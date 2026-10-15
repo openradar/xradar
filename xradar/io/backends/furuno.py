@@ -46,18 +46,19 @@ from collections import OrderedDict
 
 import lat_lon_parser
 import numpy as np
-import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -67,22 +68,29 @@ from ...model import (
     get_time_attrs,
     moment_attrs,
     radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
+    REINDEX_PARAMS_DOC,
     SINT2,
     SINT4,
+    SITE_COORDS_PARAM_DOC,
     UINT1,
     UINT2,
     UINT4,
+    _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
+    _build_groups_dict,
     _calculate_angle_res,
+    _compose_docstring,
+    _deprecation_warning,
+    _fspath,
     _get_fmt_string,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _get_reindex_coord,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _open_sweeps,
+    _resolve_single_sweep,
     _unpack_dictionary,
 )
 
@@ -305,6 +313,7 @@ class FurunoFile:
         self._loaddata = kwargs.get("loaddata", True)
         self._obsmode = kwargs.get("obsmode", None)
         self._fp = None
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             if filename.endswith(".gz"):
@@ -535,7 +544,7 @@ class FurunoArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class FurunoStore(AbstractDataStore):
+class FurunoStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading Furuno sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
@@ -707,6 +716,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
     description = "Open FURUNO (.scn, .scnx) in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#furuno-binary-data"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -721,6 +731,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         decode_timedelta=None,
         group=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -754,10 +765,9 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "furuno"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -779,58 +789,81 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+        obsmode=None,
+    ):
+        sweeps = _resolve_single_sweep(sweep, "Furuno")
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            first_dim=first_dim,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+            obsmode=obsmode,
+        )
+
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+_FURUNO_PARAMS_DOC = """
+    obsmode : int or None, optional
+        Override the file's observation-mode flag (rare; only needed for
+        files written by older firmware). Defaults to ``None``.
+"""
+
+FurunoBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a Furuno SCN or SCNX file as a CfRadial2-shaped dict of group datasets.",
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _FURUNO_PARAMS_DOC,
+)
+FurunoBackendEntrypoint.open_datatree.__doc__ = (
+    "Open a Furuno SCN or SCNX file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def open_furuno_datatree(filename_or_obj, **kwargs):
     """Open FURUNO dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="furuno")`` instead.
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    kwargs["backend_kwargs"] = backend_kwargs
+    _deprecation_warning("open_furuno_datatree", "furuno")
 
-    ls_ds = [xr.open_dataset(filename_or_obj, engine="furuno", **kwargs)]
-
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return _open_legacy_datatree(FurunoBackendEntrypoint, filename_or_obj, kwargs)
