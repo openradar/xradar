@@ -251,10 +251,15 @@ def get_x_y_z_tree(
     """
     for key in list(radar.children):
         if "sweep" in key:
-            radar[key].ds = get_x_y_z(
-                radar[key].to_dataset(inherit="all_coords"),
+            node = radar[key]
+            # the new dataset has no close; keep the node's, so that closing
+            # the tree still closes the file (#471, #502)
+            close = node._close
+            node.ds = get_x_y_z(
+                node.to_dataset(inherit="all_coords"),
                 earth_radius=earth_radius,
                 effective_radius_fraction=effective_radius_fraction,
                 target_crs=target_crs,
             )
+            node.set_close(close)
     return radar

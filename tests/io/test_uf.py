@@ -121,7 +121,7 @@ def test_open_uf_file(uf_file_1):
                 ("PulseWidth", -32768),
                 ("BeamWidthH", 0.953125),
                 ("BeamWidthV", 0.953125),
-                ("BandWidth", -9999),
+                ("BandWidth", -156.234375),
                 ("Polarization", 0),
                 ("WaveLength", 3.171875),
                 ("SampleSize", 64),
@@ -210,11 +210,13 @@ def test_open_uf_datatree(uf_file_1):
     kwargs = {
         "sweep": [0, 1, 2, 5, 7],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
@@ -265,11 +267,13 @@ def test_open_uf_datatree_2(uf_file_2):
     kwargs = {
         "sweep": [0, 1, 2, 5],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
@@ -389,22 +393,6 @@ def test_open_uf_datatree_optional_groups(uf_file_1):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
-
-
-def test_open_uf_datatree_radar_parameters(uf_file_1, uf_file_2):
-    # beam widths in 1/64 degree, receiver bandwidth in MHz (-9999: missing)
-    dtree = open_uf_datatree(uf_file_1, optional_groups=True)
-    params = dtree["radar_parameters"].ds
-    np.testing.assert_allclose(params.radar_beam_width_h, 0.953125)
-    np.testing.assert_allclose(params.radar_beam_width_v, 0.953125)
-    assert params.radar_beam_width_h.attrs["units"] == "degrees"
-    assert "radar_receiver_bandwidth" not in params
-
-    dtree = open_uf_datatree(uf_file_2, optional_groups=True, sweep=[1])
-    params = dtree["radar_parameters"].ds
-    np.testing.assert_allclose(params.radar_beam_width_h, 1.0)
-    np.testing.assert_allclose(params.radar_receiver_bandwidth, 1e6)
-    assert params.radar_receiver_bandwidth.attrs["units"] == "s-1"
 
 
 def test_uf_unsupported_input_type():

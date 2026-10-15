@@ -17,4 +17,79 @@ Radar Data IO
 from .backends import *  # noqa
 from .export import *  # noqa
 
+from .backends.cfradial1 import CfRadial1BackendEntrypoint
+from .backends.cfradial2 import CfRadial2BackendEntrypoint
+from .backends.datamet import DataMetBackendEntrypoint
+from .backends.furuno import FurunoBackendEntrypoint
+from .backends.gamic import GamicBackendEntrypoint
+from .backends.hpl import HPLBackendEntrypoint
+from .backends.imd import IMDBackendEntrypoint
+from .backends.iris import IrisBackendEntrypoint
+from .backends.metek import MRRBackendEntrypoint
+from .backends.nexrad_level2 import NexradLevel2BackendEntrypoint
+from .backends.odim import OdimBackendEntrypoint
+from .backends.rainbow import RainbowBackendEntrypoint
+from .backends.uf import UFBackendEntrypoint
+from xarray import open_datatree as _xr_open_datatree
+
+#: Registry mapping engine names to backend classes that support groups.
+_ENGINE_REGISTRY = {
+    "odim": OdimBackendEntrypoint,
+    "cfradial1": CfRadial1BackendEntrypoint,
+    "cfradial2": CfRadial2BackendEntrypoint,
+    "nexradlevel2": NexradLevel2BackendEntrypoint,
+    "gamic": GamicBackendEntrypoint,
+    "iris": IrisBackendEntrypoint,
+    "furuno": FurunoBackendEntrypoint,
+    "rainbow": RainbowBackendEntrypoint,
+    "datamet": DataMetBackendEntrypoint,
+    "hpl": HPLBackendEntrypoint,
+    "metek": MRRBackendEntrypoint,
+    "uf": UFBackendEntrypoint,
+    "imd": IMDBackendEntrypoint,
+}
+
+
+def open_datatree(filename_or_obj, *, engine, **kwargs):
+    """Open a radar file as :py:class:`xarray.DataTree` using the specified engine.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path, or file-like
+        Path to the radar file.
+    engine : str
+        Backend engine name (e.g., ``"odim"``, ``"cfradial1"``, ``"nexradlevel2"``).
+    **kwargs
+        Keyword arguments for :py:func:`xarray.open_datatree`: xarray options
+        such as ``chunks`` or ``cache``, and the backend options documented on
+        the engine's ``open_groups_as_dict`` (``sweep``, ``first_dim``, ...).
+
+    Returns
+    -------
+    dtree : xarray.DataTree
+        DataTree with CfRadial2 group structure.
+
+    Examples
+    --------
+    >>> import xradar as xd
+    >>> dtree = xd.open_datatree("file.h5", engine="odim")
+    """
+    if engine not in _ENGINE_REGISTRY:
+        supported = ", ".join(sorted(_ENGINE_REGISTRY))
+        raise ValueError(f"Unknown engine {engine!r}. Supported engines: {supported}")
+    return _xr_open_datatree(filename_or_obj, engine=_ENGINE_REGISTRY[engine], **kwargs)
+
+
+def list_engines():
+    """Return a sorted list of engine names registered with :func:`open_datatree`.
+
+    Examples
+    --------
+    >>> import xradar as xd
+    >>> "odim" in xd.io.list_engines()
+    True
+    """
+    return sorted(_ENGINE_REGISTRY)
+
+
 __all__ = [s for s in dir() if not s.startswith("_")]

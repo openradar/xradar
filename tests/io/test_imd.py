@@ -27,8 +27,8 @@ def test_imd_mapping_is_cfradial2():
     assert imd_mapping["HCLASS"] == "HCLASS"
 
 
-def test_open_dataset_imd(imd_file):
-    ds = open_dataset(imd_file, engine="imd")
+def test_open_dataset_imd(imd_file, closing):
+    ds = closing(open_dataset(imd_file, engine="imd"))
     # CfRadial2 sweep-level scalars are present
     assert "sweep_number" in ds.variables
     assert "sweep_mode" in ds.variables
@@ -55,13 +55,13 @@ def test_open_dataset_imd(imd_file):
     ds.close()
 
 
-def test_open_dataset_imd_first_dim_time(imd_file):
-    ds = open_dataset(imd_file, engine="imd", first_dim="time")
+def test_open_dataset_imd_first_dim_time(imd_file, closing):
+    ds = closing(open_dataset(imd_file, engine="imd", first_dim="time"))
     assert "time" in ds.dims
 
 
-def test_open_imd_datatree_single_file(imd_file):
-    dtree = open_imd_datatree(imd_file)
+def test_open_imd_datatree_single_file(imd_file, closing):
+    dtree = closing(open_imd_datatree(imd_file))
     assert isinstance(dtree, DataTree)
     assert "/" in [n.path for n in dtree.subtree]
     assert "sweep_0" in dtree.children
@@ -77,8 +77,8 @@ def test_open_imd_datatree_single_file(imd_file):
     assert set(sw0.data_vars) & {"DBZH", "VRADH", "DBTH", "WRADH"}
 
 
-def test_open_imd_datatree_volume(imd_volume_files):
-    dtree = open_imd_datatree(imd_volume_files)
+def test_open_imd_datatree_volume(imd_volume_files, closing):
+    dtree = closing(open_imd_datatree(imd_volume_files))
     assert isinstance(dtree, DataTree)
     sweep_groups = [k for k in dtree.match("sweep_*")]
     assert len(sweep_groups) == len(imd_volume_files)
@@ -90,14 +90,48 @@ def test_open_imd_datatree_volume(imd_volume_files):
         assert int(dtree[sw].ds["sweep_number"].values) == i
 
 
-def test_open_imd_datatree_angle_filter(imd_volume_files):
+def test_xr_open_datatree_imd_engine(imd_file, closing):
+    """End-to-end: `xr.open_datatree(file, engine="imd")` returns a DataTree."""
+    import xarray as xr
+
+    dtree = closing(xr.open_datatree(imd_file, engine="imd"))
+    assert isinstance(dtree, DataTree)
+    assert "sweep_0" in dtree.children
+
+
+def test_xd_open_datatree_imd_engine(imd_file, closing):
+    """End-to-end: `xd.open_datatree(file, engine="imd")` returns a DataTree."""
+    import xradar as xd
+
+    dtree = closing(xd.open_datatree(imd_file, engine="imd"))
+    assert isinstance(dtree, DataTree)
+    assert "sweep_0" in dtree.children
+
+
+def test_open_imd_datatree_no_futurewarning(imd_volume_files, closing):
+    """The multi-file `open_imd_datatree` carve-out must not emit FutureWarning."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        closing(open_imd_datatree(imd_volume_files))
+    future = [
+        w
+        for w in captured
+        if issubclass(w.category, FutureWarning)
+        and "open_imd_datatree" in str(w.message)
+    ]
+    assert future == [], f"open_imd_datatree must not warn: {future}"
+
+
+def test_open_imd_datatree_angle_filter(imd_volume_files, closing):
     """min_angle/max_angle forwarded to util.create_volume."""
     # Load first to learn the actual angles, then filter to just the lowest.
-    dtree = open_imd_datatree(imd_volume_files)
+    dtree = closing(open_imd_datatree(imd_volume_files))
     angles = sorted(float(a) for a in dtree.ds["sweep_fixed_angle"].values)
     cutoff = (angles[0] + angles[1]) / 2  # keep only the first sweep
 
-    filtered = open_imd_datatree(imd_volume_files, max_angle=cutoff)
+    filtered = closing(open_imd_datatree(imd_volume_files, max_angle=cutoff))
     filtered_angles = [float(a) for a in filtered.ds["sweep_fixed_angle"].values]
     assert len(filtered_angles) == 1
     assert filtered_angles[0] <= cutoff
@@ -199,8 +233,8 @@ def test_group_imd_files_from_glob(tmp_path):
     assert len(groups[0]) == 2
 
 
-def test_open_imd_datatree_optional_groups(imd_file):
-    dtree = open_imd_datatree(imd_file, optional_groups=True)
+def test_open_imd_datatree_optional_groups(imd_file, closing):
+    dtree = closing(open_imd_datatree(imd_file, optional_groups=True))
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
@@ -226,17 +260,21 @@ def test_open_imd_datatree_optional_groups(imd_file):
     ), f"expected {expected_cal} in /radar_calibration, got {set(rc.data_vars)}"
 
 
-def test_open_dataset_imd_reindex_angle(imd_file):
+def test_open_dataset_imd_reindex_angle(imd_file, closing):
     """reindex_angle should produce a 360-bin azimuth grid spanning 0-360°."""
-    ds = open_dataset(
-        imd_file,
-        engine="imd",
-        reindex_angle={
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,
-        },
+    ds = closing(
+        open_dataset(
+            imd_file,
+            engine="imd",
+            reindex_coord={
+                "angle": {
+                    "start_angle": 0.0,
+                    "stop_angle": 360.0,
+                    "angle_res": 1.0,
+                    "direction": 1,
+                }
+            },
+        )
     )
     assert ds.sizes["azimuth"] == 360
     az = ds["azimuth"].values
@@ -246,9 +284,9 @@ def test_open_dataset_imd_reindex_angle(imd_file):
     ds.close()
 
 
-def test_open_imd_datatree_has_cfradial2_required_vars(imd_file):
+def test_open_imd_datatree_has_cfradial2_required_vars(imd_file, closing):
     """FM 301 Table 7a: prt_mode and follow_mode are required on each sweep."""
-    dtree = open_imd_datatree(imd_file)
+    dtree = closing(open_imd_datatree(imd_file))
     sw = dtree["sweep_0"].ds
     assert "prt_mode" in sw.variables
     assert "follow_mode" in sw.variables
@@ -256,9 +294,9 @@ def test_open_imd_datatree_has_cfradial2_required_vars(imd_file):
     assert str(sw["follow_mode"].values) == "not_set"
 
 
-def test_open_dataset_imd_fm301_sweep_metadata(imd_file):
+def test_open_dataset_imd_fm301_sweep_metadata(imd_file, closing):
     """FM 301 Tables 7b and 8a: PRT, scan_rate, n_samples on (time,) dim."""
-    ds = open_dataset(imd_file, engine="imd")
+    ds = closing(open_dataset(imd_file, engine="imd"))
     # azimuth/elevation coord attrs match Table 7b
     assert ds["azimuth"].attrs["standard_name"] == "sensor_to_target_azimuth_angle"
     assert ds["azimuth"].attrs["axis"] == "radial_azimuth_coordinate"
@@ -290,18 +328,18 @@ def test_open_dataset_imd_fm301_sweep_metadata(imd_file):
     ds.close()
 
 
-def test_open_imd_datatree_fm301_root_attrs(imd_file):
+def test_open_imd_datatree_fm301_root_attrs(imd_file, closing):
     """FM 301 Table 2: mandatory global attributes."""
-    dtree = open_imd_datatree(imd_file)
+    dtree = closing(open_imd_datatree(imd_file))
     assert dtree.attrs["Conventions"] == "CF-1.8, WMO CF-1.0, ACDD-1.3"
     assert dtree.attrs["wmo__cf_profile"] == "FM 301-XX"
     assert dtree.attrs["platform_is_mobile"] == "false"
     assert dtree.attrs["institution"] == "India Meteorological Department"
 
 
-def test_open_dataset_imd_moment_attrs(imd_file):
+def test_open_dataset_imd_moment_attrs(imd_file, closing):
     """Moments should carry canonical CfRadial2 standard_name/long_name/units."""
-    ds = open_dataset(imd_file, engine="imd")
+    ds = closing(open_dataset(imd_file, engine="imd"))
     for mname in ("DBTH", "DBZH", "VRADH", "WRADH"):
         if mname not in ds.data_vars:
             continue
@@ -323,8 +361,8 @@ def test_open_imd_datatree_empty_list_raises():
         open_imd_datatree([])
 
 
-def test_open_imd_datatree_single_element_list(imd_file):
-    dtree = open_imd_datatree([imd_file])
+def test_open_imd_datatree_single_element_list(imd_file, closing):
+    dtree = closing(open_imd_datatree([imd_file]))
     assert isinstance(dtree, DataTree)
     assert "sweep_0" in dtree.children
 
@@ -334,11 +372,13 @@ def test_read_imd_sweep_reindex_angle(imd_file):
 
     ds = _read_imd_sweep(
         imd_file,
-        reindex_angle={
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,
+        reindex_coord={
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,
+            }
         },
     )
     assert ds.sizes["azimuth"] == 360
@@ -348,11 +388,11 @@ def test_read_imd_sweep_reindex_angle(imd_file):
     assert np.all(np.diff(az) > 0)
 
 
-def test_conform_imd_sweep_prt_mode_fixed(imd_file):
+def test_conform_imd_sweep_prt_mode_fixed(imd_file, closing):
     """When highPRF == lowPRF, prt_mode should be 'fixed'."""
     import xarray as xr
 
-    raw = xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False)
+    raw = closing(xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False))
     if "lowPRF" in raw.variables:
         raw["lowPRF"] = raw["highPRF"]
     ds = _conform_imd_sweep(raw, first_dim="auto", site_as_coords=True)
@@ -360,22 +400,22 @@ def test_conform_imd_sweep_prt_mode_fixed(imd_file):
     raw.close()
 
 
-def test_conform_imd_sweep_prt_mode_not_set(imd_file):
+def test_conform_imd_sweep_prt_mode_not_set(imd_file, closing):
     """When highPRF is missing or zero, prt_mode should be 'not_set'."""
     import xarray as xr
 
-    raw = xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False)
+    raw = closing(xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False))
     raw = raw.drop_vars([v for v in ("highPRF", "lowPRF") if v in raw.variables])
     ds = _conform_imd_sweep(raw, first_dim="auto", site_as_coords=True)
     assert str(ds["prt_mode"].values) == "not_set"
     raw.close()
 
 
-def test_conform_imd_sweep_directly(imd_file):
+def test_conform_imd_sweep_directly(imd_file, closing):
     """_conform_imd_sweep should accept a raw IMD Dataset and produce CfRadial2 layout."""
     import xarray as xr
 
-    raw = xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False)
+    raw = closing(xr.open_dataset(imd_file, engine="netcdf4", decode_timedelta=False))
     ds = _conform_imd_sweep(raw, first_dim="auto", site_as_coords=True)
     assert "sweep_mode" in ds.variables
     assert "sweep_number" in ds.variables

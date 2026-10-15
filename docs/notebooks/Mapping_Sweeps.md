@@ -49,7 +49,7 @@ import xradar as xd
 filename = DATASETS.fetch("sample_sgp_data.nc")
 
 # Open the radar file into a DataTree object
-dtree = xd.io.open_cfradial1_datatree(filename)
+dtree = xd.open_datatree(filename, engine="cfradial1")
 dtree = dtree.xradar.georeference()
 ```
 

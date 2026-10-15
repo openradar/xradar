@@ -29,7 +29,7 @@ import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
 from .transform import to_cfradial1, to_cfradial2
-from .util import map_over_sweeps
+from .util import is_sweep, map_over_sweeps
 
 
 def accessor_constructor(self, xarray_obj):
@@ -175,6 +175,13 @@ class XradarDataSetAccessor(XradarAccessor):
         radar = self.xarray_obj
         return radar.pipe(get_crs)
 
+    def is_sweep(self, strict=False):
+        """Check whether the Dataset holds a radar sweep.
+
+        See :func:`xradar.util.is_sweep`.
+        """
+        return is_sweep(self.xarray_obj, strict=strict)
+
     def to_cfradial2_datatree(self):
         """Convert a CfRadial1 Dataset to CfRadial2 DataTree."""
         return to_cfradial2(self.xarray_obj)
@@ -230,6 +237,13 @@ class XradarDataTreeAccessor(XradarAccessor):
         """
         ds = self.xarray_obj
         return ds.pipe(add_crs_tree)
+
+    def is_sweep(self, strict=False):
+        """Check whether the DataTree node holds a radar sweep.
+
+        See :func:`xradar.util.is_sweep`.
+        """
+        return is_sweep(self.xarray_obj, strict=strict)
 
     def map_over_sweeps(self, func, *args, **kwargs):
         """
