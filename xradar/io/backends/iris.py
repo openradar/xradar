@@ -1981,13 +1981,11 @@ SIGMET_DATA_TYPES = OrderedDict(
             {
                 "name": "DB_VELC",
                 "dtype": "uint8",
+                # 4.4.42: +/- 75 m/s with 128 as zero velocity, one step size
+                # on both sides as in DB_VEL; raw 254 is +74.4 m/s, not the
+                # +75.0 of the guide's table (#477)
                 "func": decode_array,
-                "fkw": {
-                    "offset": -1,
-                    "scale": 253.0 / 150,
-                    "offset2": -75,
-                    "mask": 0.0,
-                },
+                "fkw": {"scale": 127 / 75.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # SQI (1 byte)
