@@ -37,19 +37,20 @@ import sys
 import zlib
 
 import numpy as np
-import xarray as xr
 import xmltodict
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
 from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
-from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -58,16 +59,24 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
+    REINDEX_COORD_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
+    _fspath,
+    _get_reindex_coord,
+    _input_kind,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _open_sweeps,
+    _read_head,
+    _resolve_sweeps,
 )
 
 #: mapping of rainbow moment names to CfRadial2/ODIM names
@@ -415,6 +424,7 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -592,7 +602,39 @@ class RainbowArrayWrapper(BackendArray):
         )
 
 
-class RainbowStore(AbstractDataStore):
+# Rainbow slice (or pargroup) values mapped to the CfRadial 2.1 names of
+# radar_parameters (Section 7.1) and radar_calibration (Section 7.3), without a
+# public format description: only what is clear from names and values.
+# rainbow name: (xradar name, factor); 0 is "not set" for these and left out.
+_RAINBOW_PARAMETERS = {
+    "spbhorbeam": ("radar_beam_width_h", 1),  # degrees
+    "spbverbeam": ("radar_beam_width_v", 1),
+    "spbantgain": ("radar_antenna_gain_h", 1),  # dB
+    "spbdpvantgain": ("radar_antenna_gain_v", 1),
+    "rxbandwidth": ("radar_receiver_bandwidth", 1),  # Hz (s-1)
+}
+# radar constants (dB), one per pulse width: the one of the slice's `pw_index`
+_RAINBOW_RADAR_CONSTANTS = {
+    "rspdphradconst": "radar_constant_h",
+    "rspdpvradconst": "radar_constant_v",
+}
+# transmitter power in kW, as dBm
+_RAINBOW_TX_POWER = {"gdrx5txpowkwh": "xmit_power_h", "gdrx5txpowkwv": "xmit_power_v"}
+
+
+def _get_float(value, index=0):
+    """Float from a Rainbow header value, which may hold several values.
+
+    Returns ``None`` if the value is missing, no number or has no value at
+    ``index``.
+    """
+    try:
+        return float(str(value).split()[index])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading RAINBOW5 sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
@@ -717,23 +759,18 @@ class RainbowStore(AbstractDataStore):
         timestr = f"{dstr}T{tstr}Z"
         time = dt.datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
 
-        # range is in km
-        start_range = self.root._get_rbdict_value(
-            var, "startrange", default=0, dtype=float
-        )
-        start_range *= 1000.0
-
-        stop_range = self.root._get_rbdict_value(var, "stoprange", dtype=float)
-        stop_range *= 1000.0
+        # range is in km, start of the first range bin; the tag is
+        # `start_range`, older files might use `startrange`
+        start_range = self.root._get_rbdict_value(var, "start_range")
+        if start_range is None:
+            start_range = self.root._get_rbdict_value(var, "startrange", default=0)
+        start_range = float(start_range) * 1000.0
 
         range_step = self.root._get_rbdict_value(var, "rangestep", dtype=float)
         range_step *= 1000.0
-        rng = np.arange(
-            start_range + range_step / 2,
-            stop_range + range_step / 2,
-            range_step,
-            dtype="float32",
-        )[: int(var["slicedata"]["rawdata"]["@bins"])]
+        # bin centers
+        nbins = int(var["slicedata"]["rawdata"]["@bins"])
+        rng = (start_range + range_step * (np.arange(nbins) + 0.5)).astype("float32")
 
         range_attrs = get_range_attrs(rng)
 
@@ -793,12 +830,54 @@ class RainbowStore(AbstractDataStore):
     def get_attrs(self):
         return FrozenDict()
 
+    def _slice_value(self, name, index=0):
+        """Value of the slice, or of the ``pargroup`` if the slice has none."""
+        value = self.root.slices[self._group].get(name)
+        if value is None:
+            value = self.root.header["scan"].get("pargroup", {}).get(name)
+        return _get_float(value, index)
+
+    def get_radar_parameters(self):
+        """Beam widths, antenna gains and receiver bandwidth of the slice, with
+        their xradar names. The beam width falls back on ``sensorinfo``."""
+        parameters = {}
+        for name, (xradar_name, factor) in _RAINBOW_PARAMETERS.items():
+            value = self._slice_value(name)
+            if value is None and xradar_name.startswith("radar_beam_width"):
+                value = _get_float((self.root.sensorinfo or {}).get("beamwidth"))
+            if value is not None and value > 0:
+                parameters[xradar_name] = value * factor
+        return FrozenDict(parameters)
+
+    def get_calibration_parameters(self):
+        """Radar constants (of the pulse width of the slice) and transmitter
+        power of the slice, with their xradar names."""
+        calibration = {}
+        pw_index = int(self._slice_value("pw_index") or 0)
+        for name, xradar_name in _RAINBOW_RADAR_CONSTANTS.items():
+            value = self._slice_value(name, pw_index)
+            if value is not None and np.isfinite(value):
+                calibration[xradar_name] = value
+        for name, xradar_name in _RAINBOW_TX_POWER.items():
+            value = self._slice_value(name)
+            if value is not None and value > 0:
+                calibration[xradar_name] = float(10 * np.log10(value * 1e6))
+        return FrozenDict(calibration)
+
 
 class RainbowBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Rainbow5 data."""
 
     description = "Open Rainbow5 files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#rainbow-data-i-o"
+    supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """Rainbow5 file (XML header starting with ``<volume``)."""
+        if _input_kind(filename_or_obj) not in ("path",):
+            return False
+        head = _read_head(filename_or_obj, 64)
+        return head is not None and head.lstrip().startswith(b"<volume")
 
     def open_dataset(
         self,
@@ -812,6 +891,7 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         use_cftime=None,
         decode_timedelta=None,
         group=None,
+        reindex_coord=None,
         reindex_angle=False,
         first_dim="auto",
         site_as_coords=True,
@@ -843,10 +923,9 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "rainbow"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -861,90 +940,72 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_radar_parameters())
+        ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works
         ds._close = store.close
 
         return ds
 
-
-def _get_float(value, index=0):
-    """Get float from Rainbow header value, which may hold several values."""
-    try:
-        values = str(value).split()
-        return float(values[min(index, len(values) - 1)])
-    except (TypeError, ValueError, IndexError):
-        return None
-
-
-def _get_rainbow_metadata_groups(filename, sweep):
-    """Get radar_parameters and radar_calibration from a Rainbow slice.
-
-    Taken from the slice of the given sweep, falling back to ``sensorinfo``
-    for the beam width. Radar constants are given per pulse width, the one
-    of the slice's ``pw_index`` is used.
-    """
-    with RainbowFile(filename, loaddata=False) as fh:
-        slc = fh.slices[int(sweep.split("_")[-1])]
-        sensorinfo = fh.sensorinfo or {}
-        pargroup = fh.pargroup
-
-    def _get(name, index=0):
-        return _get_float(slc.get(name, pargroup.get(name)), index)
-
-    params = {}
-    beamwidth = _get_float(sensorinfo.get("beamwidth"))
-    for pol, name in [("h", "spbhorbeam"), ("v", "spbverbeam")]:
-        value = _get(name)
-        value = beamwidth if value is None else value
-        if value is not None:
-            params[f"radar_beam_width_{pol}"] = (
-                value,
-                dict(
-                    units="degrees", long_name=f"beam width, {pol.upper()} polarization"
-                ),
-            )
-    for pol, name in [("h", "spbantgain"), ("v", "spbdpvantgain")]:
-        value = _get(name)
-        if value is not None:
-            params[f"radar_antenna_gain_{pol}"] = (
-                value,
-                dict(units="dB", long_name=f"antenna gain, {pol.upper()} polarization"),
-            )
-    value = _get("rxbandwidth")
-    if value:
-        params["radar_receiver_bandwidth"] = (
-            value,
-            dict(units="s-1", long_name="bandwidth of radar receiver"),
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        sweeps = _resolve_sweeps(
+            sweep, lambda: _get_rainbow_group_names(filename_or_obj)
         )
 
-    calib = {}
-    pw_index = int(_get("pw_index") or 0)
-    for pol, name in [("h", "rspdphradconst"), ("v", "rspdpvradconst")]:
-        value = _get(name, pw_index)
-        if value is not None:
-            calib[f"radar_constant_{pol}"] = (
-                value,
-                dict(units="dB", long_name=f"radar constant, {pol.upper()} channel"),
-            )
-    for pol in ["h", "v"]:
-        # transmitter power in kW -> dBm
-        value = _get(f"gdrx5txpowkw{pol}")
-        if value:
-            calib[f"xmit_power_{pol}"] = (
-                10 * np.log10(value * 1e6),
-                dict(units="dBm", long_name=f"transmit power, {pol.upper()} channel"),
-            )
-
-    def _to_dataset(items):
-        return xr.Dataset(
-            {
-                name: xr.DataArray(np.float64(value), attrs=attrs)
-                for name, (value, attrs) in items.items()
-            }
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            first_dim=first_dim,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+            site_as_coords=site_coords,
         )
 
-    return _to_dataset(params), _to_dataset(calib)
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+RainbowBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a Rainbow5 file as a CfRadial2-shaped dict of group datasets.",
+    REINDEX_COORD_DOC,
+    SITE_COORDS_PARAM_DOC,
+)
+RainbowBackendEntrypoint.open_datatree.__doc__ = (
+    "Open a Rainbow5 file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
 
 
 def _get_rainbow_group_names(filename):
@@ -954,77 +1015,11 @@ def _get_rainbow_group_names(filename):
 
 
 def open_rainbow_datatree(filename_or_obj, **kwargs):
-    """Open ODIM_H5 dataset as :py:class:`xarray.DataTree`.
+    """Open Rainbow5 dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="rainbow")`` instead.
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    _deprecation_warning("open_rainbow_datatree", "rainbow")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_rainbow_group_names(filename_or_obj)
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="rainbow", **kw)
-        for swp in sweeps
-    ]
-
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        params, calib = _get_rainbow_metadata_groups(filename_or_obj, sweeps[0])
-        dtree["/radar_parameters"] = xr.merge(
-            [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
-        )
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = xr.merge(
-            [_get_radar_calibration(ls_ds, radar_calibration_subgroup), calib]
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return _open_legacy_datatree(RainbowBackendEntrypoint, filename_or_obj, kwargs)

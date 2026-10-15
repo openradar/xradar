@@ -12,20 +12,227 @@ Currently, all private and not part of the public API.
 
 """
 
+import gzip
+import inspect
 import io
+import numbers
+import os
+import reprlib
 import struct
+import textwrap
+import warnings
+import zlib
 from collections import OrderedDict
+from contextlib import ExitStack, suppress
+from pathlib import Path, PurePosixPath
 
 import h5netcdf
 import numpy as np
 import xarray as xr
 
+from ... import util
 from ...model import (
+    georeferencing_correction_subgroup,
     optional_root_attrs,
     optional_root_vars,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     required_global_attrs,
     required_root_vars,
 )
+
+#: coordinates which can be reindexed via ``reindex_coord``
+_REINDEX_COORDS = ("angle", "range")
+
+
+def _get_reindex_coord(reindex_coord=None, reindex_angle=False):
+    """Validate ``reindex_coord`` and map deprecated ``reindex_angle`` onto it.
+
+    Parameters
+    ----------
+    reindex_coord : dict or None
+        Nested dict with optional keys ``angle`` and ``range``, each holding
+        the kwargs for :func:`xradar.util.reindex_angle` and
+        :func:`xradar.util.reindex_range`.
+    reindex_angle : dict or False
+        Deprecated, kwargs for :func:`xradar.util.reindex_angle`.
+
+    Returns
+    -------
+    reindex_coord : dict or None
+    """
+    if reindex_angle is not False and reindex_angle is not None:
+        if reindex_coord is not None:
+            warnings.warn(
+                "Both `reindex_coord` and the deprecated `reindex_angle` are "
+                "given, `reindex_coord` is used. Please drop `reindex_angle`.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+        else:
+            warnings.warn(
+                "`reindex_angle` is deprecated and will be removed in a future "
+                "version, use `reindex_coord=dict(angle=...)` instead.",
+                FutureWarning,
+                stacklevel=_external_stacklevel(),
+            )
+            reindex_coord = {"angle": reindex_angle}
+
+    if reindex_coord is None:
+        return None
+    if not isinstance(reindex_coord, dict):
+        raise TypeError(
+            "`reindex_coord` must be a dict, e.g. "
+            "`dict(angle=dict(...), range=dict(...))`, "
+            f"got {type(reindex_coord).__name__}."
+        )
+    unknown = set(reindex_coord) - set(_REINDEX_COORDS)
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) {sorted(unknown)} in `reindex_coord`, "
+            f"expected any of {list(_REINDEX_COORDS)}."
+        )
+    for key, kwargs in reindex_coord.items():
+        if not isinstance(kwargs, dict):
+            raise TypeError(
+                f"`reindex_coord[{key!r}]` must be a dict of kwargs, "
+                f"got {type(kwargs).__name__}."
+            )
+    return reindex_coord
+
+
+def _apply_reindex_coord(ds, reindex_coord):
+    """Reindex angle and/or range as given by ``reindex_coord``."""
+    if not reindex_coord:
+        return ds
+    if (angle := reindex_coord.get("angle")) is not None:
+        ds = ds.pipe(util.remove_duplicate_rays)
+        ds = ds.pipe(util.reindex_angle, **angle)
+        ds = ds.pipe(util.ipol_time, **angle)
+    if (rng := reindex_coord.get("range")) is not None:
+        ds = ds.pipe(util.reindex_range, **rng)
+    return ds
+
+
+#: Errors raised when an input can't be read: a missing file, a directory or no
+#: permission (``OSError``), a closed stream (``ValueError``), an unseekable one
+#: (``io.UnsupportedOperation``, an ``OSError``), a truncated (``EOFError``) or
+#: corrupt (``zlib.error``, ``gzip.BadGzipFile`` is an ``OSError``) gzip file.
+#: Other exceptions (``TypeError``, ``AttributeError``, ...) point to a bug and are
+#: not caught.
+_UNREADABLE_ERRORS = (OSError, ValueError, EOFError, zlib.error)
+
+#: Errors the netCDF3/HDF5 parsers raise for truncated or corrupt files (found
+#: by truncating and flipping bytes of sample files), in addition to the above.
+_CORRUPT_FILE_ERRORS = (*_UNREADABLE_ERRORS, IndexError, KeyError, RuntimeError)
+
+
+def _read_head(filename_or_obj, size=512, decompress=False):
+    """Read the first bytes of a file without consuming file-like objects.
+
+    Used by the backends' ``guess_can_open``. Returns ``None`` if the input
+    can't be read.
+
+    Parameters
+    ----------
+    filename_or_obj : str, os.PathLike, bytes or file-like
+    size : int
+        Number of bytes to read.
+    decompress : bool
+        Read gzip-compressed files decompressed.
+    """
+    try:
+        if isinstance(filename_or_obj, (bytes, bytearray)):
+            head = bytes(filename_or_obj[:size])
+        elif isinstance(filename_or_obj, (list, tuple)):
+            # e.g. NEXRAD Level II chunks
+            first = filename_or_obj[0] if filename_or_obj else b""
+            head = bytes(first[:size]) if isinstance(first, (bytes, bytearray)) else b""
+        elif isinstance(filename_or_obj, (str, os.PathLike)):
+            with open(filename_or_obj, "rb") as fh:
+                head = fh.read(size)
+        elif hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+            pos = filename_or_obj.tell()
+            filename_or_obj.seek(0)
+            head = filename_or_obj.read(size)
+            filename_or_obj.seek(pos)
+        else:
+            return None
+        if isinstance(head, str):
+            head = head.encode(errors="replace")
+        if decompress and head[:2] == b"\x1f\x8b":
+            head = _gunzip_head(filename_or_obj, size)
+        return head
+    except _UNREADABLE_ERRORS:
+        return None
+
+
+def _input_kind(filename_or_obj):
+    """Kind of input given to a backend, used by ``guess_can_open``.
+
+    Returns one of ``"path"``, ``"bytes"``, ``"chunks"`` (list of bytes),
+    ``"text"`` (text file-like), ``"file"`` (binary file-like) or ``None``.
+    """
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        return "path"
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return "bytes"
+    if isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (bytes, bytearray)) for item in filename_or_obj
+    ):
+        return "chunks"
+    if isinstance(filename_or_obj, io.TextIOBase):
+        return "text"
+    if hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+        return "file"
+    return None
+
+
+def _gunzip_head(filename_or_obj, size):
+    """Read the first ``size`` decompressed bytes of a gzip-compressed input."""
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        with gzip.open(filename_or_obj) as fh:
+            return fh.read(size)
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return gzip.GzipFile(fileobj=io.BytesIO(filename_or_obj)).read(size)
+    pos = filename_or_obj.tell()
+    try:
+        filename_or_obj.seek(0)
+        return gzip.GzipFile(fileobj=filename_or_obj).read(size)
+    finally:
+        filename_or_obj.seek(pos)
+
+
+def _is_hdf5(head):
+    return head is not None and head[:8] == b"\x89HDF\r\n\x1a\n"
+
+
+def _read_nc_header(filename_or_obj):
+    """Get root attributes, variable and group names of a netCDF/HDF5 file.
+
+    Returns ``(attrs, variables, groups)`` or ``None`` if the input isn't a
+    readable netCDF/HDF5 file. The position of file-like objects is restored.
+    """
+    head = _read_head(filename_or_obj, 8)
+    if head is None or not (_is_hdf5(head) or head[:3] == b"CDF"):
+        return None
+    source = filename_or_obj
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+    pos = source.tell() if _input_kind(source) == "file" else None
+    try:
+        if _is_hdf5(head):
+            with h5netcdf.File(source, "r", phony_dims="access") as fh:
+                attrs = {k: _maybe_decode(v) for k, v in fh.attrs.items()}
+                return attrs, set(fh.variables), set(fh.groups)
+        # netCDF3 classic
+        with xr.open_dataset(source, engine="scipy", decode_cf=False) as ds:
+            return dict(ds.attrs), set(ds.variables), set()
+    except _CORRUPT_FILE_ERRORS:
+        return None
+    finally:
+        if pos is not None:
+            source.seek(pos)
 
 
 def _maybe_decode(attr):
@@ -64,6 +271,34 @@ def _calculate_angle_res(dim):
     #  make this robust or parameterisable
     angle_diff_wanted = angle_diff[:-1][angle_diff2 < 0.05]
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
+
+
+class _ManagedStoreMixin:
+    """Give a backend store the ``close`` of the file it holds.
+
+    The stores keep their file in ``self._manager`` (an xarray file manager);
+    without this ``Dataset.close()`` was a no-op and the file stayed open
+    until the manager was garbage collected. Requires ``self._manager``.
+    """
+
+    def close(self, **kwargs):
+        self._manager.close(**kwargs)
+
+
+def _fspath(filename_or_obj):
+    """Turn a path-like into ``str``, return anything else (file-like, bytes) as is."""
+    if isinstance(filename_or_obj, os.PathLike):
+        return os.fspath(filename_or_obj)
+    return filename_or_obj
+
+
+def _apply_fix_second_angle(ds):
+    """Replace the secondary angle of a sweep by its median (no-op for non-sweeps)."""
+    if "sweep_mode" not in ds:
+        return ds
+    dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+    dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
+    return ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
 
 def _fix_angle(da):
@@ -349,9 +584,14 @@ def _get_required_root_dataset(ls_ds, optional=True):
     return root
 
 
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+def _get_subgroup(ls_ds: list[xr.Dataset], subdict, attrs=False):
     """Get iris-sigmet root metadata group.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
+
+    With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
+    added as well (for backends which have the values as attributes, e.g. of the
+    ``how`` groups); variables win. Each name takes the value of the first sweep
+    which has it; a warning names the values the sweeps disagree about.
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -361,20 +601,68 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
         rename = meta_vars[k]
         if rename:
             subgroup = subgroup.rename_vars({k: rename})
+    if attrs and ls_ds:
+        values, differing = _collect_attrs(ls_ds, meta_vars)
+        _warn_differing("radar_parameters", differing)
+        values = {
+            (meta_vars[k] or k): xr.DataArray(v)
+            for k, v in values.items()
+            if (meta_vars[k] or k) not in subgroup
+        }
+        subgroup = xr.merge([subgroup, xr.Dataset(values)])
     subgroup.attrs = {}
     return subgroup
 
 
+def _same_value(a, b):
+    try:
+        return bool(np.array_equal(a, b, equal_nan=True))
+    except TypeError:  # e.g. strings
+        return bool(a == b)
+
+
+def _collect_attrs(ls_ds, names):
+    """Values of the attributes ``names`` of the sweeps.
+
+    Each name takes the value of the first sweep which has it (sweeps can have
+    different names, e.g. when a value is no number in one of them). Returns the
+    values and the names the sweeps disagree about.
+    """
+    values, differing = {}, []
+    for ds in ls_ds:
+        for key in sorted(ds.attrs.keys() & names.keys()):
+            value = ds.attrs[key]
+            if key not in values:
+                values[key] = value
+            elif key not in differing and not _same_value(values[key], value):
+                differing.append(key)
+    return values, differing
+
+
+def _warn_differing(group, differing):
+    if differing:
+        warnings.warn(
+            f"xradar: {group} values differ between the sweeps "
+            f"({', '.join(differing)}); the values of the first selected sweep "
+            "are used.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
 def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    if extract_vars:
-        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
-        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
-    else:
+    """Get radar calibration root metadata group.
+
+    The values are attributes of the sweeps. Each name takes the value of the
+    first sweep which has it. If the sweeps disagree about a value, e.g. for
+    calibrations of different pulse widths or the noise level of each cut, the
+    value of the first sweep is used and a warning names those values.
+    """
+    values, differing = _collect_attrs(ls_ds, subdict)
+    _warn_differing("radar_calibration", differing)
+    if not values:
         return xr.Dataset()
+    return xr.Dataset({key: xr.DataArray(value) for key, value in values.items()})
 
 
 def _prepare_backend_ds(ds):
@@ -392,6 +680,386 @@ def _prepare_backend_ds(ds):
     # create indexes
     ds = ds.set_index({dim: dim for dim in ds.dims})
     return ds
+
+
+def _keep_close(new, source):
+    """Give ``new`` the file close of ``source`` and return it.
+
+    ``drop_vars``, ``drop_attrs`` and similar build a new dataset without the
+    close, so closing the tree would no longer close the file (#471, #502).
+    """
+    new.set_close(source._close)
+    return new
+
+
+def _open_sweeps(open_sweep, sweeps):
+    """Open every sweep with ``open_sweep(sweep)`` and return the datasets.
+
+    If one fails, the sweeps already open are closed instead of being left to
+    the garbage collector (#471, #502).
+    """
+    datasets = []
+    try:
+        for sweep in sweeps:
+            datasets.append(open_sweep(sweep))
+    except Exception:
+        _close_all(datasets)
+        raise
+    return datasets
+
+
+def _call_all(functions):
+    """Call every function in ``functions``, also when one raises, so one
+    failing close does not leave the other files open; errors are chained."""
+    with ExitStack() as stack:
+        for function in functions:
+            stack.callback(function)
+
+
+def _close_all(objs):
+    """Close every dataset or tree in ``objs`` while an error is handled.
+
+    A failing close is dropped, so it does not hide the error being handled.
+    """
+    for obj in objs:
+        with suppress(Exception):
+            obj.close()
+
+
+def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
+    """Build CfRadial2 groups dict from a list of sweep Datasets.
+
+    Parameters
+    ----------
+    ls_ds : list of xr.Dataset
+        List of sweep Datasets.
+    optional : bool
+        Import optional metadata, defaults to True.
+    optional_groups : bool
+        If True, includes ``/radar_parameters``, ``/georeferencing_correction``
+        and ``/radar_calibration`` metadata subgroups. Default is False.
+
+    Returns
+    -------
+    groups_dict : dict[str, xr.Dataset]
+        Dictionary with CfRadial2 group structure.
+    """
+    try:
+        groups_dict = {
+            "/": _get_required_root_dataset(ls_ds, optional=optional),
+        }
+        # station vars belong to the root only, also when sweeps carry them as coords
+        sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                sweeps, radar_parameters_subgroup, attrs=True
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                sweeps, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                sweeps, radar_calibration_subgroup
+            )
+    except Exception:
+        # nothing holds the sweeps' files yet: close them (#471, #502)
+        _close_all(ls_ds)
+        raise
+    for i, (ds, source) in enumerate(zip(sweeps, ls_ds, strict=True)):
+        groups_dict[f"/sweep_{i}"] = _keep_close(ds.drop_attrs(deep=False), source)
+    return groups_dict
+
+
+# trailing separator, so sibling paths such as ``xradar_tools/`` do not match
+_XRADAR_DIR = os.path.join(str(Path(__file__).resolve().parents[2]), "")
+_XARRAY_DIR = os.path.join(str(Path(xr.__file__).resolve().parent), "")
+
+
+def _external_stacklevel():
+    """Return the ``stacklevel`` of the first frame outside xradar and xarray.
+
+    Call it at the ``warnings.warn`` site; for warnings raised at a call depth
+    that differs between entry points (``xd.open_datatree``,
+    ``xr.open_datatree``, legacy openers).
+    """
+    frame = inspect.currentframe().f_back
+    level = 1
+    while frame is not None and frame.f_code.co_filename.startswith(
+        (_XRADAR_DIR, _XARRAY_DIR)
+    ):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
+def _deprecation_warning(old_name, engine):
+    """Emit FutureWarning for deprecated standalone open_*_datatree functions."""
+    warnings.warn(
+        f"`{old_name}` is deprecated. Use "
+        f'`xd.open_datatree(file, engine="{engine}")` or '
+        f'`xr.open_datatree(file, engine="{engine}")` instead.',
+        FutureWarning,
+        # user code -> open_*_datatree -> _deprecation_warning -> warn
+        stacklevel=3,
+    )
+
+
+def _open_legacy_datatree(backend_cls, filename_or_obj, kwargs):
+    """Open a DataTree for a deprecated ``open_*_datatree`` function.
+
+    Goes through :py:func:`xarray.open_datatree`, so xarray options such as
+    ``chunks`` and ``cache`` keep working and ``backend_kwargs`` reach the
+    backend, as they did before. The legacy spellings ``Optional`` (in
+    ``backend_kwargs``) and ``site_as_coords`` map to ``optional`` and
+    ``site_coords``. A keyword given both directly and in ``backend_kwargs``
+    takes the ``backend_kwargs`` value, as in :py:func:`xarray.open_datatree`;
+    passing both ``site_coords`` and ``site_as_coords`` raises ``TypeError``.
+    """
+    backend_kwargs = dict(kwargs.pop("backend_kwargs", None) or {})
+    # xarray options (decoders, chunks, ...) passed in backend_kwargs would
+    # collide with the same named arguments of xr.open_datatree
+    for key in _XR_OPEN_DATATREE_KWARGS & backend_kwargs.keys():
+        kwargs[key] = backend_kwargs.pop(key)
+    if "Optional" in backend_kwargs:
+        backend_kwargs.setdefault("optional", backend_kwargs.pop("Optional"))
+    for kw in (kwargs, backend_kwargs):
+        if "site_as_coords" in kw:
+            if "site_coords" in kwargs or "site_coords" in backend_kwargs:
+                raise TypeError(
+                    "Pass either `site_coords` or the legacy `site_as_coords`, "
+                    "not both."
+                )
+            kw["site_coords"] = kw.pop("site_as_coords")
+    return xr.open_datatree(
+        filename_or_obj, engine=backend_cls, backend_kwargs=backend_kwargs, **kwargs
+    )
+
+
+#: Named arguments of :py:func:`xarray.open_datatree` other than the file,
+#: the engine and ``backend_kwargs`` itself.
+_XR_OPEN_DATATREE_KWARGS = frozenset(inspect.signature(xr.open_datatree).parameters) - {
+    "filename_or_obj",
+    "engine",
+    "backend_kwargs",
+    "kwargs",
+}
+
+
+#: NumPy-style Parameters block shared across all `open_groups_as_dict`
+#: methods. Backend-specific blocks are appended via :func:`_compose_docstring`.
+#: The CF decoder kwargs (`mask_and_scale`, `decode_times`, ...) thread
+#: through to :py:func:`xarray.open_dataset`; see xarray's documentation for
+#: full semantics.
+_COMMON_PARAMS_HEAD = """
+Parameters
+----------
+filename_or_obj : str, Path, or file-like
+    Path or file-like object understood by the underlying reader.
+mask_and_scale : bool or dict-like, optional
+    Replace fill values with NA and apply ``scale_factor``/``add_offset``
+    decoding. See :py:func:`xarray.open_dataset`. Defaults to ``True``.
+decode_times : bool or dict-like, optional
+    Decode CF time variables (calendar, units) into ``np.datetime64``.
+    Defaults to ``True``.
+concat_characters : bool or dict-like, optional
+    Concatenate character arrays into strings along their trailing
+    dimension. Defaults to ``True``.
+decode_coords : bool or {"coordinates", "all"}, optional
+    Decode the CF ``coordinates`` attribute. Defaults to ``True``
+    (equivalent to ``"coordinates"``).
+drop_variables : str or iterable of str, optional
+    Names of variables to drop before processing.
+use_cftime : bool, optional
+    Force ``cftime`` decoding for time variables (instead of
+    ``np.datetime64``). Defaults to ``None`` (auto).
+decode_timedelta : bool, optional
+    Decode CF timedelta variables. Default mirrors ``decode_times``
+    unless the backend overrides it (cfradial1, cfradial2, and imd
+    default to ``False``).
+sweep : int, str, or list of int/str, optional
+    Sweep selection. ``None`` (default) returns all sweeps. An ``int``
+    or ``"sweep_N"`` string returns one sweep; a list returns the
+    named subset.
+first_dim : {"auto", "time"}, optional
+    Leading dimension of each sweep dataset. ``"auto"`` picks
+    ``azimuth`` (PPI) or ``elevation`` (RHI); ``"time"`` keeps the
+    raw time axis. Default ``"auto"`` (``"time"`` for cfradial2).
+"""
+_OPTIONAL_PARAM_DOC = """optional : bool, optional
+    Include optional root variables when available. Defaults to ``True``.
+"""
+_COMMON_PARAMS_TAIL = """optional_groups : bool, optional
+    Include the ``/radar_parameters``, ``/georeferencing_correction``,
+    and ``/radar_calibration`` metadata subgroups under the root.
+    Defaults to ``False``.
+"""
+COMMON_BACKEND_PARAMS_DOC = (
+    _COMMON_PARAMS_HEAD + _OPTIONAL_PARAM_DOC + _COMMON_PARAMS_TAIL
+)
+
+
+#: ``reindex_coord`` parameter block, shared by every backend that can
+#: reindex angle and/or range.
+REINDEX_COORD_DOC = """
+reindex_coord : dict, optional
+    Nested dict with optional keys ``angle`` and ``range`` holding the
+    kwargs for :func:`xradar.util.reindex_angle` and
+    :func:`xradar.util.reindex_range`, e.g. ``dict(angle=dict(start_angle=0,
+    stop_angle=360, angle_res=1.0, direction=1))``. Only invoked when
+    ``decode_coords=True``. Defaults to ``None`` (no reindexing).
+reindex_angle : dict, optional
+    Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
+"""
+
+#: Reindex plus second-angle fix block, for backends that support both.
+REINDEX_PARAMS_DOC = REINDEX_COORD_DOC + """fix_second_angle : bool, optional
+    Correct erroneous secondary-angle values (azimuth on RHI,
+    elevation on PPI). Only effective with ``first_dim="auto"``.
+    Defaults to ``False``.
+"""
+
+#: Site-coordinate parameter block. Most multi-sweep backends spell this
+#: `site_coords`; IMD uses the legacy `site_as_coords`.
+SITE_COORDS_PARAM_DOC = """
+site_coords : bool, optional
+    Attach ``latitude``/``longitude``/``altitude`` as coordinates on
+    the root dataset (and on per-sweep datasets where the backend
+    supports it). Defaults to ``True``.
+"""
+
+#: HDF5/h5netcdf options shared by ODIM, GAMIC, HPL, Metek.
+HDF5_PARAMS_DOC = """
+format : str, optional
+    h5netcdf format string. Defaults to ``None``.
+invalid_netcdf : bool, optional
+    Accept HDF5 files that are not strictly NetCDF-conformant.
+phony_dims : {"access", "sort", None}, optional
+    How h5netcdf labels unnamed dimensions. Defaults to ``"access"``.
+decode_vlen_strings : bool, optional
+    Decode variable-length strings stored in HDF5. Defaults to ``True``.
+"""
+
+#: Reader-lock parameter shared by NEXRAD, IRIS, UF.
+LOCK_PARAM_DOC = """
+lock : threading.Lock or None, optional
+    Reader lock for thread-safe access. Defaults to ``None``.
+"""
+
+
+def _compose_docstring(summary, *extra_blocks, optional=True):
+    """Compose a NumPy-style docstring from a summary plus parameter blocks.
+
+    The composed result always opens with the shared
+    :data:`COMMON_BACKEND_PARAMS_DOC` Parameters block and closes with a
+    fixed Returns section. Per-backend blocks (e.g. :data:`HDF5_PARAMS_DOC`,
+    :data:`REINDEX_PARAMS_DOC`) are inserted between the common block and
+    the Returns section in the order given.
+
+    Each block is independently de-indented and re-indented with four
+    spaces, so block authors do not need to keep the indentation in sync
+    by hand — write a block at any indent level and this helper
+    normalises it.
+
+    Parameters
+    ----------
+    summary : str
+        One-paragraph summary that opens the docstring.
+    *extra_blocks : str
+        Optional backend-specific parameter blocks. Each may use any
+        indentation; the helper normalises them to four-space indent.
+    optional : bool
+        Document the shared ``optional`` parameter. Defaults to ``True``;
+        pass ``False`` for backends without optional root variables.
+
+    Returns
+    -------
+    str
+        Complete docstring suitable for ``method.__doc__ = ...``.
+    """
+
+    def _block(text):
+        return textwrap.indent(textwrap.dedent(text).strip("\n"), "    ")
+
+    common = (
+        COMMON_BACKEND_PARAMS_DOC
+        if optional
+        else _COMMON_PARAMS_HEAD + _COMMON_PARAMS_TAIL
+    )
+    parts = [summary.strip("\n"), "", _block(common)]
+    for block in extra_blocks:
+        if block:
+            parts.append(_block(block))
+    returns_body = (
+        "dict[str, xarray.Dataset]\n"
+        "    CfRadial2 group paths (``/``, ``/sweep_N``, optional\n"
+        "    ``/radar_parameters`` etc.) mapped to their datasets,\n"
+        "    ready for :py:meth:`xarray.DataTree.from_dict`."
+    )
+    parts += ["", "    Returns", "    -------", _block(returns_body)]
+    return "\n".join(parts) + "\n"
+
+
+def _resolve_sweeps(sweep, discover_fn):
+    """Normalise the sweep parameter into a list of sweep group names.
+
+    Parameters
+    ----------
+    sweep : int, str, list or tuple of int/str, or None
+        User-supplied sweep selection. Integers map to ``sweep_<n>``;
+        strings may be DataTree paths (``"/sweep_0"``), only the last path
+        component is used. Sequence items are resolved one by one.
+    discover_fn : callable
+        Zero-arg function returning all sweep group names for the file.
+
+    Returns
+    -------
+    list[str]
+        List of sweep group name strings.
+    """
+    if sweep is None:
+        return discover_fn()
+    if isinstance(sweep, (list, tuple)):
+        if not sweep:
+            raise ValueError("sweep list is empty.")
+        names = [_sweep_name(item) for item in sweep]
+        if None in names:
+            # ValueError (not TypeError) keeps the message and type the
+            # NEXRAD/UF readers raised before this helper existed
+            raise ValueError(
+                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) "
+                f"or strings (e.g. [/sweep_0, sweep_1]), got {reprlib.repr(sweep)}."
+            )
+        return names
+    name = _sweep_name(sweep)
+    if name is None:
+        raise TypeError(
+            f"Unsupported sweep {reprlib.repr(sweep)} ({type(sweep).__name__}), "
+            "expected a "
+            "non-negative int, a sweep name or a list of those."
+        )
+    return [name]
+
+
+def _resolve_single_sweep(sweep, engine, hint=""):
+    """Resolve ``sweep`` for single-sweep formats, only ``sweep_0`` exists."""
+    if sweep is not None and _resolve_sweeps(sweep, lambda: None) != ["sweep_0"]:
+        raise ValueError(
+            f"{engine} files hold a single sweep (sweep_0), "
+            f"got sweep={reprlib.repr(sweep)}." + (f" {hint}" if hint else "")
+        )
+    return ["sweep_0"]
+
+
+def _sweep_name(item):
+    """Map one sweep selector to its group name, or None if unsupported.
+
+    ``bool`` is rejected although it subclasses ``int``; numpy integers are
+    accepted. Negative integers and empty names are rejected.
+    """
+    if isinstance(item, numbers.Integral) and not isinstance(item, bool):
+        return f"sweep_{item}" if item >= 0 else None
+    if isinstance(item, str):
+        return PurePosixPath(item).name or None
+    return None
 
 
 # IRIS Data Types and corresponding python struct format characters
