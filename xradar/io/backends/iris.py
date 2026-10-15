@@ -40,6 +40,7 @@ import contextlib
 import copy
 import datetime as dt
 import io
+import os
 import struct
 import warnings
 from collections import OrderedDict
@@ -79,9 +80,11 @@ from .common import (
     _deprecation_warning,
     _fspath,
     _get_reindex_coord,
+    _input_kind,
     _ManagedStoreMixin,
     _open_legacy_datatree,
     _open_sweeps,
+    _read_head,
     _resolve_sweeps,
 )
 
@@ -1978,13 +1981,11 @@ SIGMET_DATA_TYPES = OrderedDict(
             {
                 "name": "DB_VELC",
                 "dtype": "uint8",
+                # 4.4.42: +/- 75 m/s with 128 as zero velocity, one step size
+                # on both sides as in DB_VEL; raw 254 is +74.4 m/s, not the
+                # +75.0 of the guide's table (#477)
                 "func": decode_array,
-                "fkw": {
-                    "offset": -1,
-                    "scale": 253.0 / 150,
-                    "offset2": -75,
-                    "mask": 0.0,
-                },
+                "fkw": {"scale": 127 / 75.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # SQI (1 byte)
@@ -4200,6 +4201,22 @@ class IrisBackendEntrypoint(BackendEntrypoint):
     description = "Open IRIS/Sigmet files in Xarray"
     url = "https://xradar.rtfd.io/latest/io.html#iris-sigmet-data-i-o"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """IRIS/Sigmet RAW file (``product_hdr`` structure, RAW product)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes", "file"):
+            return False
+        head = _read_head(filename_or_obj, 2)
+        if head is None or len(head) < 2 or struct.unpack("<h", head)[0] != 27:
+            return False
+        if not isinstance(filename_or_obj, (str, os.PathLike)):
+            return True
+        try:
+            return _check_iris_file(os.fspath(filename_or_obj))[1] is IrisRawFile
+        except (OSError, KeyError, struct.error):
+            # unreadable, or not a known IRIS structure (truncated header,
+            # unknown identifier or product type)
+            return False
 
     def open_dataset(
         self,

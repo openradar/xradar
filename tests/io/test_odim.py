@@ -578,3 +578,20 @@ def test_open_odim_quality_legend(odim_file, tmp_path, layout, closing):
     )
     assert "flag_values" not in ds.DBZH.attrs
     assert "flag_values" not in ds.CLASS.attrs
+
+
+def test_odim_how_value_missing_in_one_dataset(odim_how_file, closing):
+    # a value which is no number in one dataset is left out there; the open must
+    # not fail because the other datasets have it (it did with a KeyError)
+    with h5py.File(odim_how_file, "a") as f:
+        f["dataset1/how"].attrs["radconstV"] = b"n/a"
+    with pytest.warns(UserWarning, match="is no number"):
+        dtree = closing(
+            xd.open_datatree(
+                odim_how_file, engine="odim", optional_groups=True, sweep=[0, 1]
+            )
+        )
+    calib = dtree["radar_calibration"].ds
+    # the first dataset which has it: dataset2 takes the top-level value
+    np.testing.assert_allclose(calib.radar_constant_v, 68.5)
+    np.testing.assert_allclose(calib.radar_constant_h, 70.0)
