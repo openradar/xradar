@@ -43,17 +43,21 @@ def test_get_second_angle(sweep):
     assert util.get_second_angle(ds) == sweep[2]
 
 
-def test_remove_duplicate_rays():
+def test_remove_duplicate_rays(closing):
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
-    ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    ds = closing(
+        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    )
     ds_out = util.remove_duplicate_rays(ds)
     assert ds.sizes["azimuth"] == 361
     assert ds_out.sizes["azimuth"] == 360
 
 
-def test_reindex_angle():
+def test_reindex_angle(closing):
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
-    ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    ds = closing(
+        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    )
     ds_out = util.remove_duplicate_rays(ds)
     ds_out = util.reindex_angle(
         ds_out, start_angle=0, stop_angle=360, angle_res=1.0, direction=1
@@ -118,9 +122,11 @@ def test_reindex_range_defaults_and_fill(dtype):
     assert np.isnan(out.DBZH.values[:, 6:]).all()
 
 
-def test_extract_angle_parameters():
+def test_extract_angle_parameters(closing):
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
-    ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    ds = closing(
+        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    )
     angle_dict = util.extract_angle_parameters(ds)
     expected_dict = {
         "a1gate_idx": np.array(243),
@@ -245,9 +251,11 @@ def test_extract_angle_parameters2(low, high):
         assert angle_dict[k] == expected_dict[k]
 
 
-def test_ipol_time():
+def test_ipol_time(closing):
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
-    ds = xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    ds = closing(
+        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+    )
 
     # remove block of rays (100-150)
     ds_in = xr.concat(
@@ -322,9 +330,9 @@ def test_ipol_time2(missing, a1gate, rot):
             dsx.pipe(util.ipol_time, direction=direction)
 
 
-def test_get_sweep_keys(cfradial1_sgp_file):
+def test_get_sweep_keys(cfradial1_sgp_file, closing):
     # Test finding sweep keys
-    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(io.open_cfradial1_datatree(cfradial1_sgp_file))
     # set a fake group
     dtree["sneep_1"] = dtree["sweep_1"]
     keys = util.get_sweep_keys(dtree)
@@ -338,9 +346,9 @@ def test_get_sweep_keys(cfradial1_sgp_file):
     ]
 
 
-def test_apply_to_sweeps(cfradial1_sgp_file):
+def test_apply_to_sweeps(cfradial1_sgp_file, closing):
     # Open the radar file into a DataTree object
-    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(io.open_cfradial1_datatree(cfradial1_sgp_file))
 
     # Define a simple function to test with apply_to_sweeps
     def dummy_function(ds):
@@ -377,9 +385,9 @@ def test_apply_to_sweeps(cfradial1_sgp_file):
         util.apply_to_sweeps(dtree, error_function)
 
 
-def test_apply_to_sweeps_inherit_false(cfradial1_sgp_file):
+def test_apply_to_sweeps_inherit_false(cfradial1_sgp_file, closing):
     """inherit=False prevents root coords from leaking onto sweeps."""
-    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(io.open_cfradial1_datatree(cfradial1_sgp_file))
     root_coords = {"latitude", "longitude", "altitude"}
 
     def identity(ds):
@@ -398,9 +406,9 @@ def test_apply_to_sweeps_inherit_false(cfradial1_sgp_file):
     assert not leaked, f"inherit=False should not leak root coords: {leaked}"
 
 
-def test_apply_to_sweeps_inherit_via_map_over_sweeps(cfradial1_sgp_file):
+def test_apply_to_sweeps_inherit_via_map_over_sweeps(cfradial1_sgp_file, closing):
     """inherit parameter works through map_over_sweeps accessor."""
-    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(io.open_cfradial1_datatree(cfradial1_sgp_file))
     root_coords = {"latitude", "longitude", "altitude"}
 
     result = dtree.xradar.map_over_sweeps(lambda ds: ds, inherit=False)
@@ -409,9 +417,9 @@ def test_apply_to_sweeps_inherit_via_map_over_sweeps(cfradial1_sgp_file):
     assert not leaked, f"inherit=False via accessor should not leak: {leaked}"
 
 
-def test_apply_to_volume(cfradial1_sgp_file):
+def test_apply_to_volume(cfradial1_sgp_file, closing):
     # Open the radar file into a DataTree object
-    dtree = io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(io.open_cfradial1_datatree(cfradial1_sgp_file))
 
     # Define a simple function to test with apply_to_volume
     def dummy_function(ds):
@@ -476,12 +484,12 @@ def test_apply_to_volume(cfradial1_sgp_file):
         util.apply_to_volume(dtree, error_function)
 
 
-def test_map_over_sweeps_decorator_dummy_function(cfradial1_sgp_file):
+def test_map_over_sweeps_decorator_dummy_function(cfradial1_sgp_file, closing):
     """
     Test applying a dummy function to all sweep nodes using the map_over_sweeps decorator.
     """
     # Open the radar file into a DataTree object
-    dtree = xd.io.open_cfradial1_datatree(cfradial1_sgp_file)
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_sgp_file))
 
     # Use the decorator on the dummy function
     @xd.map_over_sweeps
@@ -543,10 +551,13 @@ def test_get_required_root_dataset():
     assert root.attrs["comment"] == "AEROCIVIL OPERATIONAL DUAL POLE SCAN"
 
 
-def test_get_radar_calibration():
+def test_get_radar_calibration(closing):
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
     sweeps = [f"sweep_{i}" for i in range(10)]
-    ls_ds = [xr.open_dataset(filename, engine="gamic", group=sweep) for sweep in sweeps]
+    ls_ds = [
+        closing(xr.open_dataset(filename, engine="gamic", group=sweep))
+        for sweep in sweeps
+    ]
     subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
     assert len(subgroup.variables) == 6
     assert subgroup["noise_power_h"] == "-3.8298"
@@ -555,10 +566,13 @@ def test_get_radar_calibration():
     assert subgroup["ant_gain_h"] == "43"
 
 
-def test_get_subgroup():
+def test_get_subgroup(closing):
     filename = DATASETS.fetch("71_20181220_060628.pvol.h5")
     sweeps = [f"sweep_{i}" for i in range(10)]
-    ls_ds = [xr.open_dataset(filename, engine="odim", group=sweep) for sweep in sweeps]
+    ls_ds = [
+        closing(xr.open_dataset(filename, engine="odim", group=sweep))
+        for sweep in sweeps
+    ]
     subgroup = _get_subgroup(ls_ds, model.radar_parameters_subgroup)
     assert len(subgroup.variables) == 3
     assert list(subgroup.variables) == ["longitude", "latitude", "altitude"]
@@ -581,10 +595,10 @@ def test_sweep_dataset_vars():
     assert sorted(dataset_vars) == sorted(expected)
 
 
-def test_select_sweep_dataset_vars():
+def test_select_sweep_dataset_vars(closing):
 
     filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
-    sweep = xr.open_dataset(filename, group="sweep_7", engine="gamic")
+    sweep = closing(xr.open_dataset(filename, group="sweep_7", engine="gamic"))
     sweep = sweep.assign(quality1=sweep["DBZH"] < 60)
     sweep["DBZH"].attrs["ancillary_variables"] = ["quality1"]
     sweep = sweep.assign(quality2=sweep["RHOHV"] < 0.5)
@@ -620,12 +634,12 @@ def test_select_sweep_dataset_vars():
     assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
 
 
-def test_create_volume():
+def test_create_volume(closing):
     pattern = "T_PAZ?63_C_LFPW_20230420*"
     filenames = list(DATASETS.registry.keys())
     files = fnmatch.filter(filenames, pattern)
     random.shuffle(files)
-    sweeps = [io.open_odim_datatree(DATASETS.fetch(fn)) for fn in files]
+    sweeps = [closing(io.open_odim_datatree(DATASETS.fetch(fn))) for fn in files]
 
     time_coverage_start = "2023-04-20T06:50:00Z"
     time_coverage_start = datetime.datetime.fromisoformat(time_coverage_start)
@@ -666,3 +680,86 @@ def test_create_volume():
     )
     assert volume.ds.time_coverage_start == "2023-04-20T06:50:01Z"
     assert volume.ds.time_coverage_end == "2023-04-20T06:59:46Z"
+
+
+@pytest.mark.parametrize("first_dim", ["auto", "time"])
+def test_is_sweep_backends(odim_file, cfradial1_file, first_dim, closing):
+    dtree = closing(
+        io.open_odim_datatree(odim_file, first_dim=first_dim, optional_groups=True)
+    )
+    # the root and the metadata groups are no sweeps
+    assert not util.is_sweep(dtree)
+    assert not util.is_sweep(dtree["radar_parameters"])
+    for node in ["sweep_0", "sweep_5"]:
+        assert util.is_sweep(dtree[node])
+        assert util.is_sweep(dtree[node].to_dataset(), strict=True)
+        assert dtree[node].to_dataset().xradar.is_sweep()
+        assert dtree[node].xradar.is_sweep(strict=True)
+    assert not dtree.xradar.is_sweep()
+    # still a sweep after georeferencing (2D x, y, z coordinates)
+    assert util.is_sweep(dtree.xradar.georeference()["sweep_0"])
+
+    dtree = closing(io.open_cfradial1_datatree(cfradial1_file, first_dim=first_dim))
+    assert util.is_sweep(dtree["sweep_0"], strict=True)
+
+
+def test_is_sweep_structure():
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
+    assert util.is_sweep(ds)
+    # mandatory sweep metadata is missing
+    assert not util.is_sweep(ds, strict=True)
+    ds_meta = ds.assign(
+        sweep_number=0,
+        sweep_mode="azimuth_surveillance",
+        follow_mode="none",
+        prt_mode="fixed",
+        sweep_fixed_angle=1.0,
+    )
+    assert util.is_sweep(ds_meta, strict=True)
+    assert ds_meta.xradar.is_sweep(strict=True)
+
+    # no range dimension
+    assert not util.is_sweep(ds.isel(range=0))
+    # no data variable along (ray, range)
+    assert not util.is_sweep(ds.drop_vars("DBZH"))
+    # angles missing or not along the ray dimension
+    assert not util.is_sweep(ds.drop_vars("elevation"))
+    assert not util.is_sweep(ds.assign(azimuth=("range", np.arange(10.0))))
+    # two candidate ray dimensions
+    assert not util.is_sweep(
+        ds.assign(extra=(("azimuth", "elevation"), np.ones((2, 3))))
+    )
+    # no Dataset
+    assert not util.is_sweep(ds.DBZH)
+    assert not util.is_sweep(None)
+
+
+def test_get_ray_dim():
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    assert util.get_ray_dim(ds) == "time"
+    assert util.get_ray_dim(ds.swap_dims(time="azimuth")) == "azimuth"
+    rhi = model.create_sweep_dataset(shape=(36, 10), azimuth=10.0, sweep="RHI")
+    assert util.get_ray_dim(rhi.swap_dims(time="elevation")) == "elevation"
+    # no range dimension
+    assert util.get_ray_dim(ds.isel(range=0)) is None
+    # both azimuth and elevation dimensions
+    both = xr.Dataset({"x": (("azimuth", "elevation", "range"), np.ones((2, 2, 2)))})
+    with pytest.raises(ValueError, match="Ambiguous ray dimension"):
+        util.get_ray_dim(both)
+    # range, but no ray dimension
+    with pytest.raises(ValueError, match="No CfRadial2/FM301 compliant dimension"):
+        util.get_ray_dim(xr.Dataset({"x": (("ray", "range"), np.ones((2, 3)))}))
+
+
+def test_is_sweep_stacked():
+    # a time series of a sweep is not a single sweep (semantics: #449)
+    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
+    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
+    ds = ds.swap_dims(time="azimuth")
+    assert util.is_sweep(ds)
+    stacked = xr.concat([ds.drop_vars("time")] * 2, dim="time")
+    assert util.get_ray_dim(stacked) == "azimuth"
+    assert not util.is_sweep(stacked)
+    # range dimension, but no ray dimension
+    assert not util.is_sweep(ds.rename(azimuth="ray"))
