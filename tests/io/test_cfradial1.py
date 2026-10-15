@@ -543,3 +543,70 @@ def test_cfradial1_meta_groups():
     assert ds["frequency"].attrs["meta_group"] == "instrument_parameters"
     assert ds["radar_beam_width_h"].attrs["meta_group"] == "radar_parameters"
     assert "meta_group" not in ds["radar_echo_class"].attrs
+
+
+def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
+    # radar_parameters, radar_calibration and georeferencing_correction are
+    # written with the names of the CfRadial 1.4 tables (Sections 5.2, 5.4 and
+    # 5.7), not with the aliases other software uses (Radx: radar_rx_bandwidth,
+    # r_calib_base_dbz_1km_hc, altitude_correction, eastward_velocity_correction;
+    # the reader accepts both) (#419)
+    import netCDF4
+
+    path = tmp_path / "metadata_groups.nc"
+    with xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True) as dtree:
+        xd.io.to_cfradial1(dtree, path)
+
+    aliases = {
+        "radar_receiver_bandwidth": "radar_rx_bandwidth",
+        "r_calib_base_1km_hc": "r_calib_base_dbz_1km_hc",
+        "radar_altitude_correction": "altitude_correction",
+        "eastward_ground_speed_correction": "eastward_velocity_correction",
+    }
+    with netCDF4.Dataset(cfradial1_file) as src, netCDF4.Dataset(path) as out:
+        for table_name, alias in aliases.items():
+            assert alias in src.variables  # the file uses the aliases
+            assert table_name in out.variables
+            assert alias not in out.variables
+            np.testing.assert_allclose(out[table_name][:], src[alias][:])
+
+    # the written file reads back to the same names
+    with xd.io.open_cfradial1_datatree(path, optional_groups=True) as back:
+        assert "radar_receiver_bandwidth" in back["radar_parameters"].ds
+        assert "base_1km_hc" in back["radar_calibration"].ds
+        assert "radar_altitude_correction" in back["georeferencing_correction"].ds
+
+
+def test_cfradial1_unknown_calibration_names(tmp_path):
+    # variables on the r_calib dimension with non-standard names must not
+    # break reading the radar_calibration group and keep their names on
+    # export (#419)
+    import netCDF4
+
+    filename = DATASETS.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
+    path = tmp_path / "unknown_calibration.nc"
+    with xd.io.open_cfradial1_datatree(filename, optional_groups=True) as dtree:
+        assert "calibration_constant_hh" in dtree["radar_calibration"].ds
+        xd.io.to_cfradial1(dtree, path)
+    with netCDF4.Dataset(path) as out:
+        assert "calibration_constant_hh" in out.variables
+        assert "r_calib_calibration_constant_hh" not in out.variables
+
+
+@pytest.mark.parametrize(
+    "names, expected",
+    [
+        (
+            ["r_calib_receiver_mismatch_loss_h", "r_calib_receiver_mismatch_loss_v"],
+            ["receiver_mismatch_loss_h", "receiver_mismatch_loss_v"],
+        ),
+        (["r_calib_noise_hc", "noise_hc_offset"], ["noise_hc", "noise_hc_offset"]),
+    ],
+)
+def test_cfradial1_calibration_names_exact_match(names, expected):
+    # calibration names are matched exactly, not as substrings (#419)
+    from xradar.io.backends.cfradial1 import _get_radar_calibration
+
+    ds = xr.Dataset({name: ("r_calib", [1.0]) for name in names})
+    calib = _get_radar_calibration(ds)
+    assert sorted(calib.data_vars) == expected
