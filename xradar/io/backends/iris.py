@@ -242,13 +242,29 @@ def _nyquist(wavelength, prf):
     return wavelength * prf / (10000.0 * 4.0)
 
 
+def _dual_prf_factor(multi_prf_mode_flag):
+    """Velocity Nyquist factor for the ``task_dsp_info`` multi PRF mode flag
+    (0=1:1, 1=2:3, 2=3:4, 3=4:5: x1-x4; see 4.4.44 p.86). The guide defines
+    no other value: warn and use the single-PRF Nyquist velocity (#480)."""
+    if multi_prf_mode_flag in (0, 1, 2, 3):
+        return multi_prf_mode_flag + 1
+    warnings.warn(
+        f"xradar: IRIS multi_prf_mode_flag={multi_prf_mode_flag} is not "
+        "defined (0-3); using the single-PRF Nyquist velocity",
+        UserWarning,
+    )
+    return 1
+
+
 def decode_vel(data, **kwargs):
     """Decode `DB_VEL`.
 
-    ``nyquist`` is the single-PRF Nyquist velocity; dual-PRF modes
-    (``multi_prf_mode_flag`` 1-3) multiply it by 2-4. See 4.4.44 p.86
+    ``nyquist`` is the single-PRF Nyquist velocity, multiplied by the dual-PRF
+    factor of ``multi_prf_mode_flag`` (``_dual_prf_factor``). See 4.4.44 p.86
     """
-    nyquist = kwargs.pop("nyquist") * (kwargs.pop("multi_prf_mode_flag", 0) + 1)
+    nyquist = kwargs.pop("nyquist") * _dual_prf_factor(
+        kwargs.pop("multi_prf_mode_flag", 0)
+    )
     values, no_data = _decode_linear(data, **kwargs)
     return _masked(values * nyquist, no_data)
 
