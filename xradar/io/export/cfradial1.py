@@ -33,7 +33,11 @@ from importlib.metadata import version
 import numpy as np
 import xarray as xr
 
-from ...model import georeferencing_correction_subgroup, radar_parameters_subgroup
+from ...model import (
+    georeferencing_correction_subgroup,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
+)
 
 #: Per-sweep metadata variables that CfRadial1 stores as scalars (one value
 #: per sweep) rather than along a ray dimension.
@@ -133,6 +137,10 @@ def _sweep_group_names(dtree):
     return [name for name in dtree.groups if "sweep" in name]
 
 
+#: CfRadial2.1 calibration names, as read by xradar (the ones that get the
+#: ``r_calib_`` prefix on export, other names are written back unchanged)
+CALIBRATION_NAMES = {v or k for k, v in radar_calibration_subgroup.items()}
+
 #: CfRadial version written by the exporter (#388)
 CFRADIAL1_VERSION = "1.4"
 
@@ -230,7 +238,12 @@ def _map_radar_calibration(calib_ds):
     renamed_vars = {}
     for name in calib_ds.data_vars:
         data_array = calib_ds[name]
-        renamed_vars["r_calib_" + name] = xr.DataArray(
+        # unknown names were kept as they are on read, write them back unchanged
+        if name in CALIBRATION_NAMES:
+            cf1_name = "r_calib_" + name
+        else:
+            cf1_name = name
+        renamed_vars[cf1_name] = xr.DataArray(
             data=data_array.data[np.newaxis, ...],
             dims=["r_calib"] + list(data_array.dims),
             coords={"r_calib": [0]},
@@ -328,9 +341,12 @@ def _combine_sweeps(dtree, dim0=None):
         if not np.allclose(rng, longest[: rng.size]):
             raise xr.MergeError(
                 "CfRadial1 export requires the same range gate geometry "
-                "(first gate and gate spacing) in all sweeps. Use "
-                "`xradar.util.reindex_range` to bring the sweeps onto one range "
-                "before exporting."
+                "(first gate and gate spacing) in all sweeps. The sweeps can be "
+                "reindexed onto one range with `xradar.util.reindex_range` (or "
+                "`reindex_coord=dict(range=dict(...))` when opening), but that "
+                "takes the nearest gate without averaging: gates are dropped or "
+                "repeated, and gates farther than half a gate spacing from the "
+                "new grid are filled with NaN."
             )
         # snap onto one range coordinate, the outer join below is exact
         sweep_datasets[i] = sweep_ds.assign_coords(

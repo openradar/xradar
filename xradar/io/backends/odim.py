@@ -77,12 +77,14 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _input_kind,
     _ManagedStoreMixin,
     _maybe_decode,
     _maybe_recover_surrogate,
     _open_legacy_datatree,
     _open_sweeps,
     _prepare_backend_ds,
+    _read_nc_header,
     _resolve_sweeps,
 )
 
@@ -631,9 +633,17 @@ def _get_h5netcdf_encoding(self, var):
     return encoding
 
 
+# ODIM_H5 quantities whose name means something else in FM301/CfRadial2:
+# ODIM TH/TV are logged total (uncorrected) reflectivity in dBZ
+# (ODIM_H5 2.4 Table 16), FM301 TH/TV are linear and DBTH/DBTV logged
+# (FM301 Table 301-9)
+ODIM_TO_FM301_NAMES = {"TH": "DBTH", "TV": "DBTV"}
+
+
 def _get_odim_variable_name_and_attrs(name, attrs):
     if "data" in name:
         name = attrs.pop("quantity")
+        name = ODIM_TO_FM301_NAMES.get(name, name)
         # handle non-standard moment names
         try:
             mapping = sweep_vars_mapping[name]
@@ -886,6 +896,15 @@ class OdimBackendEntrypoint(BackendEntrypoint):
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#odim-h5"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """ODIM_H5 file (HDF5 with ``Conventions`` ``ODIM_H5/...``)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return str(header[0].get("Conventions", "")).startswith("ODIM_H5")
 
     def open_dataset(
         self,
