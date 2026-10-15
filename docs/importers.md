@@ -257,7 +257,8 @@ The reader normalizes these files to the xradar data model:
   ``complex_trajectory``); the original mode is kept in the
   ``windcube_sweep_mode`` attribute,
 - DBS/VAD sweeps with ``range(time, gate_index)`` are split into one sweep per
-  gate geometry (e.g. vertical and inclined beams),
+  gate geometry (e.g. vertical and inclined beams), in the order the beams were
+  measured; masked gates do not make a ray a geometry of its own,
 - over-the-top RHIs are unfolded to elevations from 0 to 180 degrees,
 - rays without valid angles are dropped, ``time`` is the end of each ray.
 
@@ -268,10 +269,13 @@ References: [CfRadial 2.1 format](https://github.com/NCAR/CfRadial/blob/master/d
 
 The xarray backend {class}`~xradar.io.backends.windcube.WindCubeBackendEntrypoint`
 returns the wanted sweep (eg. ``sweep_0``) as {py:class}`xarray:xarray.Dataset`.
+The sweeps are counted after splitting the gate geometries, the name of the
+group in the file is kept in the ``windcube_group_name`` attribute of
+``sweep_mode``. The measurements are read lazily.
 
-### open_windcube_datatree
+### open_datatree
 
-With {func}`~xradar.io.backends.windcube.open_windcube_datatree`
+With ``xd.open_datatree(file, engine="windcube")`` (or ``xr.open_datatree``)
 all sweeps are extracted and the ``root`` group is processed.
 Everything is finally added as ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 

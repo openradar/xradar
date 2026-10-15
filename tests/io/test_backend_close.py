@@ -54,6 +54,7 @@ def _private_copy(path, tmp_path):
         ("nexradlevel2", "nexradlevel2_file"),
         ("odim", "odim_file"),
         ("rainbow", "rainbow_file"),
+        ("windcube", "windcube_file"),
     ],
 )
 def test_dataset_close_releases_file(engine, fixture_name, request, tmp_path):
