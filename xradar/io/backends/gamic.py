@@ -38,11 +38,10 @@ import io
 import dateutil
 import h5netcdf
 import numpy as np
-import xarray as xr
-from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
     find_root_and_group,
 )
 from xarray.backends.file_manager import CachingFileManager, DummyFileManager
@@ -54,26 +53,35 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_time_attrs,
     moment_attrs,
     optional_root_attrs,
     radar_calibration_subgroup,
-    radar_parameters_subgroup,
     required_global_attrs,
     sweep_vars_mapping,
 )
 from .common import (
+    HDF5_PARAMS_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
     _fix_angle,
     _get_h5group_names,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _get_reindex_coord,
+    _input_kind,
+    _ManagedStoreMixin,
     _maybe_decode,
+    _open_legacy_datatree,
+    _open_sweeps,
     _prepare_backend_ds,
+    _read_nc_header,
+    _resolve_sweeps,
 )
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
 
@@ -257,66 +265,16 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
-def _get_calibration_from_how(how):
-    """Get calibration parameters from a GAMIC scan how-group.
-
-    GAMIC stores most of them as strings, with the units in ``<name>__unit``.
-    Names are mapped according to ``radar_calibration_subgroup``.
-
-    Returns
-    -------
-    calibration : dict
-        ``{name: (value, attrs)}``
-    """
-    calibration = {}
-    for var, value in dict(how).items():
-        if var not in radar_calibration_subgroup:
-            continue
-        try:
-            value = float(_maybe_decode(value))
-        except (TypeError, ValueError):
-            continue
-        name = radar_calibration_subgroup[var] or var
-        attrs = {}
-        units = how.get(f"{var}__unit")
-        if units is not None:
-            attrs["units"] = _maybe_decode(units)
-        calibration[name] = (value, attrs)
-    return calibration
+def _to_float(value):
+    """GAMIC stores most values as strings (units in ``<name>__unit``); ``None``
+    if the value is no number."""
+    try:
+        return float(_maybe_decode(value))
+    except (TypeError, ValueError):
+        return None
 
 
-def _get_gamic_how_metadata(filename_or_obj, sweep):
-    """Get radar_parameters and radar_calibration from GAMIC how-groups.
-
-    Beam widths are taken from the top-level ``/how`` (``azimuth_beam``,
-    ``elevation_beam``), calibration from the ``how`` of the given sweep.
-    """
-    scan = f"scan{int(sweep.split('_')[-1])}"
-    with h5netcdf.File(filename_or_obj, "r", decode_vlen_strings=True) as fh:
-        root_how = dict(fh["how"].attrs) if "how" in fh else {}
-        scan_how = dict(fh[f"{scan}/how"].attrs) if f"{scan}/how" in fh else {}
-    if isinstance(filename_or_obj, io.BytesIO):
-        filename_or_obj.seek(0)
-
-    params = {}
-    for gamic_name, pol, direction in [
-        ("azimuth_beam", "h", "azimuth"),
-        ("elevation_beam", "v", "elevation"),
-    ]:
-        value = root_how.get(gamic_name)
-        if value is not None:
-            params[f"radar_beam_width_{pol}"] = xr.DataArray(
-                float(value),
-                attrs=dict(units="degrees", long_name=f"beam width in {direction}"),
-            )
-    calibration = {
-        name: xr.DataArray(value, attrs=attrs)
-        for name, (value, attrs) in _get_calibration_from_how(scan_how).items()
-    }
-    return xr.Dataset(params), xr.Dataset(calibration)
-
-
-class GamicStore(AbstractDataStore):
+class GamicStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
@@ -435,11 +393,32 @@ class GamicStore(AbstractDataStore):
         return FrozenDict(_attributes)
 
     def get_calibration_parameters(self):
-        calibration = {
-            name: value
-            for name, (value, _) in _get_calibration_from_how(self.root.how).items()
-        }
+        """Calibration values of the scan ``how``, as numbers with their xradar
+        names; values which are no numbers are left out."""
+        calibration = {}
+        for var, value in dict(self.root.how).items():
+            if var not in radar_calibration_subgroup:
+                continue
+            value = _to_float(value)
+            if value is not None:
+                calibration[radar_calibration_subgroup[var] or var] = value
         return FrozenDict(calibration)
+
+    def get_radar_parameters(self):
+        """Beam widths of the top-level ``how`` in degrees, as ``radar_parameters``
+        names: ``azimuth_beam`` is the horizontal and ``elevation_beam`` the vertical
+        width of the antenna pattern; values which are no numbers are left out."""
+        with self._manager.acquire_context(False) as root:
+            how = dict(root["how"].attrs) if "how" in root else {}
+        parameters = {}
+        for name, key in (
+            ("radar_beam_width_h", "azimuth_beam"),
+            ("radar_beam_width_v", "elevation_beam"),
+        ):
+            value = _to_float(how.get(key))
+            if value is not None:
+                parameters[name] = value
+        return FrozenDict(parameters)
 
 
 class GamicBackendEntrypoint(BackendEntrypoint):
@@ -451,9 +430,14 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         For PPI only. If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
@@ -464,6 +448,16 @@ class GamicBackendEntrypoint(BackendEntrypoint):
 
     description = "Open GAMIC HDF5 (.h5, .hdf5, .mvol) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#gamic-hdf5"
+    supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """GAMIC HDF5 file (``what`` and ``scan0`` groups)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return {"what", "scan0"}.issubset(header[2])
 
     def open_dataset(
         self,
@@ -482,6 +476,7 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -521,10 +516,9 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "gamic"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -546,83 +540,90 @@ class GamicBackendEntrypoint(BackendEntrypoint):
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
         ds.attrs.update(store.get_calibration_parameters())
+        ds.attrs.update(store.get_radar_parameters())
 
         # ensure close works
         ds._close = store.close
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        format=None,
+        invalid_netcdf=None,
+        phony_dims="access",
+        decode_vlen_strings=True,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        sweeps = _resolve_sweeps(
+            sweep, lambda: _get_h5group_names(filename_or_obj, "gamic")
+        )
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            format=format,
+            invalid_netcdf=invalid_netcdf,
+            phony_dims=phony_dims,
+            decode_vlen_strings=decode_vlen_strings,
+            first_dim=first_dim,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+        )
+
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(self, filename_or_obj, **kwargs):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+GamicBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a GAMIC HDF5 file as a CfRadial2-shaped dict of group datasets.",
+    HDF5_PARAMS_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+)
+GamicBackendEntrypoint.open_datatree.__doc__ = (
+    "Open a GAMIC HDF5 file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def open_gamic_datatree(filename_or_obj, **kwargs):
     """Open GAMIC HDF5 dataset as :py:class:`xarray.DataTree`.
 
-    Parameters
-    ----------
-    filename_or_obj : str, Path, file-like or DataStore
-        Strings and Path objects are interpreted as a path to a local or remote
-        radar file
-
-    Keyword Arguments
-    -----------------
-    sweep : int, list of int, optional
-        Sweep number(s) to extract, default to first sweep. If None, all sweeps are
-        extracted into a list.
-    first_dim : str
-        Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
-        first dimension will be either ``azimuth`` or ``elevation`` depending on
-        type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
-    fix_second_angle : bool
-        If True, fixes erroneous second angle data. Defaults to ``False``.
-    site_as_coords : bool
-        Attach radar site-coordinates to Dataset, defaults to ``True``.
-    kwargs : dict
-        Additional kwargs are fed to :py:func:`xarray.open_dataset`.
-
-    Returns
-    -------
-    dtree: xarray.DataTree
-        DataTree
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="gamic")`` instead.
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("Optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    _deprecation_warning("open_gamic_datatree", "gamic")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_h5group_names(filename_or_obj, "gamic")
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="gamic", **kw)
-        for swp in sweeps
-    ]
-
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        params, calibration = _get_gamic_how_metadata(filename_or_obj, sweeps[0])
-        dtree["/radar_parameters"] = xr.merge(
-            [_get_subgroup(ls_ds, radar_parameters_subgroup), params]
-        )
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = calibration
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return _open_legacy_datatree(GamicBackendEntrypoint, filename_or_obj, kwargs)

@@ -7,11 +7,21 @@
 ported from wradlib
 """
 
+import io
+import shutil
+import warnings
+from pathlib import Path
+
+import h5py
 import numpy as np
 import pytest
+import xarray as xr
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
+from xradar import model
 from xradar.io.backends import gamic
+from xradar.io.backends.common import _get_radar_calibration
 from xradar.io.backends.gamic import open_gamic_datatree
 
 
@@ -123,23 +133,25 @@ def test_gamic_dataset_has_close(gamic_file):
     ds.close()
 
 
-def test_open_gamic_datatree(gamic_file):
+def test_open_gamic_datatree(gamic_file, closing):
     # Define kwargs to pass into the function
     kwargs = {
         "sweep": [0, 1],  # Test with specific sweeps
         "first_dim": "auto",
-        "reindex_angle": {
-            "start_angle": 0.0,
-            "stop_angle": 360.0,
-            "angle_res": 1.0,
-            "direction": 1,  # Set a valid direction within reindex_angle
+        "reindex_coord": {
+            "angle": {
+                "start_angle": 0.0,
+                "stop_angle": 360.0,
+                "angle_res": 1.0,
+                "direction": 1,  # Set a valid direction within reindex_angle
+            }
         },
         "fix_second_angle": True,
         "site_as_coords": True,
     }
 
     # Call the function with an actual GAMIC HDF5 file
-    dtree = open_gamic_datatree(gamic_file, **kwargs)
+    dtree = closing(open_gamic_datatree(gamic_file, **kwargs))
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
@@ -178,51 +190,59 @@ def test_open_gamic_datatree(gamic_file):
     assert dtree.attrs["source"] == "gamic", "Source should match expected value"
 
 
-def test_open_gamic_datatree_optional_groups(gamic_file):
+def test_open_gamic_datatree_optional_groups(gamic_file, closing):
     """Test that optional_groups=True includes metadata subgroups."""
-    dtree = open_gamic_datatree(gamic_file, optional_groups=True)
+    dtree = closing(open_gamic_datatree(gamic_file, optional_groups=True))
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
 
 
-def test_open_gamic_datatree_how_metadata(gamic_file):
-    dtree = open_gamic_datatree(gamic_file, optional_groups=True)
-    # /how azimuth_beam, elevation_beam
+def test_gamic_radar_metadata(gamic_file, closing):
+    dtree = closing(
+        xd.open_datatree(gamic_file, engine="gamic", optional_groups=True, sweep=0)
+    )
+    # /how azimuth_beam (horizontal) and elevation_beam (vertical)
     params = dtree["radar_parameters"].ds
     np.testing.assert_allclose(params.radar_beam_width_h, 1.0)
     np.testing.assert_allclose(params.radar_beam_width_v, 1.0)
-    assert params.radar_beam_width_h.attrs["units"] == "degrees"
-    # scan how, stored as strings, renamed according to the model
+    # the scan how, stored as strings, as numbers; the antenna gain with the name
+    # of the model, the two values of unknown meaning with their GAMIC names
     calib = dtree["radar_calibration"].ds
     assert set(calib.data_vars) == {
         "antenna_gain_h",
         "antenna_gain_v",
-        "noise_source_power_h",
-        "noise_source_power_v",
-        "receiver_mismatch_loss_h",
-        "receiver_mismatch_loss_v",
+        "noise_power_h",
+        "noise_power_v",
+        "rx_loss_h",
+        "rx_loss_v",
     }
     for var in calib.data_vars.values():
         assert var.dtype == np.float64
-        assert var.attrs["units"] == "dB"
     np.testing.assert_allclose(calib.antenna_gain_h, 43.0)
-    np.testing.assert_allclose(calib.noise_source_power_h, -3.8298)
-    # the same values on the sweep datasets
-    ds = open_dataset(gamic_file, engine="gamic", group="sweep_0")
-    assert ds.attrs["antenna_gain_h"] == 43.0
+    np.testing.assert_allclose(calib.noise_power_h, -3.8298)
+    np.testing.assert_allclose(calib.rx_loss_h, 3.0)
+    # they are no attributes of the root or the sweeps
+    assert not {"antenna_gain_h", "radar_beam_width_h"} & set(dtree.attrs)
+    assert not {"antenna_gain_h", "radar_beam_width_h"} & set(dtree["sweep_0"].attrs)
 
 
-def test_open_gamic_datatree_how_metadata_variants(gamic_file, tmp_path):
-    import io
-    import shutil
+def test_gamic_dataset_attrs_are_numbers(gamic_file):
+    # the calibration values are numbers with their model names (they were the
+    # strings of the file with the GAMIC names), also for open_dataset
+    with open_dataset(gamic_file, engine="gamic", group="sweep_0") as ds:
+        assert ds.attrs["antenna_gain_h"] == 43.0
+        assert "ant_gain_h" not in ds.attrs
+        assert ds.attrs["radar_beam_width_h"] == 1.0
 
-    import h5py
 
+@pytest.fixture
+def gamic_how_file(gamic_file, tmp_path):
+    """Copy of ``gamic_file`` with other values in the ``how`` groups."""
     path = tmp_path / "gamic_how.h5"
     shutil.copy(gamic_file, path)
     with h5py.File(path, "a") as f:
-        # no beam widths, bytes value without unit, non-numeric value
+        # no beam widths, a bytes value without unit, a value that is no number
         del f["how"].attrs["azimuth_beam"]
         del f["how"].attrs["elevation_beam"]
         how = f["scan0/how"].attrs
@@ -230,21 +250,79 @@ def test_open_gamic_datatree_how_metadata_variants(gamic_file, tmp_path):
         del how["ant_gain_h__unit"]
         how["rx_loss_h"] = "n/a"
         f["scan1/how"].attrs["ant_gain_h"] = "45"
+    return path
 
-    dtree = open_gamic_datatree(path, optional_groups=True)
+
+def test_gamic_radar_metadata_variants(gamic_how_file, closing):
+    # sweeps with other names: scan0 has no rx_loss_h (not a number), scan1 has
+    # it; the antenna gain differs between the scans
+    with pytest.warns(
+        UserWarning, match=r"values differ between the sweeps \(antenna_gain_h"
+    ):
+        dtree = closing(
+            xd.open_datatree(
+                gamic_how_file, engine="gamic", optional_groups=True, sweep=[0, 1]
+            )
+        )
     assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
     calib = dtree["radar_calibration"].ds
+    # the first sweep that has the name, the first sweep for the differing one
     np.testing.assert_allclose(calib.antenna_gain_h, 44.5)
-    assert "units" not in calib.antenna_gain_h.attrs
-    assert "receiver_mismatch_loss_h" not in calib
-    np.testing.assert_allclose(calib.receiver_mismatch_loss_v, 3.0)
+    np.testing.assert_allclose(calib.rx_loss_h, 3.0)
+    np.testing.assert_allclose(calib.rx_loss_v, 3.0)
 
-    # calibration is taken from the first selected sweep
-    dtree = open_gamic_datatree(path, optional_groups=True, sweep=[1])
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, 45.0)
 
-    # file-like objects
-    with open(path, "rb") as fh:
-        buf = io.BytesIO(fh.read())
-    dtree = open_gamic_datatree(buf, optional_groups=True)
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, 44.5)
+@pytest.mark.parametrize("sweep, expected", [(0, 44.5), ([1], 45.0)])
+def test_gamic_radar_calibration_of_the_selected_sweep(
+    gamic_how_file, sweep, expected, closing
+):
+    dtree = closing(
+        xd.open_datatree(
+            gamic_how_file, engine="gamic", optional_groups=True, sweep=sweep
+        )
+    )
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, expected)
+
+
+@pytest.mark.parametrize("kind", ["bytesio", "filelike"])
+def test_gamic_radar_metadata_inputs(gamic_file, kind, closing):
+    if kind == "bytesio":
+        source = io.BytesIO(Path(gamic_file).read_bytes())
+    else:
+        source = closing(open(gamic_file, "rb"))
+    dtree = closing(
+        xd.open_datatree(source, engine="gamic", optional_groups=True, sweep=0)
+    )
+    np.testing.assert_allclose(dtree["radar_parameters"].ds.radar_beam_width_h, 1.0)
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, 43.0)
+
+
+def test_gamic_beam_width_no_number_is_skipped(gamic_file, tmp_path, closing):
+    path = tmp_path / "gamic_beam.h5"
+    shutil.copy(gamic_file, path)
+    with h5py.File(path, "a") as f:
+        f["how"].attrs["azimuth_beam"] = "n/a"
+    dtree = closing(
+        xd.open_datatree(path, engine="gamic", optional_groups=True, sweep=0)
+    )
+    params = dtree["radar_parameters"].ds
+    assert "radar_beam_width_h" not in params
+    np.testing.assert_allclose(params.radar_beam_width_v, 1.0)
+
+
+def test_get_radar_calibration_of_sweeps_with_other_names():
+    # values come from the first sweep which has the name, a difference warns
+    names = model.radar_calibration_subgroup
+    first = xr.Dataset(attrs={"antenna_gain_h": 43.0})
+    second = xr.Dataset(attrs={"antenna_gain_h": 43.0, "radar_constant_h": 70.0})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        calib = _get_radar_calibration([first, second], names)
+    assert calib.antenna_gain_h == 43.0 and calib.radar_constant_h == 70.0
+    third = xr.Dataset(attrs={"antenna_gain_h": 44.0})
+    with pytest.warns(
+        UserWarning, match=r"differ between the sweeps \(antenna_gain_h\)"
+    ):
+        calib = _get_radar_calibration([first, third], names)
+    assert calib.antenna_gain_h == 43.0
+    assert not _get_radar_calibration([xr.Dataset()], names).data_vars
