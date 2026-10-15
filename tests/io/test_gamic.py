@@ -21,7 +21,7 @@ from xarray import DataTree, open_dataset, open_mfdataset
 import xradar as xd
 from xradar import model
 from xradar.io.backends import gamic
-from xradar.io.backends.common import _get_radar_calibration
+from xradar.io.backends.common import _get_radar_calibration, _same_value
 from xradar.io.backends.gamic import open_gamic_datatree
 
 
@@ -326,3 +326,12 @@ def test_get_radar_calibration_of_sweeps_with_other_names():
         calib = _get_radar_calibration([first, third], names)
     assert calib.antenna_gain_h == 43.0
     assert not _get_radar_calibration([xr.Dataset()], names).data_vars
+
+
+def test_same_value_of_numbers_nan_and_strings():
+    assert _same_value(43.0, 43.0)
+    assert _same_value(np.nan, np.nan)
+    assert not _same_value(43.0, 44.0)
+    # np.array_equal(equal_nan=True) raises for strings (e.g. model names)
+    assert _same_value("GAMIC", "GAMIC")
+    assert not _same_value("GAMIC", "other")
