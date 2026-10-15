@@ -15,8 +15,8 @@ once at parse time and stored inline.
 Moment names, CF attributes, linear scaling, the sweep mode, the nyquist
 velocity, range gates and the root attrs come from the eager IRIS backend's
 own tables and helpers (``iris_mapping``, ``SIGMET_DATA_TYPES``,
-``_moment_names``, ``_sweep_mode``, ``_nyquist``, ``_range_centers``,
-``_root_attrs``), :mod:`xradar.model`, and the eager root builder
+``_moment_names``, ``_sweep_mode``, ``_nyquist``, ``_dual_prf_factor``,
+``_range_centers``, ``_root_attrs``), :mod:`xradar.model`, and the eager root builder
 (``common._assign_root``), so the virtual view cannot drift from the eager
 decode. Not shared on purpose: the header walk of the RLE stream
 (``format.walk_sweep``), which the codec runs on a byte span with no file
@@ -51,6 +51,7 @@ from virtualizarr.manifests.utils import create_v3_array_metadata
 
 from xradar.io.backends.iris import (
     SIGMET_DATA_TYPES,
+    _dual_prf_factor,
     _moment_cf_attrs,
     _moment_names,
     _nyquist,
@@ -107,12 +108,12 @@ def _cf_scaling(
     entry for this type.
 
     The eager decoders are ``decode_array = (raw + offset)/scale + offset2``
-    plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by the
-    multi-PRF factor, ``decode_width`` by the single-PRF nyquist, ``decode_phidp``/``_phidp2``
-    by 180/360 degrees); a ``mask`` value becomes ``_FillValue`` so CF
-    mask_and_scale reproduces the eager masking. Types whose table entry
-    declares a SIGNED dtype stay raw: the virtual arrays hold the unsigned
-    wire words, and a linear transform cannot reproduce the signed
+    plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by
+    the multi-PRF factor, ``decode_width`` by the single-PRF nyquist,
+    ``decode_phidp``/``_phidp2`` by 180/360 degrees); a ``mask`` value becomes
+    ``_FillValue`` so CF mask_and_scale reproduces the eager masking. Types
+    whose table entry declares a SIGNED dtype stay raw: the virtual arrays hold
+    the unsigned wire words, and a linear transform cannot reproduce the signed
     reinterpretation (words at or above half-range would wrap). Nonlinear
     decoders (sqrt SQI/RHOHV, log KDP), categorical types (HCLASS), and
     float-word types (``tofloat``) stay raw too.
@@ -132,11 +133,11 @@ def _cf_scaling(
     if func is decode_vel:
         return nyquist_vel / scale, offset * nyquist_vel / scale, fkw.get("mask")
     if func is decode_width:
-        return nyquist / scale, offset * nyquist / scale, None
+        return nyquist / scale, offset * nyquist / scale, fkw.get("mask")
     if func is decode_phidp:
-        return 180.0 / scale, offset * 180.0 / scale, None
+        return 180.0 / scale, offset * 180.0 / scale, fkw.get("mask")
     if func is decode_phidp2:
-        return 360.0 / scale, offset * 360.0 / scale, None
+        return 360.0 / scale, offset * 360.0 / scale, fkw.get("mask")
     return None
 
 
@@ -388,7 +389,7 @@ class IrisParser:
 
         # the eager reader's nyquist: the multi-PRF factor applies to DB_VEL
         nyquist = _nyquist(hdr.wavelength, hdr.prf)
-        nyquist_vel = _nyquist(hdr.wavelength, hdr.prf, hdr.multi_prf_mode_flag)
+        nyquist_vel = nyquist * _dual_prf_factor(hdr.multi_prf_mode_flag)
 
         groups: dict[str, ManifestGroup] = {}
         ray_times: list[np.ndarray] = []

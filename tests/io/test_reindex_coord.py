@@ -76,10 +76,12 @@ def test_reindex_coord_range(gamic_file):
         assert np.isnan(ds.DBZH.isel(range=slice(rng.size, None))).all()
 
 
-def test_reindex_coord_datatree(odim_file):
+def test_reindex_coord_datatree(odim_file, closing):
     from xradar.io import open_odim_datatree
 
-    dtree = open_odim_datatree(odim_file, sweep=0, reindex_coord={"angle": ANGLE})
+    dtree = closing(
+        open_odim_datatree(odim_file, sweep=0, reindex_coord={"angle": ANGLE})
+    )
     assert dtree["sweep_0"].ds.sizes["azimuth"] == 360
 
 

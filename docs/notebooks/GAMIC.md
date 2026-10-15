@@ -75,11 +75,11 @@ display(ds)
 The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list.
 
 ```{code-cell}
-help(xd.io.open_gamic_datatree)
+help(xd.open_datatree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep=8)
+dtree = xd.open_datatree(filename, engine="gamic", sweep=8)
 display(dtree)
 ```
 
@@ -96,16 +96,16 @@ dtree["sweep_0"].ds.DBZH.plot()
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep="sweep_8")
+dtree = xd.open_datatree(filename, engine="gamic", sweep="sweep_8")
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep=[0, 1, 8])
+dtree = xd.open_datatree(filename, engine="gamic", sweep=[0, 1, 8])
 display(dtree)
 ```
 
 ```{code-cell}
-dtree = xd.io.open_gamic_datatree(filename, sweep=["sweep_1", "sweep_2", "sweep_8"])
+dtree = xd.open_datatree(filename, engine="gamic", sweep=["sweep_1", "sweep_2", "sweep_8"])
 display(dtree)
 ```

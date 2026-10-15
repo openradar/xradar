@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.11
+  - python>=3.12
   - cartopy
   - cmweather
   - codecov
@@ -34,7 +34,7 @@ dependencies:
   - wradlib
   - ffmpeg
   - zarr>=3.1.6
+  - xarray>=2026.9.0
   - pip:
-    - xarray >= 2026.9.0
     # pip, not conda: obspec-utils (a virtualizarr dep) has no conda-forge pkg
     - virtualizarr>=2.7.1,<2.8; python_version >= "3.12"
