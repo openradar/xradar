@@ -44,8 +44,12 @@ from collections import OrderedDict, defaultdict
 
 import numpy as np
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -55,10 +59,23 @@ from xarray.core.variable import Variable
 
 from xradar import util
 from xradar.io.backends.common import (
+    _STATION_VARS,
+    LOCK_PARAM_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
     _assign_root,
+    _compose_docstring,
+    _deprecation_warning,
+    _external_stacklevel,
     _get_radar_calibration,
+    _get_reindex_coord,
     _get_subgroup,
+    _keep_close,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _resolve_sweeps,
 )
 from xradar.model import (
     georeferencing_correction_subgroup,
@@ -87,6 +104,8 @@ NEXRADL2_LOCK = SerializableLock()
 
 #: NEXRAD volume header magic prefix
 _VOLUME_HEADER_PREFIX = b"AR2V"
+#: gzip magic number, only used for a hint when the input is not readable
+_GZIP_MAGIC = b"\x1f\x8b"
 
 
 def _concatenate_chunks(file_list):
@@ -203,8 +222,18 @@ class NEXRADFile:
 
     Parameters
     ----------
-    filename : str
-        Filename of Archive II file to read.
+    filename : str, os.PathLike, bytes, bytearray or file-like
+        Archive II file to read: a path, the raw (uncompressed) bytes, or a
+        file-like object. File-like objects are rewound if seekable.
+        gzip-compressed archives have to be decompressed first.
+    mode : str, optional
+        Mode for :py:class:`numpy.memmap` when reading from a path.
+        Defaults to ``"r"``.
+    loaddata : bool, optional
+        Load all data on initialization. Defaults to ``False``.
+    has_volume_header : bool, optional
+        Whether the input starts with the 24-byte volume header (``AR2V``).
+        Set to ``False`` for I/E chunk files. Defaults to ``True``.
 
     References
     ----------
@@ -227,6 +256,12 @@ class NEXRADFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the same file-like is read again for every sweep
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -530,6 +565,22 @@ class NEXRADRecordFile(NEXRADFile):
         chk : bool
             True, if record is truncated.
         """
+        if self.record_number is None:
+            source = (
+                f" in {os.fspath(self.filename)!r}"
+                if isinstance(self.filename, (str, os.PathLike))
+                else ""
+            )
+            hint = ""
+            if self._fh[:2].tobytes() == _GZIP_MAGIC:
+                hint = (
+                    " The input is gzip-compressed (e.g. *.gz files in "
+                    "unidata-nexrad-level2), decompress it first, e.g. with "
+                    "`gzip.open(filename).read()`."
+                )
+            raise ValueError(
+                f"Not a NEXRAD Level II archive: no records found{source}.{hint}"
+            )
         return self.init_record(self.record_number + 1)
 
     def array_from_record(self, words, width, dtype):
@@ -1208,6 +1259,28 @@ _CHANNEL_CONFIGS = {
 }
 
 
+def _sweep_attrs_from_msg5_elev(elev):
+    """Build the per-sweep attrs dict from one MSG_5_ELEV entry (ICD Table XI)."""
+    wf = elev.get("waveform_type", 0)
+    ch = elev.get("channel_config", 0)
+    sup = elev.get("supplemental_data_decoded", {})
+    return {
+        "waveform_type": _WAVEFORM_TYPES.get(wf, str(wf)),
+        "channel_config": _CHANNEL_CONFIGS.get(ch, str(ch)),
+        "super_resolution": elev.get("super_resolution", 0),
+        "sails_cut": sup.get("sails_cut", False),
+        "sails_sequence_number": sup.get("sails_sequence_number", 0),
+        "mrle_cut": sup.get("mrle_cut", False),
+        "mrle_sequence_number": sup.get("mrle_sequence_number", 0),
+        "mpda_cut": sup.get("mpda_cut", False),
+        "base_tilt_cut": sup.get("base_tilt_cut", False),
+    }
+
+
+# MSG_31 azimuth_resolution code -> degrees (ICD 2620002, Table XVII-A)
+_AZIMUTH_RESOLUTION = {1: 0.5, 2: 1.0}
+
+
 def _assign_sweep_attrs(dtree, elev_data):
     """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes.
 
@@ -1220,22 +1293,7 @@ def _assign_sweep_attrs(dtree, elev_data):
         sweep_key = f"sweep_{i}"
         if sweep_key not in dtree.children:
             continue
-        wf = elev.get("waveform_type", 0)
-        ch = elev.get("channel_config", 0)
-        sup = elev.get("supplemental_data_decoded", {})
-        dtree[sweep_key].ds.attrs.update(
-            {
-                "waveform_type": _WAVEFORM_TYPES.get(wf, str(wf)),
-                "channel_config": _CHANNEL_CONFIGS.get(ch, str(ch)),
-                "super_resolution": elev.get("super_resolution", 0),
-                "sails_cut": sup.get("sails_cut", False),
-                "sails_sequence_number": sup.get("sails_sequence_number", 0),
-                "mrle_cut": sup.get("mrle_cut", False),
-                "mrle_sequence_number": sup.get("mrle_sequence_number", 0),
-                "mpda_cut": sup.get("mpda_cut", False),
-                "base_tilt_cut": sup.get("base_tilt_cut", False),
-            }
-        )
+        dtree[sweep_key].ds.attrs.update(_sweep_attrs_from_msg5_elev(elev))
 
 
 def _get_dynamic_scan_type(supplemental):
@@ -1743,7 +1801,7 @@ class NexradLevel2ArrayWrapper(BackendArray):
         )
 
 
-class NexradLevel2Store(AbstractDataStore):
+class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
     def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
         self._manager = manager
         self._group = int(group[6:])
@@ -1950,6 +2008,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
 
     description = "Open NEXRAD Level2 files in Xarray"
     url = "tbd"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -1965,6 +2024,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         group=None,
         lock=None,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -1998,10 +2058,9 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "nexradlevel2"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -2021,6 +2080,175 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        sweep=None,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        optional=True,
+        optional_groups=False,
+        incomplete_sweep="drop",
+        lock=None,
+        **kwargs,
+    ):
+        # Handle list/tuple of chunk files or bytes
+        if isinstance(filename_or_obj, (list, tuple)):
+            filename_or_obj = _concatenate_chunks(filename_or_obj)
+            if not filename_or_obj[:4].startswith(_VOLUME_HEADER_PREFIX):
+                raise ValueError(
+                    "No chunk contains a volume header (AR2V prefix). "
+                    "The first chunk must be the S file (volume scan start) "
+                    "which contains the volume header and metadata."
+                )
+
+        # Single metadata read. Reading incomplete_sweeps triggers
+        # data_header parsing and populates nex.data — needed for
+        # present_keys below.
+        with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
+            incomplete = nex.incomplete_sweeps
+            # Use sparse sweep keys: upstream-dropped interior cuts leave
+            # gaps like [0..9, 11] that range(act_sweeps) would mis-index.
+            # See #361.
+            present_keys = sorted(nex.data)
+            act_sweeps = len(present_keys)
+            elev_data = nex.msg_5.get("elevation_data", []) if nex.msg_5 else []
+            # nominal azimuth spacing of the incomplete sweeps, used for
+            # padding; msg_31_header is compacted past interior gaps:
+            # label -> position
+            angle_resolution = {
+                sw: _AZIMUTH_RESOLUTION.get(
+                    nex.msg_31_header[pos][0]["azimuth_resolution"]
+                )
+                for pos, sw in enumerate(present_keys)
+                if sw in incomplete and nex.msg_31_header[pos]
+            }
+
+        if sweep is not None:
+            sweeps = _resolve_sweeps(
+                sweep,
+                lambda: [f"sweep_{i}" for i in present_keys],
+            )
+        else:
+            if incomplete_sweep == "drop":
+                sweeps = [f"sweep_{i}" for i in present_keys if i not in incomplete]
+                if incomplete:
+                    warnings.warn(
+                        f"Dropped {len(incomplete)} incomplete sweep(s): "
+                        f"{sorted(incomplete)}. Use incomplete_sweep='pad' "
+                        f"to include them with NaN-filled rays.",
+                        UserWarning,
+                        stacklevel=_external_stacklevel(),
+                    )
+                if not sweeps:
+                    warnings.warn(
+                        "All sweeps are incomplete. Returning empty dict.",
+                        UserWarning,
+                        stacklevel=_external_stacklevel(),
+                    )
+                    return {"/": xr.Dataset()}
+            elif incomplete_sweep == "pad":
+                sweeps = [f"sweep_{i}" for i in present_keys]
+            else:
+                raise ValueError(
+                    f"Invalid incomplete_sweep={incomplete_sweep!r}. "
+                    "Expected 'drop' or 'pad'."
+                )
+
+        sweep_dict = open_sweeps_as_dict(
+            filename_or_obj=filename_or_obj,
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            sweeps=sweeps,
+            first_dim=first_dim,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+            optional=optional,
+            # incomplete sweeps that are still selected (pad mode, or an
+            # explicit `sweep=`) are padded to their nominal azimuth grid
+            incomplete_sweeps=incomplete,
+            angle_resolution=angle_resolution,
+            lock=lock,
+            **kwargs,
+        )
+
+        ls_ds = [sweep_dict[s] for s in sweep_dict]
+        ls_ds_with_root = [xr.Dataset()] + list(ls_ds)
+        root, ls_ds_with_root = _assign_root(ls_ds_with_root)
+        # Per ICD, total cuts actually recorded in the file (MSG_31 headers),
+        # not user selection. Used downstream to detect AVSET truncation.
+        root.attrs["actual_elevation_cuts"] = act_sweeps
+        groups_dict = {
+            "/": root,
+        }
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                ls_ds_with_root, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                ls_ds_with_root, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                ls_ds_with_root, radar_calibration_subgroup
+            )
+        # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI). The elev_data
+        # index aligns with sweep_{i} because both order by VCP cut index.
+        for sweep_path, ds in sweep_dict.items():
+            sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
+            sweep_idx = int(sweep_path.split("_")[-1])
+            if 0 <= sweep_idx < len(elev_data):
+                sw.attrs.update(_sweep_attrs_from_msg5_elev(elev_data[sweep_idx]))
+            groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
+        return groups_dict
+
+    def open_datatree(
+        self,
+        filename_or_obj,
+        **kwargs,
+    ):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+_NEXRAD_PARAMS_DOC = """
+incomplete_sweep : {"drop", "pad"}, optional
+    How to handle sweeps with fewer rays than the VCP nominal count.
+    ``"drop"`` (default) excludes them with a UserWarning; ``"pad"``
+    keeps them with NaN-filled rays so the reindexed azimuth grid is
+    complete.
+"""
+
+NexradLevel2BackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open a NEXRAD Level II file as a CfRadial2-shaped dict of group datasets.\n"
+    "    Accepts a single file path, a bytes buffer, or a list/tuple of LDM\n"
+    "    chunk paths (the first chunk must hold the AR2V volume header).",
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _NEXRAD_PARAMS_DOC,
+    LOCK_PARAM_DOC,
+)
+NexradLevel2BackendEntrypoint.open_datatree.__doc__ = (
+    "Open a NEXRAD Level II file as :py:class:`xarray.DataTree`. "
+    "See :meth:`open_groups_as_dict` for keyword arguments.\n"
+)
+
 
 def open_nexradlevel2_datatree(
     filename_or_obj,
@@ -2033,6 +2261,7 @@ def open_nexradlevel2_datatree(
     decode_timedelta=None,
     sweep=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
@@ -2096,9 +2325,12 @@ def open_nexradlevel2_datatree(
         first dimension. If "auto," determines the first dimension based on the sweep
         type (azimuth or elevation). Default is "auto."
 
-    reindex_angle : bool or dict, optional
-        Controls angle reindexing. If True or a dictionary, applies reindexing with
-        specified settings (if given). Only used if `decode_coords=True`. Default is False.
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+        Only used if `decode_coords=True`. Default is None (no reindexing).
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
 
     fix_second_angle : bool, optional
         If True, corrects errors in the second angle data, such as misaligned
@@ -2131,84 +2363,9 @@ def open_nexradlevel2_datatree(
     dtree : xarray.DataTree
         An `xarray.DataTree` representing the radar data organized by sweeps.
     """
-    from xarray.core.treenode import NodePath
+    _deprecation_warning("open_nexradlevel2_datatree", "nexradlevel2")
 
-    # Handle list/tuple of chunk files or bytes
-    if isinstance(filename_or_obj, (list, tuple)):
-        filename_or_obj = _concatenate_chunks(filename_or_obj)
-        # Validate that the concatenated data starts with a volume header.
-        # The first chunk must be the S file (volume scan start).
-        if not filename_or_obj[:4].startswith(_VOLUME_HEADER_PREFIX):
-            raise ValueError(
-                "No chunk contains a volume header (AR2V prefix). "
-                "The first chunk must be the S file (volume scan start) which "
-                "contains the volume header and metadata. I/E chunks alone "
-                "cannot be decoded without it."
-            )
-
-    # Single metadata read for sweep count, completeness, and elevation data
-    with NEXRADLevel2File(filename_or_obj, loaddata=False) as nex:
-        # Reading incomplete_sweeps also triggers data_header parsing,
-        # populating nex.data. Must run before sorted(nex.data) below.
-        incomplete = nex.incomplete_sweeps
-        # Use the sweep indices actually present, not range(len(...)):
-        # upstream-dropped interior sweeps leave sparse keys (e.g.
-        # [0..9, 11]) that would otherwise KeyError downstream. See #361.
-        present_keys = sorted(nex.data)
-        act_sweeps = len(present_keys)
-        if nex.msg_5:
-            exp_sweeps = nex.msg_5["number_elevation_cuts"]
-            elev_data = nex.msg_5.get("elevation_data", [])
-        else:
-            exp_sweeps = 0
-            elev_data = []
-
-    if isinstance(sweep, str):
-        sweep = NodePath(sweep).name
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        elif isinstance(sweep[0], str):
-            sweeps = [NodePath(i).name for i in sweep]
-        else:
-            raise ValueError(
-                "Invalid type in 'sweep' list. Expected integers (e.g., [0, 1, 2]) or strings (e.g. [/sweep_0, sweep_1])."
-            )
-    else:
-        # Check for AVSET mode: actual sweeps may be fewer than VCP definition
-        if exp_sweeps > act_sweeps:
-            exp_sweeps = act_sweeps
-
-        if incomplete_sweep == "drop":
-            sweeps = [f"sweep_{i}" for i in present_keys if i not in incomplete]
-            if incomplete:
-                warnings.warn(
-                    f"Dropped {len(incomplete)} incomplete sweep(s): "
-                    f"{sorted(incomplete)}. Use incomplete_sweep='pad' to "
-                    f"include them with NaN-filled rays.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            if not sweeps:
-                warnings.warn(
-                    "All sweeps are incomplete. Returning empty DataTree.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                return DataTree()
-        elif incomplete_sweep == "pad":
-            sweeps = [f"sweep_{i}" for i in present_keys]
-        else:
-            raise ValueError(
-                f"Invalid incomplete_sweep={incomplete_sweep!r}. "
-                "Expected 'drop' or 'pad'."
-            )
-
-    sweep_dict = open_sweeps_as_dict(
-        filename_or_obj=filename_or_obj,
+    kwargs.update(
         mask_and_scale=mask_and_scale,
         decode_times=decode_times,
         concat_characters=concat_characters,
@@ -2216,38 +2373,18 @@ def open_nexradlevel2_datatree(
         drop_variables=drop_variables,
         use_cftime=use_cftime,
         decode_timedelta=decode_timedelta,
-        sweeps=sweeps,
+        sweep=sweep,
         first_dim=first_dim,
-        reindex_angle=reindex_angle,
+        reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
         fix_second_angle=fix_second_angle,
-        site_as_coords=False,
+        # legacy callers may pass the new `site_coords` spelling via kwargs
+        site_coords=kwargs.pop("site_coords", site_as_coords),
         optional=optional,
-        incomplete_sweeps=incomplete,
+        optional_groups=optional_groups,
+        incomplete_sweep=incomplete_sweep,
         lock=lock,
-        **kwargs,
     )
-    ls_ds: list[xr.Dataset] = [xr.Dataset()] + list(sweep_dict.values())
-    root, ls_ds = _assign_root(ls_ds)
-    dtree: dict = {"/": root}
-    if optional_groups:
-        dtree["/radar_parameters"] = _get_subgroup(ls_ds, radar_parameters_subgroup)
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    # Build from ls_ds (station vars already stripped by _assign_root).
-    dtree |= {key: ds.drop_attrs(deep=False) for key, ds in zip(sweep_dict, ls_ds[1:])}
-    result = DataTree.from_dict(dtree)
-
-    # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI)
-    _assign_sweep_attrs(result, elev_data)
-
-    # Actual sweeps recorded in the file (from MSG_31 headers, not user selection)
-    result.ds.attrs["actual_elevation_cuts"] = act_sweeps
-
-    return result
+    return _open_legacy_datatree(NexradLevel2BackendEntrypoint, filename_or_obj, kwargs)
 
 
 def open_sweeps_as_dict(
@@ -2261,16 +2398,22 @@ def open_sweeps_as_dict(
     decode_timedelta=None,
     sweeps=None,
     first_dim="auto",
+    reindex_coord=None,
     reindex_angle=False,
     fix_second_angle=False,
     site_as_coords=True,
     optional=True,
     incomplete_sweeps=None,
+    angle_resolution=None,
     lock=None,
     **kwargs,
 ):
     if incomplete_sweeps is None:
         incomplete_sweeps = set()
+    if angle_resolution is None:
+        angle_resolution = {}
+
+    reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
 
     stores = NexradLevel2Store.open_groups(
         filename=filename_or_obj,
@@ -2303,22 +2446,43 @@ def open_sweeps_as_dict(
 
             # handle duplicates and reindex
             # For incomplete sweeps in pad mode, auto-detect angle parameters
-            # and force reindex even when reindex_angle=False
+            # and force angle reindex even without reindex_coord["angle"]
             if decode_coords and sweep_idx in incomplete_sweeps:
                 group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 angle_params = util.extract_angle_parameters(group_ds)
+                # use the nominal azimuth spacing of the sweep (MSG_31
+                # azimuth_resolution), the measured one is jittery (#396)
+                angle_res = angle_resolution.get(sweep_idx)
+                if angle_res is None:
+                    angle_res = float(angle_params["angle_res"])
                 reindex_kwargs = {
                     "start_angle": angle_params["start_angle"],
                     "stop_angle": angle_params["stop_angle"],
-                    "angle_res": float(angle_params["angle_res"]),
+                    "angle_res": angle_res,
                     "direction": angle_params["direction"],
                 }
+                ignored = (
+                    " The given reindex_coord['angle'] is not used for this sweep."
+                    if reindex_coord and "angle" in reindex_coord
+                    else ""
+                )
+                warnings.warn(
+                    f"{path_group} is incomplete and is padded to a full angle "
+                    f"grid (angle_res={reindex_kwargs['angle_res']}, "
+                    f"start_angle={reindex_kwargs['start_angle']}, "
+                    f"stop_angle={reindex_kwargs['stop_angle']}) with NaN-filled "
+                    f"rays.{ignored}",
+                    UserWarning,
+                    stacklevel=2,
+                )
                 group_ds = group_ds.pipe(util.reindex_angle, **reindex_kwargs)
                 group_ds = group_ds.pipe(util.ipol_time, **reindex_kwargs)
-            elif decode_coords and reindex_angle is not False:
-                group_ds = group_ds.pipe(util.remove_duplicate_rays)
-                group_ds = group_ds.pipe(util.reindex_angle, **reindex_angle)
-                group_ds = group_ds.pipe(util.ipol_time, **reindex_angle)
+                if reindex_coord and "range" in reindex_coord:
+                    group_ds = _apply_reindex_coord(
+                        group_ds, {"range": reindex_coord["range"]}
+                    )
+            elif decode_coords and reindex_coord:
+                group_ds = _apply_reindex_coord(group_ds, reindex_coord)
 
             # handling first dimension
             dim0 = "elevation" if group_ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -2333,5 +2497,8 @@ def open_sweeps_as_dict(
             # assign geo-coords
             group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
+            # ensure close works: the steps above build new datasets, and
+            # xarray 2026.9.0 drops the close in some of them (#471, #502)
+            group_ds.set_close(store.close)
             groups_dict[path_group] = group_ds
     return groups_dict

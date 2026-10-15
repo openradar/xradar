@@ -38,12 +38,11 @@ import warnings
 
 import h5netcdf
 import numpy as np
-import xarray as xr
-from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendArray,
     BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
     find_root_and_group,
 )
 from xarray.backends.file_manager import CachingFileManager, DummyFileManager
@@ -55,7 +54,6 @@ from xarray.core.variable import Variable
 
 from ... import util
 from ...model import (
-    georeferencing_correction_subgroup,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
@@ -65,21 +63,28 @@ from ...model import (
     get_range_attrs,
     get_time_attrs,
     moment_attrs,
-    radar_calibration_subgroup,
-    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
+    HDF5_PARAMS_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+    _apply_reindex_coord,
     _apply_site_as_coords,
-    _attach_sweep_groups,
+    _build_groups_dict,
+    _compose_docstring,
+    _deprecation_warning,
+    _external_stacklevel,
     _fix_angle,
     _get_h5group_names,
-    _get_radar_calibration,
-    _get_required_root_dataset,
-    _get_subgroup,
+    _get_reindex_coord,
+    _ManagedStoreMixin,
     _maybe_decode,
     _maybe_recover_surrogate,
+    _open_legacy_datatree,
+    _open_sweeps,
     _prepare_backend_ds,
+    _resolve_sweeps,
 )
 
 HDF5_LOCK = SerializableLock()
@@ -220,115 +225,68 @@ _ODIM_SOURCE_TO_GLOBAL_ATTRS = {
 }
 
 
-# ODIM_H5 how-attributes which have the same units in ODIM_H5 2.2, 2.3 and 2.4
-# (ODIM_H5 2.4 Table 8) and their xradar names (CfRadial 2.1 Sections 7.1, 7.3)
-# name: (group, xradar name, factor, attributes)
+# ODIM_H5 how-attributes with the same units in ODIM_H5 2.2, 2.3 and 2.4 (ODIM_H5
+# 2.4 Table 8), mapped to the CfRadial 2.1 names of radar_parameters (Section 7.1)
+# and radar_calibration (Section 7.3). ODIM `H`/`V` stand for the horizontal and
+# vertical (-3 dB) width, gain, constant ... of the antenna and give `h`/`v`.
+# stem: (name with the polarization, factor)
 _ODIM_HOW_TO_METADATA = {
-    "beamwH": (
-        "radar_parameters",
-        "radar_beam_width_h",
-        1,
-        dict(units="degrees", long_name="half-power beam width, H polarization"),
-    ),
-    "beamwV": (
-        "radar_parameters",
-        "radar_beam_width_v",
-        1,
-        dict(units="degrees", long_name="half-power beam width, V polarization"),
-    ),
-    "antgainH": (
-        "radar_parameters",
-        "radar_antenna_gain_h",
-        1,
-        dict(units="dB", long_name="antenna gain, H polarization"),
-    ),
-    "antgainV": (
-        "radar_parameters",
-        "radar_antenna_gain_v",
-        1,
-        dict(units="dB", long_name="antenna gain, V polarization"),
-    ),
-    "radconstH": (
-        "radar_calibration",
-        "radar_constant_h",
-        1,
-        dict(units="dB", long_name="radar constant, H channel"),
-    ),
-    "radconstV": (
-        "radar_calibration",
-        "radar_constant_v",
-        1,
-        dict(units="dB", long_name="radar constant, V channel"),
-    ),
-    # system noise as reflectivity at 1 km
-    "NEZH": (
-        "radar_calibration",
-        "base_1km_hc",
-        1,
-        dict(units="dBZ", long_name="reflectivity at 1 km for SNR = 0 dB, H co-pol"),
-    ),
-    "NEZV": (
-        "radar_calibration",
-        "base_1km_vc",
-        1,
-        dict(units="dBZ", long_name="reflectivity at 1 km for SNR = 0 dB, V co-pol"),
-    ),
+    "beamw": ("radar_beam_width_{}", 1),
+    "antgain": ("radar_antenna_gain_{}", 1),
+    "radconst": ("radar_constant_{}", 1),
+    # system noise as reflectivity at 1 km, co-polar
+    "NEZ": ("base_1km_{}c", 1),
     # one-way radome loss in ODIM, two-way in CfRadial
-    "radomelossH": (
-        "radar_calibration",
-        "two_way_radome_loss_h",
-        2,
-        dict(units="dB", long_name="two-way radome loss, H polarization"),
-    ),
-    "radomelossV": (
-        "radar_calibration",
-        "two_way_radome_loss_v",
-        2,
-        dict(units="dB", long_name="two-way radome loss, V polarization"),
-    ),
+    "radomeloss": ("two_way_radome_loss_{}", 2),
 }
 
 
-def _get_odim_how_metadata(filename_or_obj, sweep):
-    """Get radar_parameters and radar_calibration from ODIM how-groups.
-
-    The top-level ``/how`` is updated with the ``how`` of the dataset of the
-    given sweep, as dataset-level attributes apply to that dataset.
+def _get_odim_how_metadata(*how_attrs):
+    """Get radar_parameters and radar_calibration values from ODIM ``how`` attributes.
 
     Parameters
     ----------
-    filename_or_obj : str, Path or file-like
-    sweep : str
-        Sweep group name (``sweep_N``) to take dataset-level attributes from.
+    *how_attrs : dict
+        Attributes of the ``how`` groups, from the top-level group to the
+        dataset: later ones win, as dataset-level attributes apply to that
+        dataset only. The deprecated ``beamwidth`` (ODIM_H5 2.2/2.3) applies
+        to both ``beamwH`` and ``beamwV`` of the group it is in.
 
     Returns
     -------
-    groups : dict
-        ``{"radar_parameters": xr.Dataset, "radar_calibration": xr.Dataset}``
+    metadata : dict
+        xradar name -> float. Attributes which are no numbers are skipped
+        with a warning, and so are antenna gains of 0 dB or less, which are
+        placeholders.
     """
-    dataset = f"dataset{int(sweep.split('_')[-1]) + 1}"
     how = {}
-    with h5netcdf.File(filename_or_obj, "r", decode_vlen_strings=True) as fh:
-        for path in ["how", f"{dataset}/how"]:
-            if path in fh:
-                how.update(fh[path].attrs)
-    if isinstance(filename_or_obj, io.BytesIO):
-        filename_or_obj.seek(0)
+    for attrs in how_attrs:
+        attrs = dict(attrs)
+        if "beamwidth" in attrs:
+            for pol in "HV":
+                attrs.setdefault(f"beamw{pol}", attrs["beamwidth"])
+        how.update(attrs)
 
-    # ODIM_H5 2.2/2.3 `beamwidth` (deprecated in 2.4) applies to both
-    if "beamwidth" in how:
-        how.setdefault("beamwH", how["beamwidth"])
-        how.setdefault("beamwV", how["beamwidth"])
-
-    groups = {"radar_parameters": {}, "radar_calibration": {}}
-    for odim_name, (group, name, factor, attrs) in _ODIM_HOW_TO_METADATA.items():
-        value = how.get(odim_name)
-        if value is None or np.size(value) != 1:
-            continue
-        groups[group][name] = xr.DataArray(
-            float(np.ravel(value)[0]) * factor, attrs=attrs
-        )
-    return {group: xr.Dataset(data_vars) for group, data_vars in groups.items()}
+    metadata = {}
+    for stem, (pattern, factor) in _ODIM_HOW_TO_METADATA.items():
+        for odim_pol, pol in (("H", "h"), ("V", "v")):
+            key = f"{stem}{odim_pol}"
+            if key not in how:
+                continue
+            try:
+                value = float(np.asarray(how[key]).item())
+            except (TypeError, ValueError):
+                warnings.warn(
+                    f"xradar: ODIM how attribute {key}={how[key]!r} is no number, "
+                    "it is not used.",
+                    UserWarning,
+                    stacklevel=_external_stacklevel(),
+                )
+                continue
+            if stem == "antgain" and value <= 0:
+                continue
+            metadata[pattern.format(pol)] = value * factor
+    return metadata
 
 
 def _parse_odim_source(source):
@@ -738,9 +696,17 @@ def _get_h5netcdf_encoding(self, var):
     return encoding
 
 
+# ODIM_H5 quantities whose name means something else in FM301/CfRadial2:
+# ODIM TH/TV are logged total (uncorrected) reflectivity in dBZ
+# (ODIM_H5 2.4 Table 16), FM301 TH/TV are linear and DBTH/DBTV logged
+# (FM301 Table 301-9)
+ODIM_TO_FM301_NAMES = {"TH": "DBTH", "TV": "DBTV"}
+
+
 def _get_odim_variable_name_and_attrs(name, attrs):
     if "data" in name:
         name = attrs.pop("quantity")
+        name = ODIM_TO_FM301_NAMES.get(name, name)
         # handle non-standard moment names
         try:
             mapping = sweep_vars_mapping[name]
@@ -844,7 +810,7 @@ def _add_legend_flag_attrs(variables, legend):
             var.attrs["flag_meanings"] = " ".join(meanings)
 
 
-class OdimStore(AbstractDataStore):
+class OdimStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
@@ -964,6 +930,17 @@ class OdimStore(AbstractDataStore):
 
         return FrozenDict(attributes)
 
+    def get_calibration_parameters(self):
+        """Antenna and calibration values of the ``how`` groups of the file and
+        of the dataset, with their xradar names (see ``_get_odim_how_metadata``)."""
+        with self._manager.acquire_context(False) as root:
+            how_attrs = [
+                root[path].attrs
+                for path in ("how", f"{self._group.lstrip('/')}/how")
+                if path in root
+            ]
+            return FrozenDict(_get_odim_how_metadata(*how_attrs))
+
 
 class OdimBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for ODIM data.
@@ -974,9 +951,14 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
@@ -987,6 +969,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#odim-h5"
+    supports_groups = True
 
     def open_dataset(
         self,
@@ -1005,6 +988,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         phony_dims="access",
         decode_vlen_strings=True,
         first_dim="auto",
+        reindex_coord=None,
         reindex_angle=False,
         fix_second_angle=False,
         site_as_coords=True,
@@ -1044,10 +1028,9 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         ds.encoding["engine"] = "odim"
 
         # handle duplicates and reindex
-        if decode_coords and reindex_angle is not False:
-            ds = ds.pipe(util.remove_duplicate_rays)
-            ds = ds.pipe(util.reindex_angle, **reindex_angle)
-            ds = ds.pipe(util.ipol_time, **reindex_angle)
+        reindex_coord = _get_reindex_coord(reindex_coord, reindex_angle)
+        if decode_coords and reindex_coord:
+            ds = _apply_reindex_coord(ds, reindex_coord)
 
         # handling first dimension
         dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
@@ -1067,15 +1050,96 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works
         ds._close = store.close
 
         return ds
 
+    def open_groups_as_dict(
+        self,
+        filename_or_obj,
+        *,
+        mask_and_scale=True,
+        decode_times=True,
+        concat_characters=True,
+        decode_coords=True,
+        drop_variables=None,
+        use_cftime=None,
+        decode_timedelta=None,
+        format=None,
+        invalid_netcdf=None,
+        phony_dims="access",
+        decode_vlen_strings=True,
+        first_dim="auto",
+        reindex_coord=None,
+        reindex_angle=False,
+        fix_second_angle=False,
+        site_coords=True,
+        sweep=None,
+        optional=True,
+        optional_groups=False,
+    ):
+        sweeps = _resolve_sweeps(
+            sweep, lambda: _get_h5group_names(filename_or_obj, "odim")
+        )
+
+        ds_kwargs = dict(
+            mask_and_scale=mask_and_scale,
+            decode_times=decode_times,
+            concat_characters=concat_characters,
+            decode_coords=decode_coords,
+            drop_variables=drop_variables,
+            use_cftime=use_cftime,
+            decode_timedelta=decode_timedelta,
+            format=format,
+            invalid_netcdf=invalid_netcdf,
+            phony_dims=phony_dims,
+            decode_vlen_strings=decode_vlen_strings,
+            first_dim=first_dim,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+            fix_second_angle=fix_second_angle,
+            site_as_coords=site_coords,
+        )
+
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
+        return _build_groups_dict(
+            ls_ds, optional=optional, optional_groups=optional_groups
+        )
+
+    def open_datatree(
+        self,
+        filename_or_obj,
+        **kwargs,
+    ):
+        groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
+
+
+OdimBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
+    "Open an ODIM_H5 file as a CfRadial2-shaped dict of group datasets.",
+    HDF5_PARAMS_DOC,
+    REINDEX_PARAMS_DOC,
+    SITE_COORDS_PARAM_DOC,
+)
+OdimBackendEntrypoint.open_datatree.__doc__ = (
+    "Open an ODIM_H5 file as :py:class:`xarray.DataTree`.\n\n"
+    "Builds the tree from :meth:`open_groups_as_dict` and keeps each group's"
+    " file, so ``close()`` releases it. See :meth:`open_groups_as_dict` for"
+    " keyword arguments.\n"
+)
+
 
 def open_odim_datatree(filename_or_obj, **kwargs):
     """Open ODIM_H5 dataset as :py:class:`xarray.DataTree`.
+
+    .. deprecated::
+        Use ``xd.open_datatree(file, engine="odim")`` or
+        ``xr.open_datatree(file, engine="odim")`` instead.
 
     Parameters
     ----------
@@ -1092,9 +1156,14 @@ def open_odim_datatree(filename_or_obj, **kwargs):
         Can be ``time`` or ``auto`` first dimension. If set to ``auto``,
         first dimension will be either ``azimuth`` or ``elevation`` depending on
         type of sweep. Defaults to ``auto``.
-    reindex_angle : bool or dict
-        Defaults to False, no reindexing. Given dict should contain the kwargs to
-        reindex_angle. Only invoked if `decode_coord=True`.
+    reindex_coord : dict, optional
+        Defaults to None, no reindexing. Nested dict with optional keys
+        ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`,
+        e.g. ``dict(angle=dict(start_angle=0, stop_angle=360, angle_res=1.0,
+        direction=1))``. Only invoked if ``decode_coords=True``.
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
     fix_second_angle : bool
         If True, fixes erroneous second angle data. Defaults to ``False``.
     site_as_coords : bool
@@ -1107,48 +1176,6 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     dtree: xarray.DataTree
         DataTree
     """
-    # handle kwargs, extract first_dim
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    sweeps = []
-    kwargs["backend_kwargs"] = backend_kwargs
+    _deprecation_warning("open_odim_datatree", "odim")
 
-    if isinstance(sweep, str):
-        sweeps = [sweep]
-    elif isinstance(sweep, int):
-        sweeps = [f"sweep_{sweep}"]
-    elif isinstance(sweep, list):
-        if isinstance(sweep[0], int):
-            sweeps = [f"sweep_{i}" for i in sweep]
-        else:
-            sweeps.extend(sweep)
-    else:
-        sweeps = _get_h5group_names(filename_or_obj, "odim")
-
-    kw = {**kwargs, "site_as_coords": False}
-    ls_ds: list[xr.Dataset] = [
-        xr.open_dataset(filename_or_obj, group=swp, engine="odim", **kw)
-        for swp in sweeps
-    ]
-    # todo: apply CfRadial2 group structure below
-    dtree: dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        how = _get_odim_how_metadata(filename_or_obj, sweeps[0])
-        dtree["/radar_parameters"] = xr.merge(
-            [_get_subgroup(ls_ds, radar_parameters_subgroup), how["radar_parameters"]]
-        )
-        dtree["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        dtree["/radar_calibration"] = xr.merge(
-            [
-                _get_radar_calibration(ls_ds, radar_calibration_subgroup),
-                how["radar_calibration"],
-            ]
-        )
-    dtree = _attach_sweep_groups(dtree, ls_ds)
-    return DataTree.from_dict(dtree)
+    return _open_legacy_datatree(OdimBackendEntrypoint, filename_or_obj, kwargs)
