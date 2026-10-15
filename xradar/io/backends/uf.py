@@ -35,8 +35,12 @@ from collections import OrderedDict, defaultdict
 import dateutil
 import numpy as np
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -58,6 +62,9 @@ from xradar.io.backends.common import (
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _keep_close,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 from xradar.model import (
@@ -171,6 +178,12 @@ class UFFile:
         if isinstance(filename, (bytes, bytearray)):
             self._fh = np.frombuffer(filename, dtype=np.uint8)
         elif hasattr(filename, "read"):  # file-like object
+            # rewind, the object may have been read before (e.g. sweep discovery)
+            try:
+                filename.seek(0)
+            except (AttributeError, OSError):
+                # no seek (e.g. sockets) or not seekable (e.g. pipes)
+                pass
             file_bytes = filename.read()
             self._fh = np.frombuffer(file_bytes, dtype=np.uint8)
         elif isinstance(filename, (str, os.PathLike)):
@@ -557,7 +570,7 @@ class UFArrayWrapper(BackendArray):
         )
 
 
-class UFStore(AbstractDataStore):
+class UFStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading UF sweeps via xradar."""
 
     def __init__(self, manager, group=None, lock=UF_LOCK):
@@ -819,6 +832,10 @@ class UFBackendEntrypoint(BackendEntrypoint):
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
 
+        # swap_dims, sortby and reindex above build new datasets without the
+        # store's close; set it last so ds.close() releases the file (#471)
+        ds.set_close(store.close)
+
         return ds
 
     def open_groups_as_dict(
@@ -860,8 +877,7 @@ class UFBackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
             sweeps=sweeps,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
             optional=optional,
@@ -884,12 +900,12 @@ class UFBackendEntrypoint(BackendEntrypoint):
             )
         for sweep_path, ds in sweep_dict.items():
             sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
-            groups_dict[f"/{sweep_path}"] = sw
+            groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
         return groups_dict
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 UFBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
@@ -904,27 +920,132 @@ UFBackendEntrypoint.open_datatree.__doc__ = (
 )
 
 
-def open_uf_datatree(filename_or_obj, **kwargs):
+def open_uf_datatree(
+    filename_or_obj,
+    mask_and_scale=True,
+    decode_times=True,
+    concat_characters=True,
+    decode_coords=True,
+    drop_variables=None,
+    use_cftime=None,
+    decode_timedelta=None,
+    sweep=None,
+    first_dim="auto",
+    reindex_coord=None,
+    reindex_angle=False,
+    fix_second_angle=False,
+    site_as_coords=True,
+    optional=True,
+    optional_groups=False,
+    lock=None,
+    **kwargs,
+):
     """Open a Universal Format (UF) dataset as :py:class:`xarray.DataTree`.
 
     .. deprecated::
         Use ``xd.open_datatree(file, engine="uf")`` instead.
+
+    This function loads UF radar data into a DataTree structure, which
+    organizes radar sweeps as separate nodes. Provides options for decoding time
+    and applying various transformations to the data.
+
+    Parameters
+    ----------
+    filename_or_obj : str, Path, file-like, or DataStore
+        The path or file-like object representing the radar file.
+        Path-like objects are interpreted as local or remote paths.
+
+    mask_and_scale : bool, optional
+        If True, replaces values in the dataset that match `_FillValue` with NaN
+        and applies scale and offset adjustments. Default is True.
+
+    decode_times : bool, optional
+        If True, decodes time variables according to CF conventions. Default is True.
+
+    concat_characters : bool, optional
+        If True, concatenates character arrays along the last dimension, forming
+        string arrays. Default is True.
+
+    decode_coords : bool, optional
+        If True, decodes the "coordinates" attribute to identify coordinates in the
+        resulting dataset. Default is True.
+
+    drop_variables : str or list of str, optional
+        Specifies variables to exclude from the dataset. Useful for removing problematic
+        or inconsistent variables. Default is None.
+
+    use_cftime : bool, optional
+        If True, uses cftime objects to represent time variables; if False, uses
+        `np.datetime64` objects. If None, chooses the best format automatically.
+        Default is None.
+
+    decode_timedelta : bool, optional
+        If True, decodes variables with units of time (e.g., seconds, minutes) into
+        timedelta objects. If False, leaves them as numeric values. Default is None.
+
+    sweep : int or list of int, optional
+        Sweep numbers to extract from the dataset. Default is None, which
+        extracts all sweeps.
+
+    first_dim : {"time", "auto"}, optional
+        Defines the first dimension for each sweep. If "time," uses time as the
+        first dimension. If "auto," determines the first dimension based on the sweep
+        type (azimuth or elevation). Default is "auto."
+
+    reindex_coord : dict, optional
+        Nested dict with optional keys ``angle`` and ``range`` holding the kwargs for
+        :func:`xradar.util.reindex_angle` and :func:`xradar.util.reindex_range`.
+        Only used if `decode_coords=True`. Default is None (no reindexing).
+    reindex_angle : dict, optional
+        Deprecated, use ``reindex_coord=dict(angle=...)`` instead.
+
+    fix_second_angle : bool, optional
+        If True, corrects errors in the second angle data, such as misaligned
+        elevation or azimuth values. Default is False.
+
+    site_as_coords : bool, optional
+        Attaches radar site coordinates to the dataset if True. Default is True.
+
+    optional : bool, optional
+        If True, suppresses errors for optional dataset attributes, making them
+        optional instead of required. Default is True.
+
+    optional_groups : bool, optional
+        If True, adds the ``/radar_parameters``, ``/georeferencing_correction``
+        and ``/radar_calibration`` metadata groups. Default is False.
+
+    lock : threading.Lock or None, optional
+        Lock used when reading the file. Default is None (the UF lock).
+
+    kwargs : dict
+        Additional keyword arguments passed to :py:func:`xarray.open_datatree`.
+
+    Returns
+    -------
+    dtree : xarray.DataTree
+        An `xarray.DataTree` representing the radar data organized by sweeps.
     """
     _deprecation_warning("open_uf_datatree", "uf")
 
-    optional = kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return UFBackendEntrypoint().open_datatree(
-        filename_or_obj,
+    kwargs.update(
+        mask_and_scale=mask_and_scale,
+        decode_times=decode_times,
+        concat_characters=concat_characters,
+        decode_coords=decode_coords,
+        drop_variables=drop_variables,
+        use_cftime=use_cftime,
+        decode_timedelta=decode_timedelta,
         sweep=sweep,
+        first_dim=first_dim,
+        reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
+        fix_second_angle=fix_second_angle,
+        # legacy callers may pass the new `site_coords` spelling via kwargs
+        site_coords=kwargs.pop("site_coords", site_as_coords),
         optional=optional,
         optional_groups=optional_groups,
-        **kwargs,
+        lock=lock,
     )
+    return _open_legacy_datatree(UFBackendEntrypoint, filename_or_obj, kwargs)
 
 
 def open_sweeps_as_dict(
@@ -990,5 +1111,8 @@ def open_sweeps_as_dict(
             # assign geo-coords
             group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
+            # ensure close works: the steps above build new datasets, and
+            # xarray 2026.9.0 drops the close in some of them (#471, #502)
+            group_ds.set_close(store.close)
             groups_dict[path_group] = group_ds
     return groups_dict

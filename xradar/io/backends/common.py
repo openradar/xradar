@@ -15,11 +15,13 @@ Currently, all private and not part of the public API.
 import inspect
 import io
 import numbers
+import os
 import reprlib
 import struct
 import textwrap
 import warnings
 from collections import OrderedDict
+from contextlib import ExitStack, suppress
 from pathlib import Path, PurePosixPath
 
 import h5netcdf
@@ -63,14 +65,14 @@ def _get_reindex_coord(reindex_coord=None, reindex_angle=False):
                 "Both `reindex_coord` and the deprecated `reindex_angle` are "
                 "given, `reindex_coord` is used. Please drop `reindex_angle`.",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=_external_stacklevel(),
             )
         else:
             warnings.warn(
                 "`reindex_angle` is deprecated and will be removed in a future "
                 "version, use `reindex_coord=dict(angle=...)` instead.",
                 FutureWarning,
-                stacklevel=3,
+                stacklevel=_external_stacklevel(),
             )
             reindex_coord = {"angle": reindex_angle}
 
@@ -146,6 +148,34 @@ def _calculate_angle_res(dim):
     #  make this robust or parameterisable
     angle_diff_wanted = angle_diff[:-1][angle_diff2 < 0.05]
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
+
+
+class _ManagedStoreMixin:
+    """Give a backend store the ``close`` of the file it holds.
+
+    The stores keep their file in ``self._manager`` (an xarray file manager);
+    without this ``Dataset.close()`` was a no-op and the file stayed open
+    until the manager was garbage collected. Requires ``self._manager``.
+    """
+
+    def close(self, **kwargs):
+        self._manager.close(**kwargs)
+
+
+def _fspath(filename_or_obj):
+    """Turn a path-like into ``str``, return anything else (file-like, bytes) as is."""
+    if isinstance(filename_or_obj, os.PathLike):
+        return os.fspath(filename_or_obj)
+    return filename_or_obj
+
+
+def _apply_fix_second_angle(ds):
+    """Replace the secondary angle of a sweep by its median (no-op for non-sweeps)."""
+    if "sweep_mode" not in ds:
+        return ds
+    dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+    dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
+    return ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
 
 def _fix_angle(da):
@@ -476,6 +506,50 @@ def _prepare_backend_ds(ds):
     return ds
 
 
+def _keep_close(new, source):
+    """Give ``new`` the file close of ``source`` and return it.
+
+    ``drop_vars``, ``drop_attrs`` and similar build a new dataset without the
+    close, so closing the tree would no longer close the file (#471, #502).
+    """
+    new.set_close(source._close)
+    return new
+
+
+def _open_sweeps(open_sweep, sweeps):
+    """Open every sweep with ``open_sweep(sweep)`` and return the datasets.
+
+    If one fails, the sweeps already open are closed instead of being left to
+    the garbage collector (#471, #502).
+    """
+    datasets = []
+    try:
+        for sweep in sweeps:
+            datasets.append(open_sweep(sweep))
+    except Exception:
+        _close_all(datasets)
+        raise
+    return datasets
+
+
+def _call_all(functions):
+    """Call every function in ``functions``, also when one raises, so one
+    failing close does not leave the other files open; errors are chained."""
+    with ExitStack() as stack:
+        for function in functions:
+            stack.callback(function)
+
+
+def _close_all(objs):
+    """Close every dataset or tree in ``objs`` while an error is handled.
+
+    A failing close is dropped, so it does not hide the error being handled.
+    """
+    for obj in objs:
+        with suppress(Exception):
+            obj.close()
+
+
 def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     """Build CfRadial2 groups dict from a list of sweep Datasets.
 
@@ -494,27 +568,34 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     groups_dict : dict[str, xr.Dataset]
         Dictionary with CfRadial2 group structure.
     """
-    groups_dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    if optional_groups:
-        groups_dict["/radar_parameters"] = _get_subgroup(
-            ls_ds, radar_parameters_subgroup
-        )
-        groups_dict["/georeferencing_correction"] = _get_subgroup(
-            ls_ds, georeferencing_correction_subgroup
-        )
-        groups_dict["/radar_calibration"] = _get_radar_calibration(
-            ls_ds, radar_calibration_subgroup
-        )
-    for i, ds in enumerate(ls_ds):
-        sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
-        groups_dict[f"/sweep_{i}"] = sw
+    try:
+        groups_dict = {
+            "/": _get_required_root_dataset(ls_ds, optional=optional),
+        }
+        # station vars belong to the root only, also when sweeps carry them as coords
+        sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                sweeps, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                sweeps, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                sweeps, radar_calibration_subgroup
+            )
+    except Exception:
+        # nothing holds the sweeps' files yet: close them (#471, #502)
+        _close_all(ls_ds)
+        raise
+    for i, (ds, source) in enumerate(zip(sweeps, ls_ds, strict=True)):
+        groups_dict[f"/sweep_{i}"] = _keep_close(ds.drop_attrs(deep=False), source)
     return groups_dict
 
 
-_XRADAR_DIR = str(Path(__file__).resolve().parents[2])
-_XARRAY_DIR = str(Path(xr.__file__).resolve().parent)
+# trailing separator, so sibling paths such as ``xradar_tools/`` do not match
+_XRADAR_DIR = os.path.join(str(Path(__file__).resolve().parents[2]), "")
+_XARRAY_DIR = os.path.join(str(Path(xr.__file__).resolve().parent), "")
 
 
 def _external_stacklevel():
@@ -546,12 +627,53 @@ def _deprecation_warning(old_name, engine):
     )
 
 
+def _open_legacy_datatree(backend_cls, filename_or_obj, kwargs):
+    """Open a DataTree for a deprecated ``open_*_datatree`` function.
+
+    Goes through :py:func:`xarray.open_datatree`, so xarray options such as
+    ``chunks`` and ``cache`` keep working and ``backend_kwargs`` reach the
+    backend, as they did before. The legacy spellings ``Optional`` (in
+    ``backend_kwargs``) and ``site_as_coords`` map to ``optional`` and
+    ``site_coords``. A keyword given both directly and in ``backend_kwargs``
+    takes the ``backend_kwargs`` value, as in :py:func:`xarray.open_datatree`;
+    passing both ``site_coords`` and ``site_as_coords`` raises ``TypeError``.
+    """
+    backend_kwargs = dict(kwargs.pop("backend_kwargs", None) or {})
+    # xarray options (decoders, chunks, ...) passed in backend_kwargs would
+    # collide with the same named arguments of xr.open_datatree
+    for key in _XR_OPEN_DATATREE_KWARGS & backend_kwargs.keys():
+        kwargs[key] = backend_kwargs.pop(key)
+    if "Optional" in backend_kwargs:
+        backend_kwargs.setdefault("optional", backend_kwargs.pop("Optional"))
+    for kw in (kwargs, backend_kwargs):
+        if "site_as_coords" in kw:
+            if "site_coords" in kwargs or "site_coords" in backend_kwargs:
+                raise TypeError(
+                    "Pass either `site_coords` or the legacy `site_as_coords`, "
+                    "not both."
+                )
+            kw["site_coords"] = kw.pop("site_as_coords")
+    return xr.open_datatree(
+        filename_or_obj, engine=backend_cls, backend_kwargs=backend_kwargs, **kwargs
+    )
+
+
+#: Named arguments of :py:func:`xarray.open_datatree` other than the file,
+#: the engine and ``backend_kwargs`` itself.
+_XR_OPEN_DATATREE_KWARGS = frozenset(inspect.signature(xr.open_datatree).parameters) - {
+    "filename_or_obj",
+    "engine",
+    "backend_kwargs",
+    "kwargs",
+}
+
+
 #: NumPy-style Parameters block shared across all `open_groups_as_dict`
 #: methods. Backend-specific blocks are appended via :func:`_compose_docstring`.
 #: The CF decoder kwargs (`mask_and_scale`, `decode_times`, ...) thread
 #: through to :py:func:`xarray.open_dataset`; see xarray's documentation for
 #: full semantics.
-COMMON_BACKEND_PARAMS_DOC = """
+_COMMON_PARAMS_HEAD = """
 Parameters
 ----------
 filename_or_obj : str, Path, or file-like
@@ -585,13 +707,18 @@ first_dim : {"auto", "time"}, optional
     Leading dimension of each sweep dataset. ``"auto"`` picks
     ``azimuth`` (PPI) or ``elevation`` (RHI); ``"time"`` keeps the
     raw time axis. Default ``"auto"`` (``"time"`` for cfradial2).
-optional : bool, optional
+"""
+_OPTIONAL_PARAM_DOC = """optional : bool, optional
     Include optional root variables when available. Defaults to ``True``.
-optional_groups : bool, optional
+"""
+_COMMON_PARAMS_TAIL = """optional_groups : bool, optional
     Include the ``/radar_parameters``, ``/georeferencing_correction``,
     and ``/radar_calibration`` metadata subgroups under the root.
     Defaults to ``False``.
 """
+COMMON_BACKEND_PARAMS_DOC = (
+    _COMMON_PARAMS_HEAD + _OPTIONAL_PARAM_DOC + _COMMON_PARAMS_TAIL
+)
 
 
 #: ``reindex_coord`` parameter block, shared by every backend that can
@@ -642,7 +769,7 @@ lock : threading.Lock or None, optional
 """
 
 
-def _compose_docstring(summary, *extra_blocks):
+def _compose_docstring(summary, *extra_blocks, optional=True):
     """Compose a NumPy-style docstring from a summary plus parameter blocks.
 
     The composed result always opens with the shared
@@ -663,6 +790,9 @@ def _compose_docstring(summary, *extra_blocks):
     *extra_blocks : str
         Optional backend-specific parameter blocks. Each may use any
         indentation; the helper normalises them to four-space indent.
+    optional : bool
+        Document the shared ``optional`` parameter. Defaults to ``True``;
+        pass ``False`` for backends without optional root variables.
 
     Returns
     -------
@@ -673,7 +803,12 @@ def _compose_docstring(summary, *extra_blocks):
     def _block(text):
         return textwrap.indent(textwrap.dedent(text).strip("\n"), "    ")
 
-    parts = [summary.strip("\n"), "", _block(COMMON_BACKEND_PARAMS_DOC)]
+    common = (
+        COMMON_BACKEND_PARAMS_DOC
+        if optional
+        else _COMMON_PARAMS_HEAD + _COMMON_PARAMS_TAIL
+    )
+    parts = [summary.strip("\n"), "", _block(common)]
     for block in extra_blocks:
         if block:
             parts.append(_block(block))

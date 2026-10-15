@@ -10,6 +10,8 @@ Tests the unified ``xd.open_datatree()`` and ``xr.open_datatree()`` APIs,
 deprecated standalone functions, and ``supports_groups`` attribute.
 """
 
+import os
+import shutil
 import warnings
 
 import numpy as np
@@ -21,7 +23,7 @@ import xradar as xd
 from xradar.io import _ENGINE_REGISTRY
 from xradar.io.backends import imd as imd_backend
 from xradar.io.backends import open_imd_datatree
-from xradar.io.backends.common import _resolve_sweeps
+from xradar.io.backends.common import _STATION_VARS, _resolve_sweeps
 
 # -- Fixtures ----------------------------------------------------------------
 
@@ -97,27 +99,29 @@ _ANGLE_GRID = {
 class TestXdOpenDatatree:
     """Test xd.open_datatree() for all engines."""
 
-    def test_basic_open(self, engine_and_file):
+    def test_basic_open(self, engine_and_file, closing):
         engine, filepath = engine_and_file
-        dtree = xd.open_datatree(filepath, engine=engine)
+        dtree = closing(xd.open_datatree(filepath, engine=engine))
         _assert_cfradial2_structure(dtree)
 
-    def test_sweep_selection_int(self, engine_and_file):
+    def test_sweep_selection_int(self, engine_and_file, closing):
         engine, filepath = engine_and_file
-        dtree = xd.open_datatree(filepath, engine=engine, sweep=0)
+        dtree = closing(xd.open_datatree(filepath, engine=engine, sweep=0))
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == 1
 
-    def test_sweep_selection_string(self, engine_and_file):
+    def test_sweep_selection_string(self, engine_and_file, closing):
         engine, filepath = engine_and_file
-        dtree = xd.open_datatree(filepath, engine=engine, sweep="sweep_0")
+        dtree = closing(xd.open_datatree(filepath, engine=engine, sweep="sweep_0"))
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == 1
 
-    def test_kwargs_flow_through(self, engine_and_file):
+    def test_kwargs_flow_through(self, engine_and_file, closing):
         engine, filepath = engine_and_file
-        dtree = xd.open_datatree(
-            filepath, engine=engine, first_dim="auto", site_coords=True, sweep=0
+        dtree = closing(
+            xd.open_datatree(
+                filepath, engine=engine, first_dim="auto", site_coords=True, sweep=0
+            )
         )
         # Station coords are on root (promoted by _assign_root)
         assert "latitude" in dtree.ds.coords
@@ -146,14 +150,19 @@ class TestXdOpenDatatree:
         with pytest.raises(exc, match=match):
             xd.open_datatree(filepath, engine=engine, sweep=sweep)
 
-    def test_reindex_coord(self, engine_and_file):
+    def test_reindex_coord(self, engine_and_file, closing):
         engine, filepath = engine_and_file
         if engine in ("metek", "cfradial2"):
             pytest.skip(f"{engine} has no reindexing")
-        plain = xd.open_datatree(filepath, engine=engine, sweep=0)["sweep_0"]
+        plain = closing(xd.open_datatree(filepath, engine=engine, sweep=0))["sweep_0"]
         dim = "elevation" if plain["sweep_mode"].item() == "rhi" else "azimuth"
-        dtree = xd.open_datatree(
-            filepath, engine=engine, sweep=0, reindex_coord={"angle": _ANGLE_GRID[dim]}
+        dtree = closing(
+            xd.open_datatree(
+                filepath,
+                engine=engine,
+                sweep=0,
+                reindex_coord={"angle": _ANGLE_GRID[dim]},
+            )
         )
         assert dtree["sweep_0"].sizes[dim] == (90 if dim == "elevation" else 360)
 
@@ -164,23 +173,28 @@ class TestXdOpenDatatree:
 class TestXdOpenDatatreeCfRadial1:
     """Test xd.open_datatree() for CfRadial1."""
 
-    def test_basic_open(self, cfradial1_engine_file):
-        _, filepath = cfradial1_engine_file
-        from xradar.io.backends.cfradial1 import CfRadial1BackendEntrypoint
-
-        backend = CfRadial1BackendEntrypoint()
-        dtree = backend.open_datatree(
-            filepath, engine="h5netcdf", decode_timedelta=False
+    def test_basic_open(self, cfradial1_engine_file, closing):
+        engine, filepath = cfradial1_engine_file
+        dtree = closing(
+            xd.open_datatree(
+                filepath,
+                engine=engine,
+                netcdf_engine="h5netcdf",
+                decode_timedelta=False,
+            )
         )
         _assert_cfradial2_structure(dtree)
 
-    def test_sweep_selection(self, cfradial1_engine_file):
-        _, filepath = cfradial1_engine_file
-        from xradar.io.backends.cfradial1 import CfRadial1BackendEntrypoint
-
-        backend = CfRadial1BackendEntrypoint()
-        dtree = backend.open_datatree(
-            filepath, engine="h5netcdf", decode_timedelta=False, sweep=[0, 1]
+    def test_sweep_selection(self, cfradial1_engine_file, closing):
+        engine, filepath = cfradial1_engine_file
+        dtree = closing(
+            xd.open_datatree(
+                filepath,
+                engine=engine,
+                netcdf_engine="h5netcdf",
+                decode_timedelta=False,
+                sweep=[0, 1],
+            )
         )
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == 2
@@ -197,29 +211,35 @@ class TestXdOpenDatatreeCfRadial1:
         with pytest.raises(exc, match=match):
             xd.open_datatree(cfradial1_file, engine="cfradial1", sweep=sweep)
 
-    def test_sweep_path(self, cfradial1_file):
-        dtree = xd.open_datatree(cfradial1_file, engine="cfradial1", sweep="/sweep_0")
+    def test_sweep_path(self, cfradial1_file, closing):
+        dtree = closing(
+            xd.open_datatree(cfradial1_file, engine="cfradial1", sweep="/sweep_0")
+        )
         assert list(dtree.match("sweep_*")) == ["sweep_0"]
 
-    def test_reindex_coord(self, cfradial1_file):
-        dtree = xd.open_datatree(
-            cfradial1_file,
-            engine="cfradial1",
-            sweep=0,
-            reindex_coord={"angle": _ANGLE_GRID["azimuth"]},
+    def test_reindex_coord(self, cfradial1_file, closing):
+        dtree = closing(
+            xd.open_datatree(
+                cfradial1_file,
+                engine="cfradial1",
+                sweep=0,
+                reindex_coord={"angle": _ANGLE_GRID["azimuth"]},
+            )
         )
         assert dtree["sweep_0"].sizes["azimuth"] == 360
 
 
 @pytest.mark.parametrize("first_dim,dim0", [("auto", "azimuth"), ("time", "time")])
-def test_hpl_angle_reindex(hpl_file, first_dim, dim0):
+def test_hpl_angle_reindex(hpl_file, first_dim, dim0, closing):
     # angle reindexing used to fail while time was still the first dimension
-    dtree = xd.open_datatree(
-        hpl_file,
-        engine="hpl",
-        sweep=0,
-        first_dim=first_dim,
-        reindex_coord={"angle": _ANGLE_GRID["azimuth"]},
+    dtree = closing(
+        xd.open_datatree(
+            hpl_file,
+            engine="hpl",
+            sweep=0,
+            first_dim=first_dim,
+            reindex_coord={"angle": _ANGLE_GRID["azimuth"]},
+        )
     )
     sweep = dtree["sweep_0"]
     assert sweep["intensity"].dims[0] == dim0
@@ -244,58 +264,58 @@ class TestXrOpenDatatree:
     """Test xr.open_datatree() with xradar engines."""
 
     def test_xr_open_datatree_odim(self, odim_file):
-        dtree = xr.open_datatree(odim_file, engine="odim")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(odim_file, engine="odim") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_nexrad(self, nexradlevel2_file):
-        dtree = xr.open_datatree(nexradlevel2_file, engine="nexradlevel2")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(nexradlevel2_file, engine="nexradlevel2") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_cfradial1(self, cfradial1_file):
-        dtree = xr.open_datatree(
+        with xr.open_datatree(
             cfradial1_file, engine="cfradial1", decode_timedelta=False
-        )
-        _assert_cfradial2_structure(dtree)
+        ) as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_gamic(self, gamic_file):
-        dtree = xr.open_datatree(gamic_file, engine="gamic")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(gamic_file, engine="gamic") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_iris(self, iris0_file):
-        dtree = xr.open_datatree(iris0_file, engine="iris")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(iris0_file, engine="iris") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_furuno(self, furuno_scn_file):
-        dtree = xr.open_datatree(furuno_scn_file, engine="furuno")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(furuno_scn_file, engine="furuno") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_rainbow(self, rainbow_file):
-        dtree = xr.open_datatree(rainbow_file, engine="rainbow")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(rainbow_file, engine="rainbow") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_datamet(self, datamet_file):
-        dtree = xr.open_datatree(datamet_file, engine="datamet")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(datamet_file, engine="datamet") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_hpl(self, hpl_file):
-        dtree = xr.open_datatree(hpl_file, engine="hpl")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(hpl_file, engine="hpl") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_metek(self, metek_ave_gz_file):
-        dtree = xr.open_datatree(metek_ave_gz_file, engine="metek")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(metek_ave_gz_file, engine="metek") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_uf(self, uf_file_1):
-        dtree = xr.open_datatree(uf_file_1, engine="uf")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(uf_file_1, engine="uf") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_cfradial2(self, cfradial2_file):
-        dtree = xr.open_datatree(cfradial2_file, engine="cfradial2")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(cfradial2_file, engine="cfradial2") as dtree:
+            _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_imd(self, imd_file):
-        dtree = xr.open_datatree(imd_file, engine="imd")
-        _assert_cfradial2_structure(dtree)
+        with xr.open_datatree(imd_file, engine="imd") as dtree:
+            _assert_cfradial2_structure(dtree)
 
 
 # -- IMD: multi-file carve-out vs single-file engine -------------------------
@@ -308,22 +328,24 @@ class TestIMDMultiFile:
     go through the module-level ``xd.io.open_imd_datatree([files])``.
     """
 
-    def test_engine_imd_handles_single_file(self, imd_file):
-        dtree = xd.open_datatree(imd_file, engine="imd")
+    def test_engine_imd_handles_single_file(self, imd_file, closing):
+        dtree = closing(xd.open_datatree(imd_file, engine="imd"))
         _assert_cfradial2_structure(dtree)
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == 1
 
-    def test_module_level_handles_multi_file_volume(self, imd_volume_files):
+    def test_module_level_handles_multi_file_volume(self, imd_volume_files, closing):
         # Precondition: each fixture file in `imd_volume_files` contains
         # exactly one sweep, so the resulting volume has one sweep per file.
-        dtree = open_imd_datatree(imd_volume_files)
+        dtree = closing(open_imd_datatree(imd_volume_files))
         _assert_cfradial2_structure(dtree)
         sweep_groups = [k for k in dtree.children if k.startswith("sweep_")]
         assert len(sweep_groups) == len(imd_volume_files)
 
     @pytest.mark.parametrize("site_coords", [True, False])
-    def test_engine_imd_accepts_site_coords(self, imd_file, odim_file, site_coords):
+    def test_engine_imd_accepts_site_coords(
+        self, imd_file, odim_file, site_coords, closing
+    ):
         # same keyword and same station-coord layout as the other engines
         def station_coords(dtree):
             stations = {"latitude", "longitude", "altitude"}
@@ -332,9 +354,9 @@ class TestIMDMultiFile:
                 sorted(stations & set(dtree["sweep_0"].to_dataset().variables)),
             )
 
-        imd = xd.open_datatree(imd_file, engine="imd", site_coords=site_coords)
-        odim = xd.open_datatree(
-            odim_file, engine="odim", site_coords=site_coords, sweep=0
+        imd = closing(xd.open_datatree(imd_file, engine="imd", site_coords=site_coords))
+        odim = closing(
+            xd.open_datatree(odim_file, engine="odim", site_coords=site_coords, sweep=0)
         )
         assert station_coords(imd) == station_coords(odim)
 
@@ -343,8 +365,8 @@ class TestIMDMultiFile:
             xd.open_datatree(imd_file, engine="imd", site_as_coords=False)
 
     @pytest.mark.parametrize("sweep", [0, "sweep_0", "/sweep_0", [0]])
-    def test_engine_imd_sweep_0(self, imd_file, sweep):
-        dtree = xd.open_datatree(imd_file, engine="imd", sweep=sweep)
+    def test_engine_imd_sweep_0(self, imd_file, sweep, closing):
+        dtree = closing(xd.open_datatree(imd_file, engine="imd", sweep=sweep))
         assert list(dtree.match("sweep_*")) == ["sweep_0"]
 
     @pytest.mark.parametrize("sweep", [1, [0, 1], "sweep_2"])
@@ -352,7 +374,7 @@ class TestIMDMultiFile:
         with pytest.raises(ValueError, match="single sweep"):
             xd.open_datatree(imd_file, engine="imd", sweep=sweep)
 
-    def test_legacy_site_coords_alias(self, imd_file, monkeypatch):
+    def test_legacy_site_coords_alias(self, imd_file, monkeypatch, closing):
         seen = {}
 
         def fake_open(filename, **kwargs):
@@ -360,7 +382,7 @@ class TestIMDMultiFile:
             return DataTree()
 
         monkeypatch.setattr(imd_backend, "_open_single_imd_datatree", fake_open)
-        open_imd_datatree(imd_file, site_coords=False)
+        closing(open_imd_datatree(imd_file, site_coords=False))
         assert seen == {"site_as_coords": False}
 
     def test_legacy_site_coords_both_raises(self, imd_file):
@@ -374,14 +396,18 @@ class TestIMDMultiFile:
 class TestCfRadial2SiteCoords:
     """`site_coords` honors True/False for the CfRadial2 entrypoint."""
 
-    def test_site_coords_true_keeps_station_coords(self, cfradial2_file):
-        dtree = xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=True)
+    def test_site_coords_true_keeps_station_coords(self, cfradial2_file, closing):
+        dtree = closing(
+            xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=True)
+        )
         assert "latitude" in dtree.ds.coords
         assert "longitude" in dtree.ds.coords
         assert "altitude" in dtree.ds.coords
 
-    def test_site_coords_false_drops_station_coords(self, cfradial2_file):
-        dtree = xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=False)
+    def test_site_coords_false_drops_station_coords(self, cfradial2_file, closing):
+        dtree = closing(
+            xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=False)
+        )
         assert "latitude" not in dtree.ds.coords
         assert "longitude" not in dtree.ds.coords
         assert "altitude" not in dtree.ds.coords
@@ -582,26 +608,13 @@ _DEPRECATED_FUNCTIONS = {
 class TestDeprecation:
     """Test that all standalone functions emit FutureWarning."""
 
-    @pytest.mark.parametrize(
-        "func_name,module_path,fixture_name,extra_kwargs",
-        [
-            (name, mod, fix, kw)
-            for name, (mod, fix, kw) in _DEPRECATED_FUNCTIONS.items()
-        ],
-        ids=list(_DEPRECATED_FUNCTIONS.keys()),
-    )
-    def test_deprecated_function_warns(
-        self, func_name, module_path, fixture_name, extra_kwargs, request
-    ):
-        import importlib
-
-        filepath = request.getfixturevalue(fixture_name)
-        module = importlib.import_module(module_path)
-        func = getattr(module, func_name)
+    @pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+    def test_deprecated_function_warns(self, func_name, request, closing):
+        func, _, filepath, extra_kwargs, _ = _legacy_and_engine(func_name, request)
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            dtree = func(filepath, sweep=0, **extra_kwargs)
+            dtree = closing(func(filepath, sweep=0, **extra_kwargs))
             deprecation_warnings = [
                 x for x in w if issubclass(x.category, FutureWarning)
             ]
@@ -613,3 +626,269 @@ class TestDeprecation:
             # stacklevel must point at the caller's line, not xradar internals
             assert deprecation_warnings[0].filename == __file__
         _assert_cfradial2_structure(dtree)
+
+
+# -- Legacy wrappers keep their pre-#335 behaviour ({issue}`481`) -------------
+
+
+def _legacy_and_engine(func_name, request):
+    """Return the legacy function, engine name, file and matching kwargs."""
+    import importlib
+
+    module_path, fixture_name, extra = _DEPRECATED_FUNCTIONS[func_name]
+    func = getattr(importlib.import_module(module_path), func_name)
+    engine = func_name.removeprefix("open_").removesuffix("_datatree")
+    engine_extra = dict(extra)
+    if "engine" in engine_extra:  # cfradial1's inner netCDF engine
+        engine_extra["netcdf_engine"] = engine_extra.pop("engine")
+    return func, engine, request.getfixturevalue(fixture_name), extra, engine_extra
+
+
+def _call_legacy(func, *args, **kwargs):
+    with pytest.warns(FutureWarning, match="is deprecated"):
+        return func(*args, **kwargs)
+
+
+@pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+@pytest.mark.parametrize(
+    "legacy_kw,engine_kw",
+    [
+        ({}, {}),
+        ({"site_as_coords": False}, {"site_coords": False}),
+        ({"optional": False}, {"optional": False}),
+        ({"optional_groups": True}, {"optional_groups": True}),
+    ],
+    ids=["default", "site_as_coords", "optional", "optional_groups"],
+)
+def test_legacy_matches_engine(func_name, legacy_kw, engine_kw, request, closing):
+    func, engine, filename, extra, engine_extra = _legacy_and_engine(func_name, request)
+    legacy = closing(_call_legacy(func, filename, sweep=0, **extra, **legacy_kw))
+    expected = closing(
+        xd.open_datatree(filename, engine=engine, sweep=0, **engine_extra, **engine_kw)
+    )
+    xr.testing.assert_identical(legacy, expected)
+
+
+@pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+def test_legacy_chunks(func_name, request, closing):
+    func, _, filename, extra, _ = _legacy_and_engine(func_name, request)
+    dtree = closing(_call_legacy(func, filename, sweep=0, chunks={}, **extra))
+    sweep = dtree["sweep_0"].to_dataset()
+    lazy = [v for v in sweep.data_vars.values() if v.ndim]
+    assert lazy and all(v.chunks is not None for v in lazy)
+
+
+@pytest.mark.parametrize(
+    "func_name",
+    [
+        name
+        for name in _DEPRECATED_FUNCTIONS
+        if name not in ("open_cfradial2_datatree", "open_metek_datatree")
+    ],
+)
+def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
+    func, _, filename, extra, _ = _legacy_and_engine(func_name, request)
+    via_backend_kwargs = closing(
+        _call_legacy(
+            func, filename, sweep=0, backend_kwargs={"first_dim": "time"}, **extra
+        )
+    )
+    direct = closing(_call_legacy(func, filename, sweep=0, first_dim="time", **extra))
+    xr.testing.assert_identical(via_backend_kwargs, direct)
+    assert "time" in via_backend_kwargs["sweep_0"].dims
+
+
+@pytest.mark.parametrize(
+    "func,engine,fixture_name,key",
+    [
+        (xd.io.open_odim_datatree, "odim", "odim_file", "optional"),
+        # capital-O ``Optional`` is the old GAMIC spelling, accepted everywhere
+        (xd.io.open_odim_datatree, "odim", "odim_file", "Optional"),
+    ],
+    ids=["optional", "Optional"],
+)
+def test_legacy_backend_kwargs_optional(
+    func, engine, fixture_name, key, request, closing
+):
+    filename = request.getfixturevalue(fixture_name)
+    legacy = closing(_call_legacy(func, filename, sweep=0, backend_kwargs={key: False}))
+    expected = closing(
+        xd.open_datatree(filename, engine=engine, sweep=0, optional=False)
+    )
+    xr.testing.assert_identical(legacy, expected)
+    default = closing(xd.open_datatree(filename, engine=engine, sweep=0))
+    assert not legacy.identical(default)
+
+
+def test_xd_matches_xr_and_indexes_dims(engine_and_file, closing):
+    engine, filename = engine_and_file
+    dtree = closing(xd.open_datatree(filename, engine=engine, sweep=0))
+    xr.testing.assert_identical(
+        dtree, closing(xr.open_datatree(filename, engine=engine, sweep=0))
+    )
+    sweep = dtree["sweep_0"].to_dataset()
+    for dim in sweep.dims:
+        if dim in sweep.coords:
+            assert dim in sweep.xindexes, f"{engine}: {dim} is not indexed"
+
+
+def test_optional_groups_hold_no_station_vars(engine_and_file, closing):
+    engine, filename = engine_and_file
+    dtree = closing(
+        xd.open_datatree(filename, engine=engine, sweep=0, optional_groups=True)
+    )
+    for group in ("radar_parameters", "georeferencing_correction"):
+        if group in dtree.children:  # cfradial2 copies only groups in the file
+            assert not _STATION_VARS & set(dtree[group].variables), (engine, group)
+
+
+def test_sweep_selection_returns_requested_sweep(engine_and_file, closing):
+    engine, filename = engine_and_file
+    if engine in ("furuno", "metek", "hpl"):
+        pytest.skip(f"{engine} test file holds a single sweep")
+    reference = closing(xd.open_datatree(filename, engine=engine, sweep=[0, 1]))
+    selected = closing(xd.open_datatree(filename, engine=engine, sweep=[1]))
+    (name,) = (c for c in selected.children if c.startswith("sweep_"))
+    np.testing.assert_equal(
+        selected[name]["sweep_fixed_angle"].values,
+        reference["sweep_1"]["sweep_fixed_angle"].values,
+    )
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["engine", "legacy"])
+def test_reindex_angle_warns_once_at_caller(odim_file, legacy, closing):
+    angle = _ANGLE_GRID["azimuth"]
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        if legacy:
+            closing(
+                xd.io.open_odim_datatree(odim_file, sweep=[0, 1], reindex_angle=angle)
+            )
+        else:
+            closing(
+                xd.open_datatree(
+                    odim_file, engine="odim", sweep=[0, 1], reindex_angle=angle
+                )
+            )
+    reindex = [x for x in w if "reindex_angle" in str(x.message)]
+    assert len(reindex) == 1
+    assert issubclass(reindex[0].category, FutureWarning)
+    assert reindex[0].filename == __file__
+
+
+def test_uf_legacy_signature():
+    import inspect
+
+    params = list(inspect.signature(xd.io.open_uf_datatree).parameters)
+    assert params == [
+        "filename_or_obj",
+        "mask_and_scale",
+        "decode_times",
+        "concat_characters",
+        "decode_coords",
+        "drop_variables",
+        "use_cftime",
+        "decode_timedelta",
+        "sweep",
+        "first_dim",
+        "reindex_coord",
+        "reindex_angle",
+        "fix_second_angle",
+        "site_as_coords",
+        "optional",
+        "optional_groups",
+        "lock",
+        "kwargs",
+    ]
+    assert "site_as_coords" in xd.io.open_uf_datatree.__doc__
+
+
+@pytest.mark.parametrize(
+    "engine,absent",
+    [
+        ("imd", "optional :"),
+        ("rainbow", "fix_second_angle"),
+        ("datamet", "fix_second_angle"),
+        ("iris", "group :"),
+    ],
+)
+def test_docstrings_only_list_accepted_params(engine, absent):
+    import inspect
+
+    method = _ENGINE_REGISTRY[engine].open_groups_as_dict
+    assert absent not in method.__doc__
+    param = absent.removesuffix(" :")
+    assert param not in inspect.signature(method).parameters
+
+
+def test_legacy_site_as_coords_maps_to_site_coords(cfradial2_file, closing):
+    # cfradial2 is the engine where ``site_coords=False`` changes the tree
+    legacy = closing(
+        _call_legacy(
+            xd.io.open_cfradial2_datatree, cfradial2_file, site_as_coords=False
+        )
+    )
+    expected = closing(
+        xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=False)
+    )
+    default = closing(xd.open_datatree(cfradial2_file, engine="cfradial2"))
+    xr.testing.assert_identical(legacy, expected)
+    assert not legacy.identical(default)
+
+
+@pytest.mark.parametrize("engine", ["cfradial1", "cfradial2"])
+def test_netcdf_engine_reaches_reader(engine, cfradial1_file, cfradial2_file):
+    filename = cfradial1_file if engine == "cfradial1" else cfradial2_file
+    with pytest.raises(ValueError, match="not-an-engine"):
+        xd.open_datatree(filename, engine=engine, netcdf_engine="not-an-engine")
+    legacy = getattr(xd.io, f"open_{engine}_datatree")
+    with pytest.warns(FutureWarning), pytest.raises(ValueError, match="not-an-engine"):
+        legacy(filename, engine="not-an-engine")
+    # the legacy `engine` is mapped from backend_kwargs too
+    with pytest.warns(FutureWarning), pytest.raises(ValueError, match="not-an-engine"):
+        legacy(filename, backend_kwargs={"engine": "not-an-engine"})
+
+
+def test_legacy_backend_kwargs_decoder(nexradlevel2_file, closing):
+    # NEXRAD's wrapper passes every decoder; one in backend_kwargs must not clash
+    dtree = closing(
+        _call_legacy(
+            xd.io.open_nexradlevel2_datatree,
+            nexradlevel2_file,
+            sweep=0,
+            backend_kwargs={"decode_times": False},
+        )
+    )
+    assert not np.issubdtype(dtree["sweep_0"]["time"].dtype, np.datetime64)
+
+
+def test_legacy_rejects_both_site_spellings(odim_file):
+    with pytest.raises(TypeError, match="not both"):
+        _call_legacy(
+            xd.io.open_odim_datatree,
+            odim_file,
+            sweep=0,
+            site_as_coords=False,
+            site_coords=True,
+        )
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs /proc/self/fd")
+def test_cfradial2_close_releases_file(cfradial2_file, tmp_path):
+    # private copy: no other test holds it in xarray's file cache
+    filename = tmp_path / "cfradial2.nc"
+    shutil.copyfile(cfradial2_file, filename)
+    target = os.path.realpath(filename)
+
+    def open_handles():
+        fds = os.listdir("/proc/self/fd")
+        return sum(
+            os.path.realpath(f"/proc/self/fd/{fd}") == target
+            for fd in fds
+            if os.path.exists(f"/proc/self/fd/{fd}")
+        )
+
+    dtree = xd.open_datatree(filename, engine="cfradial2", sweep=0)
+    dtree.load()
+    dtree.close()
+    assert open_handles() == 0

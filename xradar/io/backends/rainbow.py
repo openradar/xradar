@@ -33,14 +33,17 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
-import os
 import sys
 import zlib
 
 import numpy as np
 import xmltodict
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
@@ -59,14 +62,18 @@ from ...model import (
     sweep_vars_mapping,
 )
 from .common import (
-    REINDEX_PARAMS_DOC,
+    REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _open_sweeps,
     _resolve_sweeps,
 )
 
@@ -415,8 +422,7 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -594,7 +600,7 @@ class RainbowArrayWrapper(BackendArray):
         )
 
 
-class RainbowStore(AbstractDataStore):
+class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading RAINBOW5 sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
@@ -897,26 +903,26 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
             use_cftime=use_cftime,
             decode_timedelta=decode_timedelta,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 RainbowBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     "Open a Rainbow5 file as a CfRadial2-shaped dict of group datasets.",
-    REINDEX_PARAMS_DOC,
+    REINDEX_COORD_DOC,
     SITE_COORDS_PARAM_DOC,
 )
 RainbowBackendEntrypoint.open_datatree.__doc__ = (
@@ -939,18 +945,4 @@ def open_rainbow_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_rainbow_datatree", "rainbow")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return RainbowBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(RainbowBackendEntrypoint, filename_or_obj, kwargs)

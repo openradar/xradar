@@ -38,10 +38,10 @@ import io
 import dateutil
 import h5netcdf
 import numpy as np
-from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
     find_root_and_group,
 )
 from xarray.backends.file_manager import CachingFileManager, DummyFileManager
@@ -74,6 +74,9 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _open_sweeps,
     _prepare_backend_ds,
     _resolve_sweeps,
 )
@@ -259,7 +262,7 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
-class GamicStore(AbstractDataStore):
+class GamicStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
@@ -544,22 +547,22 @@ class GamicBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 GamicBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
@@ -582,18 +585,4 @@ def open_gamic_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_gamic_datatree", "gamic")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    # Capital-O "Optional" is the legacy GAMIC convention
-    optional = backend_kwargs.pop("Optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return GamicBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(GamicBackendEntrypoint, filename_or_obj, kwargs)

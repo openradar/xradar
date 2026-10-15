@@ -44,8 +44,12 @@ from collections import OrderedDict, defaultdict
 
 import numpy as np
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -64,9 +68,13 @@ from xradar.io.backends.common import (
     _assign_root,
     _compose_docstring,
     _deprecation_warning,
+    _external_stacklevel,
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _keep_close,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
     _resolve_sweeps,
 )
 from xradar.model import (
@@ -1793,7 +1801,7 @@ class NexradLevel2ArrayWrapper(BackendArray):
         )
 
 
-class NexradLevel2Store(AbstractDataStore):
+class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
     def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
         self._manager = manager
         self._group = int(group[6:])
@@ -2141,15 +2149,13 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                         f"{sorted(incomplete)}. Use incomplete_sweep='pad' "
                         f"to include them with NaN-filled rays.",
                         UserWarning,
-                        # caller -> open_datatree -> open_groups_as_dict
-                        stacklevel=4,
+                        stacklevel=_external_stacklevel(),
                     )
                 if not sweeps:
                     warnings.warn(
                         "All sweeps are incomplete. Returning empty dict.",
                         UserWarning,
-                        # caller -> open_datatree -> open_groups_as_dict
-                        stacklevel=4,
+                        stacklevel=_external_stacklevel(),
                     )
                     return {"/": xr.Dataset()}
             elif incomplete_sweep == "pad":
@@ -2171,8 +2177,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             decode_timedelta=decode_timedelta,
             sweeps=sweeps,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
             optional=optional,
@@ -2210,7 +2215,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             sweep_idx = int(sweep_path.split("_")[-1])
             if 0 <= sweep_idx < len(elev_data):
                 sw.attrs.update(_sweep_attrs_from_msg5_elev(elev_data[sweep_idx]))
-            groups_dict[f"/{sweep_path}"] = sw
+            groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
         return groups_dict
 
     def open_datatree(
@@ -2219,7 +2224,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         **kwargs,
     ):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _NEXRAD_PARAMS_DOC = """
@@ -2360,13 +2365,7 @@ def open_nexradlevel2_datatree(
     """
     _deprecation_warning("open_nexradlevel2_datatree", "nexradlevel2")
 
-    # Legacy callers may pass `site_coords` via kwargs; the explicit
-    # `site_as_coords` parameter is the canonical wrapper signature.
-    # Honor the legacy name if given so existing callers keep working.
-    site_as_coords = kwargs.pop("site_coords", site_as_coords)
-
-    return NexradLevel2BackendEntrypoint().open_datatree(
-        filename_or_obj,
+    kwargs.update(
         mask_and_scale=mask_and_scale,
         decode_times=decode_times,
         concat_characters=concat_characters,
@@ -2378,13 +2377,14 @@ def open_nexradlevel2_datatree(
         first_dim=first_dim,
         reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
         fix_second_angle=fix_second_angle,
-        site_coords=site_as_coords,
+        # legacy callers may pass the new `site_coords` spelling via kwargs
+        site_coords=kwargs.pop("site_coords", site_as_coords),
         optional=optional,
         optional_groups=optional_groups,
         incomplete_sweep=incomplete_sweep,
         lock=lock,
-        **kwargs,
     )
+    return _open_legacy_datatree(NexradLevel2BackendEntrypoint, filename_or_obj, kwargs)
 
 
 def open_sweeps_as_dict(
@@ -2497,5 +2497,8 @@ def open_sweeps_as_dict(
             # assign geo-coords
             group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
+            # ensure close works: the steps above build new datasets, and
+            # xarray 2026.9.0 drops the close in some of them (#471, #502)
+            group_ds.set_close(store.close)
             groups_dict[path_group] = group_ds
     return groups_dict

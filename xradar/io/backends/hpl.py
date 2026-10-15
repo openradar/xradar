@@ -31,15 +31,18 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import io
-import os
 from collections import OrderedDict
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
@@ -61,7 +64,11 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
+    _ManagedStoreMixin,
+    _open_legacy_datatree,
+    _open_sweeps,
     _resolve_sweeps,
 )
 
@@ -275,10 +282,12 @@ class HplFile:
         longitude = kwargs.pop("longitude", 0)
         altitude = kwargs.pop("altitude", 0)
         self._fp = None
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        # close only a file opened here, never the caller's file object
+        self._owns_fp = False
+        filename = _fspath(filename)
         if isinstance(filename, str):
             self._fp = open(filename)
+            self._owns_fp = True
             self._filename = filename
         elif isinstance(filename, io.IOBase):
             filename.seek(0)
@@ -418,7 +427,7 @@ class HplFile:
             self.data["sweep_data"][k] = self._data[sweep_number][k]
 
     def close(self):
-        if self._fp is not None:
+        if self._fp is not None and self._owns_fp:
             self._fp.close()
 
     __del__ = close
@@ -460,7 +469,7 @@ class HplArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class HplStore(AbstractDataStore):
+class HplStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading Furuno sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
@@ -669,8 +678,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             site_as_coords=site_coords,
             latitude=latitude,
             longitude=longitude,
@@ -679,9 +687,10 @@ class HPLBackendEntrypoint(BackendEntrypoint):
             transition_threshold_el=transition_threshold_el,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         groups_dict = _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
@@ -693,7 +702,7 @@ class HPLBackendEntrypoint(BackendEntrypoint):
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _HPL_PARAMS_DOC = """
@@ -736,18 +745,4 @@ def open_hpl_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_hpl_datatree", "hpl")
 
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Remap legacy kwarg name
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return HPLBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(HPLBackendEntrypoint, filename_or_obj, kwargs)

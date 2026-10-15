@@ -38,11 +38,11 @@ import warnings
 
 import h5netcdf
 import numpy as np
-from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendArray,
     BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
     find_root_and_group,
 )
 from xarray.backends.file_manager import CachingFileManager, DummyFileManager
@@ -77,8 +77,11 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _maybe_decode,
     _maybe_recover_surrogate,
+    _open_legacy_datatree,
+    _open_sweeps,
     _prepare_backend_ds,
     _resolve_sweeps,
 )
@@ -734,7 +737,7 @@ def _add_legend_flag_attrs(variables, legend):
             var.attrs["flag_meanings"] = " ".join(meanings)
 
 
-class OdimStore(AbstractDataStore):
+class OdimStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
@@ -1010,15 +1013,15 @@ class OdimBackendEntrypoint(BackendEntrypoint):
             phony_dims=phony_dims,
             decode_vlen_strings=decode_vlen_strings,
             first_dim=first_dim,
-            reindex_coord=reindex_coord,
-            reindex_angle=reindex_angle,
+            reindex_coord=_get_reindex_coord(reindex_coord, reindex_angle),
             fix_second_angle=fix_second_angle,
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
@@ -1029,7 +1032,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
         **kwargs,
     ):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 OdimBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
@@ -1040,9 +1043,9 @@ OdimBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
 )
 OdimBackendEntrypoint.open_datatree.__doc__ = (
     "Open an ODIM_H5 file as :py:class:`xarray.DataTree`.\n\n"
-    "Equivalent to "
-    "``DataTree.from_dict(self.open_groups_as_dict(filename_or_obj, **kwargs))``."
-    " See :meth:`open_groups_as_dict` for keyword arguments.\n"
+    "Builds the tree from :meth:`open_groups_as_dict` and keeps each group's"
+    " file, so ``close()`` releases it. See :meth:`open_groups_as_dict` for"
+    " keyword arguments.\n"
 )
 
 
@@ -1090,20 +1093,4 @@ def open_odim_datatree(filename_or_obj, **kwargs):
     """
     _deprecation_warning("open_odim_datatree", "odim")
 
-    # Bridge old backend_kwargs to direct kwargs
-    backend_kwargs = kwargs.pop("backend_kwargs", {})
-    optional = backend_kwargs.pop("optional", True)
-    optional_groups = kwargs.pop("optional_groups", False)
-    sweep = kwargs.pop("sweep", None)
-    # Translate the legacy `site_as_coords` spelling to the canonical
-    # `site_coords` kwarg the entrypoint accepts.
-    if "site_as_coords" in kwargs:
-        kwargs["site_coords"] = kwargs.pop("site_as_coords")
-
-    return OdimBackendEntrypoint().open_datatree(
-        filename_or_obj,
-        sweep=sweep,
-        optional=optional,
-        optional_groups=optional_groups,
-        **kwargs,
-    )
+    return _open_legacy_datatree(OdimBackendEntrypoint, filename_or_obj, kwargs)

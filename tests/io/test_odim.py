@@ -290,7 +290,7 @@ def test_odim_source_global_attributes(request, fixture_name):
             assert ds.attrs.get(global_attr) == value
 
 
-def test_open_odim_datatree(odim_file):
+def test_open_odim_datatree(odim_file, closing):
     # Define kwargs to pass into the function
     kwargs = {
         "sweep": [0, 1, 2],  # Specify sweeps to extract
@@ -301,7 +301,7 @@ def test_open_odim_datatree(odim_file):
     }
 
     # Call the function with an ODIM file
-    dtree = open_odim_datatree(odim_file, **kwargs)
+    dtree = closing(open_odim_datatree(odim_file, **kwargs))
 
     # Assertions to check DataTree structure
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
@@ -341,16 +341,16 @@ def test_open_odim_datatree(odim_file):
     ), "Instrument name should match expected value"
 
 
-def test_open_odim_datatree_optional_groups(odim_file):
+def test_open_odim_datatree_optional_groups(odim_file, closing):
     """Test that optional_groups=True includes metadata subgroups."""
-    dtree = open_odim_datatree(odim_file, optional_groups=True)
+    dtree = closing(open_odim_datatree(odim_file, optional_groups=True))
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
 
 
 @pytest.mark.parametrize("layout", ["fmi", "odim"])
-def test_open_odim_quality_legend(odim_file, tmp_path, layout):
+def test_open_odim_quality_legend(odim_file, tmp_path, layout, closing):
     # quality groups with compound-dtype legend tables must not be merged as
     # ray data (#395). "odim": ODIM_H5 2.3/2.4 Section 6.2
     # {char[64] key; char[32] value}, "fmi": {int64 code; string class}
@@ -388,7 +388,7 @@ def test_open_odim_quality_legend(odim_file, tmp_path, layout):
         qual.create_dataset("data", data=np.full(shape, 72, dtype="uint8"))
         qual.create_dataset("legend", data=legend)
 
-    dtree = open_odim_datatree(path, sweep=0)
+    dtree = closing(open_odim_datatree(path, sweep=0))
     ds = dtree["sweep_0"].ds
     assert "legend" not in ds.variables
     assert ds.ECHO_CLASS.dims == ds.DBZH.dims
