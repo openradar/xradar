@@ -51,9 +51,11 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _fspath,
+    _input_kind,
     _ManagedStoreMixin,
     _open_legacy_datatree,
     _open_sweeps,
+    _read_head,
     _resolve_single_sweep,
 )
 
@@ -591,6 +593,13 @@ class MRRBackendEntrypoint(BackendEntrypoint):
     description = "Backend for reading Metek MRR2 processed and raw data"
     url = "https://xradar.rtfd.io/en/latest/io.html#metek"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """Metek MRR file (header lines starting with ``MRR``)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        head = _read_head(filename_or_obj, 8)
+        return head is not None and head.startswith(b"MRR ")
 
     def open_dataset(
         self,

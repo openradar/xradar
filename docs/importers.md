@@ -2,6 +2,24 @@
 
 The backends use different approaches to ingest the data.
 
+## Engine discovery
+
+Each backend implements ``guess_can_open``, based on the format's signature
+(e.g. ``AR2V`` for NEXRAD Level II, ``ODIM_H5`` conventions in HDF5 files) and
+on the input types the backend can read (path, bytes, file-like).
+{func}`xradar.io.discover_engine` returns the matching xradar engine:
+
+```python
+engine = xd.io.discover_engine(filename)
+ds = xr.open_dataset(filename, engine=engine, group="sweep_0")
+```
+
+For formats which xarray's own backends don't read (e.g. NEXRAD Level II,
+IRIS, Rainbow), ``xr.open_dataset(filename, group="sweep_0")`` also picks the
+xradar engine without passing ``engine``. netCDF/HDF5 based formats (CfRadial,
+ODIM_H5, GAMIC) are claimed by xarray's netCDF backends first, so use
+``discover_engine`` or pass ``engine`` there.
+
 ## Common DataTree behavior
 
 All ``open_*_datatree()`` functions share the following behavior:

@@ -77,12 +77,14 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _input_kind,
     _ManagedStoreMixin,
     _maybe_decode,
     _maybe_recover_surrogate,
     _open_legacy_datatree,
     _open_sweeps,
     _prepare_backend_ds,
+    _read_nc_header,
     _resolve_sweeps,
 )
 
@@ -894,6 +896,15 @@ class OdimBackendEntrypoint(BackendEntrypoint):
     description = "Open ODIM_H5 (.h5, .hdf5) using h5netcdf in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#odim-h5"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """ODIM_H5 file (HDF5 with ``Conventions`` ``ODIM_H5/...``)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return str(header[0].get("Conventions", "")).startswith("ODIM_H5")
 
     def open_dataset(
         self,
