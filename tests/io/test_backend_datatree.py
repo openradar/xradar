@@ -980,6 +980,21 @@ class TestXdOpenDatatreeSweepFiles:
         with pytest.raises(ValueError, match="different engines"):
             xd.open_datatree([sweep_files[0], odim_file])
 
+    def test_single_file_list(self, sweep_files, closing):
+        volume = closing(xd.open_datatree(sweep_files[:1]))
+        single = closing(xd.open_datatree(sweep_files[0]))
+        xr.testing.assert_identical(volume, single)
+
+    def test_imd_volume(self, imd_volume_files, closing):
+        # IMD files are stacked by open_imd_datatree
+        volume = closing(xd.open_datatree(imd_volume_files))
+        xr.testing.assert_identical(
+            volume, closing(xd.io.open_imd_datatree(imd_volume_files))
+        )
+        assert len([k for k in volume.children if k.startswith("sweep_")]) == len(
+            imd_volume_files
+        )
+
     def test_empty_list_raises(self):
         with pytest.raises(ValueError, match="at least one file"):
             xd.open_datatree([])
