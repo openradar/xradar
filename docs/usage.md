@@ -34,6 +34,7 @@ notebooks/Furuno
 notebooks/Rainbow
 notebooks/Iris
 notebooks/HaloPhotonics
+notebooks/WindCube
 notebooks/MRR
 notebooks/NexradLevel2
 notebooks/nexrad_read_chunks

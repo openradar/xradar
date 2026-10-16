@@ -37,6 +37,7 @@ FILES = [
     ("uf_file_1", "uf"),
     ("uf_file_2", "uf"),
     ("imd_file", "imd"),
+    ("windcube_file", "windcube"),
 ]
 
 

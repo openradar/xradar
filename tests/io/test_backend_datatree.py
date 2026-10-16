@@ -41,6 +41,7 @@ from xradar.io.backends.common import _STATION_VARS, _resolve_sweeps
         pytest.param(("hpl", "hpl_file"), id="hpl"),
         pytest.param(("metek", "metek_ave_gz_file"), id="metek"),
         pytest.param(("uf", "uf_file_1"), id="uf"),
+        pytest.param(("windcube", "windcube_file"), id="windcube"),
         pytest.param(
             ("imd", "imd_file"),
             marks=pytest.mark.skip(
@@ -152,7 +153,7 @@ class TestXdOpenDatatree:
 
     def test_reindex_coord(self, engine_and_file, closing):
         engine, filepath = engine_and_file
-        if engine in ("metek", "cfradial2"):
+        if engine in ("metek", "cfradial2", "windcube"):
             pytest.skip(f"{engine} has no reindexing")
         plain = closing(xd.open_datatree(filepath, engine=engine, sweep=0))["sweep_0"]
         dim = "elevation" if plain["sweep_mode"].item() == "rhi" else "azimuth"
@@ -560,6 +561,7 @@ class TestEngineRegistry:
             "metek",
             "uf",
             "imd",
+            "windcube",
         }
         assert set(_ENGINE_REGISTRY.keys()) == expected
 

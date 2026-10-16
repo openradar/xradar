@@ -47,6 +47,7 @@ datamet = "xradar.io.backends:DataMetBackendEntrypoint"
 metek = "xradar.io.backends:MRRBackendEntrypoint"
 uf = "xradar.io.backends:UFBackendEntrypoint"
 imd = "xradar.io.backends:IMDBackendEntrypoint"
+windcube = "xradar.io.backends:WindCubeBackendEntrypoint"
 
 [build-system]
 requires = [

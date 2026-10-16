@@ -10,6 +10,8 @@ import pytest
 from filelock import FileLock
 from open_radar_data import DATASETS
 
+from tests.windcube_data import write_default_file
+
 
 # silence FutureWarning
 def pytest_configure(config):
@@ -383,3 +385,11 @@ def make_temp_file(tmp_path):
         return tmp_path / f"testfile_{rnd}"
 
     return _make_file
+
+
+@pytest.fixture
+def windcube_file(tmp_path):
+    """Synthetic WindCube file: RHI, DBS (two gate geometries) and PPI."""
+    return write_default_file(
+        tmp_path / "WCS000001_2025-04-10_00-00-00_mixed_1_25mTP.nc"
+    )

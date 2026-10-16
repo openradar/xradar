@@ -179,6 +179,15 @@ dtree = xr.open_datatree(uf_file, engine="uf")
 display(dtree)
 ```
 
+## Vaisala WindCube
+
+WindCube lidar files are opened the same way. The cell is not executed, as
+there is no sample file in `open-radar-data` yet:
+
+```python
+dtree = xr.open_datatree("WCS000001_2025-04-10_00-00-00_mixed_1_25mTP.nc", engine="windcube")
+```
+
 ## IMD - single file via `engine="imd"`
 
 IMD distributes one sweep per NetCDF file. The `engine="imd"` entry serves

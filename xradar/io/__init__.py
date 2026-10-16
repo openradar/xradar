@@ -30,6 +30,7 @@ from .backends.nexrad_level2 import NexradLevel2BackendEntrypoint
 from .backends.odim import OdimBackendEntrypoint
 from .backends.rainbow import RainbowBackendEntrypoint
 from .backends.uf import UFBackendEntrypoint
+from .backends.windcube import WindCubeBackendEntrypoint
 from xarray import open_datatree as _xr_open_datatree
 
 #: Registry mapping engine names to backend classes that support groups.
@@ -47,6 +48,7 @@ _ENGINE_REGISTRY = {
     "metek": MRRBackendEntrypoint,
     "uf": UFBackendEntrypoint,
     "imd": IMDBackendEntrypoint,
+    "windcube": WindCubeBackendEntrypoint,
 }
 
 
