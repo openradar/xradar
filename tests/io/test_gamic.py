@@ -321,7 +321,8 @@ def test_get_radar_calibration_of_sweeps_with_other_names():
     assert calib.antenna_gain_h == 43.0 and calib.radar_constant_h == 70.0
     third = xr.Dataset(attrs={"antenna_gain_h": 44.0})
     with pytest.warns(
-        UserWarning, match=r"differ between the sweeps \(antenna_gain_h\)"
+        UserWarning,
+        match=r"differ between the sweeps \(antenna_gain_h\).*``sweep=``",
     ):
         calib = _get_radar_calibration([first, third], names)
     assert calib.antenna_gain_h == 43.0
