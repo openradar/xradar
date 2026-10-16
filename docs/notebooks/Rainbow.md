@@ -110,3 +110,22 @@ display(dtree)
 dtree = xd.open_datatree(filename, engine="rainbow", sweep=["sweep_1", "sweep_2", "sweep_8"])
 display(dtree)
 ```
+
+## Optional groups: radar_parameters and radar_calibration
+
+With `optional_groups=True` the datatree also has the metadata groups. The Rainbow reader fills them from the slice metadata of the file (beam widths, the radar constants).
+
+```{code-cell}
+dtree = xd.open_datatree(filename, engine="rainbow", sweep=0, optional_groups=True)
+display(dtree["radar_parameters"].ds)
+display(dtree["radar_calibration"].ds)
+```
+
+```{code-cell}
+import numpy as np
+
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 1.326, 3)
+np.testing.assert_almost_equal(dtree["radar_calibration"].radar_constant_h, 74.09, 2)
+```
+
+The groups hold one set of values: if the slices of a file disagree about a value, the group holds the values of the first selected sweep, and a warning names these values. Select the sweep whose values you need with `sweep=`.
