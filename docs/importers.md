@@ -2,6 +2,8 @@
 
 The backends use different approaches to ingest the data.
 
+How the names of moments and metadata of each format are mapped to the data model is shown in the {doc}`notebooks/Name_Mapping` notebook.
+
 ## Engine discovery
 
 Each backend implements ``guess_can_open``, based on the format's signature
