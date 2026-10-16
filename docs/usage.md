@@ -18,6 +18,7 @@ datamodel
 importers
 exporters
 notebooks/Open-Datatree-Engine
+notebooks/Open-Any-Format
 notebooks/Accessors
 notebooks/Mapping_Sweeps
 notebooks/CfRadial1_Model_Transformation
