@@ -17,6 +17,7 @@ import xradar
 datamodel
 importers
 exporters
+notebooks/Name_Mapping
 notebooks/Open-Datatree-Engine
 notebooks/Accessors
 notebooks/Mapping_Sweeps
