@@ -134,3 +134,36 @@ xd.io.to_cfradial1(dtree=radar, filename="cfradial1_qced.nc", calibs=True)
 
 If `filename` is `None` in the `xd.io.to_cfradial1` function, it will automatically generate a<br>
 filename using the instrument name and the first available timestamp from the data.
+
+## Sweeps with different range geometry
+
+CfRadial1 holds all sweeps in one `range` axis. Volumes whose sweeps have different gate spacing, like this GAMIC volume (100 m gates in the first six sweeps, 150 m gates in the others), can not be written like that, and the export says so:
+
+```{code-cell}
+gamic_file = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+volume = xd.open_datatree(gamic_file, engine="gamic")
+print({name: float(volume[name].range.diff("range").mean()) for name in volume.children if name.startswith("sweep_")})
+```
+
+```{code-cell}
+try:
+    xd.io.to_cfradial1(volume, "gamic_common.nc")
+except ValueError as err:
+    print(err)
+```
+
+With `range_geometry="per_sweep"` the range of each sweep is written (`range(sweep, range)`, with `meters_to_center_of_first_gate` and `meters_between_gates` per sweep), and the file reads back with the gate spacing of every sweep:
+
+```{code-cell}
+xd.io.to_cfradial1(volume, "gamic_per_sweep.nc", range_geometry="per_sweep")
+back = xd.open_datatree("gamic_per_sweep.nc", engine="cfradial1")
+spacing = {
+    name: round(float(back[name].range.diff("range").mean()), 1)
+    for name in back.children
+    if name.startswith("sweep_")
+}
+print(spacing)
+assert spacing["sweep_0"] == 100.0 and spacing["sweep_9"] == 150.0
+```
+
+The default is `range_geometry="common"`, the per-sweep range is opt-in.
