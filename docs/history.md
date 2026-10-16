@@ -69,6 +69,7 @@
 * FIX: CfRadial1 export of sweeps with different range geometry (e.g. GAMIC 100 m / 150 m gates) raises a clear error (``MergeError``, a ``ValueError``) that points to ``reindex_range`` and says that it takes the nearest gate (CfRadial 1.4 section 2.5), NEXRAD split cuts (same elevation, different moments) are covered by a test ({issue}`418`, {pull}`455`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Implement ``guess_can_open`` for all backends (format signatures and the input types each backend reads) and add ``xradar.io.discover_engine`` / ``xradar.io.list_xradar_engines``; formats unknown to xarray (NEXRAD Level II, IRIS, Rainbow, UF, ...) can now be opened with ``xr.open_dataset`` without ``engine`` ({issue}`225`, {issue}`380`, {pull}`446`) by [@syedhamidali](https://github.com/syedhamidali)
 * DOC: ``Name_Mapping`` notebook with tables of how the readers and exporters map the names of moments and metadata (built from the mappings of the code), linked from the importers page ({issue}`46`) by [@syedhamidali](https://github.com/syedhamidali)
+* DOC: links to the standards (WMO FM301, CfRadial, ODIM_H5) in the ``Name_Mapping`` notebook ({pull}`523`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
