@@ -133,6 +133,22 @@ for var in xd.util.get_sweep_dataset_vars(sweep):
     plt.title(var)
 ```
 
-```{code-cell}
+## Optional groups: radar_parameters and radar_calibration
 
+With `optional_groups=True` the datatree also has the metadata groups. The IRIS/Sigmet reader fills them from the product and task configuration of the file (beam widths and receiver bandwidth, the receiver noise and the radar constant, ...).
+
+```{code-cell}
+dtree = xd.open_datatree(filename_volume, engine="iris", sweep=0, optional_groups=True)
+display(dtree["radar_parameters"].ds)
+display(dtree["radar_calibration"].ds)
 ```
+
+```{code-cell}
+import numpy as np
+
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 0.95, 2)
+np.testing.assert_almost_equal(dtree["radar_calibration"].noise_hc, -81.4, 1)
+np.testing.assert_almost_equal(dtree["radar_calibration"].radar_constant_h, 67.1, 1)
+```
+
+The groups hold one set of values: if the sweeps of a file disagree about a value, the group holds the values of the first selected sweep, and a warning names these values. Select the sweep whose values you need with `sweep=`.
