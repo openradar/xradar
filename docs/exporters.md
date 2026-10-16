@@ -25,3 +25,17 @@ works on a shallow copy by default; pass `deepcopy=True` to work on a deep copy 
 
 With {class}`~xradar.io.export.to_cfradial1` an xradar {py:class}`xarray:xarray.DataTree`
 can be saved to a CfRadial1-like file.
+
+CfRadial1 has one `range(range)` for all rays, so by default all sweeps need the
+same first gate and gate spacing (the number of gates may differ). Volumes with
+different gate geometries per sweep (e.g. 100 m and 150 m gates in one GAMIC
+volume) raise an error. With `range_geometry="per_sweep"` they are written as they
+are, with a 2-D `range(sweep, range)` and the attributes
+`meters_to_center_of_first_gate` and `meters_between_gates` per sweep
+(CfRadial 1.4 Section 2.5). xradar reads such files, not every other reader does
+(see ARM-DOE/pyart#1900). If all sweeps share the geometry, the usual 1-D `range`
+is written.
+
+```python
+xd.io.to_cfradial1(dtree, "volume.nc", range_geometry="per_sweep")
+```
