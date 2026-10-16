@@ -20,6 +20,7 @@ html_theme.sidebar_secondary.remove: true
 installation
 usage
 contributing
+ai_policy
 authors
 history
 reference
