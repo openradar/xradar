@@ -1,0 +1,815 @@
+#!/usr/bin/env python
+# Copyright (c) 2026, openradar developers.
+# Distributed under the MIT License. See LICENSE for more info.
+
+"""Tests for `io.virtual.iris` (format walker + ``xradar-iris-sweep`` codec).
+
+The oracle for decode parity is the eager IRIS backend in this same repo.
+Ray-order note: the format walker emits rays in acquisition (stream) order
+while the eager reader places rays by azimuth-derived index, so a sweep
+whose first ray straddles north differs by a cyclic roll — parity is
+therefore asserted on azimuth-ALIGNED rows, not positionally.
+"""
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+import pytest
+import xarray as xr
+
+pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only; numpy-1 cells skip
+
+import xradar  # resolves the package location for the subprocess test
+from xradar.io.backends.iris import SIGMET_DATA_TYPES, decode_array
+from xradar.io.virtual.iris.codec import CODEC_NAME, IrisSweepCodec
+from xradar.io.virtual.iris.format import (
+    BHDR_SIZE,
+    IDH_SIZE,
+    INGEST_DATA_HEADER_ID,
+    INGEST_HEADER_ID,
+    PRODUCT_HDR_ID,
+    RAY_HEADER_WORDS,
+    RECORD_SIZE,
+    azimuth_midpoints,
+    azimuth_sort_order,
+    decode_sweep_moment,
+    range_centers,
+    read_volume,
+    sweep_words,
+    walk_sweep,
+)
+
+
+def test_framing_constants_derive_from_iris_structs():
+    """The derived sizes/ids/offsets must equal the IRIS Programmer's
+    Manual values — pins the struct-dict derivation to the documented
+    format."""
+    assert RECORD_SIZE == 6144
+    assert BHDR_SIZE == 12
+    assert IDH_SIZE == 76
+    assert RAY_HEADER_WORDS == 6
+    assert (PRODUCT_HDR_ID, INGEST_HEADER_ID, INGEST_DATA_HEADER_ID) == (27, 23, 24)
+
+
+def test_read_volume_sweeps_corozal(iris0_file):
+    """10-sweep 8-bit IDEAM Corozal volume: sweeps tile the file exactly."""
+    buf = Path(iris0_file).read_bytes()
+    hdr, sweeps, *_ = read_volume(buf)
+
+    assert hdr.task_name == "SURV_HV_300"
+    assert "Corozal" in hdr.site_name
+    assert len(sweeps) == 10
+    total = 2 * RECORD_SIZE
+    for s in sweeps:
+        assert s.byte_offset % RECORD_SIZE == 0
+        assert s.byte_length % RECORD_SIZE == 0
+        assert s.ndatatypes == 7
+        total += s.byte_length
+    assert sweeps[0].byte_offset == 2 * RECORD_SIZE
+    assert total == len(buf)
+    types = [h.type_name for h in sweeps[0].headers]
+    assert types[0] == "DB_DBZ"
+    assert "DB_XHDR" not in types
+
+
+def test_read_volume_sweeps_surgavere_16bit(iris1_file):
+    """Single-sweep all-16-bit volume with DB_XHDR and one missing ray."""
+    buf = Path(iris1_file).read_bytes()
+    sweeps = read_volume(buf).sweeps
+
+    assert len(sweeps) == 1
+    (sweep,) = sweeps
+    assert sweep.ndatatypes == 12
+    types = [h.type_name for h in sweep.headers]
+    assert types[0] == "DB_XHDR"
+    assert "DB_DBZ2" in types
+    data_headers = [h for h in sweep.headers if h.type_name != "DB_XHDR"]
+    assert all(h.bits_per_bin == 16 for h in data_headers)
+    assert sweep.headers[0].nrays_expected == 360
+
+    span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+    census = walk_sweep(sweep_words(span, sweep.ndatatypes), sweep.ndatatypes)
+    assert len(census) == sweep.ndatatypes
+    assert all(len(rays.headers) == 359 for rays in census)  # one compacted
+    assert all(len(rays.missing) == 1 for rays in census)
+
+
+def _decoded_rows_and_azimuths(buf, sweeps, sweep_idx, type_name, nbins):
+    """Decode one moment of one sweep plus its per-ray azimuth midpoints."""
+    sweep = sweeps[sweep_idx]
+    types = [h.type_name for h in sweep.headers]
+    ordinal = types.index(type_name)
+    dth = sweep.headers[ordinal]
+    dtype = np.dtype("uint8") if dth.bits_per_bin == 8 else np.dtype("uint16")
+    span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+    headers = walk_sweep(sweep_words(span, sweep.ndatatypes), sweep.ndatatypes)[
+        0
+    ].ray_headers()
+    rows = decode_sweep_moment(
+        span, ordinal, sweep.ndatatypes, (len(headers), nbins), dtype
+    )
+    azimuths = azimuth_midpoints(
+        [h.azimuth_start for h in headers], [h.azimuth_stop for h in headers]
+    )
+    return rows, azimuths, dth.type_code
+
+
+def _assert_parity_az_aligned(rows, azimuths, type_code, eager):
+    """Bin-for-bin parity against the eager decode, aligned on azimuth."""
+    entry = SIGMET_DATA_TYPES[type_code]
+    # this helper only understands plain linear types; pointing it at a
+    # nyquist/nonlinear type must fail loudly, not silently misdecode
+    assert entry.get("func") is decode_array, entry
+    with np.errstate(invalid="ignore"):
+        mine = decode_array(rows.astype("float64"), **entry.get("fkw", {}))
+    theirs = eager.values.astype("float64")
+    assert mine.shape == theirs.shape
+
+    ours_order = azimuth_sort_order(azimuths)
+    theirs_order = np.argsort(eager["azimuth"].values, kind="stable")
+    np.testing.assert_allclose(
+        azimuths[ours_order],
+        eager["azimuth"].values[theirs_order],
+        atol=1e-6,
+    )
+    mine = mine[ours_order]
+    theirs = theirs[theirs_order]
+    both = np.isfinite(mine) & np.isfinite(theirs)
+    assert both.any()
+    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-5)
+
+
+def test_decode_moment_parity_corozal(iris0_file):
+    buf = Path(iris0_file).read_bytes()
+    hdr, sweeps, *_ = read_volume(buf)
+    rows, azimuths, code = _decoded_rows_and_azimuths(
+        buf, sweeps, 0, "DB_DBZ", hdr.number_output_bins
+    )
+    with xr.open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        _assert_parity_az_aligned(rows, azimuths, code, ds["DBZH"])
+
+
+def test_decode_moment_parity_surgavere_16bit(iris1_file):
+    buf = Path(iris1_file).read_bytes()
+    hdr, sweeps, *_ = read_volume(buf)
+    rows, azimuths, code = _decoded_rows_and_azimuths(
+        buf, sweeps, 0, "DB_DBZ2", hdr.number_output_bins
+    )
+    with xr.open_dataset(iris1_file, engine="iris", group="sweep_0") as ds:
+        _assert_parity_az_aligned(rows, azimuths, code, ds["DBZH"])
+
+
+def test_codec_from_dict_strict():
+    with pytest.raises(ValueError, match="requires"):
+        IrisSweepCodec.from_dict(
+            {"name": CODEC_NAME, "configuration": {"moment_index": 1}}
+        )
+    with pytest.raises(ValueError, match="expected codec name"):
+        IrisSweepCodec.from_dict(
+            {"name": "gzip", "configuration": {"moment_index": 1, "ndatatypes": 2}}
+        )
+    codec = IrisSweepCodec.from_dict(
+        {"name": CODEC_NAME, "configuration": {"moment_index": 1, "ndatatypes": 12}}
+    )
+    assert codec.sort_rays is False
+    assert codec.pad_missing_rays is False
+    with pytest.raises(ValueError, match="out of range"):
+        IrisSweepCodec(moment_index=12, ndatatypes=12)
+
+
+def test_codec_to_dict_round_trip():
+    codec = IrisSweepCodec(
+        moment_index=3, ndatatypes=12, sort_rays=True, pad_missing_rays=True
+    )
+    assert IrisSweepCodec.from_dict(codec.to_dict()) == codec
+    assert set(codec.to_dict()["configuration"]) == {
+        "moment_index",
+        "ndatatypes",
+        "sort_rays",
+        "pad_missing_rays",
+    }
+
+
+def test_codec_config_is_frozen():
+    """The serialized config is a public contract: every published store
+    carries it verbatim, so the key set and order must never change (this
+    configuration is byte-identical to the original raw2zarr implementation's;
+    only the name gained the ``xradar-`` prefix)."""
+    codec = IrisSweepCodec(moment_index=3, ndatatypes=12, sort_rays=True)
+    assert json.dumps(codec.to_dict()) == (
+        '{"name": "xradar-iris-sweep", "configuration": {"moment_index": 3, '
+        '"ndatatypes": 12, "sort_rays": true, "pad_missing_rays": false}}'
+    )
+
+
+def test_codec_resolves_from_zarr_registry():
+    """``xradar-iris-sweep`` resolves from the zarr registry. When several
+    providers of the name coexist (e.g. a migration window where another
+    package still registers it), zarr warns and picks one arbitrarily —
+    ``zarr.config`` pins the xradar implementation deterministically."""
+    import warnings
+
+    import zarr
+    from zarr.registry import get_codec_class
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # duplicate-provider warning is env-dependent
+        assert get_codec_class(CODEC_NAME).__name__ == "IrisSweepCodec"
+
+    fqcn = f"{IrisSweepCodec.__module__}.{IrisSweepCodec.__qualname__}"
+    with zarr.config.set({"codecs": {CODEC_NAME: fqcn}}):
+        assert get_codec_class(CODEC_NAME) is IrisSweepCodec
+
+
+def test_zarr_end_to_end_read(iris1_file, tmp_path):
+    """A hand-written zarr v3 store whose single chunk is a raw sweep span
+    decodes through the public zarr API purely via the registered codec."""
+    buf = Path(iris1_file).read_bytes()
+    hdr, (sweep,), *_ = read_volume(buf)
+    types = [h.type_name for h in sweep.headers]
+    ordinal = types.index("DB_DBZ2")
+    span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+    headers = walk_sweep(sweep_words(span, sweep.ndatatypes), sweep.ndatatypes)[
+        0
+    ].headers
+    nrays, nbins = len(headers), hdr.number_output_bins
+
+    codec = IrisSweepCodec(moment_index=ordinal, ndatatypes=sweep.ndatatypes)
+    metadata = {
+        "zarr_format": 3,
+        "node_type": "array",
+        "shape": [nrays, nbins],
+        "data_type": "uint16",
+        "chunk_grid": {
+            "name": "regular",
+            "configuration": {"chunk_shape": [nrays, nbins]},
+        },
+        "chunk_key_encoding": {"name": "default"},
+        "fill_value": 0,
+        "codecs": [codec.to_dict()],
+    }
+    (tmp_path / "zarr.json").write_text(json.dumps(metadata))
+    chunk_dir = tmp_path / "c" / "0"
+    chunk_dir.mkdir(parents=True)
+    (chunk_dir / "0").write_bytes(span)
+
+    import zarr
+
+    arr = zarr.open_array(store=str(tmp_path), mode="r")
+    expected = decode_sweep_moment(
+        span, ordinal, sweep.ndatatypes, (nrays, nbins), np.dtype("uint16")
+    )
+    np.testing.assert_array_equal(arr[:], expected)
+
+
+def test_codec_import_does_not_pull_virtualizarr():
+    """Resolving the codec (what a reader does) must not import
+    virtualizarr — reading virtual stores needs only xradar + zarr."""
+    repo_root = Path(xradar.__file__).resolve().parents[1]
+    code = (
+        "import sys\n"
+        "import xradar.io.virtual.iris.codec\n"
+        "assert 'virtualizarr' not in sys.modules\n"
+        "print('CODEC_IMPORT_OK')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=repo_root,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "CODEC_IMPORT_OK" in result.stdout
+
+
+def test_io_import_does_not_pull_virtual():
+    """``import xradar.io`` (every eager-reader session) must not import the
+    virtual subpackage, nor zarr through it."""
+    repo_root = Path(xradar.__file__).resolve().parents[1]
+    code = (
+        "import sys\n"
+        "import xradar.io\n"
+        "assert 'xradar.io.virtual' not in sys.modules\n"
+        "import xradar.io.virtual\n"  # the lazy package itself stays light
+        "assert 'virtualizarr' not in sys.modules\n"
+        "print('IO_IMPORT_OK')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=repo_root,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "IO_IMPORT_OK" in result.stdout
+
+
+def test_range_centers_matches_eager(iris0_file, iris1_file):
+    """The mirrored range-gate construction equals the eager backend's."""
+    for path in (iris0_file, iris1_file):
+        hdr = read_volume(Path(path).read_bytes()).header
+        with xr.open_dataset(path, engine="iris", group="sweep_0") as ds:
+            np.testing.assert_allclose(
+                range_centers(hdr), ds["range"].values, atol=1e-3
+            )
+
+
+def test_decode_flavors_and_shape_guard(iris1_file):
+    """sort_rays / pad_missing_rays row layouts, and the manifest/file
+    mismatch guard, at the format level (SUR has one real missing ray)."""
+    buf = Path(iris1_file).read_bytes()
+    hdr, (sweep,), *_ = read_volume(buf)
+    ndt = sweep.ndatatypes
+    ordinal = [h.type_name for h in sweep.headers].index("DB_DBZ2")
+    span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+    census = walk_sweep(sweep_words(span, ndt), ndt)
+    headers = census[ordinal].ray_headers()
+    nbins = hdr.number_output_bins
+    n_written = len(headers)  # 359
+    n_expected = sweep.headers[0].nrays_expected  # 360
+    dtype = np.dtype("uint16")
+
+    plain = decode_sweep_moment(span, ordinal, ndt, (n_written, nbins), dtype)
+
+    # sorted flavor = plain rows under the shared azimuth permutation
+    srt = decode_sweep_moment(
+        span, ordinal, ndt, (n_written, nbins), dtype, sort_rays=True
+    )
+    key = azimuth_midpoints(
+        [h.azimuth_start for h in headers], [h.azimuth_stop for h in headers]
+    )
+    np.testing.assert_array_equal(srt, plain[azimuth_sort_order(key)])
+
+    # padded flavor keeps every slot; the missing slot reads as fill
+    padded = decode_sweep_moment(
+        span, ordinal, ndt, (n_expected, nbins), dtype, pad_missing_rays=True
+    )
+    (missing_slot,) = census[ordinal].missing
+    assert (padded[missing_slot] == 0).all()
+    np.testing.assert_array_equal(np.delete(padded, missing_slot, axis=0), plain)
+
+    # wrong declared shape fails loudly in both flavors
+    with pytest.raises(ValueError, match="manifest/file mismatch"):
+        decode_sweep_moment(span, ordinal, ndt, (n_expected, nbins), dtype)
+    with pytest.raises(ValueError, match="manifest/file mismatch"):
+        decode_sweep_moment(
+            span, ordinal, ndt, (n_written, nbins), dtype, pad_missing_rays=True
+        )
+
+
+def test_codec_constructor_keeps_the_contract():
+    """numpy ordinals (e.g. from np.arange) serialize as plain JSON ints;
+    strings never pass as flags."""
+    codec = IrisSweepCodec(moment_index=np.int64(2), ndatatypes=np.int64(5))
+    assert json.dumps(codec.to_dict())
+    assert IrisSweepCodec.from_dict(codec.to_dict()) == codec
+    with pytest.raises(ValueError, match="must be bool"):
+        IrisSweepCodec(moment_index=0, ndatatypes=2, sort_rays="false")
+    with pytest.raises(ValueError, match="must be int"):
+        IrisSweepCodec(moment_index=True, ndatatypes=2)
+
+
+@pytest.mark.parametrize(
+    "config, match",
+    [
+        ({"moment_index": 1, "ndatatypes": 2, "sort_rays": "false"}, "must be bool"),
+        (
+            {"moment_index": 1, "ndatatypes": 2, "reorder": "azimuth"},
+            "unknown configuration keys",
+        ),
+        ({"moment_index": True, "ndatatypes": 2}, "must be int"),
+        ({"moment_index": "1", "ndatatypes": 2}, "must be int"),
+        ({"moment_index": 1.0, "ndatatypes": 2}, "must be int"),
+    ],
+    ids=["flag-string", "unknown-key", "bool-index", "str-index", "float-index"],
+)
+def test_codec_from_dict_rejects_out_of_contract_configs(config, match):
+    """A newer or corrupt store must fail loudly, never decode in the wrong
+    row order (bool("false") is True; True is an int)."""
+    with pytest.raises(ValueError, match=match):
+        IrisSweepCodec.from_dict({"name": CODEC_NAME, "configuration": config})
+
+
+@pytest.mark.parametrize("fill", [float("inf"), float("nan"), 0.5, "0", True, None])
+def test_fill_value_must_be_an_integer(fill):
+    """Moments are raw unsigned words: a non-integral fill value raises
+    ValueError (never OverflowError, never silent truncation). One rule for
+    every virtual codec (``_checks.check_output``)."""
+    from xradar.io.virtual._checks import check_output
+
+    with pytest.raises(ValueError, match="not an integer"):
+        check_output("uint8", fill, (2, 3))
+    assert check_output("uint8", np.uint8(7), (2, 3))[1] == 7
+    assert check_output("uint16", 3.0, (2, 3))[1] == 3  # JSON float fills
+
+
+@pytest.mark.parametrize(
+    "dtype, fill, shape, match",
+    [
+        ("int16", 0, (2, 3), "uint8/uint16"),
+        (">u2", 0, (2, 3), "uint8/uint16"),
+        ("uint32", 0, (2, 3), "uint8/uint16"),
+        ("uint8", 256, (2, 3), "not a valid uint8"),
+        ("uint8", -1, (2, 3), "not a valid uint8"),
+        ("uint8", 0, (0, 3), "non-empty"),
+        ("uint8", 0, (3,), "non-empty"),
+    ],
+)
+def test_output_contract_is_shared(dtype, fill, shape, match):
+    """Both codecs refuse the same out-of-contract arrays (dtype, fill
+    range, shape) before decoding a byte."""
+    from xradar.io.virtual._checks import check_output
+
+    with pytest.raises(ValueError, match=match):
+        check_output(dtype, fill, shape)
+
+
+def test_only_the_prefixed_codec_name_is_registered():
+    """xradar registers ``xradar-iris-sweep`` only: the unprefixed
+    ``sigmet-sweep`` is neither accepted by ``from_dict`` nor an entry point."""
+    from importlib.metadata import entry_points
+
+    config = {"moment_index": 3, "ndatatypes": 12}
+    with pytest.raises(ValueError, match="expected codec name"):
+        IrisSweepCodec.from_dict({"name": "sigmet-sweep", "configuration": config})
+    names = {
+        ep.name
+        for ep in entry_points(group="zarr.codecs")
+        if ep.value.startswith("xradar.")
+    }
+    assert names == {CODEC_NAME}
+
+
+def test_azimuth_sort_order_is_stable():
+    """Codec rows and builder coordinates must apply the SAME permutation,
+    tied azimuths included (numpy sorts short inputs stably regardless of
+    ``kind``, so use a long one)."""
+    assert azimuth_sort_order([1.0, 0.0, 1.0, 0.0]).tolist() == [1, 3, 0, 2]
+    many = np.tile([1.0, 0.0, 1.0], 64)
+    np.testing.assert_array_equal(
+        azimuth_sort_order(many), np.argsort(many, kind="stable")
+    )
+
+
+def test_output_contract_caps_the_chunk_size():
+    """A store declaring an absurd chunk shape is refused before anything
+    is allocated (a hostile store must not cost the reader gigabytes)."""
+    from xradar.io.virtual._checks import MAX_CELLS, check_output
+
+    check_output("uint16", 0, (720, 1840))  # a real super-res sweep
+    with pytest.raises(ValueError, match="exceeds"):
+        check_output("uint8", 0, (360, MAX_CELLS))
+    with pytest.raises(ValueError, match="non-empty"):
+        check_output("uint8", 0, (2.5, 3))
+
+
+def test_lazy_exports_resolve_in_process(monkeypatch):
+    """``xradar.io.virtual`` and its subpackages resolve their exports on
+    first access, list only what is importable, and explain a missing
+    optional dependency instead of failing with a bare ImportError."""
+    import importlib
+
+    import xradar.io
+    from xradar.io import virtual
+    from xradar.io.virtual import iris
+
+    assert xradar.io.virtual is virtual  # lazy attribute of xradar.io
+    assert iris.IrisSweepCodec is IrisSweepCodec
+    assert "IrisSweepCodec" in dir(iris)
+    assert "azimuth_sort_order" in dir(virtual)
+    with pytest.raises(AttributeError, match="no attribute 'Nope'"):
+        virtual.Nope
+
+    real_import = importlib.import_module
+
+    def missing(name, *args):
+        if name == "xradar.io.virtual.iris.codec":
+            raise ImportError("no zarr", name="zarr")
+        return real_import(name, *args)
+
+    monkeypatch.setattr(importlib, "import_module", missing)
+    with pytest.raises(virtual.MissingDependencyError, match="needs only xradar"):
+        virtual.lazy_attribute("xradar.io.virtual", "IrisSweepCodec", virtual._LAZY)
+
+
+def test_codec_is_decode_only_and_needs_a_mapping():
+    """A store's codec entry must be a mapping, and the codec never writes."""
+    with pytest.raises(ValueError, match="must be a mapping"):
+        IrisSweepCodec.from_dict({"name": CODEC_NAME, "configuration": [1, 2]})
+    import asyncio
+
+    codec = IrisSweepCodec(moment_index=0, ndatatypes=1)
+    with pytest.raises(NotImplementedError, match="decode-only"):
+        codec._encode_sync(None, None)
+    with pytest.raises(NotImplementedError, match="decode-only"):
+        asyncio.run(codec._encode_single(None, None))
+    with pytest.raises(NotImplementedError):
+        codec.compute_encoded_size(10, None)
+
+
+def test_zarr_v2_is_refused_with_a_clear_error():
+    """The codecs run on zarr v3 only: on zarr 2.x importing them raises an
+    ImportError naming the requirement (not a bare ``No module named
+    'zarr.abc'``), which the lazy exports turn into MissingDependencyError."""
+    code = (
+        "import zarr; zarr.__version__ = '2.18.7'\n"
+        "try:\n"
+        "    import xradar.io.virtual.iris.codec\n"
+        "except ImportError as err:\n"
+        "    print(type(err).__name__, err)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(xradar.__file__).parents[1],
+    )
+    assert "need zarr>=3.1.6 (zarr v3); found zarr 2.18.7" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "version, supported",
+    [
+        ("3.1.6", True),
+        ("3.1.10", True),
+        ("3.10.0", True),
+        ("3.2.1.dev3+g1a2b", True),
+        ("4.0.0", True),
+        ("3.1.6rc1", False),  # a pre-release is older, as for importorskip
+        ("3.1.5", False),
+        ("2.18.7", False),
+        ("not-a-version", False),
+    ],
+)
+def test_zarr_version_rule(version, supported):
+    """One version rule for the codec guard and the lazy exports, with the
+    same pre-release ordering as ``pytest.importorskip(minversion=...)``."""
+    from xradar.io.virtual._checks import zarr_supported
+
+    assert zarr_supported(version) is supported
+
+
+def _run_with_old_zarr(body: str) -> str:
+    """Run ``body`` in a fresh interpreter where zarr reports 3.1.5."""
+    code = (
+        "import importlib.metadata as md, zarr\n"
+        "zarr.__version__ = '3.1.5'\n"
+        "real = md.version\n"
+        "md.version = lambda name: '3.1.5' if name == 'zarr' else real(name)\n" + body
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=Path(xradar.__file__).parents[1],
+    )
+    return result.stdout
+
+
+def test_old_zarr_message_and_star_import():
+    """On a too-old zarr the lazy export says what is found and needed
+    (never that zarr "is not importable"), and a star import, which only
+    lists installed exports, still works."""
+    out = _run_with_old_zarr(
+        "import xradar.io.virtual as v\n"
+        "try:\n"
+        "    v.IrisSweepCodec\n"
+        "except v.MissingDependencyError as err:\n"
+        "    print(err)\n"
+        "print('IrisSweepCodec' in v.__all__)\n"
+        "exec('from xradar.io.virtual import *')\n"
+        "print('star ok')\n"
+    )
+    assert "need zarr>=3.1.6 (zarr v3); found zarr 3.1.5" in out
+    assert "not importable" not in out
+    assert "False\nstar ok" in out
+
+
+@pytest.fixture
+def fresh_span_cache():
+    """An empty span cache, and none left behind for other tests."""
+    from xradar.io.virtual.iris import format as fmt
+
+    fmt._SPANS.clear()
+    yield fmt._SPANS
+    fmt._SPANS.clear()
+
+
+@pytest.fixture
+def counted_walks(fresh_span_cache, monkeypatch):
+    """Count the RLE walks that run (``walk_span`` calls ``walk_sweep``
+    through the module, so the patch sees every walk)."""
+    from xradar.io.virtual.iris import format as fmt
+
+    calls = []
+    real = fmt.walk_sweep
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(fmt, "walk_sweep", counting)
+    return calls
+
+
+def _sur_sweep(iris1_file):
+    buf = Path(iris1_file).read_bytes()
+    hdr, (sweep,), *_ = read_volume(buf)
+    span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+    return span, sweep, hdr.number_bins
+
+
+def test_one_walk_serves_every_moment(iris1_file, counted_walks):
+    """Every moment of a sweep references the same span: the first decode
+    walks it for all data types, the rest come from the cache, and the
+    cached rows equal a fresh walk's."""
+    from xradar.io.virtual.iris import format as fmt
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    ndt, shape = sweep.ndatatypes, (359, nbins)
+    dtype = np.dtype("uint16")
+    cached = [decode_sweep_moment(span, o, ndt, shape, dtype) for o in range(ndt)]
+    assert len(counted_walks) == 1
+    for ordinal, rows in enumerate(cached):
+        fmt._SPANS.clear()
+        fresh = decode_sweep_moment(span, ordinal, ndt, shape, dtype)
+        np.testing.assert_array_equal(rows, fresh)
+    # the padded layout declares other rows: a walk of its own
+    fmt._SPANS.clear()
+    counted_walks.clear()
+    decode_sweep_moment(span, 0, ndt, shape, dtype)
+    decode_sweep_moment(span, 0, ndt, (360, nbins), dtype, pad_missing_rays=True)
+    assert len(counted_walks) == 2
+
+
+def test_cache_key_is_the_span_content(iris0_file, counted_walks):
+    """Two sweeps with the same shape and data types are different spans:
+    each gets its own walk and its own rows."""
+    buf = Path(iris0_file).read_bytes()
+    hdr, sweeps, *_ = read_volume(buf)
+    first, second = sweeps[:2]
+    shape = (first.headers[0].nrays_written, hdr.number_bins)
+    assert shape[0] == second.headers[0].nrays_written
+    assert first.ndatatypes == second.ndatatypes
+
+    def decode(sweep):
+        span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
+        return decode_sweep_moment(span, 1, sweep.ndatatypes, shape, np.uint8)
+
+    assert not np.array_equal(decode(first), decode(second))
+    assert len(counted_walks) == 2
+
+
+def test_concurrent_moment_reads_walk_once(iris1_file, counted_walks):
+    """Integration smoke test (the threads may not overlap); the
+    single-flight wait itself is tested in test_virtual_cache.py."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    ndt, dtype = sweep.ndatatypes, np.dtype("uint16")
+    with ThreadPoolExecutor(ndt) as pool:
+        rows = list(
+            pool.map(
+                lambda o: decode_sweep_moment(span, o, ndt, (359, nbins), dtype),
+                range(ndt),
+            )
+        )
+    assert len(counted_walks) == 1
+    assert all(r.shape == (359, nbins) for r in rows)
+
+
+def test_cached_walk_is_read_only(iris1_file, fresh_span_cache):
+    from xradar.io.virtual.iris.format import walk_span
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    rays = walk_span(span, sweep.ndatatypes, (359, nbins))[0]
+    for arr in (rays.headers, rays.payload, rays.nwords):
+        with pytest.raises(ValueError, match="read-only"):
+            arr[0] = 1
+    rows = decode_sweep_moment(span, 0, sweep.ndatatypes, (359, nbins), "uint16")
+    rows[0] = 1  # decoded rows are the caller's own
+
+
+def test_span_walk_is_bounded(iris1_file):
+    """A store declaring more data types x cells than any sweep holds is
+    refused before the span is walked (no decompression bomb)."""
+    from xradar.io.virtual._checks import MAX_SPAN_CELLS
+
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    ndt = MAX_SPAN_CELLS // (360 * (6 + nbins)) + 1
+    with pytest.raises(ValueError, match="corrupt or hostile"):
+        decode_sweep_moment(span, 0, ndt, (360, nbins), np.dtype("uint16"))
+
+
+def test_more_rays_than_declared_stop_the_walk(iris1_file, fresh_span_cache):
+    span, sweep, nbins = _sur_sweep(iris1_file)
+    with pytest.raises(ValueError, match="more than the 100 rays"):
+        decode_sweep_moment(span, 0, sweep.ndatatypes, (100, nbins), np.dtype("uint16"))
+
+
+# --- the walk on hand-built word streams ------------------------------------
+
+
+def _data(*words):
+    """A data run: its code word, then the words."""
+    return [len(words) - 32768, *words]
+
+
+def _ray(azimuth, rbins, *payload):
+    """One ray: header (azimuth start/stop words, rbins), payload, end."""
+    return [*_data(azimuth, 0, azimuth, 0, rbins, 0, *payload), 1]
+
+
+def _walk(*rays, ndt=1, payload_words=4, max_rays=None):
+    from xradar.io.virtual.iris.format import walk_sweep
+
+    words = np.array([w for ray in rays for w in ray] + [0, 0], dtype="<i2")
+    return walk_sweep(words, ndt, payload_words=payload_words, max_rays=max_rays)
+
+
+def test_walk_marks_missing_rays_and_stops_at_padding():
+    """End-of-ray as the first code word, or rbins 0, is a missing ray;
+    the zero padding after the last ray ends the walk."""
+    (rays,) = _walk(_ray(100, 2, 7, 8), [1], _ray(200, 0, 9), _ray(300, 1, 5))
+    assert rays.missing.tolist() == [1, 2]
+    assert rays.headers[:, 0].tolist() == [100, 300]
+    assert rays.nwords.tolist() == [2, 1]
+
+
+@pytest.mark.parametrize(
+    "stream, match",
+    [
+        ([*_data(1, 2, 3), 1], "shorter than the 6-word ray header"),
+        (_data(1, 0, 1, 0, 2, 0, 5), "exhausted mid-ray"),  # no end-of-ray
+        ([-32768 + 50, 1, 2], "exhausted mid-ray"),  # run past the end
+        (_ray(100, -3, 7), "declares -3 bins"),
+    ],
+)
+def test_walk_refuses_corrupt_rays(stream, match):
+    from xradar.io.virtual.iris.format import walk_sweep
+
+    words = np.array(stream, dtype="<i2")  # no padding: the stream just ends
+    with pytest.raises(ValueError, match=match):
+        walk_sweep(words, 1, payload_words=4)
+
+
+def test_walk_memory_is_bounded_by_the_stream():
+    """A missing ray costs 4 bytes, and is counted in the cache size; rows
+    go into one block of the declared ray count."""
+    (rays,) = _walk(*[[1]] * 1000, _ray(100, 2, 7, 8), max_rays=4)
+    assert rays.missing.dtype.itemsize == 4 and len(rays.missing) == 1000
+    assert rays.nbytes >= rays.missing.nbytes + rays.payload.nbytes
+    assert rays.payload.shape == (1, 4)
+
+
+def test_rows_follow_rbins_and_word_size():
+    """``rbins`` bins of each ray, fill past them; 1-byte types pack two
+    bins a word (little-endian), and a ray that decoded fewer words than
+    ``rbins`` claims fills the rest."""
+    (rays,) = _walk(_ray(1, 3, 0x0201, 0x0403), _ray(2, 9, 0x0605))
+    u8 = rays.rows(5, np.uint8, 255)
+    assert u8.tolist() == [[1, 2, 3, 255, 255], [5, 6, 255, 255, 255]]
+    u16 = rays.rows(3, np.uint16, 7)
+    assert u16.tolist() == [[0x0201, 0x0403, 7], [0x0605, 7, 7]]
+    # more gates than the walk kept words for
+    assert rays.rows(10, np.uint16, 7).shape == (2, 10)
+
+
+def test_misaligned_data_types_are_refused():
+    """A store whose data types miss different rays (built elsewhere, or a
+    file changed after parsing) is refused instead of decoding moments
+    whose rows are different physical rays."""
+    from xradar.io.virtual.iris.format import check_aligned
+
+    walk = _walk(_ray(1, 2, 7), [1], [1], _ray(2, 2, 8), ndt=2)
+    with pytest.raises(ValueError, match="not group-consistent"):
+        check_aligned(walk, "sweep")
+    walk = _walk(_ray(1, 2, 7), _ray(1, 2, 8), _ray(2, 2, 9), ndt=2)
+    with pytest.raises(ValueError, match="rows would misalign"):
+        check_aligned(walk, "sweep")
+
+
+def test_ndatatypes_is_capped():
+    """An IRIS sweep carries at most one data type per DSP mask bit (160);
+    a larger ``ndatatypes`` is refused before any walk."""
+    from xradar.io.virtual.iris.format import MAX_DATATYPES, walk_span
+
+    assert MAX_DATATYPES == 160
+    with pytest.raises(ValueError, match="ndatatypes"):
+        IrisSweepCodec(moment_index=0, ndatatypes=MAX_DATATYPES + 1)
+    with pytest.raises(ValueError, match="outside 1..160"):
+        walk_span(bytes(2 * RECORD_SIZE), 10**6, (1, 1))
+
+
+def test_cache_holds_the_largest_allowed_walk():
+    from xradar.io.virtual._checks import MAX_SPAN_CELLS
+    from xradar.io.virtual.iris import format as fmt
+
+    assert fmt._SPANS.max_bytes >= 2 * MAX_SPAN_CELLS  # int16 words
