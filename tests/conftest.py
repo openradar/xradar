@@ -41,6 +41,10 @@ def pytest_configure(config):
         "filterwarnings",
         r"ignore:.*IRIS multi_prf_mode_flag=\d+ is not defined:UserWarning",
     )
+    config.addinivalue_line(
+        "filterwarnings",
+        r"ignore:.*values differ between the sweeps:UserWarning",
+    )
 
 
 @pytest.fixture(params=["file", "filelike"])
