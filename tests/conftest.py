@@ -187,6 +187,11 @@ def iris1_file():
 
 
 @pytest.fixture(scope="session")
+def iris_arouca_file():
+    return DATASETS.fetch("PRT231225000005.RAWD2A3")
+
+
+@pytest.fixture(scope="session")
 def nexradlevel2_file():
     return DATASETS.fetch("KATX20130717_195021_V06")
 

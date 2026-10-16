@@ -109,6 +109,7 @@ iris_mapping = {
     "DB_PHIDP2": "PHIDP",
     "DB_SQI": "SQIH",
     "DB_SQI2": "SQIH",
+    "DB_SNR8": "SNRH",
     "DB_SNR16": "SNRH",
     "DB_RHOHV": "RHOHV",
     "DB_RHOHV2": "RHOHV",
@@ -499,6 +500,25 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
             pass
 
     return data
+
+
+def _moment_names(type_names):
+    """CfRadial moment name per Sigmet data type, in order.
+
+    Types map through ``iris_mapping``. When two types of one sweep map to
+    the same name (e.g. the 1- and 2-byte flavors ``DB_DBZ`` and
+    ``DB_DBZ2`` both map to ``DBZH``), the first keeps the CfRadial name and
+    each later one keeps its Sigmet name, so no moment is lost.
+    """
+    names = []
+    for type_name in type_names:
+        name = iris_mapping.get(type_name, type_name)
+        if name in names:
+            name = type_name
+        if name in names:
+            raise ValueError(f"data type {type_name!r} appears twice in one sweep")
+        names.append(name)
+    return names
 
 
 def _data_types_from_dsp_mask(words):
@@ -1981,13 +2001,11 @@ SIGMET_DATA_TYPES = OrderedDict(
             {
                 "name": "DB_VELC",
                 "dtype": "uint8",
+                # 4.4.42: +/- 75 m/s with 128 as zero velocity, one step size
+                # on both sides as in DB_VEL; raw 254 is +74.4 m/s, not the
+                # +75.0 of the guide's table (#477)
                 "func": decode_array,
-                "fkw": {
-                    "offset": -1,
-                    "scale": 253.0 / 150,
-                    "offset2": -75,
-                    "mask": 0.0,
-                },
+                "fkw": {"scale": 127 / 75.0, "offset": -128.0, "mask": 0.0},
             },
         ),
         # SQI (1 byte)
@@ -2377,6 +2395,15 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
+        # The SNR family (DB_SNR, DB_LOG, DB_CSP, DB_AH, DB_AV, DB_AZDR, 1 and
+        # 2 byte). 1 byte: (N - 64) / 2, the DB_DBZ format, from the -31.5 ...
+        # +95.5 dB range of guide M212927EN-B 4.4.37 (M212927EN-D prints
+        # +32.5 ... +127.5 dB, which no 8-bit 0.5 dB scale covers). 2 byte:
+        # (N - 32768) / 100, the DB_DBZ2 format, whose -327.67 ... +327.66 dB
+        # range M212927EN-D 4.4.38 states. Raw 0 is masked: the 1-byte raw 0
+        # lies below the -31.5 dB floor, the 2-byte one decodes to -327.68 dB;
+        # on the SUR test file the raw-0 DB_SNR16 bins line up with the
+        # no-data bins of DB_DBZ2 (#475).
         # Signal to Noise ratio (1 byte)
         (
             65,
@@ -2384,7 +2411,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SNR8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Signal to Noise ratio (2 byte)
@@ -2394,7 +2421,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_SNR16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Albedo (1 byte)
@@ -2473,7 +2500,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LOG8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # The log receiver signal-to-noise ratio (2 byte)
@@ -2483,7 +2510,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_LOG16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Doppler channel clutter signal power (-CSR) (1 byte)
@@ -2493,7 +2520,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CSP8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Doppler channel clutter signal power (-CSR) (2 byte)
@@ -2503,7 +2530,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_CSP16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Cross correlation, uncorrected rhohv (1 byte)
@@ -2533,7 +2560,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AH8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zh (2 byte)
@@ -2543,7 +2570,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AH16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zv (1 byte)
@@ -2553,7 +2580,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AV8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zv (2 byte)
@@ -2563,7 +2590,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AV16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zzdr (1 byte)
@@ -2573,7 +2600,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AZDR8",
                 "dtype": "uint8",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 2.0, "offset": -64.0, "mask": 0.0},
             },
         ),
         # Attenuation of Zzdr (2 byte)
@@ -2583,7 +2610,7 @@ SIGMET_DATA_TYPES = OrderedDict(
                 "name": "DB_AZDR16",
                 "dtype": "uint16",
                 "func": decode_array,
-                "fkw": {"scale": 2.0, "offset": -63.0},
+                "fkw": {"scale": 100.0, "offset": -32768.0, "mask": 0.0},
             },
         ),
     ]
@@ -4049,14 +4076,17 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     def ds(self):
         return self._acquire()
 
-    def open_store_variable(self, name, var):
+    def open_store_variable(self, name, var, mname=None):
         dim = self.root.first_dimension
 
         data = indexing.LazilyOuterIndexedArray(IrisArrayWrapper(self, name, var))
         encoding = {"group": self._group, "source": self._filename}
 
-        mname = iris_mapping.get(name, name)
-        mapping = sweep_vars_mapping.get(mname, {})
+        if mname is None:
+            mname = iris_mapping.get(name, name)
+        # CF attrs of the mapped moment, also when a colliding type keeps its
+        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
+        mapping = sweep_vars_mapping.get(iris_mapping.get(name, name), {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         if name in ["DB_HCLASS", "DB_HCLASS2"]:
             task_end_info = self.root.ingest_header["task_configuration"][
@@ -4151,12 +4181,15 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         return coords
 
     def get_variables(self):
+        hdrs = self.ds["ingest_data_hdrs"]
         return FrozenDict(
             (k1, v1)
             for k1, v1 in {
                 **dict(
-                    self.open_store_variable(k, v)
-                    for k, v in self.ds["ingest_data_hdrs"].items()
+                    self.open_store_variable(k, v, mname)
+                    for (k, v), mname in zip(
+                        hdrs.items(), _moment_names(hdrs), strict=True
+                    )
                 ),
                 **self.open_store_coordinates(
                     list(self.ds["ingest_data_hdrs"].values())[0]
