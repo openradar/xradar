@@ -190,11 +190,12 @@ dtree = xr.open_datatree(imd_file, engine="imd")
 display(dtree)
 ```
 
-## IMD - multi-file volume via `open_imd_datatree`
+## IMD - multi-file volume
 
-To assemble a full IMD volume you supply a list of sweep files. xarray's
-`engine=` API takes a single path, so multi-file IMD volumes use the
-module-level function (which delegates to `xradar.util.create_volume`):
+To assemble a full IMD volume you supply a list of sweep files, see
+[Files with one sweep each](#files-with-one-sweep-each). `xd.open_datatree` calls
+`xd.io.open_imd_datatree` for the IMD engine, which delegates to
+`xradar.util.create_volume`, and you can call it directly as well:
 
 ```{code-cell}
 imd_volume = [
@@ -256,6 +257,76 @@ with warnings.catch_warnings(record=True) as captured:
     xd.io.open_odim_datatree(odim_file, sweep=[0])
 [w.message for w in captured if issubclass(w.category, FutureWarning)]
 ```
+
+## Without `engine=`
+
+Every backend implements `guess_can_open` (format signature and the input types
+it reads). `xd.open_datatree` uses these checks, via
+{func}`xradar.io.discover_engine`, when `engine` is left out, so one call opens
+every supported format:
+
+```{code-cell}
+for name, path in {
+    "ODIM_H5": odim_file,
+    "GAMIC": gamic_file,
+    "CfRadial1": cfradial1_file,
+    "NEXRAD Level II": nexrad_file,
+    "IRIS/Sigmet": iris_file,
+    "Rainbow": rainbow_file,
+    "UF": uf_file,
+    "IMD": imd_file,
+}.items():
+    dtree = xd.open_datatree(path)
+    sweeps = [child for child in dtree.children if child.startswith("sweep_")]
+    print(f"{name}: engine {xd.io.discover_engine(path)}, {len(sweeps)} sweeps")
+    assert sweeps
+```
+
+xarray's own `xr.open_datatree(path)` without `engine` does the same only for
+formats which xarray's backends do not read (NEXRAD Level II, IRIS, Rainbow,
+UF, ...). netCDF and HDF5 based formats (ODIM_H5, GAMIC, CfRadial1, IMD) are
+claimed by xarray's netCDF/HDF5 backends first, and opened as plain
+netCDF/HDF5 groups, without the `sweep_N` layout and without the xradar
+processing:
+
+```{code-cell}
+plain = xr.open_datatree(odim_file)
+print("xr.open_datatree:", [child for child in plain.children][:4], "...")
+assert not any(child.startswith("sweep_") for child in plain.children)
+```
+
+For these files use `xd.open_datatree(path)`, or pass the discovered engine to
+xarray:
+
+```{code-cell}
+dtree = xr.open_datatree(odim_file, engine=xd.io.discover_engine(odim_file))
+assert "sweep_0" in dtree.children
+```
+
+`discover_engine` raises a `ValueError` which lists the engines if none of them
+reads the file.
+
+## Files with one sweep each
+
+Some systems write one sweep per file (IMD, IRIS/Sigmet files of single sweeps).
+A list of files is stacked into one volume: the engine is discovered (all files
+need the same one), the sweeps of all files are sorted by time and numbered in
+this order. The same code works for every format:
+
+```{code-cell}
+imd_sweep_files = [
+    DATASETS.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
+    for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
+]
+volume = xd.open_datatree(imd_sweep_files)
+display(volume)
+assert len([child for child in volume.children if child.startswith("sweep_")]) == 10
+```
+
+The keyword arguments `time_coverage_start`, `time_coverage_end`, `min_angle`,
+`max_angle` and `volume_number` of {func}`xradar.util.create_volume` select the
+sweeps of the volume, e.g. `xd.open_datatree(files, max_angle=2.0)`. All other
+arguments (`sweep`, `first_dim`, ...) are used for every file.
 
 ## Unknown engine
 

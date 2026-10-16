@@ -19,6 +19,7 @@ FILES = [
     ("cfradial1_file", "cfradial1"),
     ("cfradial1_sgp_file", "cfradial1"),
     ("cfradial1n_file", "cfradial1"),
+    ("cfradial2_file", "cfradial2"),
     ("odim_file", "odim"),
     ("odim_file2", "odim"),
     ("gamic_file", "gamic"),
