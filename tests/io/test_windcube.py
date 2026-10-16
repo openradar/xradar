@@ -18,6 +18,7 @@ import h5py
 import numpy as np
 import pytest
 import xarray as xr
+from open_radar_data import DATASETS
 
 import xradar as xd
 from tests.windcube_data import (
@@ -497,3 +498,37 @@ def test_windcube_guess_can_open(windcube_file, windcube_file_old, tmp_path):
     truncated.write_bytes(windcube_file.read_bytes()[:2000])
     for filename in (other, text, truncated, tmp_path / "missing.nc", 12345):
         assert not entrypoint.guess_can_open(filename)
+
+
+#: real files of open-radar-data: sweep mode, then the sizes and fixed angle of
+#: each sweep
+REAL = {
+    "WLS200s-218_2022-10-07_00-51-38_dbs_1823_75m.nc": (
+        "doppler_beam_swinging",
+        [({"time": 40, "range": 188}, 75.0), ({"time": 10, "range": 188}, 90.0)],
+    ),
+    "WLS400s-118_2025-02-06_22-26-47_ppi_50_150m.nc": (
+        "sector",
+        [({"azimuth": 70, "range": 141}, 2.5)],
+    ),
+    "WLS400s-118_2025-02-20_02-46-06_rhi_45_150m.nc": (
+        "rhi",
+        [({"elevation": 30, "range": 141}, 320.0)],
+    ),
+}
+
+
+@pytest.mark.parametrize("name", REAL)
+def test_open_windcube_real_file(name, closing):
+    mode, sweeps = REAL[name]
+    path = DATASETS.fetch(name)
+    assert xd.io.discover_engine(path) == "windcube"
+    dtree = closing(xr.open_datatree(path, engine="windcube"))
+    assert dtree.ds.sweep_fixed_angle.values.tolist() == [angle for _, angle in sweeps]
+    for i, (sizes, angle) in enumerate(sweeps):
+        ds = dtree[f"sweep_{i}"].ds
+        assert dict(ds.radial_wind_speed.sizes) == sizes
+        assert ds.sweep_mode.item() == mode
+        assert ds.sweep_fixed_angle.item() == angle
+        assert not isinstance(ds.radial_wind_speed.variable._data, np.ndarray)
+        assert ds.time.dtype.kind == "M"
