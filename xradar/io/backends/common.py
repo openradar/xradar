@@ -591,7 +591,8 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict, attrs=False):
     With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
     added as well (for backends which have the values as attributes, e.g. of the
     ``how`` groups); variables win. Each name takes the value of the first sweep
-    which has it; a warning names the values the sweeps disagree about.
+    which has it; a warning names the values the sweeps disagree about (select
+    another sweep with ``sweep=`` to get its values).
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -622,29 +623,30 @@ def _same_value(a, b):
 
 
 def _collect_attrs(ls_ds, names):
-    """Values of the attributes ``names`` of the sweeps.
+    """Values of the attributes ``names`` found in the sweeps.
 
-    Each name takes the value of the first sweep which has it (sweeps can have
-    different names, e.g. when a value is no number in one of them). Returns the
-    values and the names the sweeps disagree about.
+    Returns ``(values, differing)``: ``values`` holds, for each name, the value
+    of the first sweep which has it, ``differing`` lists the names for which
+    another sweep has a different value.
     """
-    values, differing = {}, []
+    values, differing = {}, set()
     for ds in ls_ds:
-        for key in sorted(ds.attrs.keys() & names.keys()):
-            value = ds.attrs[key]
-            if key not in values:
-                values[key] = value
-            elif key not in differing and not _same_value(values[key], value):
-                differing.append(key)
-    return values, differing
+        for name in sorted(names.keys() & ds.attrs.keys()):
+            value = ds.attrs[name]
+            if name not in values:
+                values[name] = value
+            elif not _same_value(values[name], value):
+                differing.add(name)
+    return values, sorted(differing)
 
 
 def _warn_differing(group, differing):
     if differing:
         warnings.warn(
             f"xradar: {group} values differ between the sweeps "
-            f"({', '.join(differing)}); the values of the first selected sweep "
-            "are used.",
+            f"({', '.join(differing)}). The group holds the values of the first "
+            "selected sweep; use ``sweep=`` to select the sweep whose values "
+            "you need.",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
@@ -654,9 +656,10 @@ def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset
     """Get radar calibration root metadata group.
 
     The values are attributes of the sweeps. Each name takes the value of the
-    first sweep which has it. If the sweeps disagree about a value, e.g. for
-    calibrations of different pulse widths or the noise level of each cut, the
-    value of the first sweep is used and a warning names those values.
+    first sweep which has it. If the sweeps disagree about a value (e.g. the
+    noise level of each cut), the group holds the value of the first selected
+    sweep and a warning names these values; select another sweep with ``sweep=``
+    to get its values.
     """
     values, differing = _collect_attrs(ls_ds, subdict)
     _warn_differing("radar_calibration", differing)

@@ -925,6 +925,29 @@ def test_nexradlevel2_radar_calibration_of_first_selected_sweep(
     np.testing.assert_allclose(calib.system_phidp, 25.0)
 
 
+def test_nexradlevel2_calibration_warning_says_how_to_select(
+    nexradlevel2_file, closing
+):
+    # the noise level differs between the cuts: the warning tells how to get
+    # the values of one cut, which then opens without a warning
+    with pytest.warns(
+        UserWarning,
+        match=r"differ between the sweeps \(noise_hc, noise_vc\).*``sweep=``",
+    ):
+        closing(
+            xd.open_datatree(
+                nexradlevel2_file, engine="nexradlevel2", optional_groups=True
+            )
+        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        closing(
+            xd.open_datatree(
+                nexradlevel2_file, engine="nexradlevel2", optional_groups=True, sweep=4
+            )
+        )
+
+
 def test_nexradlevel2_radar_calibration_legacy_msg1(nexradlevel2_msg1_file, closing):
     # legacy MSG_1 files have no RAD block (and no transmitter power)
     dtree = closing(
