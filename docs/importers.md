@@ -50,6 +50,16 @@ dtree = xd.io.open_nexradlevel2_datatree(filename)
 dtree = xd.io.open_nexradlevel2_datatree(filename, optional_groups=True)
 ```
 
+The groups hold one set of values. If the sweeps of a file disagree about a value
+(e.g. the calibration or the noise level of each cut), the group holds the values
+of the first selected sweep and a warning names the values which differ. To get
+the values of another sweep, select that sweep:
+
+```python
+# radar_calibration with the values of sweep_4
+dtree = xd.open_datatree(filename, sweep=4, optional_groups=True)
+```
+
 ## CfRadial1
 
 ### CfRadial1BackendEntrypoint
