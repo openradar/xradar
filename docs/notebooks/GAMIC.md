@@ -109,3 +109,23 @@ display(dtree)
 dtree = xd.open_datatree(filename, engine="gamic", sweep=["sweep_1", "sweep_2", "sweep_8"])
 display(dtree)
 ```
+
+## Optional groups: radar_parameters and radar_calibration
+
+With `optional_groups=True` the datatree also has the metadata groups. The GAMIC reader fills them from the `/how` attributes of the file (beam widths in `radar_parameters`, antenna gain, receiver loss and noise power in `radar_calibration`).
+
+```{code-cell}
+dtree = xd.open_datatree(filename, engine="gamic", sweep=0, optional_groups=True)
+display(dtree["radar_parameters"].ds)
+display(dtree["radar_calibration"].ds)
+```
+
+```{code-cell}
+import numpy as np
+
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 1.0)
+np.testing.assert_almost_equal(dtree["radar_calibration"].antenna_gain_h, 43.0)
+np.testing.assert_almost_equal(dtree["radar_calibration"].rx_loss_h, 3.0)
+```
+
+The groups hold one set of values: if the sweeps of a file disagree about a value, the group holds the values of the first selected sweep, and a warning names these values. Select the sweep whose values you need with `sweep=`.
