@@ -295,8 +295,19 @@ print("xr.open_datatree:", [child for child in plain.children][:4], "...")
 assert not any(child.startswith("sweep_") for child in plain.children)
 ```
 
-For these files use `xd.open_datatree(path)`, or pass the discovered engine to
+For these files use `xd.open_datatree(path)`, name the engine yourself
+(`engine="odim"`, see the sections above), or pass the discovered engine to
 xarray:
+
+```{code-cell}
+dtree = xd.open_datatree(odim_file)
+assert "sweep_0" in dtree.children
+```
+
+```{code-cell}
+dtree = xr.open_datatree(odim_file, engine="odim")
+assert "sweep_0" in dtree.children
+```
 
 ```{code-cell}
 dtree = xr.open_datatree(odim_file, engine=xd.io.discover_engine(odim_file))
