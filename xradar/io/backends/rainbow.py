@@ -33,14 +33,17 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
-import os
 import sys
 import zlib
 
 import numpy as np
 import xmltodict
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
@@ -66,8 +69,13 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
+    _input_kind,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _open_sweeps,
+    _read_head,
     _resolve_sweeps,
 )
 
@@ -416,8 +424,7 @@ class RainbowFile(RainbowFileBase):
         self._loaddata = kwargs.get("loaddata", True)
 
         self._fp = None
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             self._fp = open(filename, "rb")
@@ -595,7 +602,7 @@ class RainbowArrayWrapper(BackendArray):
         )
 
 
-class RainbowStore(AbstractDataStore):
+class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading RAINBOW5 sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
@@ -799,6 +806,13 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
     url = "https://xradar.rtfd.io/latest/io.html#rainbow-data-i-o"
     supports_groups = True
 
+    def guess_can_open(self, filename_or_obj):
+        """Rainbow5 file (XML header starting with ``<volume``)."""
+        if _input_kind(filename_or_obj) not in ("path",):
+            return False
+        head = _read_head(filename_or_obj, 64)
+        return head is not None and head.lstrip().startswith(b"<volume")
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -902,16 +916,17 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 RainbowBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(

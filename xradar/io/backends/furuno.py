@@ -46,8 +46,12 @@ from collections import OrderedDict
 
 import lat_lon_parser
 import numpy as np
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
@@ -80,9 +84,14 @@ from .common import (
     _calculate_angle_res,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_fmt_string,
     _get_reindex_coord,
+    _input_kind,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _open_sweeps,
+    _read_head,
     _resolve_single_sweep,
     _unpack_dictionary,
 )
@@ -306,6 +315,7 @@ class FurunoFile:
         self._loaddata = kwargs.get("loaddata", True)
         self._obsmode = kwargs.get("obsmode", None)
         self._fp = None
+        filename = _fspath(filename)
         self._filename = filename
         if isinstance(filename, str):
             if filename.endswith(".gz"):
@@ -536,7 +546,7 @@ class FurunoArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class FurunoStore(AbstractDataStore):
+class FurunoStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading Furuno sweeps via wradlib."""
 
     def __init__(self, manager, group=None):
@@ -710,6 +720,16 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
     url = "https://xradar.rtfd.io/en/latest/io.html#furuno-binary-data"
     supports_groups = True
 
+    def guess_can_open(self, filename_or_obj):
+        """Furuno SCN/SCNX, also gzip-compressed (header size and version)."""
+        if _input_kind(filename_or_obj) not in ("path",):
+            return False
+        head = _read_head(filename_or_obj, 4, decompress=True)
+        if head is None or len(head) < 4:
+            return False
+        size, version = struct.unpack("<HH", head[:4])
+        return (size, version) in [(80, 3), (80, 103), (156, 10)]
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -819,16 +839,17 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             obsmode=obsmode,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _FURUNO_PARAMS_DOC = """

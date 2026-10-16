@@ -38,10 +38,10 @@ import io
 import dateutil
 import h5netcdf
 import numpy as np
-from xarray import DataTree
 from xarray.backends.common import (
     AbstractDataStore,
     BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
     find_root_and_group,
 )
 from xarray.backends.file_manager import CachingFileManager, DummyFileManager
@@ -74,8 +74,12 @@ from .common import (
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
+    _input_kind,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _open_sweeps,
     _prepare_backend_ds,
+    _read_nc_header,
     _resolve_sweeps,
 )
 from .odim import H5NetCDFArrayWrapper, _get_h5netcdf_encoding, _H5NetCDFMetadata
@@ -260,7 +264,7 @@ class _GamicH5NetCDFMetadata(_H5NetCDFMetadata):
             return None
 
 
-class GamicStore(AbstractDataStore):
+class GamicStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading ODIM dataset groups via h5netcdf."""
 
     def __init__(self, manager, group=None, lock=False):
@@ -417,6 +421,15 @@ class GamicBackendEntrypoint(BackendEntrypoint):
     url = "https://xradar.rtfd.io/en/latest/io.html#gamic-hdf5"
     supports_groups = True
 
+    def guess_can_open(self, filename_or_obj):
+        """GAMIC HDF5 file (``what`` and ``scan0`` groups)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return {"what", "scan0"}.issubset(header[2])
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -550,16 +563,17 @@ class GamicBackendEntrypoint(BackendEntrypoint):
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 GamicBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(

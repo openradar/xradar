@@ -25,8 +25,12 @@ from datetime import datetime
 
 import numpy as np
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
@@ -46,7 +50,12 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
+    _input_kind,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _open_sweeps,
+    _read_head,
     _resolve_single_sweep,
 )
 
@@ -211,6 +220,7 @@ class MRR2File:
         self.device_serial_number = ""
         self.bandwidth = 0
         self._fp = None
+        self._owns_fp = False
         self.calibration_constant = []
         self._data["percentage_valid_spectra"] = []
         self._data["number_valid_spectra"] = []
@@ -234,13 +244,16 @@ class MRR2File:
             self.open(file_name)
 
     def open(self, filename_or_obj):
+        filename_or_obj = _fspath(filename_or_obj)
         if isinstance(filename_or_obj, io.IOBase):
             filename_or_obj.seek(0)
+            # a caller's file object: never closed here (_owns_fp stays False)
             self._fp = filename_or_obj
 
         if isinstance(filename_or_obj, str):
             self.filename = filename_or_obj
             self._fp = open(filename_or_obj)
+            self._owns_fp = True
 
         num_times = 0
         temp_spectra = np.zeros((self.n_gates, 64))
@@ -455,7 +468,7 @@ class MRR2File:
         temp_spectra = None
 
     def close(self):
-        if self._fp is not None:
+        if self._fp is not None and self._owns_fp:
             self._fp.close()
 
     __del__ = close
@@ -500,7 +513,7 @@ class MRR2ArrayWrapper(BackendArray):
         return self.data[key]
 
 
-class MRR2DataStore(AbstractDataStore):
+class MRR2DataStore(_ManagedStoreMixin, AbstractDataStore):
     def __init__(self, manager, group=None):
         self._manager = manager
         self._group = group
@@ -580,6 +593,13 @@ class MRRBackendEntrypoint(BackendEntrypoint):
     description = "Backend for reading Metek MRR2 processed and raw data"
     url = "https://xradar.rtfd.io/en/latest/io.html#metek"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """Metek MRR file (header lines starting with ``MRR``)."""
+        if _input_kind(filename_or_obj) not in ("path", "file"):
+            return False
+        head = _read_head(filename_or_obj, 8)
+        return head is not None and head.startswith(b"MRR ")
 
     def open_dataset(
         self,
@@ -672,16 +692,17 @@ class MRRBackendEntrypoint(BackendEntrypoint):
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 MRRBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(

@@ -7,6 +7,7 @@
 Ported from wradlib.
 """
 
+import warnings
 from types import SimpleNamespace
 
 import numpy as np
@@ -84,11 +85,15 @@ def test_decode_array():
 
 
 def test_decode_velc():
-    data = [0, 1, 2, 128, 129, 254, 255]
-    np.testing.assert_array_almost_equal(
-        iris.decode_array(data, scale=127 / 75.0, offset=-1, offset2=-75, mask=0.0),
-        [np.inf, -75.0, -74.409449, 0.0, 0.590551, 74.409449, 75.0],
+    """4.4.42: raw 128 is zero velocity, one step of 75 / 127 m/s on both
+    sides, raw 0 is no data (#477)."""
+    decoded = _decode_raw(_ENTRIES["DB_VELC"], [0, 1, 2, 128, 129, 254, 255])
+    np.testing.assert_allclose(
+        decoded.filled(),
+        [np.nan, -75.0, -74.409449, 0.0, 0.590551, 74.409449, 75.0],
+        atol=1e-6,
     )
+    assert decoded[3] == 0.0  # exactly zero, not just within atol
 
 
 def test_decode_kdp():
@@ -541,6 +546,127 @@ def test_iris_velocity_no_data_is_nan(iris0_file):
     assert (vel == 0).sum() == (words == 128).sum() > 0
 
 
+def test_nyquist_matches_the_programming_guide_example():
+    """Guide 5.1.2 productx example: 10.63 cm, 840/560 Hz, 2:3 dual PRF gives
+    Nyquist 22.32 m/s for width and 44.65 m/s for velocity."""
+    nyquist = iris._nyquist(1063, 840)
+    one = np.array([1], dtype="uint16")
+    kw = {"scale": 1.0, "nyquist": nyquist, "multi_prf_mode_flag": 1}
+    assert iris.decode_width(one, **kw)[0] == pytest.approx(22.32, abs=0.005)
+    assert iris.decode_vel(one, **kw)[0] == pytest.approx(44.65, abs=0.005)
+
+
+@pytest.mark.parametrize("multi_prf_mode_flag", [0, 1, 2, 3])
+def test_dual_prf_scales_velocity_not_width(multi_prf_mode_flag):
+    """Dual-PRF modes 1:1, 2:3, 3:4, 4:5 (task_dsp_info byte 144; the 4.4.44
+    text calls the third "4:3") multiply the velocity Nyquist by 1-4; the
+    width keeps the single-PRF one (4.4.48)."""
+    data = np.array([2, 3], dtype="uint16")
+    kw = {"scale": 1.0, "nyquist": 10.0, "multi_prf_mode_flag": multi_prf_mode_flag}
+    vel = iris.decode_vel(data, **kw)
+    np.testing.assert_allclose(vel, data * 10.0 * (multi_prf_mode_flag + 1))
+    np.testing.assert_allclose(iris.decode_width(data, **kw), data * 10.0)
+
+
+def _header_stub():
+    """The headers ``decode_data`` reads for the Nyquist, with a different
+    wavelength and PRF in ``product_end`` than in the task configuration
+    (dual-PRF flag 1 in both cases)."""
+    dsp_info = {"prf": 7777, "multi_prf_mode_flag": 1}
+    return SimpleNamespace(
+        _rawdata=False,
+        product_hdr={"product_end": {"wavelength": 533, "prf": 1000}},
+        ingest_header={
+            "task_configuration": {
+                "task_dsp_info": dsp_info,
+                "task_misc_info": {"wavelength": 999},
+            }
+        },
+    )
+
+
+def test_moment_names_keep_colliding_types():
+    assert iris._moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
+        "DBZH",
+        "VRADH",
+        "DB_DBZ2",
+    ]
+    assert iris._moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    with pytest.raises(ValueError, match="appears twice"):
+        iris._moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
+
+
+def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
+    """Two types mapping to one CfRadial name used to keep only the later
+    one; now the second keeps its Sigmet name. (The collision is staged by
+    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as before:
+        dbzh, vradh = before.DBZH.values, before.VRADH.values
+    monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
+        np.testing.assert_array_equal(ds.DBZH.values, dbzh)
+        np.testing.assert_array_equal(ds.DB_VEL.values, vradh)
+        # CF attrs follow the mapped name, also under the Sigmet name
+        assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+
+
+#: each decode path with the wavelength and PRF it reads from ``_header_stub``
+_DECODE_PATHS = pytest.mark.parametrize(
+    "cls, wavelength_prf",
+    [(iris.IrisRawFile, (533, 1000)), (iris.IrisIngestDataFile, (999, 7777))],
+)
+
+
+@_DECODE_PATHS
+def test_decode_paths_read_their_own_headers(cls, wavelength_prf):
+    """RAW products take wavelength and PRF from ``product_end``, ingest
+    data files from the task configuration. (2-byte words, viewed the same
+    in both paths; the ingest path's 1-byte view has no file test, no
+    ingest data file fixture exists.)"""
+    data = np.array([2, 3], dtype="uint16")
+    nyquist = iris._nyquist(*wavelength_prf)
+    for func, factor in ((iris.decode_vel, 2), (iris.decode_width, 1)):
+        prod = {"func": func, "dtype": "uint16", "fkw": {"scale": 1.0}}
+        decoded = cls.decode_data(_header_stub(), data, prod)
+        np.testing.assert_allclose(decoded, data * nyquist * factor, err_msg=func)
+
+
+@_DECODE_PATHS
+@pytest.mark.parametrize("flag", [4, 65535])
+def test_undefined_multi_prf_flag_warns_and_uses_single_prf(cls, wavelength_prf, flag):
+    """task_dsp_info defines flags 0-3 only; any other value must not scale
+    the velocity (#480). The width ignores the flag, so it does not warn."""
+    stub = _header_stub()
+    stub.ingest_header["task_configuration"]["task_dsp_info"][
+        "multi_prf_mode_flag"
+    ] = flag
+    data = np.array([2, 3], dtype="uint16")
+    nyquist = iris._nyquist(*wavelength_prf)
+    vel = {"func": iris.decode_vel, "dtype": "uint16", "fkw": {"scale": 1.0}}
+    with pytest.warns(UserWarning, match=f"multi_prf_mode_flag={flag} is not defined"):
+        decoded = cls.decode_data(stub, data, vel)
+    np.testing.assert_allclose(decoded, data * nyquist)
+    width = {**vel, "func": iris.decode_width}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        decoded = cls.decode_data(stub, data, width)
+    np.testing.assert_allclose(decoded, data * nyquist)
+
+
+@pytest.mark.parametrize("cls", [iris.IrisRawFile, iris.IrisIngestDataFile])
+def test_kdp_needs_no_prf(cls):
+    """``DB_KDP`` returns before the PRF lookup: it only needs the
+    wavelength."""
+    stub = _header_stub()
+    del stub.ingest_header["task_configuration"]["task_dsp_info"]["prf"]
+    del stub.product_hdr["product_end"]["prf"]
+    words = np.zeros((1, 2), dtype="int16")  # one ray of raw words (KDP 0: no data)
+    kdp = iris.SIGMET_DATA_TYPES[14]
+    assert kdp["name"] == "DB_KDP"
+    assert np.isnan(cls.decode_data(stub, words, kdp)).all()
+
+
 #: Data types whose raw word 0 is "no data" (IRIS Programming Guide
 #: M212927EN-B, 4.4). The corrected and V/E reflectivity types have no section
 #: there and follow their base types (#467).
@@ -563,6 +689,9 @@ MANUAL_ZERO_IS_NO_DATA = frozenset(
         "DB_KDP2", "DB_LDRH", "DB_LDRV", "DB_LDRH2", "DB_LDRV2",
         # derived, 4.4.11, 4.4.30, 4.4.41, 4.4.47, 4.4.50
         "DB_HEIGHT", "DB_VIL2", "DB_RAINRATE2", "DB_TIME2", "DB_SHEAR",
+        # SNR family, below the -31.5 dB floor of 4.4.37 (#475)
+        "DB_SNR8", "DB_SNR16", "DB_LOG8", "DB_LOG16", "DB_CSP8", "DB_CSP16",
+        "DB_AH8", "DB_AH16", "DB_AV8", "DB_AV16", "DB_AZDR8", "DB_AZDR16",
     }
 )  # fmt: skip
 
@@ -572,18 +701,9 @@ MANUAL_ZERO_IS_DATA = frozenset(
     {"DB_AXDIL2", "DB_DEFORM2", "DB_DIVERGE2", "DB_FLIQUID2", "DB_HDIR2", "DB_VVEL2"}
 )
 
-#: The guide gives raw 0 no meaning (the DB_SNR8/16 family; DB_HVEL2 has no
-#: section): no mask, nothing pinned.
-MANUAL_ZERO_UNDEFINED = frozenset(
-    {
-        *(
-            f"DB_{t}{n}"
-            for t in ("SNR", "LOG", "CSP", "AH", "AV", "AZDR")
-            for n in (8, 16)
-        ),
-        "DB_HVEL2",
-    }
-)
+#: The guide gives raw 0 no meaning (DB_HVEL2 has no section): no mask,
+#: nothing pinned.
+MANUAL_ZERO_UNDEFINED = frozenset({"DB_HVEL2"})
 
 #: ``decode_kdp`` NaNs raw 0 (and 255) itself
 NAN_AT_ZERO = MANUAL_ZERO_IS_NO_DATA | {"DB_KDP"}
@@ -613,6 +733,17 @@ def _raw_words(raw, sweep, name, nbins):
     return words.reshape(words.shape[0], -1)[:, :nbins]
 
 
+def test_hvel2_decodes_like_vvel2():
+    """The guide has no DB_HVEL2 section: signed 0.01 m/s like DB_VVEL2
+    (4.4.46) (#479); the sign is checked here, raw 0 by the generic test."""
+    hvel2 = {k: v for k, v in _ENTRIES["DB_HVEL2"].items() if k != "name"}
+    vvel2 = {k: v for k, v in _ENTRIES["DB_VVEL2"].items() if k != "name"}
+    assert hvel2 == vvel2
+    np.testing.assert_allclose(
+        _decode_raw(_ENTRIES["DB_HVEL2"], [-100, 0, 100]), [-1.0, 0.0, 1.0]
+    )
+
+
 def test_no_data_masks_follow_the_manual():
     """The table masks raw 0 for exactly the no-data types above, and every
     type with a decoder is classified once."""
@@ -627,7 +758,7 @@ def test_no_data_masks_follow_the_manual():
 
 @pytest.mark.parametrize(
     "entry",
-    [e for e in _ENTRIES.values() if e["func"] is not None and e.get("dtype")],
+    [e for e in _ENTRIES.values() if e["func"] is not None],
     ids=lambda e: e["name"],
 )
 def test_raw_zero_decodes_as_the_manual_says(entry):
@@ -653,6 +784,16 @@ def test_phih_phiv_decode_like_phidp(name):
         [0.0, 90.0, 179.2913],
         atol=1e-4,
     )
+
+
+@pytest.mark.parametrize(
+    "name", ["DB_SQI2", "DB_RHOHV2", "DB_RHOH2", "DB_RHOV2", "DB_PMI16", "DB_CCOR16"]
+)
+def test_sqi2_format_scale(name):
+    """4.4.40: (N - 1) / 65533, 65534 = 1.00000 (#478)."""
+    decoded = _decode_raw(_ENTRIES[name], [1, 128, 65533, 65534])
+    np.testing.assert_allclose(decoded, [0.0, 0.00194, 0.99998, 1.0], atol=5e-6)
+    assert decoded[-1] == 1.0  # exactly one, not just within atol
 
 
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt
@@ -715,3 +856,52 @@ def test_decoders_keep_a_caller_mask_and_take_scalars():
     assert np.isnan(np.asarray(out)[:2]).all() and np.asarray(out)[2] == 32.0
     assert np.isnan(np.asarray(dbz["func"](np.uint8(0), **dbz["fkw"])))
     assert dbz["func"](np.uint8(128), **dbz["fkw"]) == 32.0
+
+
+def _decode_entry(name, words):
+    """``_decode_raw`` by type name, as plain floats (NaN at masked bins)."""
+    return np.asarray(_decode_raw(_ENTRIES[name], words), dtype="float64")
+
+
+@pytest.mark.parametrize("family", ["SNR", "LOG", "CSP", "AH", "AV", "AZDR"])
+def test_snr_family_scaling(family):
+    """1-byte: -31.5 ... +95.5 dB in 0.5 dB steps (4.4.37); 2-byte:
+    (N - 32768) / 100 like the other 2-byte dB types (#475)."""
+    np.testing.assert_allclose(
+        _decode_entry(f"DB_{family}8", [1, 64, 255]), [-31.5, 0.0, 95.5]
+    )
+    np.testing.assert_allclose(
+        _decode_entry(f"DB_{family}16", [27133, 32768, 39853]), [-56.35, 0.0, 70.85]
+    )
+
+
+def test_snr16_on_the_test_file(iris1_file):
+    """SUR's SNRH was -31.5 ... 19895 dB with the 1-byte scaling; it now
+    gives -56 ... +71 dB, and raw 0 is masked where DBZH has no data
+    (#475)."""
+    with open_dataset(iris1_file, engine="iris", group="sweep_0") as ds:
+        snr, dbz = ds.SNRH.values, ds.DBZH.values
+        assert ds.SNRH.attrs["units"] == "dB"
+    assert -60 < np.nanmin(snr) < np.nanmax(snr) < 75
+    assert np.isnan(snr).any()
+    assert not (np.isnan(snr) & ~np.isnan(dbz)).any()
+
+
+def test_snr8_matches_reflectivity_on_arouca(iris_arouca_file):
+    """IRIS computes DBZ = C + SNR + 20 log10(r) + gas * r, so the 1-byte
+    SNR scale (N - 64) / 2 must close that equation to within the rounding
+    of two 0.5 dB values for almost all bins (#475)."""
+    with iris.IrisRawFile(iris_arouca_file, loaddata=False) as raw:
+        task = raw.ingest_header["task_configuration"]
+    cal = task["task_calib_info"]["calibration_reflectivity"] / 16
+    gas = task["task_dsp_info"]["gas_attenuation"] / 1e5  # dB/km
+    with open_dataset(iris_arouca_file, engine="iris", group="sweep_0") as ds:
+        snr, dbz = ds.SNRH.values, ds.DBZH.values
+        r = ds.range.values / 1000.0
+    ok = ~np.isnan(snr) & ~np.isnan(dbz)
+    resid = (dbz - snr - 20 * np.log10(r) - gas * r - cal)[ok]
+    # 7882 bins, median -0.01, 97 % within 0.5 dB; main's (N - 63) / 2
+    # gives median -0.51 and 46 %
+    assert resid.size > 5000
+    assert np.abs(np.median(resid)) < 0.05
+    assert np.mean(np.abs(resid) <= 0.5) > 0.95

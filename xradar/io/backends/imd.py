@@ -46,12 +46,13 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import glob as _glob
 import os
 import re
+from functools import partial
 
 import numpy as np
 import xarray as xr
 from xarray import DataTree
 from xarray.backends import NetCDF4DataStore
-from xarray.backends.common import BackendEntrypoint
+from xarray.backends.common import BackendEntrypoint, datatree_from_dict_with_io_cleanup
 from xarray.backends.store import StoreBackendEntrypoint
 
 from ... import util
@@ -67,9 +68,14 @@ from .common import (
     SITE_COORDS_PARAM_DOC,
     _apply_reindex_coord,
     _apply_site_as_coords,
+    _call_all,
+    _close_all,
     _compose_docstring,
     _get_reindex_coord,
     _get_subgroup,
+    _input_kind,
+    _keep_close,
+    _read_nc_header,
     _resolve_single_sweep,
 )
 
@@ -435,6 +441,15 @@ class IMDBackendEntrypoint(BackendEntrypoint):
     # `/` + `/sweep_0` CfRadial2 layout from the single-sweep file.
     supports_groups = True
 
+    def guess_can_open(self, filename_or_obj):
+        """IMD IRIS-netCDF file (``radialAzim`` and ``elevationAngle``)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        return {"radialAzim", "elevationAngle"}.issubset(header[1])
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -520,7 +535,7 @@ class IMDBackendEntrypoint(BackendEntrypoint):
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _IMD_PARAMS_DOC = """
@@ -662,13 +677,16 @@ def _build_single_imd_dtree_dict(
     sw = sweep_ds.drop_vars(_STATION_VARS, errors="ignore")
     sw = _apply_site_as_coords(sw, site_as_coords)
     sw.attrs = {}
-    dtree["/sweep_0"] = sw
+    # dropping variables loses the file's close (#471, #502)
+    dtree["/sweep_0"] = _keep_close(sw, sweep_ds)
     return dtree
 
 
 def _open_single_imd_datatree(filename, **kwargs):
     """Build a single-sweep CfRadial2 DataTree from one IMD NetCDF file."""
-    return DataTree.from_dict(_build_single_imd_dtree_dict(filename, **kwargs))
+    return datatree_from_dict_with_io_cleanup(
+        _build_single_imd_dtree_dict(filename, **kwargs)
+    )
 
 
 def open_imd_datatree(filename_or_obj, **kwargs):
@@ -753,14 +771,25 @@ def open_imd_datatree(filename_or_obj, **kwargs):
         if len(files) == 1:
             return _open_single_imd_datatree(files[0], **kwargs)
 
-        sweep_trees = [_open_single_imd_datatree(f, **kwargs) for f in files]
-        volume = util.create_volume(sweep_trees, **cv_kwargs)
+        sweep_trees = []
+        try:
+            for f in files:
+                sweep_trees.append(_open_single_imd_datatree(f, **kwargs))
+            volume = util.create_volume(sweep_trees, **cv_kwargs)
+        except Exception:
+            _close_all(sweep_trees)
+            raise
         # create_volume copies sweeps verbatim, so each sweep_number stays 0.
         # Renumber to match the final DataTree position.
         for i, key in enumerate(util.get_sweep_keys(volume)):
             sw_ds = volume[key].to_dataset()
             sw_ds["sweep_number"] = xr.DataArray(i)
             volume[key] = DataTree(sw_ds)
+        # create_volume builds new nodes (and may drop or reorder sweeps), so
+        # closing the volume closes every source file instead (#471, #502);
+        # keep only the file closers, not the source trees and their data
+        closers = [close for tree in sweep_trees for close in _closers(tree)]
+        volume.set_close(partial(_call_all, closers))
         return volume
 
     if cv_kwargs:
@@ -828,17 +857,31 @@ def open_imd_volumes(paths, **kwargs):
             }
         )
     }
-    for i, files in enumerate(groups):
-        vcp = f"vcp_{i:0{width}d}"
-        volume = open_imd_datatree(files, **kwargs)
-        # Flatten the volume's subtree under /vcp_NN/...
-        for subpath, ds in volume.to_dict().items():
-            if subpath == "/":
-                flat[f"/{vcp}"] = ds
-            else:
-                flat[f"/{vcp}{subpath}"] = ds
+    volumes = []
+    try:
+        for i, files in enumerate(groups):
+            vcp = f"vcp_{i:0{width}d}"
+            volume = open_imd_datatree(files, **kwargs)
+            volumes.append(volume)
+            # Flatten the volume's subtree under /vcp_NN/...
+            for subpath, ds in volume.to_dict().items():
+                if subpath == "/":
+                    flat[f"/{vcp}"] = ds
+                else:
+                    flat[f"/{vcp}{subpath}"] = ds
+            # to_dict() does not keep the volume's close (#471, #502); keep
+            # only the file closers, not the volume tree and its data
+            flat[f"/{vcp}"].set_close(partial(_call_all, _closers(volume)))
+    except Exception:
+        _close_all(volumes)
+        raise
 
-    return DataTree.from_dict(flat)
+    return datatree_from_dict_with_io_cleanup(flat)
+
+
+def _closers(tree):
+    """The file closers of every node of ``tree``."""
+    return [node._close for node in tree.subtree if node._close is not None]
 
 
 # Files matching `<stem>.nc` or `<stem>.nc.<digits>`. The stem -- everything

@@ -24,13 +24,19 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import gzip
 import io
+import os
 import tarfile
+import zlib
 from collections import defaultdict
 from datetime import datetime, timedelta
 
 import numpy as np
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.store import StoreBackendEntrypoint
 from xarray.core import indexing
@@ -56,8 +62,11 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _fspath,
     _get_reindex_coord,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _open_sweeps,
     _resolve_sweeps,
 )
 
@@ -94,6 +103,7 @@ def convert_value(value):
 
 class DataMetFile:
     def __init__(self, filename):
+        filename = _fspath(filename)
         self.filename = filename
         # Handle .tar.gz case
         if self.filename.endswith(".gz"):
@@ -229,7 +239,7 @@ class DataMetArrayWrapper(BackendArray):
         return ds.data[self.group][self.variable_name]
 
 
-class DataMetStore(AbstractDataStore):
+class DataMetStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading DataMet sweeps."""
 
     def __init__(self, manager, group=None):
@@ -385,6 +395,19 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
     url = "https://xradar.rtfd.io/latest/io.html#datamet-data-i-o"
     supports_groups = True
 
+    def guess_can_open(self, filename_or_obj):
+        """DataMet volume (tar archive with ``navigation.txt``)."""
+        if not isinstance(filename_or_obj, (str, os.PathLike)):
+            return False
+        try:
+            with tarfile.open(filename_or_obj) as tar:
+                names = {os.path.normpath(name) for name in tar.getnames()}
+        except (OSError, tarfile.TarError, EOFError, zlib.error):
+            # not a (readable) tar archive: missing file, directory, truncated
+            # or corrupt archive
+            return False
+        return "navigation.txt" in names
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -493,16 +516,17 @@ class DataMetBackendEntrypoint(BackendEntrypoint):
             site_as_coords=site_coords,
         )
 
-        ls_ds = [
-            self.open_dataset(filename_or_obj, group=swp, **ds_kwargs) for swp in sweeps
-        ]
+        ls_ds = _open_sweeps(
+            lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
+            sweeps,
+        )
         return _build_groups_dict(
             ls_ds, optional=optional, optional_groups=optional_groups
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 DataMetBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(

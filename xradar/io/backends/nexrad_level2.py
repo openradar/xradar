@@ -44,8 +44,12 @@ from collections import OrderedDict, defaultdict
 
 import numpy as np
 import xarray as xr
-from xarray import DataTree
-from xarray.backends.common import AbstractDataStore, BackendArray, BackendEntrypoint
+from xarray.backends.common import (
+    AbstractDataStore,
+    BackendArray,
+    BackendEntrypoint,
+    datatree_from_dict_with_io_cleanup,
+)
 from xarray.backends.file_manager import CachingFileManager
 from xarray.backends.locks import SerializableLock, ensure_lock
 from xarray.backends.store import StoreBackendEntrypoint
@@ -68,7 +72,11 @@ from xradar.io.backends.common import (
     _get_radar_calibration,
     _get_reindex_coord,
     _get_subgroup,
+    _input_kind,
+    _keep_close,
+    _ManagedStoreMixin,
     _open_legacy_datatree,
+    _read_head,
     _resolve_sweeps,
 )
 from xradar.model import (
@@ -1795,7 +1803,7 @@ class NexradLevel2ArrayWrapper(BackendArray):
         )
 
 
-class NexradLevel2Store(AbstractDataStore):
+class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
     def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
         self._manager = manager
         self._group = int(group[6:])
@@ -2004,6 +2012,13 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
     url = "tbd"
     supports_groups = True
 
+    def guess_can_open(self, filename_or_obj):
+        """NEXRAD Level II archive (``AR2V`` / ``ARCHIVE2`` volume header)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes", "chunks"):
+            return False
+        head = _read_head(filename_or_obj, 8)
+        return head is not None and head.startswith((b"AR2V", b"ARCHIVE2"))
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -2209,7 +2224,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             sweep_idx = int(sweep_path.split("_")[-1])
             if 0 <= sweep_idx < len(elev_data):
                 sw.attrs.update(_sweep_attrs_from_msg5_elev(elev_data[sweep_idx]))
-            groups_dict[f"/{sweep_path}"] = sw
+            groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
         return groups_dict
 
     def open_datatree(
@@ -2218,7 +2233,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         **kwargs,
     ):
         groups_dict = self.open_groups_as_dict(filename_or_obj, **kwargs)
-        return DataTree.from_dict(groups_dict)
+        return datatree_from_dict_with_io_cleanup(groups_dict)
 
 
 _NEXRAD_PARAMS_DOC = """
@@ -2491,5 +2506,8 @@ def open_sweeps_as_dict(
             # assign geo-coords
             group_ds = _apply_site_as_coords(group_ds, site_as_coords)
 
+            # ensure close works: the steps above build new datasets, and
+            # xarray 2026.9.0 drops the close in some of them (#471, #502)
+            group_ds.set_close(store.close)
             groups_dict[path_group] = group_ds
     return groups_dict

@@ -12,6 +12,7 @@ Currently, all private and not part of the public API.
 
 """
 
+import gzip
 import inspect
 import io
 import numbers
@@ -20,7 +21,10 @@ import reprlib
 import struct
 import textwrap
 import warnings
+import zlib
 from collections import OrderedDict
+from contextlib import ExitStack, suppress
+from functools import partial
 from pathlib import Path, PurePosixPath
 
 import h5netcdf
@@ -111,6 +115,127 @@ def _apply_reindex_coord(ds, reindex_coord):
     return ds
 
 
+#: Errors raised when an input can't be read: a missing file, a directory or no
+#: permission (``OSError``), a closed stream (``ValueError``), an unseekable one
+#: (``io.UnsupportedOperation``, an ``OSError``), a truncated (``EOFError``) or
+#: corrupt (``zlib.error``, ``gzip.BadGzipFile`` is an ``OSError``) gzip file.
+#: Other exceptions (``TypeError``, ``AttributeError``, ...) point to a bug and are
+#: not caught.
+_UNREADABLE_ERRORS = (OSError, ValueError, EOFError, zlib.error)
+
+#: Errors the netCDF3/HDF5 parsers raise for truncated or corrupt files (found
+#: by truncating and flipping bytes of sample files), in addition to the above.
+_CORRUPT_FILE_ERRORS = (*_UNREADABLE_ERRORS, IndexError, KeyError, RuntimeError)
+
+
+def _read_head(filename_or_obj, size=512, decompress=False):
+    """Read the first bytes of a file without consuming file-like objects.
+
+    Used by the backends' ``guess_can_open``. Returns ``None`` if the input
+    can't be read.
+
+    Parameters
+    ----------
+    filename_or_obj : str, os.PathLike, bytes or file-like
+    size : int
+        Number of bytes to read.
+    decompress : bool
+        Read gzip-compressed files decompressed.
+    """
+    try:
+        if isinstance(filename_or_obj, (bytes, bytearray)):
+            head = bytes(filename_or_obj[:size])
+        elif isinstance(filename_or_obj, (list, tuple)):
+            # e.g. NEXRAD Level II chunks
+            first = filename_or_obj[0] if filename_or_obj else b""
+            head = bytes(first[:size]) if isinstance(first, (bytes, bytearray)) else b""
+        elif isinstance(filename_or_obj, (str, os.PathLike)):
+            with open(filename_or_obj, "rb") as fh:
+                head = fh.read(size)
+        elif hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+            pos = filename_or_obj.tell()
+            filename_or_obj.seek(0)
+            head = filename_or_obj.read(size)
+            filename_or_obj.seek(pos)
+        else:
+            return None
+        if isinstance(head, str):
+            head = head.encode(errors="replace")
+        if decompress and head[:2] == b"\x1f\x8b":
+            head = _gunzip_head(filename_or_obj, size)
+        return head
+    except _UNREADABLE_ERRORS:
+        return None
+
+
+def _input_kind(filename_or_obj):
+    """Kind of input given to a backend, used by ``guess_can_open``.
+
+    Returns one of ``"path"``, ``"bytes"``, ``"chunks"`` (list of bytes),
+    ``"text"`` (text file-like), ``"file"`` (binary file-like) or ``None``.
+    """
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        return "path"
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return "bytes"
+    if isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (bytes, bytearray)) for item in filename_or_obj
+    ):
+        return "chunks"
+    if isinstance(filename_or_obj, io.TextIOBase):
+        return "text"
+    if hasattr(filename_or_obj, "read") and hasattr(filename_or_obj, "seek"):
+        return "file"
+    return None
+
+
+def _gunzip_head(filename_or_obj, size):
+    """Read the first ``size`` decompressed bytes of a gzip-compressed input."""
+    if isinstance(filename_or_obj, (str, os.PathLike)):
+        with gzip.open(filename_or_obj) as fh:
+            return fh.read(size)
+    if isinstance(filename_or_obj, (bytes, bytearray)):
+        return gzip.GzipFile(fileobj=io.BytesIO(filename_or_obj)).read(size)
+    pos = filename_or_obj.tell()
+    try:
+        filename_or_obj.seek(0)
+        return gzip.GzipFile(fileobj=filename_or_obj).read(size)
+    finally:
+        filename_or_obj.seek(pos)
+
+
+def _is_hdf5(head):
+    return head is not None and head[:8] == b"\x89HDF\r\n\x1a\n"
+
+
+def _read_nc_header(filename_or_obj):
+    """Get root attributes, variable and group names of a netCDF/HDF5 file.
+
+    Returns ``(attrs, variables, groups)`` or ``None`` if the input isn't a
+    readable netCDF/HDF5 file. The position of file-like objects is restored.
+    """
+    head = _read_head(filename_or_obj, 8)
+    if head is None or not (_is_hdf5(head) or head[:3] == b"CDF"):
+        return None
+    source = filename_or_obj
+    if isinstance(source, (bytes, bytearray)):
+        source = io.BytesIO(source)
+    pos = source.tell() if _input_kind(source) == "file" else None
+    try:
+        if _is_hdf5(head):
+            with h5netcdf.File(source, "r", phony_dims="access") as fh:
+                attrs = {k: _maybe_decode(v) for k, v in fh.attrs.items()}
+                return attrs, set(fh.variables), set(fh.groups)
+        # netCDF3 classic
+        with xr.open_dataset(source, engine="scipy", decode_cf=False) as ds:
+            return dict(ds.attrs), set(ds.variables), set()
+    except _CORRUPT_FILE_ERRORS:
+        return None
+    finally:
+        if pos is not None:
+            source.seek(pos)
+
+
 def _maybe_decode(attr):
     try:
         # Decode the xr.DataArray differently than a byte string
@@ -147,6 +272,34 @@ def _calculate_angle_res(dim):
     #  make this robust or parameterisable
     angle_diff_wanted = angle_diff[:-1][angle_diff2 < 0.05]
     return np.round(np.nanmean(angle_diff_wanted), decimals=2)
+
+
+class _ManagedStoreMixin:
+    """Give a backend store the ``close`` of the file it holds.
+
+    The stores keep their file in ``self._manager`` (an xarray file manager);
+    without this ``Dataset.close()`` was a no-op and the file stayed open
+    until the manager was garbage collected. Requires ``self._manager``.
+    """
+
+    def close(self, **kwargs):
+        self._manager.close(**kwargs)
+
+
+def _fspath(filename_or_obj):
+    """Turn a path-like into ``str``, return anything else (file-like, bytes) as is."""
+    if isinstance(filename_or_obj, os.PathLike):
+        return os.fspath(filename_or_obj)
+    return filename_or_obj
+
+
+def _apply_fix_second_angle(ds):
+    """Replace the secondary angle of a sweep by its median (no-op for non-sweeps)."""
+    if "sweep_mode" not in ds:
+        return ds
+    dim0 = "elevation" if ds.sweep_mode.load() == "rhi" else "azimuth"
+    dim1 = {"azimuth": "elevation", "elevation": "azimuth"}[dim0]
+    return ds.assign_coords({dim1: ds[dim1].pipe(_fix_angle)})
 
 
 def _fix_angle(da):
@@ -477,6 +630,108 @@ def _prepare_backend_ds(ds):
     return ds
 
 
+def _keep_close(new, source):
+    """Give ``new`` the file close of ``source`` and return it.
+
+    ``drop_vars``, ``drop_attrs`` and similar build a new dataset without the
+    close, so closing the tree would no longer close the file (#471, #502).
+    """
+    new.set_close(source._close)
+    return new
+
+
+def _open_sweeps(open_sweep, sweeps):
+    """Open every sweep with ``open_sweep(sweep)`` and return the datasets.
+
+    If one fails, the sweeps already open are closed instead of being left to
+    the garbage collector (#471, #502).
+    """
+    datasets = []
+    try:
+        for sweep in sweeps:
+            datasets.append(open_sweep(sweep))
+    except Exception:
+        _close_all(datasets)
+        raise
+    return datasets
+
+
+def _call_all(functions):
+    """Call every function in ``functions``, also when one raises, so one
+    failing close does not leave the other files open; errors are chained."""
+    with ExitStack() as stack:
+        for function in functions:
+            stack.callback(function)
+
+
+def _close_all(objs):
+    """Close every dataset or tree in ``objs`` while an error is handled.
+
+    A failing close is dropped, so it does not hide the error being handled.
+    """
+    for obj in objs:
+        with suppress(Exception):
+            obj.close()
+
+
+#: arguments of :func:`xradar.util.create_volume` which select and label the sweeps
+_VOLUME_KWARGS = (
+    "time_coverage_start",
+    "time_coverage_end",
+    "min_angle",
+    "max_angle",
+    "volume_number",
+)
+
+
+def _is_file_list(filename_or_obj):
+    """List or tuple of paths (not of bytes chunks, see NEXRAD Level II)."""
+    return isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (str, os.PathLike)) for item in filename_or_obj
+    )
+
+
+def _open_sweep_files_as_volume(files, open_file, **kwargs):
+    """Open files with one sweep each and stack them into one volume.
+
+    ``open_file(path, **kwargs)`` opens a file as DataTree. The sweeps of all
+    files are sorted by time and numbered in this order (see
+    :func:`xradar.util.create_volume`), closing the volume closes all files.
+    """
+    volume_kwargs = {k: kwargs.pop(k) for k in _VOLUME_KWARGS if k in kwargs}
+    if len(files) == 1:
+        if volume_kwargs:
+            raise TypeError(
+                f"{', '.join(_VOLUME_KWARGS)} are only valid when opening "
+                "multiple files."
+            )
+        return open_file(files[0], **kwargs)
+    trees = []
+    try:
+        for file in files:
+            trees.append(open_file(file, **kwargs))
+        volume = util.create_volume(trees, **volume_kwargs)
+    except Exception:
+        _close_all(trees)
+        raise
+    # create_volume copies sweeps verbatim: number them by their position
+    for i, key in enumerate(util.get_sweep_keys(volume)):
+        sweep = volume[key].to_dataset()
+        if "sweep_number" in sweep:
+            sweep["sweep_number"] = xr.DataArray(i)
+            volume[key] = xr.DataTree(sweep)
+    # closing the volume closes every source file; the source trees and their
+    # data are not kept
+    closers = [
+        node._close
+        for tree in trees
+        for node in tree.subtree
+        if node._close is not None
+    ]
+    volume.set_close(partial(_call_all, closers))
+    return volume
+
+
 def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     """Build CfRadial2 groups dict from a list of sweep Datasets.
 
@@ -495,23 +750,28 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     groups_dict : dict[str, xr.Dataset]
         Dictionary with CfRadial2 group structure.
     """
-    groups_dict = {
-        "/": _get_required_root_dataset(ls_ds, optional=optional),
-    }
-    # station vars belong to the root only, also when sweeps carry them as coords
-    sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
-    if optional_groups:
-        groups_dict["/radar_parameters"] = _get_subgroup(
-            sweeps, radar_parameters_subgroup
-        )
-        groups_dict["/georeferencing_correction"] = _get_subgroup(
-            sweeps, georeferencing_correction_subgroup
-        )
-        groups_dict["/radar_calibration"] = _get_radar_calibration(
-            sweeps, radar_calibration_subgroup
-        )
-    for i, ds in enumerate(sweeps):
-        groups_dict[f"/sweep_{i}"] = ds.drop_attrs(deep=False)
+    try:
+        groups_dict = {
+            "/": _get_required_root_dataset(ls_ds, optional=optional),
+        }
+        # station vars belong to the root only, also when sweeps carry them as coords
+        sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
+        if optional_groups:
+            groups_dict["/radar_parameters"] = _get_subgroup(
+                sweeps, radar_parameters_subgroup
+            )
+            groups_dict["/georeferencing_correction"] = _get_subgroup(
+                sweeps, georeferencing_correction_subgroup
+            )
+            groups_dict["/radar_calibration"] = _get_radar_calibration(
+                sweeps, radar_calibration_subgroup
+            )
+    except Exception:
+        # nothing holds the sweeps' files yet: close them (#471, #502)
+        _close_all(ls_ds)
+        raise
+    for i, (ds, source) in enumerate(zip(sweeps, ls_ds, strict=True)):
+        groups_dict[f"/sweep_{i}"] = _keep_close(ds.drop_attrs(deep=False), source)
     return groups_dict
 
 
