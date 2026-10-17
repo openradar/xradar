@@ -250,7 +250,7 @@ generic data packets (packet code 28). Raw data levels are decoded to
 physical values using the product thresholds; legacy velocity products are
 converted from knots to m/s and precipitation products from inches to mm so
 moments are uniformly ``DBZH``, ``VRADH``, ``WRADH``, ``SRMV``, ``ZDR``,
-``RHOHV``, ``KDP``, ``HCLASS``, ``ACCUM`` and ``RATE``.
+``RHOHV``, ``KDP``, ``HCLASS``, ``ACRR`` and ``RATE``.
 
 Level 3 files are small and available in real time and back to ~2020 on AWS:
 

@@ -83,7 +83,7 @@ from .common import _STATION_VARS, _apply_site_as_coords, _input_kind, _read_hea
 #: which returns the raw knot values).
 KT_TO_MS = 0.514444
 
-#: 1 inch in mm. Accumulation products are converted so ACCUM is mm.
+#: 1 inch in mm. Accumulation products are converted so ACRR is mm.
 IN_TO_MM = 25.4
 
 #: Structure of a Level 3 product specification.
@@ -117,9 +117,9 @@ PRODUCT_TABLE = {
     28: ProductSpec("WRADH", "legacy16", 250.0, True, KT_TO_MS, 0),
     30: ProductSpec("WRADH", "legacy16", 1000.0, True, KT_TO_MS, 0),
     56: ProductSpec("SRMV", "legacy16", 1000.0, True, KT_TO_MS, 0),
-    78: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM, 1),
-    79: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM, 1),
-    80: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM, 1),
+    78: ProductSpec("ACRR", "legacy16", None, False, IN_TO_MM, 1),
+    79: ProductSpec("ACRR", "legacy16", None, False, IN_TO_MM, 1),
+    80: ProductSpec("ACRR", "legacy16", None, False, IN_TO_MM, 1),
     # digital products, linear halfword scale/offset
     94: ProductSpec("DBZH", "linear_hw", 1000.0, True, 1.0, 0),
     99: ProductSpec("VRADH", "linear_hw", 250.0, True, 1.0, 0),
@@ -132,11 +132,11 @@ PRODUCT_TABLE = {
     163: ProductSpec("KDP", "float_scale", 250.0, True, 1.0, 0),
     165: ProductSpec("HCLASS", "class_int", 250.0, True, 1.0, 1),
     # digital precipitation products (surface: packet range scale is exact)
-    170: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
-    172: ProductSpec("ACCUM", "precip", None, False, 1.0, 1),
-    173: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
-    174: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
-    175: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
+    170: ProductSpec("ACRR", "precip", None, False, 1.0, 0),
+    172: ProductSpec("ACRR", "precip", None, False, 1.0, 1),
+    173: ProductSpec("ACRR", "precip", None, False, 1.0, 0),
+    174: ProductSpec("ACRR", "precip", None, False, 1.0, 0),
+    175: ProductSpec("ACRR", "precip", None, False, 1.0, 0),
     # generic data packet products (XDR; gate geometry from the component)
     176: ProductSpec("RATE", "rate", None, False, 1.0, 0),
     177: ProductSpec("HCLASS", "class_int", 250.0, False, 1.0, 0),

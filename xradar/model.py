@@ -228,7 +228,7 @@ sweep_dataset_vars = {
     "RATE",
     "HCLASS",
     "SRMV",
-    "ACCUM",
+    "ACRR",
 }
 
 #: non-standard sweep dataset variable names
@@ -610,10 +610,10 @@ sweep_vars_mapping = {
         "short_name": "RATE",
         "units": "mm h-1",
     },
-    "ACCUM": {
-        "standard_name": "rainfall_amount",
-        "long_name": "Radar estimated rainfall accumulation",
-        "short_name": "ACCUM",
+    "ACRR": {
+        "standard_name": "lwe_thickness_of_precipitation_amount",
+        "long_name": "Accumulated precipitation",
+        "short_name": "ACRR",
         "units": "mm",
     },
     "HCLASS": {
