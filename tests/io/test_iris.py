@@ -7,6 +7,7 @@
 Ported from wradlib.
 """
 
+import copy
 import warnings
 from types import SimpleNamespace
 
@@ -14,6 +15,7 @@ import numpy as np
 import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends import iris, open_iris_datatree
 from xradar.util import _get_data_file
 
@@ -416,6 +418,69 @@ def test_first_loaded_moment_aligned_with_others(iris0_file):
         assert (
             best_shift(sw["DBZH"].values, sw[moment].values) == 0
         ), f"DBZH is row-rotated relative to {moment}"
+
+
+@pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
+def test_range_attrs_match_range(fixture, request):
+    # the header range fields are in cm, the attrs are in m (#525)
+    path = request.getfixturevalue(fixture)
+    with xd.open_datatree(path, engine="iris") as dtree:
+        rng = dtree["sweep_0"].ds["range"]
+        # also what the CfRadial1 export writes
+        exported = xd.transform.to_cfradial1(dtree)["range"].attrs
+        for attrs in (rng.attrs, exported):
+            np.testing.assert_allclose(
+                attrs["meters_between_gates"], np.diff(rng.values)[0]
+            )
+            np.testing.assert_allclose(
+                attrs["meters_to_center_of_first_gate"], rng.values[0]
+            )
+            assert attrs["spacing_is_constant"] == "true"
+
+
+def _patch_range_info(monkeypatch, **fields):
+    """Serve a deep copy of the ingest header with ``task_range_info`` updated."""
+
+    def header(self):
+        hdr = copy.deepcopy(self._ingest_header)
+        hdr["task_configuration"]["task_range_info"].update(fields)
+        return hdr
+
+    monkeypatch.setattr(iris.IrisIngestHeader, "ingest_header", property(header))
+
+
+@pytest.mark.parametrize(
+    "first_bin, step, spacing, first_centre",
+    [
+        # an odd centimetre step is still one constant spacing (125.01 m),
+        # which the float32 range values alone could not tell
+        (12345, 12501, 125.01, 123.45),
+        # a first bin of 0 means the first gate is centred at half a step
+        (0, 30000, 300.0, 150.0),
+    ],
+)
+def test_range_attrs_follow_the_header_exactly(
+    iris0_file, monkeypatch, first_bin, step, spacing, first_centre
+):
+    _patch_range_info(monkeypatch, range_first_bin=first_bin, step_output_bins=step)
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        attrs = ds["range"].attrs
+        first = ds["range"].values[0]
+    assert attrs["meters_between_gates"] == spacing
+    assert attrs["meters_to_center_of_first_gate"] == first_centre
+    assert attrs["spacing_is_constant"] == "true"
+    np.testing.assert_allclose(first, first_centre, rtol=1e-6)
+
+
+def test_range_attrs_variable_spacing_flag(iris0_file, monkeypatch):
+    # with variable bin spacing in the header there is no single gate spacing
+    _patch_range_info(monkeypatch, variable_range_bin_spacing_flag=1)
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        attrs = ds["range"].attrs
+        first = ds["range"].values[0]
+    assert attrs["spacing_is_constant"] == "false"
+    assert "meters_between_gates" not in attrs
+    np.testing.assert_allclose(attrs["meters_to_center_of_first_gate"], first)
 
 
 @pytest.mark.parametrize(

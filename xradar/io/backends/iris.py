@@ -4150,12 +4150,14 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
             )[: task["number_output_bins"]]
             / 1e2
         )
+        # header range fields are in cm; convert to m as for rng (#525)
         range_attrs = get_range_attrs()
-        range_attrs["meters_between_gates"] = task["step_output_bins"] / 2
-        range_attrs["spacing_is_constant"] = (
-            "false" if task["variable_range_bin_spacing_flag"] else "true"
-        )
-        range_attrs["meters_to_center_of_first_gate"] = task["range_first_bin"]
+        if task["variable_range_bin_spacing_flag"]:
+            range_attrs["spacing_is_constant"] = "false"
+        else:
+            range_attrs["meters_between_gates"] = task["step_output_bins"] / 1e2
+            range_attrs["spacing_is_constant"] = "true"
+        range_attrs["meters_to_center_of_first_gate"] = range_first_bin / 1e2
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
 
