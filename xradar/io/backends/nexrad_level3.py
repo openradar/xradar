@@ -90,7 +90,7 @@ IN_TO_MM = 25.4
 #:
 #: - ``moment``: CfRadial2 moment name the product maps to
 #: - ``decode``: decode scheme (``linear_hw``, ``float_scale``, ``precip``,
-#:   ``legacy16``, ``class_int``)
+#:   ``rate``, ``legacy16``, ``class_int``)
 #: - ``bin_size``: range bin size in meters (the ICD product resolution).
 #:   ``None`` uses the radial-packet range scale field directly; for
 #:   elevation-bearing products that field is ``floor(1000*cos(elevation))``
@@ -98,8 +98,11 @@ IN_TO_MM = 25.4
 #:   products carry the exact ICD resolution here instead.
 #: - ``has_elevation``: whether PDB halfword 30 holds the elevation angle
 #: - ``post_scale``: factor applied after decoding (unit conversions)
+#: - ``max_version``: latest product version (PDB halfword 7) the decoder
+#:   implements; newer files warn
 ProductSpec = namedtuple(
-    "ProductSpec", ["moment", "decode", "bin_size", "has_elevation", "post_scale"]
+    "ProductSpec",
+    ["moment", "decode", "bin_size", "has_elevation", "post_scale", "max_version"],
 )
 
 #: Message code -> product specification for the radial products supported
@@ -107,36 +110,36 @@ ProductSpec = namedtuple(
 #: (Table III / "Products with Version Numbers", ICD 2620001).
 PRODUCT_TABLE = {
     # legacy 8/16-level run-length encoded products
-    19: ProductSpec("DBZH", "legacy16", 1000.0, True, 1.0),
-    20: ProductSpec("DBZH", "legacy16", 2000.0, True, 1.0),
-    25: ProductSpec("VRADH", "legacy16", 250.0, True, KT_TO_MS),
-    27: ProductSpec("VRADH", "legacy16", 1000.0, True, KT_TO_MS),
-    28: ProductSpec("WRADH", "legacy16", 250.0, True, KT_TO_MS),
-    30: ProductSpec("WRADH", "legacy16", 1000.0, True, KT_TO_MS),
-    56: ProductSpec("SRMV", "legacy16", 1000.0, True, KT_TO_MS),
-    78: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM),
-    79: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM),
-    80: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM),
+    19: ProductSpec("DBZH", "legacy16", 1000.0, True, 1.0, 0),
+    20: ProductSpec("DBZH", "legacy16", 2000.0, True, 1.0, 0),
+    25: ProductSpec("VRADH", "legacy16", 250.0, True, KT_TO_MS, 0),
+    27: ProductSpec("VRADH", "legacy16", 1000.0, True, KT_TO_MS, 0),
+    28: ProductSpec("WRADH", "legacy16", 250.0, True, KT_TO_MS, 0),
+    30: ProductSpec("WRADH", "legacy16", 1000.0, True, KT_TO_MS, 0),
+    56: ProductSpec("SRMV", "legacy16", 1000.0, True, KT_TO_MS, 0),
+    78: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM, 1),
+    79: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM, 1),
+    80: ProductSpec("ACCUM", "legacy16", None, False, IN_TO_MM, 1),
     # digital products, linear halfword scale/offset
-    94: ProductSpec("DBZH", "linear_hw", 1000.0, True, 1.0),
-    99: ProductSpec("VRADH", "linear_hw", 250.0, True, 1.0),
-    153: ProductSpec("DBZH", "linear_hw", 250.0, True, 1.0),
-    154: ProductSpec("VRADH", "linear_hw", 250.0, True, 1.0),
-    155: ProductSpec("WRADH", "linear_hw", 250.0, True, 1.0),
+    94: ProductSpec("DBZH", "linear_hw", 1000.0, True, 1.0, 0),
+    99: ProductSpec("VRADH", "linear_hw", 250.0, True, 1.0, 0),
+    153: ProductSpec("DBZH", "linear_hw", 250.0, True, 1.0, 0),
+    154: ProductSpec("VRADH", "linear_hw", 250.0, True, 1.0, 0),
+    155: ProductSpec("WRADH", "linear_hw", 250.0, True, 1.0, 0),
     # digital dual-pol products, float scale/offset
-    159: ProductSpec("ZDR", "float_scale", 250.0, True, 1.0),
-    161: ProductSpec("RHOHV", "float_scale", 250.0, True, 1.0),
-    163: ProductSpec("KDP", "float_scale", 250.0, True, 1.0),
-    165: ProductSpec("HCLASS", "class_int", 250.0, True, 1.0),
+    159: ProductSpec("ZDR", "float_scale", 250.0, True, 1.0, 1),
+    161: ProductSpec("RHOHV", "float_scale", 250.0, True, 1.0, 1),
+    163: ProductSpec("KDP", "float_scale", 250.0, True, 1.0, 0),
+    165: ProductSpec("HCLASS", "class_int", 250.0, True, 1.0, 1),
     # digital precipitation products (surface: packet range scale is exact)
-    170: ProductSpec("ACCUM", "precip", None, False, 1.0),
-    172: ProductSpec("ACCUM", "precip", None, False, 1.0),
-    173: ProductSpec("ACCUM", "precip", None, False, 1.0),
-    174: ProductSpec("ACCUM", "precip", None, False, 1.0),
-    175: ProductSpec("ACCUM", "precip", None, False, 1.0),
+    170: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
+    172: ProductSpec("ACCUM", "precip", None, False, 1.0, 1),
+    173: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
+    174: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
+    175: ProductSpec("ACCUM", "precip", None, False, 1.0, 0),
     # generic data packet products (XDR; gate geometry from the component)
-    176: ProductSpec("RATE", "rate", None, False, 1.0),
-    177: ProductSpec("HCLASS", "class_int", 250.0, False, 1.0),
+    176: ProductSpec("RATE", "rate", None, False, 1.0, 0),
+    177: ProductSpec("HCLASS", "class_int", 250.0, False, 1.0, 0),
 }
 
 #: Radial products not yet implemented; mapped to a descriptive name so the
@@ -157,34 +160,6 @@ DEFERRED_PRODUCTS = {
 
 #: Maximum product version implemented, per the ICD "Products with Version
 #: Numbers" table. Newer versions trigger a warning, not an error.
-SUPPORTED_VERSION_NUMBERS = {
-    19: 0,
-    20: 0,
-    25: 0,
-    27: 0,
-    28: 0,
-    30: 0,
-    56: 0,
-    78: 1,
-    79: 1,
-    80: 1,
-    94: 0,
-    99: 0,
-    153: 0,
-    154: 0,
-    155: 0,
-    159: 1,
-    161: 1,
-    163: 0,
-    165: 1,
-    170: 0,
-    172: 1,
-    173: 0,
-    174: 0,
-    175: 0,
-    176: 0,
-    177: 0,
-}
 
 #: Hydrometeor classification data levels (ICD Figure 3-6, page 3-37).
 HCLASS_FLAG_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140, 150]
@@ -423,6 +398,10 @@ class _Level3XDRParser(_XDRUnpacker):
         return component._replace(radials=rads)
 
 
+class _RadialExpansionError(ValueError):
+    """Run-length encoded radials do not expand to the header bin count."""
+
+
 class NEXRADLevel3File:
     """Read a NEXRAD Level 3 (NIDS) radial product file.
 
@@ -482,7 +461,7 @@ class NEXRADLevel3File:
         self._validate_headers()
 
         version = self.prod_descr["version"]
-        max_version = SUPPORTED_VERSION_NUMBERS.get(code, 0)
+        max_version = self.product_spec.max_version
         if version > max_version:
             warnings.warn(
                 f"Product version {version} is newer than the latest "
@@ -617,9 +596,9 @@ class NEXRADLevel3File:
                 self._read_packet16(buf2, nradials, nbins)
             else:
                 self._read_packet_af1f(buf2, nradials, nbins)
+        except _RadialExpansionError:
+            raise
         except (struct.error, ValueError) as err:
-            if isinstance(err, ValueError) and "expand" in str(err):
-                raise
             raise ValueError("Truncated or corrupt radial packet data.") from err
 
     def _read_packet16(self, buf2, nradials, nbins):
@@ -696,7 +675,7 @@ class NEXRADLevel3File:
         ends = np.cumsum(run_lengths)
         totals = np.add.reduceat(runs, np.r_[0, ends[:-1]])
         if not (totals == nbins).all():
-            raise ValueError(
+            raise _RadialExpansionError(
                 "Run-length encoded radial does not expand to the expected "
                 f"number of bins (expected {nbins})."
             )
