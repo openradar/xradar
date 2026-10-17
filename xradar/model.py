@@ -566,13 +566,13 @@ sweep_vars_mapping = {
         "standard_name": "signal_noise_ratio_h",
         "long_name": "Signal Noise Ratio H",
         "short_name": "SNRH",
-        "units": "unitless",
+        "units": "dB",
     },
     "SNRV": {
         "standard_name": "signal_noise_ratio_v",
         "long_name": "Signal Noise Ratio V",
         "short_name": "SNRV",
-        "units": "unitless",
+        "units": "dB",
     },
     "SQIH": {
         "standard_name": "signal_quality_index_h",
