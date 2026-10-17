@@ -75,7 +75,7 @@ from ...model import (
     moment_attrs,
     sweep_vars_mapping,
 )
-from .common import _STATION_VARS, _apply_site_as_coords
+from .common import _STATION_VARS, _apply_site_as_coords, _input_kind, _read_head
 
 #: 1 international knot in m/s. Legacy 16-level velocity products (25/27,
 #: 28/30, 56) carry data levels in knots; they are converted so VRADH /
@@ -1070,6 +1070,13 @@ class NexradLevel3BackendEntrypoint(BackendEntrypoint):
     description = "Open NEXRAD Level 3 (NIDS) radial products in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#nexrad-level3"
 
+    def guess_can_open(self, filename_or_obj):
+        """NEXRAD Level 3 product (``SDUS`` WMO heading in the first 80 bytes)."""
+        if _input_kind(filename_or_obj) not in ("path", "bytes", "file"):
+            return False
+        head = _read_head(filename_or_obj, 80)
+        return head is not None and head.find(b"SDUS") != -1
+
     def open_dataset(
         self,
         filename_or_obj,
@@ -1104,6 +1111,7 @@ class NexradLevel3BackendEntrypoint(BackendEntrypoint):
             ds = ds.drop_vars(drop_variables, errors="ignore")
 
         ds._close = fdata.close
+        ds.encoding["engine"] = "nexradlevel3"
         return ds
 
 

@@ -195,6 +195,11 @@ def nexradlevel2_file():
 
 
 @pytest.fixture(scope="session")
+def nexradlevel3_file():
+    return DATASETS.fetch("LOT_N0B_2026_07_17_19_30_15")
+
+
+@pytest.fixture(scope="session")
 def nexradlevel2_ldm_stride_file():
     """KILX volume with an over-120-message LDM (#376 regression fixture).
 
