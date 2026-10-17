@@ -1110,12 +1110,11 @@ class TestRealFiles:
         "real_file", ["LOT_N0B_2026_07_17_19_30_15"], indirect=["real_file"]
     )
     def test_real_multi_tilt_datatree(self, real_file):
-        import os
+        from open_radar_data import DATASETS
 
-        base = os.path.dirname(real_file)
-        tilts = [os.path.join(base, f"LOT_N{i}B_2026_07_17_19_30_15") for i in range(4)]
-        if not all(os.path.exists(t) for t in tilts):
-            pytest.skip("full N0B-N3B tilt set not available")
+        tilts = [real_file] + [
+            DATASETS.fetch(f"LOT_N{i}B_2026_07_17_19_30_15") for i in range(1, 4)
+        ]
         dtree = open_nexradlevel3_datatree(tilts)
         assert list(dtree.children) == [f"sweep_{i}" for i in range(4)]
         np.testing.assert_allclose(
