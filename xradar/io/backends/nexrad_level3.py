@@ -1188,7 +1188,9 @@ def open_nexradlevel3_datatree(filename_or_obj, **kwargs):
     reindex_angle : bool or dict
         If a dict, kwargs are passed to :func:`xradar.util.reindex_angle`.
     site_as_coords : bool
-        Attach station variables as coordinates on sweep Datasets.
+        Accepted for parity with the other datatree openers. The station
+        variables live on the root node and the sweeps inherit them as
+        coordinates, so this has no effect on the DataTree.
 
     Returns
     -------
