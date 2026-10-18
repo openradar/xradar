@@ -696,6 +696,32 @@ def _header_stub():
     )
 
 
+def test_moment_names_keep_colliding_types():
+    assert iris._moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
+        "DBZH",
+        "VRADH",
+        "DB_DBZ2",
+    ]
+    assert iris._moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    with pytest.raises(ValueError, match="appears twice"):
+        iris._moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
+
+
+def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
+    """Two types mapping to one CfRadial name used to keep only the later
+    one; now the second keeps its Sigmet name. (The collision is staged by
+    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as before:
+        dbzh, vradh = before.DBZH.values, before.VRADH.values
+    monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
+        np.testing.assert_array_equal(ds.DBZH.values, dbzh)
+        np.testing.assert_array_equal(ds.DB_VEL.values, vradh)
+        # CF attrs follow the mapped name, also under the Sigmet name
+        assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+
+
 #: each decode path with the wavelength and PRF it reads from ``_header_stub``
 _DECODE_PATHS = pytest.mark.parametrize(
     "cls, wavelength_prf",
@@ -774,6 +800,9 @@ MANUAL_ZERO_IS_NO_DATA = frozenset(
         "DB_KDP2", "DB_LDRH", "DB_LDRV", "DB_LDRH2", "DB_LDRV2",
         # derived, 4.4.11, 4.4.30, 4.4.41, 4.4.47, 4.4.50
         "DB_HEIGHT", "DB_VIL2", "DB_RAINRATE2", "DB_TIME2", "DB_SHEAR",
+        # SNR family, below the -31.5 dB floor of 4.4.37 (#475)
+        "DB_SNR8", "DB_SNR16", "DB_LOG8", "DB_LOG16", "DB_CSP8", "DB_CSP16",
+        "DB_AH8", "DB_AH16", "DB_AV8", "DB_AV16", "DB_AZDR8", "DB_AZDR16",
     }
 )  # fmt: skip
 
@@ -783,18 +812,9 @@ MANUAL_ZERO_IS_DATA = frozenset(
     {"DB_AXDIL2", "DB_DEFORM2", "DB_DIVERGE2", "DB_FLIQUID2", "DB_HDIR2", "DB_VVEL2"}
 )
 
-#: The guide gives raw 0 no meaning (the DB_SNR8/16 family; DB_HVEL2 has no
-#: section): no mask, nothing pinned.
-MANUAL_ZERO_UNDEFINED = frozenset(
-    {
-        *(
-            f"DB_{t}{n}"
-            for t in ("SNR", "LOG", "CSP", "AH", "AV", "AZDR")
-            for n in (8, 16)
-        ),
-        "DB_HVEL2",
-    }
-)
+#: The guide gives raw 0 no meaning (DB_HVEL2 has no section): no mask,
+#: nothing pinned.
+MANUAL_ZERO_UNDEFINED = frozenset({"DB_HVEL2"})
 
 #: ``decode_kdp`` NaNs raw 0 (and 255) itself
 NAN_AT_ZERO = MANUAL_ZERO_IS_NO_DATA | {"DB_KDP"}
@@ -947,3 +967,52 @@ def test_decoders_keep_a_caller_mask_and_take_scalars():
     assert np.isnan(np.asarray(out)[:2]).all() and np.asarray(out)[2] == 32.0
     assert np.isnan(np.asarray(dbz["func"](np.uint8(0), **dbz["fkw"])))
     assert dbz["func"](np.uint8(128), **dbz["fkw"]) == 32.0
+
+
+def _decode_entry(name, words):
+    """``_decode_raw`` by type name, as plain floats (NaN at masked bins)."""
+    return np.asarray(_decode_raw(_ENTRIES[name], words), dtype="float64")
+
+
+@pytest.mark.parametrize("family", ["SNR", "LOG", "CSP", "AH", "AV", "AZDR"])
+def test_snr_family_scaling(family):
+    """1-byte: -31.5 ... +95.5 dB in 0.5 dB steps (4.4.37); 2-byte:
+    (N - 32768) / 100 like the other 2-byte dB types (#475)."""
+    np.testing.assert_allclose(
+        _decode_entry(f"DB_{family}8", [1, 64, 255]), [-31.5, 0.0, 95.5]
+    )
+    np.testing.assert_allclose(
+        _decode_entry(f"DB_{family}16", [27133, 32768, 39853]), [-56.35, 0.0, 70.85]
+    )
+
+
+def test_snr16_on_the_test_file(iris1_file):
+    """SUR's SNRH was -31.5 ... 19895 dB with the 1-byte scaling; it now
+    gives -56 ... +71 dB, and raw 0 is masked where DBZH has no data
+    (#475)."""
+    with open_dataset(iris1_file, engine="iris", group="sweep_0") as ds:
+        snr, dbz = ds.SNRH.values, ds.DBZH.values
+        assert ds.SNRH.attrs["units"] == "dB"
+    assert -60 < np.nanmin(snr) < np.nanmax(snr) < 75
+    assert np.isnan(snr).any()
+    assert not (np.isnan(snr) & ~np.isnan(dbz)).any()
+
+
+def test_snr8_matches_reflectivity_on_arouca(iris_arouca_file):
+    """IRIS computes DBZ = C + SNR + 20 log10(r) + gas * r, so the 1-byte
+    SNR scale (N - 64) / 2 must close that equation to within the rounding
+    of two 0.5 dB values for almost all bins (#475)."""
+    with iris.IrisRawFile(iris_arouca_file, loaddata=False) as raw:
+        task = raw.ingest_header["task_configuration"]
+    cal = task["task_calib_info"]["calibration_reflectivity"] / 16
+    gas = task["task_dsp_info"]["gas_attenuation"] / 1e5  # dB/km
+    with open_dataset(iris_arouca_file, engine="iris", group="sweep_0") as ds:
+        snr, dbz = ds.SNRH.values, ds.DBZH.values
+        r = ds.range.values / 1000.0
+    ok = ~np.isnan(snr) & ~np.isnan(dbz)
+    resid = (dbz - snr - 20 * np.log10(r) - gas * r - cal)[ok]
+    # 7882 bins, median -0.01, 97 % within 0.5 dB; main's (N - 63) / 2
+    # gives median -0.51 and 46 %
+    assert resid.size > 5000
+    assert np.abs(np.median(resid)) < 0.05
+    assert np.mean(np.abs(resid) <= 0.5) > 0.95

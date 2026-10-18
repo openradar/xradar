@@ -127,6 +127,31 @@ class TestXdOpenDatatree:
         assert "latitude" in dtree.ds.coords
         assert "longitude" in dtree.ds.coords
 
+    def test_engine_is_discovered(self, engine_and_file, closing):
+        engine, filepath = engine_and_file
+        dtree = closing(xd.open_datatree(filepath, sweep=0))
+        xr.testing.assert_identical(
+            dtree, closing(xd.open_datatree(filepath, engine=engine, sweep=0))
+        )
+
+    @pytest.mark.parametrize("engine", ["cfradial1", "imd"])
+    def test_engine_is_discovered_netcdf(
+        self, engine, cfradial1_file, imd_file, closing
+    ):
+        # netCDF files which xr.open_datatree hands to xarray's own backend
+        filepath = {"cfradial1": cfradial1_file, "imd": imd_file}[engine]
+        dtree = closing(xd.open_datatree(filepath))
+        xr.testing.assert_identical(
+            dtree, closing(xd.open_datatree(filepath, engine=engine))
+        )
+        assert any(name.startswith("sweep_") for name in dtree.children)
+
+    def test_undiscoverable_file_raises(self, tmp_path):
+        path = tmp_path / "other.dat"
+        path.write_bytes(b"no radar data here")
+        with pytest.raises(ValueError, match="None of the xradar engines"):
+            xd.open_datatree(path)
+
     def test_unknown_engine_raises(self, odim_file):
         with pytest.raises(ValueError, match="Unknown engine"):
             xd.open_datatree(odim_file, engine="nonexistent_engine")
@@ -892,3 +917,84 @@ def test_cfradial2_close_releases_file(cfradial2_file, tmp_path):
     dtree.load()
     dtree.close()
     assert open_handles() == 0
+
+
+class TestXdOpenDatatreeSweepFiles:
+    """xd.open_datatree() stacks a list of single-sweep files into a volume."""
+
+    @pytest.fixture
+    def sweep_files(self, cfradial2_file, tmp_path, closing):
+        files = []
+        for i in range(3):
+            tree = closing(xd.open_datatree(cfradial2_file, sweep=i, first_dim="time"))
+            path = tmp_path / f"sweep_file_{i}.nc"
+            xd.io.to_cfradial2(tree.copy(), path, engine="netcdf4")
+            files.append(str(path))
+        return files
+
+    def test_sweeps_are_stacked_by_time(self, sweep_files, cfradial2_file, closing):
+        volume = closing(xd.open_datatree(sweep_files))
+        reference = closing(
+            xd.open_datatree(cfradial2_file, sweep=[0, 1, 2], first_dim="time")
+        )
+        assert [k for k in volume.children if k.startswith("sweep_")] == [
+            "sweep_0",
+            "sweep_1",
+            "sweep_2",
+        ]
+        np.testing.assert_array_equal(
+            volume.ds.sweep_fixed_angle, reference.ds.sweep_fixed_angle
+        )
+        for i in range(3):
+            assert volume[f"sweep_{i}"].sweep_number.item() == i
+            np.testing.assert_array_equal(
+                volume[f"sweep_{i}"].DBZ.values, reference[f"sweep_{i}"].DBZ.values
+            )
+
+    def test_files_in_any_order(self, sweep_files, closing):
+        # the sweeps are sorted by time, not by the order of the list
+        volume = closing(xd.open_datatree(sweep_files[::-1]))
+        starts = [volume[f"sweep_{i}"].time.min().values for i in range(3)]
+        assert starts == sorted(starts)
+        assert volume.ds.sweep_fixed_angle.values.tolist() == [
+            volume[f"sweep_{i}"].sweep_fixed_angle.item() for i in range(3)
+        ]
+
+    def test_volume_kwargs(self, sweep_files, closing):
+        volume = closing(xd.open_datatree(sweep_files, max_angle=0.6))
+        assert len([k for k in volume.children if k.startswith("sweep_")]) < 3
+        with pytest.raises(ValueError, match="No sweeps remain"):
+            xd.open_datatree(sweep_files, min_angle=1000)
+
+    def test_volume_kwargs_single_file(self, sweep_files):
+        with pytest.raises(TypeError, match="only valid when opening multiple"):
+            xd.open_datatree(sweep_files[:1], engine="cfradial2", max_angle=1)
+
+    def test_closing_closes_every_file(self, sweep_files):
+        volume = xd.open_datatree(sweep_files)
+        volume.close()
+        for path in sweep_files:  # no file is left open
+            xr.open_datatree(path, engine="cfradial2").close()
+
+    def test_mixed_formats_raise(self, sweep_files, odim_file):
+        with pytest.raises(ValueError, match="different engines"):
+            xd.open_datatree([sweep_files[0], odim_file])
+
+    def test_single_file_list(self, sweep_files, closing):
+        volume = closing(xd.open_datatree(sweep_files[:1]))
+        single = closing(xd.open_datatree(sweep_files[0]))
+        xr.testing.assert_identical(volume, single)
+
+    def test_imd_volume(self, imd_volume_files, closing):
+        # IMD files are stacked by open_imd_datatree
+        volume = closing(xd.open_datatree(imd_volume_files))
+        xr.testing.assert_identical(
+            volume, closing(xd.io.open_imd_datatree(imd_volume_files))
+        )
+        assert len([k for k in volume.children if k.startswith("sweep_")]) == len(
+            imd_volume_files
+        )
+
+    def test_empty_list_raises(self):
+        with pytest.raises(ValueError, match="at least one file"):
+            xd.open_datatree([])
