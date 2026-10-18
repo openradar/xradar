@@ -9,19 +9,16 @@ ported from wradlib
 
 import io
 import shutil
-import warnings
 from pathlib import Path
 
 import h5py
 import numpy as np
 import pytest
-import xarray as xr
 from xarray import DataTree, open_dataset, open_mfdataset
 
 import xradar as xd
-from xradar import model
 from xradar.io.backends import gamic
-from xradar.io.backends.common import _get_radar_calibration, _same_value
+from xradar.io.backends.common import _maybe_decode
 from xradar.io.backends.gamic import open_gamic_datatree
 
 
@@ -222,6 +219,10 @@ def test_gamic_radar_metadata(gamic_file, closing):
     np.testing.assert_allclose(calib.antenna_gain_h, 43.0)
     np.testing.assert_allclose(calib.noise_power_h, -3.8298)
     np.testing.assert_allclose(calib.rx_loss_h, 3.0)
+    # units: "dB" is what the file gives in <name>__unit
+    assert params.radar_beam_width_h.attrs["units"] == "degrees"
+    for var in calib.data_vars.values():
+        assert var.attrs["units"] == "dB"
     # they are no attributes of the root or the sweeps
     assert not {"antenna_gain_h", "radar_beam_width_h"} & set(dtree.attrs)
     assert not {"antenna_gain_h", "radar_beam_width_h"} & set(dtree["sweep_0"].attrs)
@@ -310,29 +311,45 @@ def test_gamic_beam_width_no_number_is_skipped(gamic_file, tmp_path, closing):
     np.testing.assert_allclose(params.radar_beam_width_v, 1.0)
 
 
-def test_get_radar_calibration_of_sweeps_with_other_names():
-    # values come from the first sweep which has the name, a difference warns
-    names = model.radar_calibration_subgroup
-    first = xr.Dataset(attrs={"antenna_gain_h": 43.0})
-    second = xr.Dataset(attrs={"antenna_gain_h": 43.0, "radar_constant_h": 70.0})
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        calib = _get_radar_calibration([first, second], names)
-    assert calib.antenna_gain_h == 43.0 and calib.radar_constant_h == 70.0
-    third = xr.Dataset(attrs={"antenna_gain_h": 44.0})
-    with pytest.warns(
-        UserWarning,
-        match=r"differ between the sweeps \(antenna_gain_h\).*``sweep=``",
-    ):
-        calib = _get_radar_calibration([first, third], names)
-    assert calib.antenna_gain_h == 43.0
-    assert not _get_radar_calibration([xr.Dataset()], names).data_vars
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("43", 43.0),
+        (b"-3.8298", -3.8298),
+        (1, 1.0),
+        ("n/a", None),
+        (None, None),
+        ("nan", None),
+        ("inf", None),
+        ("-inf", None),
+    ],
+)
+def test_gamic_to_float(value, expected):
+    assert gamic._to_float(value) == expected
 
 
-def test_same_value_of_numbers_nan_and_strings():
-    assert _same_value(43.0, 43.0)
-    assert _same_value(np.nan, np.nan)
-    assert not _same_value(43.0, 44.0)
-    # np.array_equal(equal_nan=True) raises for strings (e.g. model names)
-    assert _same_value("GAMIC", "GAMIC")
-    assert not _same_value("GAMIC", "other")
+def test_gamic_units_are_the_file_units(gamic_file):
+    # the scan how of the file has the unit of each value in <name>__unit
+    with h5py.File(gamic_file) as f:
+        how = f["scan0/how"].attrs
+        for name, model_name in (
+            ("ant_gain_h", "antenna_gain_h"),
+            ("noise_power_h", "noise_power_h"),
+            ("rx_loss_h", "rx_loss_h"),
+        ):
+            assert _maybe_decode(how[f"{name}__unit"]) == gamic._GAMIC_UNITS[model_name]
+
+
+def test_gamic_not_finite_values_are_skipped(gamic_file, tmp_path, closing):
+    path = tmp_path / "gamic_nan.h5"
+    shutil.copy(gamic_file, path)
+    with h5py.File(path, "a") as f:
+        f["how"].attrs["azimuth_beam"] = "inf"
+        for scan in (f[name] for name in f if name.startswith("scan")):
+            scan["how"].attrs["noise_power_h"] = "nan"
+    dtree = closing(
+        xd.open_datatree(path, engine="gamic", optional_groups=True, sweep=0)
+    )
+    assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
+    assert "noise_power_h" not in dtree["radar_calibration"].ds
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.noise_power_v, -3.5802)

@@ -120,6 +120,13 @@ display(dtree["radar_parameters"].ds)
 display(dtree["radar_calibration"].ds)
 ```
 
+The same with the xarray API:
+
+```{code-cell}
+dtree = xr.open_datatree(filename, engine="gamic", sweep=0, optional_groups=True)
+assert dtree["radar_calibration"].antenna_gain_h.attrs["units"] == "dB"
+```
+
 ```{code-cell}
 import numpy as np
 
