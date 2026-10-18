@@ -585,9 +585,17 @@ def _get_required_root_dataset(ls_ds, optional=True):
     return root
 
 
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
+def _get_subgroup(
+    ls_ds: list[xr.Dataset], subdict, attrs=False, name="radar_parameters"
+):
     """Get iris-sigmet root metadata group.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
+
+    With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
+    added as well (for backends which have the values as attributes, e.g. of the
+    ``how`` groups); variables win. Each name takes the value of the first sweep
+    which has it; a warning for the group ``name`` names the values the sweeps
+    disagree about (select another sweep with ``sweep=`` to get its values).
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -597,20 +605,68 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
         rename = meta_vars[k]
         if rename:
             subgroup = subgroup.rename_vars({k: rename})
+    if attrs:
+        values, differing = _collect_attrs(ls_ds, meta_vars)
+        _warn_differing(name, differing)
+        values = {
+            (meta_vars[k] or k): xr.DataArray(v)
+            for k, v in values.items()
+            if (meta_vars[k] or k) not in subgroup
+        }
+        subgroup = xr.merge([subgroup, xr.Dataset(values)])
     subgroup.attrs = {}
     return subgroup
 
 
+def _same_value(a, b):
+    try:
+        return bool(np.array_equal(a, b, equal_nan=True))
+    except TypeError:  # strings and bytes: isnan is not defined
+        return bool(np.array_equal(a, b))
+
+
+def _collect_attrs(ls_ds, names):
+    """Values of the attributes ``names`` found in the sweeps.
+
+    Returns ``(values, differing)``: ``values`` holds, for each name, the value
+    of the first sweep which has it, ``differing`` lists the names for which
+    another sweep has a different value.
+    """
+    values, differing = {}, set()
+    for ds in ls_ds:
+        for name in sorted(names.keys() & ds.attrs.keys()):
+            value = ds.attrs[name]
+            if name not in values:
+                values[name] = value
+            elif not _same_value(values[name], value):
+                differing.add(name)
+    return values, sorted(differing)
+
+
+def _warn_differing(group, differing):
+    if differing:
+        warnings.warn(
+            f"xradar: {group} values differ between the sweeps "
+            f"({', '.join(differing)}). The group holds the values of the first "
+            "selected sweep; use ``sweep=`` to select the sweep whose values "
+            "you need.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
 def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    if extract_vars:
-        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
-        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
-    else:
-        return xr.Dataset()
+    """Get radar calibration root metadata group.
+
+    The values are attributes of the sweeps. Each name takes the value of the
+    first sweep which has it. If the sweeps disagree about a value (e.g. the
+    noise level of each cut), the group holds the value of the first selected
+    sweep and a warning names these values; select another sweep with ``sweep=``
+    to get its values.
+    """
+    values, differing = _collect_attrs(ls_ds, subdict)
+    _warn_differing("radar_calibration", differing)
+    return xr.Dataset({key: xr.DataArray(value) for key, value in values.items()})
 
 
 def _prepare_backend_ds(ds):

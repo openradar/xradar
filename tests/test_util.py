@@ -7,6 +7,7 @@
 import datetime
 import fnmatch
 import random
+import warnings
 
 import numpy as np
 import pytest
@@ -16,9 +17,11 @@ from open_radar_data import DATASETS
 import xradar as xd
 from xradar import io, model, util
 from xradar.io.backends.common import (
+    _collect_attrs,
     _get_radar_calibration,
     _get_required_root_dataset,
     _get_subgroup,
+    _same_value,
 )
 
 
@@ -564,6 +567,88 @@ def test_get_radar_calibration(closing):
     assert subgroup["rx_loss_h"] == "3"
     assert subgroup["ant_gain_v"] == "43"
     assert subgroup["ant_gain_h"] == "43"
+
+
+@pytest.mark.parametrize(
+    ("a", "b", "same"),
+    [
+        (43.0, 43.0, True),
+        (43.0, 44.0, False),
+        (np.nan, np.nan, True),
+        (np.array([1.0, np.nan]), np.array([1.0, np.nan]), True),
+        (np.array([1.0, 2.0]), np.array([1.0, 3.0]), False),
+        ("GAMIC", "GAMIC", True),
+        ("GAMIC", "other", False),
+        (b"a", b"a", True),
+        # np.array_equal(..., equal_nan=True) raises for strings, and a == b of
+        # arrays is elementwise
+        (np.array(["a", "b"]), np.array(["a", "b"]), True),
+        (np.array(["a", "b"]), np.array(["a", "c"]), False),
+    ],
+)
+def test_same_value(a, b, same):
+    assert _same_value(a, b) is same
+
+
+def test_collect_attrs():
+    names = {"a": None, "b": None, "c": None}
+    first = xr.Dataset(attrs={"a": 1.0, "other": 5.0})
+    second = xr.Dataset(attrs={"a": 2.0, "b": 3.0, "c": 4.0})
+    third = xr.Dataset(attrs={"b": 3.0, "c": 5.0})
+    values, differing = _collect_attrs([first, second, third], names)
+    # the first sweep which has a name gives the value (b, c are not in the
+    # first), names of other attributes are not collected
+    assert values == {"a": 1.0, "b": 3.0, "c": 4.0}
+    # the sweeps disagree about a and c, not about b
+    assert differing == ["a", "c"]
+    assert _collect_attrs([], names) == ({}, [])
+
+
+def test_get_radar_calibration_of_sweeps_with_different_names():
+    names = model.radar_calibration_subgroup
+    first = xr.Dataset(attrs={"antenna_gain_h": 43.0})
+    second = xr.Dataset(attrs={"antenna_gain_h": 43.0, "radar_constant_h": 70.0})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        calib = _get_radar_calibration([first, second], names)
+    assert calib.antenna_gain_h == 43.0
+    assert calib.radar_constant_h == 70.0
+    assert not _get_radar_calibration([xr.Dataset()], names).data_vars
+    assert not _get_radar_calibration([], names).data_vars
+
+
+def test_get_radar_calibration_warns_for_differing_sweeps():
+    names = model.radar_calibration_subgroup
+    first = xr.Dataset(attrs={"antenna_gain_h": 43.0})
+    second = xr.Dataset(attrs={"antenna_gain_h": 44.0})
+    with pytest.warns(
+        UserWarning,
+        match=r"radar_calibration values differ between the sweeps "
+        r"\(antenna_gain_h\).*``sweep=``",
+    ):
+        calib = _get_radar_calibration([first, second], names)
+    assert calib.antenna_gain_h == 43.0
+
+
+def test_get_subgroup_with_attrs():
+    names = {"beamw": None, "gain": "antenna_gain"}
+    first = xr.Dataset({"beamw": 1.0}, attrs={"gain": 43.0})
+    second = xr.Dataset({"beamw": 1.0}, attrs={"beamw": 9.0, "gain": 43.0})
+    subgroup = _get_subgroup([first, second], names, attrs=True)
+    # variables win over attributes, attribute names are renamed
+    assert subgroup.beamw == 1.0
+    assert subgroup.antenna_gain == 43.0
+    # without attrs=True the attributes are not used
+    assert "antenna_gain" not in _get_subgroup([first, second], names)
+
+
+def test_get_subgroup_warning_names_the_group():
+    names = {"gain": None}
+    sweeps = [xr.Dataset(attrs={"gain": 43.0}), xr.Dataset(attrs={"gain": 44.0})]
+    with pytest.warns(UserWarning, match="radar_parameters values differ"):
+        _get_subgroup(sweeps, names, attrs=True)
+    with pytest.warns(UserWarning, match="georeferencing_correction values differ"):
+        _get_subgroup(sweeps, names, attrs=True, name="georeferencing_correction")
 
 
 def test_get_subgroup(closing):
