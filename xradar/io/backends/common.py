@@ -805,7 +805,7 @@ def _open_sweep_files_as_volume(files, open_file, **kwargs):
     return volume
 
 
-def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
+def _build_groups_dict(ls_ds, optional=True, optional_groups=False, units=None):
     """Build CfRadial2 groups dict from a list of sweep Datasets.
 
     Parameters
@@ -817,6 +817,10 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     optional_groups : bool
         If True, includes ``/radar_parameters``, ``/georeferencing_correction``
         and ``/radar_calibration`` metadata subgroups. Default is False.
+    units : dict, optional
+        ``units`` attribute of values of ``/radar_parameters`` and
+        ``/radar_calibration`` which backends take from the sweep attributes,
+        by name.
 
     Returns
     -------
@@ -831,13 +835,13 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
         sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
         if optional_groups:
             groups_dict["/radar_parameters"] = _get_subgroup(
-                sweeps, radar_parameters_subgroup
+                sweeps, radar_parameters_subgroup, attrs=True, units=units
             )
             groups_dict["/georeferencing_correction"] = _get_subgroup(
                 sweeps, georeferencing_correction_subgroup
             )
             groups_dict["/radar_calibration"] = _get_radar_calibration(
-                sweeps, radar_calibration_subgroup
+                sweeps, radar_calibration_subgroup, units=units
             )
     except Exception:
         # nothing holds the sweeps' files yet: close them (#471, #502)

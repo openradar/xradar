@@ -16,7 +16,9 @@ from open_radar_data import DATASETS
 
 import xradar as xd
 from xradar import io, model, util
+from xradar.io.backends import common
 from xradar.io.backends.common import (
+    _build_groups_dict,
     _collect_attrs,
     _get_radar_calibration,
     _get_required_root_dataset,
@@ -868,3 +870,32 @@ def test_metadata_values_get_units():
     assert calib.radar_constant_h.attrs == {}
     # no units are made up without a table
     assert _get_subgroup(sweeps, names, attrs=True).beamw.attrs == {}
+
+
+def test_build_groups_dict_metadata_from_sweep_attributes(monkeypatch):
+    # the root is not what this is about
+    monkeypatch.setattr(
+        common, "_get_required_root_dataset", lambda ls_ds, optional=True: xr.Dataset()
+    )
+
+    def sweep(angle):
+        return xr.Dataset(
+            {"DBZH": ("azimuth", np.zeros(2))},
+            coords={"azimuth": [0.0, 1.0]},
+            attrs={
+                "radar_beam_width_h": 1.0,
+                "antenna_gain_h": 43.0,
+                "noise_hc": -80.0 - angle,
+            },
+        )
+
+    sweeps = [sweep(0.5), sweep(1.5)]
+    units = {"radar_beam_width_h": "degrees", "antenna_gain_h": "dB"}
+    with pytest.warns(UserWarning, match=r"radar_calibration .*\(noise_hc\)"):
+        groups = _build_groups_dict(sweeps, optional_groups=True, units=units)
+    params, calib = groups["/radar_parameters"], groups["/radar_calibration"]
+    assert params.radar_beam_width_h.attrs == {"units": "degrees"}
+    assert calib.antenna_gain_h.attrs == {"units": "dB"}
+    # the first sweep gives the values; sweeps do not keep them
+    assert calib.noise_hc == -80.5
+    assert not groups["/sweep_0"].attrs
