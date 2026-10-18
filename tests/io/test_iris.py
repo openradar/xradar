@@ -8,7 +8,9 @@ Ported from wradlib.
 """
 
 import io
+import struct
 import warnings
+from collections import OrderedDict
 from types import SimpleNamespace
 
 import numpy as np
@@ -386,14 +388,13 @@ def test_open_iris_datatree_optional_groups(iris0_file):
 # IRIS Programming Guide 4.3.50 (task_calib_info) and 4.3.57 (task_misc_info)
 _TASK_METADATA = [
     # file, beam width, receiver bandwidth (Hz), radar constant H/V (dB),
-    # noise H/V (dBm), I0 calibration value H/V (dBm)
+    # noise at calibration H/V (dBm)
     (
         "cor-main131125105503.RAW2049",
         (0.95, 0.95),
         1.048e6,
         (67.1, 70.1),
         (-81.4, -81.78),
-        (-108.66, -108.99),
     ),
     (
         "SUR210819000227.RAWKPJV",
@@ -401,7 +402,6 @@ _TASK_METADATA = [
         559e3,
         (63.2, 66.2),
         (-82.39, -83.09),
-        (-108.55, -114.02),
     ),
     # unset receiver bandwidth (0 kHz) is left out
     (
@@ -410,20 +410,17 @@ _TASK_METADATA = [
         None,
         (68.58, 71.58),
         (-74.61, -75.33),
-        (-109.17, -109.55),
     ),
 ]
 
 
 @pytest.mark.parametrize("kind", ["path", "bytesio"])
 @pytest.mark.parametrize(
-    "name, beam, bandwidth, constant, noise, i0",
+    "name, beam, bandwidth, constant, noise",
     _TASK_METADATA,
     ids=["cor-main", "SUR", "RAW_NA"],
 )
-def test_iris_task_metadata(name, beam, bandwidth, constant, noise, i0, kind, closing):
-    # the in-memory case used to fail: the header was read from a second opened
-    # copy of the buffer, which had been read already
+def test_iris_task_metadata(name, beam, bandwidth, constant, noise, kind, closing):
     filename = DATASETS.fetch(name)
     if kind == "bytesio":
         with open(filename, "rb") as fh:
@@ -443,8 +440,11 @@ def test_iris_task_metadata(name, beam, bandwidth, constant, noise, i0, kind, cl
     np.testing.assert_allclose(calib.radar_constant_v, constant[1])
     np.testing.assert_allclose(calib.noise_hc, noise[0])
     np.testing.assert_allclose(calib.noise_vc, noise[1])
-    np.testing.assert_allclose(calib.i0_dbm_hc, i0[0])
-    np.testing.assert_allclose(calib.i0_dbm_vc, i0[1])
+    # the I0 cal values are not noise levels, they are not mapped
+    assert not {"i0_dbm_hc", "i0_dbm_vc"} & set(calib.data_vars)
+    assert params.radar_beam_width_h.attrs["units"] == "degrees"
+    assert calib.noise_hc.attrs["units"] == "dBm"
+    assert calib.radar_constant_h.attrs["units"] == "dB"
     # the values are no attributes of the root or of the sweeps
     names = {"radar_constant_h", "noise_hc", "radar_beam_width_h"}
     assert not names & set(dtree.attrs)
@@ -459,29 +459,63 @@ def test_iris_task_metadata_of_a_selected_sweep(iris0_file, closing):
     np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 67.1)
 
 
-def test_iris_store_task_metadata_skips_unset_values():
-    from xradar.io.backends.iris import IrisStore
+class _TaskStore(iris.IrisStore):
+    """Store on a given task configuration, without a file."""
 
-    def store(misc, calib):
+    def __init__(self, misc, calib):
         task = {"task_misc_info": misc, "task_calib_info": calib}
-        return SimpleNamespace(
-            root=SimpleNamespace(ingest_header={"task_configuration": task})
-        )
+        self._root = SimpleNamespace(ingest_header={"task_configuration": task})
 
+    @property
+    def root(self):
+        return self._root
+
+
+def test_iris_store_task_metadata_skips_unset_values():
     # 0 is an unset configuration (and a missing field is left out)
-    calibration = IrisStore.get_calibration_parameters(
-        store({}, {"horizontal_radar_constant": 0, "vertical_radar_constant": 6710})
+    store = _TaskStore(
+        {}, {"horizontal_radar_constant": 0, "vertical_radar_constant": 6710}
     )
-    assert dict(calibration) == {"radar_constant_v": pytest.approx(67.1)}
-    parameters = IrisStore.get_radar_parameters(
-        store(
-            {"horizontal_beam_width": 0.95, "vertical_beam_width": 0},
-            {"receiver_bandwidth": 0},
-        )
+    assert dict(store.get_calibration_parameters()) == {"radar_constant_v": 67.1}
+    store = _TaskStore(
+        {"horizontal_beam_width": 0.95, "vertical_beam_width": 0},
+        {"receiver_bandwidth": 0},
     )
-    assert dict(parameters) == {"radar_beam_width_h": 0.95}
-    parameters = IrisStore.get_radar_parameters(store({}, {"receiver_bandwidth": 1048}))
-    assert dict(parameters) == {"radar_receiver_bandwidth": 1.048e6}
+    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 0.95}
+    store = _TaskStore({}, {"receiver_bandwidth": 1048})
+    assert dict(store.get_radar_parameters()) == {"radar_receiver_bandwidth": 1.048e6}
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(7010, 70.1), (-10899, -108.99)])
+def test_iris_store_hundredths_have_no_float_noise(raw, expected):
+    # raw * 0.01 gives 70.10000000000001 and -108.99000000000001
+    store = _TaskStore(
+        {}, {"vertical_radar_constant": raw, "horizontal_noise_calibration": raw}
+    )
+    assert dict(store.get_calibration_parameters()) == {
+        "radar_constant_v": expected,
+        "noise_hc": expected,
+    }
+
+
+def test_iris_i0_cal_values_are_not_mapped():
+    store = _TaskStore(
+        {}, {"horizontal_io_cal_value": -10866, "vertical_io_cal_value": -10899}
+    )
+    assert dict(store.get_calibration_parameters()) == {}
+
+
+def test_receiver_bandwidth_is_decoded_unsigned():
+    # 4.3.50 byte 60: a bandwidth above 32767 kHz is not negative
+    calib = iris.TASK_CALIB_INFO
+    prefix = OrderedDict(list(calib.items())[: list(calib).index("receiver_bandwidth")])
+    offset = struct.calcsize(iris._get_fmt_string(prefix))
+    buffer = bytearray(struct.calcsize(iris._get_fmt_string(calib)))
+    struct.pack_into("<H", buffer, offset, 40000)
+    assert (
+        iris._unpack_dictionary(bytes(buffer), calib, False)["receiver_bandwidth"]
+        == 40000
+    )
 
 
 def test_receiver_bandwidth_is_unsigned():

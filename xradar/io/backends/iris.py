@@ -67,6 +67,8 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
@@ -4040,23 +4042,33 @@ class IrisArrayWrapper(BackendArray):
 # IRIS Programming Guide M212927EN-B, 4.3.50 (task_calib_info) and 4.3.57
 # (task_misc_info), mapped to the CfRadial 2.1 names of radar_calibration
 # (Section 7.3) and radar_parameters (Section 7.1).
-# iris field: (xradar name, factor). A value of 0 is an unset configuration (the
-# manual's summary of such a task prints "Radar constant: 0.00/0.00 dB, Receiver
-# bandwidth 0 kHz") and is left out.
-_IRIS_CALIBRATION = {  # task_calib_info, in 1/100 dB or 1/100 dBm
-    "horizontal_radar_constant": ("radar_constant_h", 0.01),
-    "vertical_radar_constant": ("radar_constant_v", 0.01),
-    "horizontal_noise_calibration": ("noise_hc", 0.01),
-    "vertical_noise_calibration": ("noise_vc", 0.01),
-    "horizontal_io_cal_value": ("i0_dbm_hc", 0.01),
-    "vertical_io_cal_value": ("i0_dbm_vc", 0.01),
+# (block, field) of the task configuration: (xradar name, multiplier, divisor).
+# A value of 0 is an unset configuration (the manual's summary of such a task
+# prints "Radar constant: 0.00/0.00 dB, Receiver bandwidth 0 kHz") and is left
+# out. The I0 cal values of task_calib_info are not mapped: they are not the
+# calibrated noise of CfRadial's ``i0_dbm_hc`` (for cor-main the I0 cal value is
+# -108.66 dBm, the noise at calibration -81.40 dBm).
+_IRIS_METADATA = {
+    # 1/100 dB
+    ("task_calib_info", "horizontal_radar_constant"): ("radar_constant_h", 1, 100),
+    ("task_calib_info", "vertical_radar_constant"): ("radar_constant_v", 1, 100),
+    # noise at calibration, 1/100 dBm
+    ("task_calib_info", "horizontal_noise_calibration"): ("noise_hc", 1, 100),
+    ("task_calib_info", "vertical_noise_calibration"): ("noise_vc", 1, 100),
+    # degrees
+    ("task_misc_info", "horizontal_beam_width"): ("radar_beam_width_h", 1, 1),
+    ("task_misc_info", "vertical_beam_width"): ("radar_beam_width_v", 1, 1),
+    # kHz, as s-1
+    ("task_calib_info", "receiver_bandwidth"): ("radar_receiver_bandwidth", 1000, 1),
 }
-_IRIS_PARAMETERS = {
-    # task_misc_info, in degrees
-    ("task_misc_info", "horizontal_beam_width"): ("radar_beam_width_h", 1),
-    ("task_misc_info", "vertical_beam_width"): ("radar_beam_width_v", 1),
-    # task_calib_info, in kHz, as s-1
-    ("task_calib_info", "receiver_bandwidth"): ("radar_receiver_bandwidth", 1e3),
+_IRIS_UNITS = {
+    "radar_constant_h": "dB",
+    "radar_constant_v": "dB",
+    "noise_hc": "dBm",
+    "noise_vc": "dBm",
+    "radar_beam_width_h": "degrees",
+    "radar_beam_width_v": "degrees",
+    "radar_receiver_bandwidth": "s-1",
 }
 
 
@@ -4244,26 +4256,34 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         ]["task_description"]
         return FrozenDict(attributes)
 
+    def _task_metadata(self):
+        """Values of the task configuration with their xradar names; 0 is an
+        unset configuration."""
+        task = self.root.ingest_header["task_configuration"]
+        return {
+            name: value * multiplier / divisor
+            for (block, field), (name, multiplier, divisor) in _IRIS_METADATA.items()
+            if (value := task.get(block, {}).get(field))
+        }
+
     def get_calibration_parameters(self):
         """Calibration values of the task configuration, with their xradar names."""
-        calib = self.root.ingest_header["task_configuration"]["task_calib_info"]
         return FrozenDict(
             {
-                name: value * factor
-                for field, (name, factor) in _IRIS_CALIBRATION.items()
-                if (value := calib.get(field))
+                name: value
+                for name, value in self._task_metadata().items()
+                if name in radar_calibration_subgroup
             }
         )
 
     def get_radar_parameters(self):
         """Beam widths and receiver bandwidth of the task configuration, with
         their xradar names."""
-        task = self.root.ingest_header["task_configuration"]
         return FrozenDict(
             {
-                name: value * factor
-                for (block, field), (name, factor) in _IRIS_PARAMETERS.items()
-                if (value := task.get(block, {}).get(field))
+                name: value
+                for name, value in self._task_metadata().items()
+                if name in radar_parameters_subgroup
             }
         )
 
@@ -4420,7 +4440,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             sweeps,
         )
         return _build_groups_dict(
-            ls_ds, optional=optional, optional_groups=optional_groups
+            ls_ds, optional=optional, optional_groups=optional_groups, units=_IRIS_UNITS
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
