@@ -586,7 +586,11 @@ def _get_required_root_dataset(ls_ds, optional=True):
 
 
 def _get_subgroup(
-    ls_ds: list[xr.Dataset], subdict, attrs=False, name="radar_parameters"
+    ls_ds: list[xr.Dataset],
+    subdict,
+    attrs=False,
+    name="radar_parameters",
+    units=None,
 ):
     """Get iris-sigmet root metadata group.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
@@ -596,6 +600,8 @@ def _get_subgroup(
     ``how`` groups); variables win. Each name takes the value of the first sweep
     which has it; a warning for the group ``name`` names the values the sweeps
     disagree about (select another sweep with ``sweep=`` to get its values).
+    ``units`` maps names of the group to the ``units`` attribute of the values
+    taken from the attributes.
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -609,13 +615,19 @@ def _get_subgroup(
         values, differing = _collect_attrs(ls_ds, meta_vars)
         _warn_differing(name, differing)
         values = {
-            (meta_vars[k] or k): xr.DataArray(v)
+            (meta_vars[k] or k): _value_array(v, (meta_vars[k] or k), units)
             for k, v in values.items()
             if (meta_vars[k] or k) not in subgroup
         }
         subgroup = xr.merge([subgroup, xr.Dataset(values)])
     subgroup.attrs = {}
     return subgroup
+
+
+def _value_array(value, name, units=None):
+    """Scalar DataArray of a metadata value, with ``units`` of ``name`` if known."""
+    attrs = {"units": units[name]} if units and name in units else {}
+    return xr.DataArray(value, attrs=attrs)
 
 
 def _same_value(a, b):
@@ -655,18 +667,23 @@ def _warn_differing(group, differing):
         )
 
 
-def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
+def _get_radar_calibration(
+    ls_ds: list[xr.Dataset], subdict: dict, units=None
+) -> xr.Dataset:
     """Get radar calibration root metadata group.
 
     The values are attributes of the sweeps. Each name takes the value of the
     first sweep which has it. If the sweeps disagree about a value (e.g. the
     noise level of each cut), the group holds the value of the first selected
     sweep and a warning names these values; select another sweep with ``sweep=``
-    to get its values.
+    to get its values. ``units`` maps names to the ``units`` attribute of the
+    values.
     """
     values, differing = _collect_attrs(ls_ds, subdict)
     _warn_differing("radar_calibration", differing)
-    return xr.Dataset({key: xr.DataArray(value) for key, value in values.items()})
+    return xr.Dataset(
+        {key: _value_array(value, key, units) for key, value in values.items()}
+    )
 
 
 def _prepare_backend_ds(ds):

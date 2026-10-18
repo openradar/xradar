@@ -848,3 +848,23 @@ def test_is_sweep_stacked():
     assert not util.is_sweep(stacked)
     # range dimension, but no ray dimension
     assert not util.is_sweep(ds.rename(azimuth="ray"))
+
+
+def test_metadata_values_get_units():
+    names = {"beamw": None, "gain": "antenna_gain", "other": None}
+    sweeps = [xr.Dataset(attrs={"beamw": 1.0, "gain": 43.0, "other": 5.0})]
+    units = {"beamw": "degrees", "antenna_gain": "dB"}
+    # units are given by the name in the group, only for names which have one
+    subgroup = _get_subgroup(sweeps, names, attrs=True, units=units)
+    assert subgroup.beamw.attrs == {"units": "degrees"}
+    assert subgroup.antenna_gain.attrs == {"units": "dB"}
+    assert subgroup.other.attrs == {}
+    calib = _get_radar_calibration(
+        [xr.Dataset(attrs={"antenna_gain_h": 43.0, "radar_constant_h": 70.0})],
+        model.radar_calibration_subgroup,
+        units={"antenna_gain_h": "dB"},
+    )
+    assert calib.antenna_gain_h.attrs == {"units": "dB"}
+    assert calib.radar_constant_h.attrs == {}
+    # no units are made up without a table
+    assert _get_subgroup(sweeps, names, attrs=True).beamw.attrs == {}
