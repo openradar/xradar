@@ -452,8 +452,8 @@ def _patch_range_info(monkeypatch, **fields):
 @pytest.mark.parametrize(
     "first_bin, step, spacing, first_centre",
     [
-        # an odd centimetre step is still one constant spacing (125.01 m),
-        # which the float32 range values alone could not tell
+        # an odd centimetre step gives the exact header metres (125.01 m);
+        # float32 range values misread such steps beyond about 168 km
         (12345, 12501, 125.01, 123.45),
         # a first bin of 0 means the first gate is centred at half a step
         (0, 30000, 300.0, 150.0),
