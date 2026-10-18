@@ -483,6 +483,66 @@ def test_range_attrs_variable_spacing_flag(iris0_file, monkeypatch):
     np.testing.assert_allclose(attrs["meters_to_center_of_first_gate"], first)
 
 
+def _task_range_info(first, step, n, variable=0):
+    # range_last_bin as the IRIS headers give it: the last bin for a non-zero
+    # first bin, the end of the last gate for a first bin of 0 (SUR fixture)
+    return {
+        "range_first_bin": first,
+        "range_last_bin": first + step * (n - 1) if first else step * n - 1,
+        "step_output_bins": step,
+        "number_output_bins": n,
+        "variable_range_bin_spacing_flag": variable,
+    }
+
+
+@pytest.mark.parametrize(
+    "first, step, n",
+    [
+        # the #525 case: float32 centimetres were off beyond 2**24 cm
+        pytest.param(12345, 12501, 2400, id="odd-cm-step-to-300km"),
+        # SUR and IDEAM-like headers
+        pytest.param(0, 30000, 833, id="first-bin-zero-sur-header"),
+        pytest.param(100000, 30000, 994, id="ideam-like"),
+        pytest.param(0, 30000, 1, id="one-gate"),
+        pytest.param(0, 30000, 0, id="no-gates"),
+    ],
+)
+def test_range_centers_round_once(first, step, n):
+    # every gate is the float32 nearest the exact header distance (#525)
+    rng = iris._range_centers(_task_range_info(first, step, n))
+    start = first if first else step / 2
+    exact = (start + step * np.arange(n, dtype="int64")) / 1e2
+    assert rng.dtype == np.float32 and rng.size == n
+    np.testing.assert_array_equal(rng, exact.astype("float32"))
+
+
+def test_range_centers_far_gates():
+    # hard-coded far gates of the odd-cm case; float32 centimetres gave
+    # 167886.88 m for gate 1342 before (#525)
+    rng = iris._range_centers(_task_range_info(12345, 12501, 2400))
+    assert rng[1342] == np.float32(167886.87)
+    assert rng[-1] == np.float32(300022.44)
+
+
+def test_range_centers_of_the_sur_header():
+    # the SUR fixture's task_range_info, with hard-coded gate centers
+    task = {
+        "range_first_bin": 0,
+        "range_last_bin": 24989999,
+        "step_output_bins": 30000,
+        "number_output_bins": 833,
+    }
+    rng = iris._range_centers(task)
+    assert rng.size == 833
+    assert (rng[0], rng[1], rng[-1]) == (150.0, 450.0, 249750.0)
+
+
+def test_range_centers_reject_a_zero_step():
+    # a corrupt header must not open with a made-up range
+    with pytest.raises(ZeroDivisionError):
+        iris._range_centers(_task_range_info(100000, 0, 994))
+
+
 @pytest.mark.parametrize(
     "lon, lat, expected",
     [

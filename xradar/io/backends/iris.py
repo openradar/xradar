@@ -521,6 +521,40 @@ def _moment_names(type_names):
     return names
 
 
+def _first_bin_cm(task_range_info):
+    """Range of the first gate center in cm: a first bin of 0 is the start
+    of the first gate, its center half a step out."""
+    first = task_range_info["range_first_bin"]
+    return first if first else task_range_info["step_output_bins"] / 2
+
+
+def _range_centers(task_range_info):
+    """Range gate centers (m, float32) from an IRIS ``task_range_info``.
+
+    Same bins as before, but computed in float64 and rounded to float32
+    once: float32 centimetres step by 2 cm beyond 2**24 cm (about 168 km).
+    """
+    step = task_range_info["step_output_bins"]
+    last = task_range_info["range_last_bin"]
+    if not task_range_info["range_first_bin"]:
+        last += step
+    rng = np.arange(_first_bin_cm(task_range_info), last + step, step, "float64")
+    return (rng[: task_range_info["number_output_bins"]] / 1e2).astype("float32")
+
+
+def _range_attrs(task_range_info):
+    """CF ``range`` attributes in metres from an IRIS ``task_range_info``,
+    whose range fields are in cm (#525)."""
+    attrs = get_range_attrs()
+    if task_range_info["variable_range_bin_spacing_flag"]:
+        attrs["spacing_is_constant"] = "false"
+    else:
+        attrs["meters_between_gates"] = task_range_info["step_output_bins"] / 1e2
+        attrs["spacing_is_constant"] = "true"
+    attrs["meters_to_center_of_first_gate"] = _first_bin_cm(task_range_info) / 1e2
+    return attrs
+
+
 def _data_types_from_dsp_mask(words):
     """Return a list of the data types from the words in the data_type mask."""
     data_types = []
@@ -4136,28 +4170,8 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         lon, lat, alt = self.root.site_coords
 
         task = self.root.ingest_header["task_configuration"]["task_range_info"]
-        range_first_bin = task["range_first_bin"]
-        range_last_bin = task["range_last_bin"]
-        if range_first_bin == 0:
-            range_first_bin = task["step_output_bins"] / 2
-            range_last_bin += task["step_output_bins"]
-        rng = (
-            np.arange(
-                range_first_bin,
-                range_last_bin + task["step_output_bins"],
-                task["step_output_bins"],
-                dtype="float32",
-            )[: task["number_output_bins"]]
-            / 1e2
-        )
-        # header range fields are in cm; convert to m as for rng (#525)
-        range_attrs = get_range_attrs()
-        if task["variable_range_bin_spacing_flag"]:
-            range_attrs["spacing_is_constant"] = "false"
-        else:
-            range_attrs["meters_between_gates"] = task["step_output_bins"] / 1e2
-            range_attrs["spacing_is_constant"] = "true"
-        range_attrs["meters_to_center_of_first_gate"] = range_first_bin / 1e2
+        rng = _range_centers(task)
+        range_attrs = _range_attrs(task)
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
 
