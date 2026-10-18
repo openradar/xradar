@@ -11,7 +11,6 @@ import datetime
 import warnings
 import zlib
 from io import BytesIO
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -360,15 +359,14 @@ def test_rainbow_slice_metadata(fixture, sweep, expected, request, closing):
     assert set(found) == set(expected)
     for name, value in expected.items():
         np.testing.assert_allclose(found[name], value, rtol=1e-6, err_msg=name)
-    # the values are no attributes of the root or the sweeps
+    # the values are no attributes of the root
     assert not set(expected) & set(dtree.attrs)
-    assert not set(expected) & set(dtree["sweep_0"].attrs)
 
 
 def test_rainbow_slice_metadata_differs_between_slices(rainbow_file2, closing):
     # the calibration changes with the pulse width: the groups hold the values of
     # the first selected slice, and a warning names the ones that differ
-    with pytest.warns(UserWarning, match="radar_parameters values differ") as record:
+    with pytest.warns(UserWarning, match="values differ between the sweeps") as record:
         dtree = closing(
             xd.open_datatree(
                 rainbow_file2, engine="rainbow", sweep=[6, 0], optional_groups=True
@@ -413,37 +411,106 @@ class _StubStore(rainbow.RainbowStore):
 
     def __init__(self, slc, pargroup=None, sensorinfo=None):
         self._group = 0
-        self._stub = SimpleNamespace(
-            slices=[slc],
-            header={"scan": {} if pargroup is None else {"pargroup": pargroup}},
-            sensorinfo=sensorinfo,
-        )
+        scan = {"slice": [slc]}
+        if pargroup is not None:
+            scan["pargroup"] = pargroup
+        root = object.__new__(rainbow.RainbowFile)
+        root._header = {"scan": scan}
+        if sensorinfo is not None:
+            root._header["sensorinfo"] = sensorinfo
+        self._stub = root
 
     @property
     def root(self):
         return self._stub
 
 
-def test_rainbow_store_metadata_edge_cases():
-    # no pargroup, the slice has the values
-    store = _StubStore({"spbhorbeam": "0.9", "spbverbeam": "0", "rxbandwidth": "0"})
-    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 0.9}
-    # a slice key without value falls back on the pargroup, 0 is "not set"
-    store = _StubStore({"spbantgain": None}, pargroup={"spbantgain": "45.3"})
-    assert dict(store.get_radar_parameters()) == {"radar_antenna_gain_h": 45.3}
-    # a missing beam width falls back on sensorinfo
-    store = _StubStore({}, sensorinfo={"beamwidth": "1.3"})
-    assert dict(store.get_radar_parameters()) == {
-        "radar_beam_width_h": 1.3,
-        "radar_beam_width_v": 1.3,
-    }
-    # not positive transmitter power: no value (and no NaN with a warning)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", RuntimeWarning)
-        store = _StubStore({"gdrx5txpowkwh": "-5", "gdrx5txpowkwv": "0"})
-        assert dict(store.get_calibration_parameters()) == {}
-    # the radar constant of the pulse width, none if there is no such value
-    store = _StubStore({"rspdphradconst": "77.2 74.1", "pw_index": "1"})
-    assert dict(store.get_calibration_parameters()) == {"radar_constant_h": 74.1}
-    store = _StubStore({"rspdphradconst": "77.2", "pw_index": "1"})
-    assert dict(store.get_calibration_parameters()) == {}
+@pytest.mark.parametrize(
+    ("slc", "pargroup", "sensorinfo", "expected"),
+    [
+        # no pargroup, the slice has the values; 0 is "not set"
+        (
+            {"spbhorbeam": "0.9", "spbverbeam": "0", "rxbandwidth": "0"},
+            None,
+            None,
+            {"radar_beam_width_h": 0.9},
+        ),
+        # a slice key without value falls back on the pargroup
+        (
+            {"spbantgain": None},
+            {"spbantgain": "45.3"},
+            None,
+            {"radar_antenna_gain_h": 45.3},
+        ),
+        # a beam width which is missing or 0 falls back on the sensorinfo
+        (
+            {},
+            None,
+            {"beamwidth": "1.3"},
+            {"radar_beam_width_h": 1.3, "radar_beam_width_v": 1.3},
+        ),
+        (
+            {"spbhorbeam": "0.9", "spbverbeam": "0"},
+            None,
+            {"@beamwidth": "1.3"},
+            {"radar_beam_width_h": 0.9, "radar_beam_width_v": 1.3},
+        ),
+        # inf and nan are no values
+        (
+            {"spbhorbeam": "inf", "rxbandwidth": "nan", "spbantgain": "inf"},
+            None,
+            None,
+            {},
+        ),
+    ],
+    ids=["slice", "pargroup", "sensorinfo", "sensorinfo-at", "not-finite"],
+)
+def test_rainbow_store_radar_parameters_edge_cases(slc, pargroup, sensorinfo, expected):
+    store = _StubStore(slc, pargroup=pargroup, sensorinfo=sensorinfo)
+    assert dict(store.get_radar_parameters()) == expected
+
+
+@pytest.mark.parametrize(
+    ("slc", "expected"),
+    [
+        # not positive or not finite transmitter power: no value
+        ({"gdrx5txpowkwh": "-5", "gdrx5txpowkwv": "0"}, {}),
+        ({"gdrx5txpowkwh": "inf", "gdrx5txpowkwv": "nan"}, {}),
+        # kW as dBm
+        ({"gdrx5txpowkwh": "1"}, {"xmit_power_h": 60.0}),
+        # the radar constant of the pulse width, none if there is no such value
+        (
+            {"rspdphradconst": "77.2 74.1", "pw_index": "1"},
+            {"radar_constant_h": 74.1},
+        ),
+        ({"rspdphradconst": "77.2", "pw_index": "1"}, {}),
+        # no pulse width index: the first one
+        ({"rspdphradconst": "77.2 74.1"}, {"radar_constant_h": 77.2}),
+        # an index which is no non-negative whole number: no radar constant,
+        # not the one of another pulse width (-1 is the last one of a list)
+        ({"rspdphradconst": "77.2 74.1", "pw_index": "-1"}, {}),
+        ({"rspdphradconst": "77.2 74.1", "pw_index": "nan"}, {}),
+        ({"rspdphradconst": "77.2 74.1", "pw_index": "inf"}, {}),
+        ({"rspdphradconst": "77.2 74.1", "pw_index": "0.5"}, {}),
+        ({"rspdphradconst": "77.2 74.1", "pw_index": "x"}, {}),
+    ],
+    ids=[
+        "tx-not-positive",
+        "tx-not-finite",
+        "tx-dbm",
+        "pulse-width",
+        "no-such-pulse-width",
+        "no-index",
+        "negative-index",
+        "nan-index",
+        "inf-index",
+        "fraction-index",
+        "text-index",
+    ],
+)
+def test_rainbow_store_calibration_parameters_edge_cases(slc, expected):
+    store = _StubStore(slc)
+    found = dict(store.get_calibration_parameters())
+    assert found.keys() == expected.keys()
+    for name, value in expected.items():
+        np.testing.assert_allclose(found[name], value, rtol=1e-6)

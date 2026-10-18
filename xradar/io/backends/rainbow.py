@@ -33,6 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
+import math
 import sys
 import zlib
 
@@ -510,7 +511,7 @@ class RainbowFile(RainbowFileBase):
 
     @property
     def pargroup(self):
-        return self._header["scan"]["pargroup"]
+        return self._header["scan"].get("pargroup", {})
 
     @property
     def sensorinfo(self):
@@ -605,13 +606,13 @@ class RainbowArrayWrapper(BackendArray):
 # Rainbow slice (or pargroup) values mapped to the CfRadial 2.1 names of
 # radar_parameters (Section 7.1) and radar_calibration (Section 7.3), without a
 # public format description: only what is clear from names and values.
-# rainbow name: (xradar name, factor); 0 is "not set" for these and left out.
+# rainbow name: xradar name; 0 is "not set" for these and left out.
 _RAINBOW_PARAMETERS = {
-    "spbhorbeam": ("radar_beam_width_h", 1),  # degrees
-    "spbverbeam": ("radar_beam_width_v", 1),
-    "spbantgain": ("radar_antenna_gain_h", 1),  # dB
-    "spbdpvantgain": ("radar_antenna_gain_v", 1),
-    "rxbandwidth": ("radar_receiver_bandwidth", 1),  # Hz (s-1)
+    "spbhorbeam": "radar_beam_width_h",  # degrees
+    "spbverbeam": "radar_beam_width_v",
+    "spbantgain": "radar_antenna_gain_h",  # dB
+    "spbdpvantgain": "radar_antenna_gain_v",
+    "rxbandwidth": "radar_receiver_bandwidth",  # Hz (s-1)
 }
 # radar constants (dB), one per pulse width: the one of the slice's `pw_index`
 _RAINBOW_RADAR_CONSTANTS = {
@@ -625,13 +626,19 @@ _RAINBOW_TX_POWER = {"gdrx5txpowkwh": "xmit_power_h", "gdrx5txpowkwv": "xmit_pow
 def _get_float(value, index=0):
     """Float from a Rainbow header value, which may hold several values.
 
-    Returns ``None`` if the value is missing, no number or has no value at
-    ``index``.
+    Returns ``None`` if the value is missing, no finite number or has no value
+    at ``index``.
     """
     try:
-        return float(str(value).split()[index])
+        value = float(str(value).split()[index])
     except (TypeError, ValueError, IndexError):
         return None
+    return value if math.isfinite(value) else None
+
+
+def _kw_to_dbm(kw):
+    """Power in kW as dBm, ``None`` if it is not positive."""
+    return 10 * math.log10(kw) + 60 if kw > 0 else None
 
 
 class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
@@ -830,38 +837,45 @@ class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     def get_attrs(self):
         return FrozenDict()
 
-    def _slice_value(self, name, index=0):
+    def _slice_value(self, name):
         """Value of the slice, or of the ``pargroup`` if the slice has none."""
-        value = self.root.slices[self._group].get(name)
-        if value is None:
-            value = self.root.header["scan"].get("pargroup", {}).get(name)
-        return _get_float(value, index)
+        return self.root._get_rbdict_value(self.root.slices[self._group], name)
 
     def get_radar_parameters(self):
         """Beam widths, antenna gains and receiver bandwidth of the slice, with
-        their xradar names. The beam width falls back on ``sensorinfo``."""
+        their xradar names. A beam width which is not set falls back on the
+        ``sensorinfo``."""
         parameters = {}
-        for name, (xradar_name, factor) in _RAINBOW_PARAMETERS.items():
-            value = self._slice_value(name)
-            if value is None and xradar_name.startswith("radar_beam_width"):
-                value = _get_float((self.root.sensorinfo or {}).get("beamwidth"))
+        for name, xradar_name in _RAINBOW_PARAMETERS.items():
+            value = _get_float(self._slice_value(name))
+            if (value is None or value <= 0) and "beam_width" in xradar_name:
+                sensorinfo = self.root.sensorinfo or {}
+                value = _get_float(
+                    sensorinfo.get("beamwidth", sensorinfo.get("@beamwidth"))
+                )
             if value is not None and value > 0:
-                parameters[xradar_name] = value * factor
+                parameters[xradar_name] = value
         return FrozenDict(parameters)
 
     def get_calibration_parameters(self):
         """Radar constants (of the pulse width of the slice) and transmitter
         power of the slice, with their xradar names."""
         calibration = {}
-        pw_index = int(self._slice_value("pw_index") or 0)
-        for name, xradar_name in _RAINBOW_RADAR_CONSTANTS.items():
-            value = self._slice_value(name, pw_index)
-            if value is not None and np.isfinite(value):
-                calibration[xradar_name] = value
+        # the pulse width index is a non-negative whole number, if it is not (or
+        # no number) there is no radar constant, instead of one of another pulse
+        # width; no index means the first pulse width
+        pw_value = self._slice_value("pw_index")
+        pw_index = 0 if pw_value is None else _get_float(pw_value)
+        if pw_index is not None and pw_index >= 0 and pw_index == int(pw_index):
+            for name, xradar_name in _RAINBOW_RADAR_CONSTANTS.items():
+                value = _get_float(self._slice_value(name), int(pw_index))
+                if value is not None:
+                    calibration[xradar_name] = value
         for name, xradar_name in _RAINBOW_TX_POWER.items():
-            value = self._slice_value(name)
-            if value is not None and value > 0:
-                calibration[xradar_name] = float(10 * np.log10(value * 1e6))
+            value = _get_float(self._slice_value(name))
+            dbm = None if value is None else _kw_to_dbm(value)
+            if dbm is not None:
+                calibration[xradar_name] = dbm
         return FrozenDict(calibration)
 
 

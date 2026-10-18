@@ -585,15 +585,17 @@ def _get_required_root_dataset(ls_ds, optional=True):
     return root
 
 
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict, attrs=False):
+def _get_subgroup(
+    ls_ds: list[xr.Dataset], subdict, attrs=False, name="radar_parameters"
+):
     """Get iris-sigmet root metadata group.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
 
     With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
     added as well (for backends which have the values as attributes, e.g. of the
     ``how`` groups); variables win. Each name takes the value of the first sweep
-    which has it; a warning names the values the sweeps disagree about (select
-    another sweep with ``sweep=`` to get its values).
+    which has it; a warning for the group ``name`` names the values the sweeps
+    disagree about (select another sweep with ``sweep=`` to get its values).
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -603,9 +605,9 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict, attrs=False):
         rename = meta_vars[k]
         if rename:
             subgroup = subgroup.rename_vars({k: rename})
-    if attrs and ls_ds:
+    if attrs:
         values, differing = _collect_attrs(ls_ds, meta_vars)
-        _warn_differing("radar_parameters", differing)
+        _warn_differing(name, differing)
         values = {
             (meta_vars[k] or k): xr.DataArray(v)
             for k, v in values.items()
@@ -619,8 +621,8 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict, attrs=False):
 def _same_value(a, b):
     try:
         return bool(np.array_equal(a, b, equal_nan=True))
-    except TypeError:  # e.g. strings
-        return bool(a == b)
+    except TypeError:  # strings and bytes: isnan is not defined
+        return bool(np.array_equal(a, b))
 
 
 def _collect_attrs(ls_ds, names):
@@ -664,8 +666,6 @@ def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset
     """
     values, differing = _collect_attrs(ls_ds, subdict)
     _warn_differing("radar_calibration", differing)
-    if not values:
-        return xr.Dataset()
     return xr.Dataset({key: xr.DataArray(value) for key, value in values.items()})
 
 
