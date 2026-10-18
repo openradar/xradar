@@ -384,8 +384,8 @@ frequency_attrs = {
 }
 
 
-#: required moment attributes
-moment_attrs = {"standard_name", "long_name", "units"}
+#: required moment attributes. Readers iterate this, so this order is the CF attr order.
+moment_attrs = ("standard_name", "long_name", "units")
 
 # todo: align this with sweep_dataset_vars
 #: CfRadial 2.1 / FM301 / ODIM_H5 mapping
