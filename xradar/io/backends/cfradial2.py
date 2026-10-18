@@ -65,8 +65,10 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _external_stacklevel,
+    _input_kind,
     _keep_close,
     _open_legacy_datatree,
+    _read_nc_header,
     _resolve_sweeps,
 )
 
@@ -680,6 +682,31 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
     description = "Open CfRadial2/FM301 grouped datasets in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#cfradial2"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """CfRadial2 file (netCDF/HDF5 with sweep groups, whose ``Conventions``
+        mention CF/Radial and whose root has ``sweep_group_name`` and
+        ``time_coverage_start``).
+
+        Files with ``sweep_start_ray_index`` (CfRadial1) and vendor files which
+        use the CfRadial2 layout without the time coverage (e.g. WindCube) are
+        not claimed.
+        """
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        attrs, variables, groups = header
+        convention = " ".join(
+            str(attrs.get(name, "")) for name in ["Conventions", "conventions"]
+        ).lower()
+        return (
+            "radial" in convention
+            and bool(groups)
+            and {"sweep_group_name", "time_coverage_start"} <= variables
+            and "sweep_start_ray_index" not in variables
+        )
 
     def open_dataset(
         self,

@@ -24,6 +24,7 @@ import warnings
 import zlib
 from collections import OrderedDict
 from contextlib import ExitStack, suppress
+from functools import partial
 from pathlib import Path, PurePosixPath
 
 import h5netcdf
@@ -727,6 +728,64 @@ def _close_all(objs):
     for obj in objs:
         with suppress(Exception):
             obj.close()
+
+
+#: arguments of :func:`xradar.util.create_volume` which select and label the sweeps
+_VOLUME_KWARGS = (
+    "time_coverage_start",
+    "time_coverage_end",
+    "min_angle",
+    "max_angle",
+    "volume_number",
+)
+
+
+def _is_file_list(filename_or_obj):
+    """List or tuple of paths (not of bytes chunks, see NEXRAD Level II)."""
+    return isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (str, os.PathLike)) for item in filename_or_obj
+    )
+
+
+def _open_sweep_files_as_volume(files, open_file, **kwargs):
+    """Open files with one sweep each and stack them into one volume.
+
+    ``open_file(path, **kwargs)`` opens a file as DataTree. The sweeps of all
+    files are sorted by time and numbered in this order (see
+    :func:`xradar.util.create_volume`), closing the volume closes all files.
+    """
+    volume_kwargs = {k: kwargs.pop(k) for k in _VOLUME_KWARGS if k in kwargs}
+    if len(files) == 1:
+        if volume_kwargs:
+            raise TypeError(
+                f"{', '.join(_VOLUME_KWARGS)} are only valid when opening "
+                "multiple files."
+            )
+        return open_file(files[0], **kwargs)
+    trees = []
+    try:
+        for file in files:
+            trees.append(open_file(file, **kwargs))
+        volume = util.create_volume(trees, **volume_kwargs)
+    except Exception:
+        _close_all(trees)
+        raise
+    # create_volume copies sweeps verbatim: number them by their position
+    for i, key in enumerate(util.get_sweep_keys(volume)):
+        sweep = volume[key].to_dataset()
+        if "sweep_number" in sweep:
+            sweep["sweep_number"] = xr.DataArray(i)
+            volume[key] = xr.DataTree(sweep)
+    # closing the volume closes every source file; the source trees and their
+    # data are not kept
+    closers = [
+        node._close
+        for tree in trees
+        for node in tree.subtree
+        if node._close is not None
+    ]
+    volume.set_close(partial(_call_all, closers))
+    return volume
 
 
 def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
