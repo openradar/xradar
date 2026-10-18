@@ -72,9 +72,10 @@ def test_azimuth_centers(start, stop, center):
     assert 0 <= az[0] < 360
 
 
-def test_azimuth_centers_stay_below_360():
-    # a tiny negative center wraps to just below 360, never to 360
-    az = iris._azimuth_centers(np.array([1e-13]), np.array([360 - 2e-13]))
+@pytest.mark.parametrize("stop", [360 - 2e-13, np.nextafter(360, 0)])
+def test_azimuth_centers_stay_below_360(stop):
+    # a center just below 0 must not wrap to exactly 360
+    az = iris._azimuth_centers(np.array([0.0]), np.array([stop]))
     assert 0 <= az[0] < 360
 
 
