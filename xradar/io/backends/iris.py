@@ -531,8 +531,9 @@ def _first_bin_cm(task_range_info):
 def _range_centers(task_range_info):
     """Range gate centers (m, float32) from an IRIS ``task_range_info``.
 
-    Same bins as before, but computed in float64 and rounded to float32
-    once: float32 centimetres step by 2 cm beyond 2**24 cm (about 168 km).
+    One center per output bin up to ``range_last_bin``, computed in float64
+    and rounded to float32 once: float32 centimetres step by 2 cm beyond
+    2**24 cm (about 168 km).
     """
     step = task_range_info["step_output_bins"]
     last = task_range_info["range_last_bin"]
