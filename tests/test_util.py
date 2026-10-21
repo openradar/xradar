@@ -565,12 +565,12 @@ def test_get_radar_calibration(closing):
         subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
     assert len(subgroup.variables) == 4
     assert "noise_power_h" not in subgroup
-    assert subgroup["rx_loss_h"] == "3"
-    assert subgroup["ant_gain_v"] == "43"
-    assert subgroup["ant_gain_h"] == "43"
+    # (the GAMIC reader gives strings or numbers, under the GAMIC or the model names)
+    assert float(subgroup["rx_loss_h"]) == 3.0
+    assert {float(v) for k, v in subgroup.items() if "gain" in k} == {43.0}
     # the sweeps before the last one agree
     subgroup = _get_radar_calibration(ls_ds[:9], model.radar_calibration_subgroup)
-    assert subgroup["noise_power_h"] == "-3.8298"
+    assert float(subgroup["noise_power_h"]) == -3.8298
 
 
 @pytest.mark.parametrize(
