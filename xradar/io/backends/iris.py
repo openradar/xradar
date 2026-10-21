@@ -60,14 +60,14 @@ from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
 from ...model import (
+    MOMENT_COORDINATES,
+    _cf_moment_attrs,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
     get_range_attrs,
-    moment_attrs,
-    sweep_vars_mapping,
 )
 from .common import (
     LOCK_PARAM_DOC,
@@ -502,6 +502,13 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
     return data
 
 
+def _data_type_dict(code):
+    """``SIGMET_DATA_TYPES`` entry for ``code``; unknown codes get the
+    ``DB_UNKNOWN_{code}`` name and no decoder (shared with the virtual
+    parser)."""
+    return SIGMET_DATA_TYPES.get(code, {"name": f"DB_UNKNOWN_{code}", "func": None})
+
+
 def _moment_names(type_names):
     """CfRadial moment name per Sigmet data type, in order.
 
@@ -519,6 +526,52 @@ def _moment_names(type_names):
             raise ValueError(f"data type {type_name!r} appears twice in one sweep")
         names.append(name)
     return names
+
+
+def _sweep_mode(scan_mode):
+    """FM301 ``sweep_mode`` for an IRIS ``antenna_scan_mode``.
+
+    1 (PPI sector) -> ``sector``, 2 (RHI) -> ``rhi``; every other mode
+    (4 PPI full, and the manual/file/exec modes FM301 has no value for)
+    -> ``azimuth_surveillance``.
+    """
+    return {1: "sector", 2: "rhi"}.get(scan_mode, "azimuth_surveillance")
+
+
+def _range_centers(task_range_info):
+    """Range gate centers (m, float32) from an IRIS ``task_range_info``."""
+    step = task_range_info["step_output_bins"]
+    first = task_range_info["range_first_bin"]
+    last = task_range_info["range_last_bin"]
+    if first == 0:
+        first = step / 2
+        last += step
+    rng = np.arange(first, last + step, step, dtype="float32")
+    return rng[: task_range_info["number_output_bins"]] / 1e2
+
+
+def _root_attrs(product_hdr, ingest_header):
+    """Volume attrs from the IRIS product and ingest headers (shared with
+    the virtual parser): source, stripped scan/instrument names, the task
+    description as comment, and the RHI elevation limits."""
+    task_conf = ingest_header["task_configuration"]
+    scan_info = task_conf["task_scan_info"]
+    attributes = {}
+    if scan_info["antenna_scan_mode"] == 2:
+        tsi = scan_info["task_type_scan_info"]
+        attributes.update(
+            {
+                "elevation_lower_limit": tsi["lower_elevation_limit"],
+                "elevation_upper_limit": tsi["upper_elevation_limit"],
+            }
+        )
+    attributes["source"] = "Sigmet"
+    attributes["scan_name"] = product_hdr["product_configuration"]["task_name"].strip()
+    attributes["instrument_name"] = ingest_header["ingest_configuration"][
+        "site_name"
+    ].strip()
+    attributes["comment"] = task_conf["task_end_info"]["task_description"]
+    return attributes
 
 
 def _data_types_from_dsp_mask(words):
@@ -2616,6 +2669,14 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
+#: Names of the data types whose raw word 0 means "no data" (the ``mask: 0``
+#: entries of ``SIGMET_DATA_TYPES``); shared with the virtual parser.
+_NO_DATA_ZERO_TYPES = frozenset(
+    entry["name"]
+    for entry in SIGMET_DATA_TYPES.values()
+    if (entry.get("fkw") or {}).get("mask") == 0
+)
+
 # HydroClass echo classifiers, keyed by the identifiers stored in
 # task_end_info "echo_class_identifiers": (IRIS method name, CF flag prefix,
 # {value: (IRIS class name as in sig_data_types.h, CF flag meaning)});
@@ -2711,6 +2772,23 @@ def hclass_flag_attrs(identifiers, nbytes=1):
         "flag_values": np.array(values, dtype=dtype),
         "flag_meanings": " ".join(meanings),
     }
+
+
+def _moment_cf_attrs(type_name, echo_class_identifiers):
+    """CF attrs of one IRIS data type, shared by the eager and the virtual
+    reader: the attrs of its mapped moment (also when a colliding type keeps
+    its Sigmet name: DB_DBZ2 next to DB_DBZ is still reflectivity), plus the
+    HydroClass flag attrs for ``DB_HCLASS``/``DB_HCLASS2``, built from the
+    task_end_info ``echo_class_identifiers``."""
+    attrs = _cf_moment_attrs(iris_mapping.get(type_name, type_name))
+    if type_name in ("DB_HCLASS", "DB_HCLASS2"):
+        attrs.update(
+            hclass_flag_attrs(
+                bytearray(echo_class_identifiers),
+                nbytes=1 if type_name == "DB_HCLASS" else 2,
+            )
+        )
+    return attrs
 
 
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
@@ -2902,10 +2980,7 @@ class IrisIngestHeader(IrisHeaderBase):
     @property
     def data_types_dict(self):
         """Returns list of data type dictionaries."""
-        return [
-            SIGMET_DATA_TYPES.get(i, {"name": f"DB_UNKNOWN_{i}", "func": None})
-            for i in self._data_types_numbers
-        ]
+        return [_data_type_dict(i) for i in self._data_types_numbers]
 
     @property
     def data_types_count(self):
@@ -3052,9 +3127,7 @@ class IrisIngestDataHeader(IrisHeaderBase):
     @property
     def data_types_dict(self):
         """Returns list of data type dictionaries."""
-        i = self._data_types_numbers
-
-        return SIGMET_DATA_TYPES.get(i, {"name": f"DB_UNKNOWN_{i}", "func": None})
+        return _data_type_dict(self._data_types_numbers)
 
     @property
     def data_types(self):
@@ -4084,23 +4157,9 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
 
         if mname is None:
             mname = iris_mapping.get(name, name)
-        # CF attrs of the mapped moment, also when a colliding type keeps its
-        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
-        mapping = sweep_vars_mapping.get(iris_mapping.get(name, name), {})
-        attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
-        if name in ["DB_HCLASS", "DB_HCLASS2"]:
-            task_end_info = self.root.ingest_header["task_configuration"][
-                "task_end_info"
-            ]
-            attrs.update(
-                hclass_flag_attrs(
-                    bytearray(task_end_info["echo_class_identifiers"]),
-                    nbytes=1 if name == "DB_HCLASS" else 2,
-                )
-            )
-        attrs["coordinates"] = (
-            "elevation azimuth range latitude longitude altitude time"
-        )
+        task_end_info = self.root.ingest_header["task_configuration"]["task_end_info"]
+        attrs = _moment_cf_attrs(name, task_end_info["echo_class_identifiers"])
+        attrs["coordinates"] = MOMENT_COORDINATES
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self, var):
@@ -4127,7 +4186,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         dim = self.root.first_dimension
 
         # get coordinates from IrisFile
-        sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
+        sweep_mode = _sweep_mode(self.root.scan_mode)
         # align with CfRadial2 convention
         sweep_number = self._group - 1
         prt_mode = "not_set"
@@ -4136,20 +4195,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         lon, lat, alt = self.root.site_coords
 
         task = self.root.ingest_header["task_configuration"]["task_range_info"]
-        range_first_bin = task["range_first_bin"]
-        range_last_bin = task["range_last_bin"]
-        if range_first_bin == 0:
-            range_first_bin = task["step_output_bins"] / 2
-            range_last_bin += task["step_output_bins"]
-        rng = (
-            np.arange(
-                range_first_bin,
-                range_last_bin + task["step_output_bins"],
-                task["step_output_bins"],
-                dtype="float32",
-            )[: task["number_output_bins"]]
-            / 1e2
-        )
+        rng = _range_centers(task)
         range_attrs = get_range_attrs()
         range_attrs["meters_between_gates"] = task["step_output_bins"] / 2
         range_attrs["spacing_is_constant"] = (
@@ -4198,28 +4244,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {}
-        # RHI limits
-        if self.root.scan_mode == 2:
-            tsi = self.root.ingest_header["task_configuration"]["task_scan_info"][
-                "task_type_scan_info"
-            ]
-            ll = tsi["lower_elevation_limit"]
-            ul = tsi["upper_elevation_limit"]
-            attributes.update(
-                {"elevation_lower_limit": ll, "elevation_upper_limit": ul}
-            )
-        attributes["source"] = "Sigmet"
-        attributes["scan_name"] = self.root.product_hdr["product_configuration"][
-            "task_name"
-        ]
-        attributes["instrument_name"] = self.root.ingest_header["ingest_configuration"][
-            "site_name"
-        ].strip()
-        attributes["comment"] = self.root.ingest_header["task_configuration"][
-            "task_end_info"
-        ]["task_description"]
-        return FrozenDict(attributes)
+        return FrozenDict(_root_attrs(self.root.product_hdr, self.root.ingest_header))
 
 
 def _get_iris_group_names(filename):

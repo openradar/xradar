@@ -1,0 +1,11 @@
+# The `xradar[virtual]` extra: building virtual (byte-range) stores. Needs
+# Python >= 3.12 (virtualizarr's own floor).
+# READING virtual stores needs none of this — only xradar + zarr>=3.1.6
+# (the codec uses zarr's 3.1 ZDType API; 3.1.6 is virtualizarr's floor and
+# the lowest co-tested version).
+virtualizarr>=2.7.1,<2.8
+zarr>=3.1.6
+# direct deps of the parser's public API (users construct the registry and
+# an obstore store themselves), pinned to the tested contracts
+obspec-utils>=0.9.0
+obstore>=0.7.0
