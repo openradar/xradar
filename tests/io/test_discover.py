@@ -32,6 +32,7 @@ FILES = [
     ("iris1_file", "iris"),
     ("nexradlevel2_file", "nexradlevel2"),
     ("nexradlevel2_msg1_file", "nexradlevel2"),
+    ("nexradlevel3_file", "nexradlevel3"),
     ("hpl_file", "hpl"),
     ("metek_ave_gz_file", "metek"),
     ("metek_pro_gz_file", "metek"),
