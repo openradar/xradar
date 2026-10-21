@@ -2,6 +2,7 @@
 
 ## Development
 
+* DOC: Add AI Usage Policy (``docs/ai_policy.md``) adapted from xarray's policy, with xradar-specific guidance for CI, packaging, and dependency changes, copyright and licensing, and disclosure of AI usage ({pull}`363`) by [@aladinor](https://github.com/aladinor)
 * FIX: ``Dataset.close()`` and ``DataTree.close()`` release the file for every backend, also after ``georeference()``/``add_crs()`` and when opening fails (most backends left files open until garbage collection, which can crash HDF5); CfRadial1 caches its data once ({issue}`471`, {issue}`502`, {pull}`472`) by [@aladinor](https://github.com/aladinor)
 * MNT: CI unit tests use released xarray again, and test jobs time out after 30 minutes ({issue}`495`, {pull}`510`) by [@aladinor](https://github.com/aladinor)
 * FIX: DataMet, Furuno, IRIS (also ``open_iris_datatree``) and Metek accept ``pathlib.Path`` (as HPL and Rainbow do), UF reads datatrees from file-like objects (sweep discovery consumed the object without rewinding), and the CfRadial1 backend applies ``fix_second_angle`` to sweep groups in ``open_dataset`` and ``open_datatree`` (it was accepted but ignored) ({pull}`509`) by [@aladinor](https://github.com/aladinor)
@@ -71,6 +72,7 @@
 * DOC: ``Name_Mapping`` notebook with tables of how the readers and exporters map the names of moments and metadata (built from the mappings of the code), linked from the importers page ({issue}`46`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: ``xd.open_datatree`` finds the engine with ``xd.io.discover_engine`` when ``engine`` is not given, which also works for netCDF/HDF5 based formats (ODIM_H5, GAMIC, CfRadial, IMD) that ``xr.open_datatree`` without ``engine`` hands to xarray's netCDF backends, and stacks a list of files with one sweep each into a volume (``xradar.util.create_volume``); CfRadial2 backend implements ``guess_can_open``; the ``Open-Datatree-Engine`` and ``Open-Any-Format`` notebooks show both ({issue}`225`, {issue}`380`, {pull}`446`) by [@syedhamidali](https://github.com/syedhamidali)
 * DOC: links to the standards (WMO FM301, CfRadial, ODIM_H5) in the ``Name_Mapping`` notebook ({pull}`523`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: the ``radar_calibration`` group of volumes whose sweeps carry different calibration attributes no longer raises ``KeyError``: each value is taken from the first selected sweep which has it. Values the sweeps disagree about (e.g. the noise level of each cut) are left out of the group, so that no value which holds for only a part of the volume is written, and a warning lists them (select the wanted sweep with ``sweep=``). Shared helpers to fill ``radar_parameters`` and ``radar_calibration`` from sweep attributes ({issue}`232`, {pull}`532`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: Furuno reader (``optional_groups=True``) fills ``radar_parameters`` with the half-power beam widths from the SCNX header (stored in 1/100 degree, a width of 0 is not set); ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`434`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
