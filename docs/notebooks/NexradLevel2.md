@@ -133,6 +133,34 @@ display(dtree)
 dtree["sweep_1"]
 ```
 
-```{code-cell}
+## Optional groups: radar_calibration
 
+With `optional_groups=True` the datatree also has the metadata groups. The NEXRAD Level II reader fills `radar_calibration` from the volume (`VOL`) and radial (`RAD`) data blocks of the first radial: transmit power in dBm, noise level and the system differential phase.
+
+```{code-cell}
+dtree = xd.open_datatree(filename, engine="nexradlevel2", sweep=0, optional_groups=True)
+display(dtree["radar_calibration"].ds)
+```
+
+```{code-cell}
+import numpy as np
+
+np.testing.assert_almost_equal(dtree["radar_calibration"].xmit_power_h, 82.48, 2)
+np.testing.assert_almost_equal(dtree["radar_calibration"].noise_hc, -78.61, 2)
+```
+
+The noise level is measured for every cut. If the selected cuts disagree about it, the noise level is left out of the group and a warning lists it, so that the group does not hold a value which is only right for some of the cuts. Select the cut whose values you need with `sweep=`:
+
+```{code-cell}
+import warnings
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    dtree = xd.open_datatree(filename, engine="nexradlevel2", optional_groups=True)
+print([str(w.message) for w in caught if "differ" in str(w.message)])
+assert "noise_hc" not in dtree["radar_calibration"]
+assert "xmit_power_h" in dtree["radar_calibration"]
+
+dtree = xd.open_datatree(filename, engine="nexradlevel2", sweep=2, optional_groups=True)
+print("sweep 2: noise_hc =", float(dtree["radar_calibration"].noise_hc))
 ```
