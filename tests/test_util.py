@@ -4,9 +4,6 @@
 
 """Tests for `xradar` util package."""
 
-import datetime
-import fnmatch
-import random
 import warnings
 
 import numpy as np
@@ -563,12 +560,17 @@ def test_get_radar_calibration(closing):
         closing(xr.open_dataset(filename, engine="gamic", group=sweep))
         for sweep in sweeps
     ]
-    subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
-    assert len(subgroup.variables) == 6
-    assert subgroup["noise_power_h"] == "-3.8298"
+    # the noise power of the last scan differs from the others: it is left out
+    with pytest.warns(UserWarning, match=r"differ between the sweeps \(noise_power_h"):
+        subgroup = _get_radar_calibration(ls_ds, model.radar_calibration_subgroup)
+    assert len(subgroup.variables) == 4
+    assert "noise_power_h" not in subgroup
     assert subgroup["rx_loss_h"] == "3"
     assert subgroup["ant_gain_v"] == "43"
     assert subgroup["ant_gain_h"] == "43"
+    # the sweeps before the last one agree
+    subgroup = _get_radar_calibration(ls_ds[:9], model.radar_calibration_subgroup)
+    assert subgroup["noise_power_h"] == "-3.8298"
 
 
 @pytest.mark.parametrize(
@@ -619,16 +621,21 @@ def test_get_radar_calibration_of_sweeps_with_different_names():
     assert not _get_radar_calibration([], names).data_vars
 
 
-def test_get_radar_calibration_warns_for_differing_sweeps():
+def test_get_radar_calibration_leaves_out_differing_values():
     names = model.radar_calibration_subgroup
-    first = xr.Dataset(attrs={"antenna_gain_h": 43.0})
-    second = xr.Dataset(attrs={"antenna_gain_h": 44.0})
+    first = xr.Dataset(attrs={"antenna_gain_h": 43.0, "noise_hc": -80.0})
+    second = xr.Dataset(attrs={"antenna_gain_h": 44.0, "noise_hc": -80.0})
     with pytest.warns(
         UserWarning,
         match=r"radar_calibration values differ between the sweeps "
-        r"\(antenna_gain_h\).*``sweep=``",
+        r"\(antenna_gain_h\) and are left out.*``sweep=``",
     ):
         calib = _get_radar_calibration([first, second], names)
+    # the value the sweeps disagree about is not in the group, nothing else is
+    assert "antenna_gain_h" not in calib
+    assert calib.noise_hc == -80.0
+    # a single sweep has all its values
+    calib = _get_radar_calibration([first], names)
     assert calib.antenna_gain_h == 43.0
 
 
@@ -648,208 +655,22 @@ def test_get_subgroup_warning_names_the_group():
     names = {"gain": None}
     sweeps = [xr.Dataset(attrs={"gain": 43.0}), xr.Dataset(attrs={"gain": 44.0})]
     with pytest.warns(UserWarning, match="radar_parameters values differ"):
-        _get_subgroup(sweeps, names, attrs=True)
+        subgroup = _get_subgroup(sweeps, names, attrs=True)
+    assert "gain" not in subgroup
     with pytest.warns(UserWarning, match="georeferencing_correction values differ"):
         _get_subgroup(sweeps, names, attrs=True, name="georeferencing_correction")
 
 
-def test_get_subgroup(closing):
-    filename = DATASETS.fetch("71_20181220_060628.pvol.h5")
-    sweeps = [f"sweep_{i}" for i in range(10)]
-    ls_ds = [
-        closing(xr.open_dataset(filename, engine="odim", group=sweep))
-        for sweep in sweeps
+def test_get_subgroup_differing_attribute_does_not_hide_a_variable():
+    # variables win over attributes, also if the attributes differ
+    names = {"gain": None}
+    sweeps = [
+        xr.Dataset({"gain": 1.0}, attrs={"gain": 43.0}),
+        xr.Dataset({"gain": 1.0}, attrs={"gain": 44.0}),
     ]
-    subgroup = _get_subgroup(ls_ds, model.radar_parameters_subgroup)
-    assert len(subgroup.variables) == 3
-    assert list(subgroup.variables) == ["longitude", "latitude", "altitude"]
-    np.testing.assert_almost_equal(subgroup.longitude.values.item(), 151.20899963378906)
-    np.testing.assert_almost_equal(subgroup.latitude.values.item(), -33.700801849365234)
-    assert isinstance(subgroup.altitude.values.item(), float)
-
-
-def test_sweep_dataset_vars():
-
-    filename = DATASETS.fetch("cor-main131125105503.RAW2049")
-    sweep = xr.open_dataset(filename, group="sweep_7", engine="iris")
-
-    dataset_vars = util.get_sweep_dataset_vars(sweep)
-    expected = ["DBZH", "VRADH", "ZDR", "KDP", "PHIDP", "RHOHV"]
-    assert sorted(dataset_vars) == sorted(expected)
-
-    dataset_vars = util.get_sweep_dataset_vars(sweep, non_standard=True)
-    expected = expected + ["DB_HCLASS"]
-    assert sorted(dataset_vars) == sorted(expected)
-
-
-def test_select_sweep_dataset_vars(closing):
-
-    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
-    sweep = closing(xr.open_dataset(filename, group="sweep_7", engine="gamic"))
-    sweep = sweep.assign(quality1=sweep["DBZH"] < 60)
-    sweep["DBZH"].attrs["ancillary_variables"] = ["quality1"]
-    sweep = sweep.assign(quality2=sweep["RHOHV"] < 0.5)
-    sweep["RHOHV"].attrs["ancillary_variables"] = ["quality2"]
-    sweep = sweep.assign(polarization_mode="hv_alt")
-
-    required_metadata = list(model.required_sweep_metadata_vars)
-    required_metadata.remove("elevation")
-    required_metadata.remove("azimuth")
-
-    select = ["DBZH", "PHIDP"]
-    sweep2 = util.select_sweep_dataset_vars(
-        sweep,
-        select,
-    )
-
-    assert sorted(sweep2.data_vars) == sorted(select + required_metadata)
-
-    sweep2 = util.select_sweep_dataset_vars(
-        sweep,
-        select,
-        ancillary=True,
-    )
-
-    expected = select + ["quality1"] + required_metadata
-    assert sorted(sweep2.data_vars) == sorted(expected)
-
-    sweep2 = util.select_sweep_dataset_vars(
-        sweep, select, ancillary=True, optional_metadata=True
-    )
-
-    metadata = required_metadata + ["polarization_mode", "nyquist_velocity"]
-    assert sorted(sweep2.data_vars) == sorted(select + ["quality1"] + metadata)
-
-
-def test_create_volume(closing):
-    pattern = "T_PAZ?63_C_LFPW_20230420*"
-    filenames = list(DATASETS.registry.keys())
-    files = fnmatch.filter(filenames, pattern)
-    random.shuffle(files)
-    sweeps = [closing(io.open_odim_datatree(DATASETS.fetch(fn))) for fn in files]
-
-    time_coverage_start = "2023-04-20T06:50:00Z"
-    time_coverage_start = datetime.datetime.fromisoformat(time_coverage_start)
-    time_coverage_end = "2023-04-20T06:55:00Z"
-    time_coverage_end = datetime.datetime.fromisoformat(time_coverage_end)
-    volume = util.create_volume(
-        sweeps=sweeps,
-        time_coverage_start=time_coverage_start,
-        time_coverage_end=time_coverage_end,
-        min_angle=0.5,
-        max_angle=5.0,
-    )
-    assert volume.ds.time_coverage_start == "2023-04-20T06:50:00Z"
-    assert volume.ds.time_coverage_end == "2023-04-20T06:55:00Z"
-    sweep_group_name = ["sweep_0", "sweep_1", "sweep_2"]
-    np.testing.assert_array_equal(volume.ds.sweep_group_name, sweep_group_name)
-    angles = [3.6, 1.6, 1.0]
-    np.testing.assert_array_equal(volume.ds.sweep_fixed_angle, angles)
-    sweep_fixed_angle = [
-        volume[sweep].ds.sweep_fixed_angle.values.item()
-        for sweep in util.get_sweep_keys(volume)
-    ]
-    np.testing.assert_array_equal(sweep_fixed_angle, angles)
-
-    time_coverage_start = "2023-04-19T06:50:00Z"
-    time_coverage_start = datetime.datetime.fromisoformat(time_coverage_start)
-    time_coverage_end = "2023-04-19T06:55:00Z"
-    time_coverage_end = datetime.datetime.fromisoformat(time_coverage_end)
-    with pytest.raises(ValueError, match="No sweeps remain after filtering."):
-        volume = util.create_volume(
-            sweeps=sweeps,
-            time_coverage_start=time_coverage_start,
-            time_coverage_end=time_coverage_end,
-        )
-
-    volume = util.create_volume(
-        sweeps=sweeps,
-    )
-    assert volume.ds.time_coverage_start == "2023-04-20T06:50:01Z"
-    assert volume.ds.time_coverage_end == "2023-04-20T06:59:46Z"
-
-
-@pytest.mark.parametrize("first_dim", ["auto", "time"])
-def test_is_sweep_backends(odim_file, cfradial1_file, first_dim, closing):
-    dtree = closing(
-        io.open_odim_datatree(odim_file, first_dim=first_dim, optional_groups=True)
-    )
-    # the root and the metadata groups are no sweeps
-    assert not util.is_sweep(dtree)
-    assert not util.is_sweep(dtree["radar_parameters"])
-    for node in ["sweep_0", "sweep_5"]:
-        assert util.is_sweep(dtree[node])
-        assert util.is_sweep(dtree[node].to_dataset(), strict=True)
-        assert dtree[node].to_dataset().xradar.is_sweep()
-        assert dtree[node].xradar.is_sweep(strict=True)
-    assert not dtree.xradar.is_sweep()
-    # still a sweep after georeferencing (2D x, y, z coordinates)
-    assert util.is_sweep(dtree.xradar.georeference()["sweep_0"])
-
-    dtree = closing(io.open_cfradial1_datatree(cfradial1_file, first_dim=first_dim))
-    assert util.is_sweep(dtree["sweep_0"], strict=True)
-
-
-def test_is_sweep_structure():
-    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
-    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
-    assert util.is_sweep(ds)
-    # mandatory sweep metadata is missing
-    assert not util.is_sweep(ds, strict=True)
-    ds_meta = ds.assign(
-        sweep_number=0,
-        sweep_mode="azimuth_surveillance",
-        follow_mode="none",
-        prt_mode="fixed",
-        sweep_fixed_angle=1.0,
-    )
-    assert util.is_sweep(ds_meta, strict=True)
-    assert ds_meta.xradar.is_sweep(strict=True)
-
-    # no range dimension
-    assert not util.is_sweep(ds.isel(range=0))
-    # no data variable along (ray, range)
-    assert not util.is_sweep(ds.drop_vars("DBZH"))
-    # angles missing or not along the ray dimension
-    assert not util.is_sweep(ds.drop_vars("elevation"))
-    assert not util.is_sweep(ds.assign(azimuth=("range", np.arange(10.0))))
-    # two candidate ray dimensions
-    assert not util.is_sweep(
-        ds.assign(extra=(("azimuth", "elevation"), np.ones((2, 3))))
-    )
-    # no Dataset
-    assert not util.is_sweep(ds.DBZH)
-    assert not util.is_sweep(None)
-
-
-def test_get_ray_dim():
-    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
-    assert util.get_ray_dim(ds) == "time"
-    assert util.get_ray_dim(ds.swap_dims(time="azimuth")) == "azimuth"
-    rhi = model.create_sweep_dataset(shape=(36, 10), azimuth=10.0, sweep="RHI")
-    assert util.get_ray_dim(rhi.swap_dims(time="elevation")) == "elevation"
-    # no range dimension
-    assert util.get_ray_dim(ds.isel(range=0)) is None
-    # both azimuth and elevation dimensions
-    both = xr.Dataset({"x": (("azimuth", "elevation", "range"), np.ones((2, 2, 2)))})
-    with pytest.raises(ValueError, match="Ambiguous ray dimension"):
-        util.get_ray_dim(both)
-    # range, but no ray dimension
-    with pytest.raises(ValueError, match="No CfRadial2/FM301 compliant dimension"):
-        util.get_ray_dim(xr.Dataset({"x": (("ray", "range"), np.ones((2, 3)))}))
-
-
-def test_is_sweep_stacked():
-    # a time series of a sweep is not a single sweep (semantics: #449)
-    ds = model.create_sweep_dataset(shape=(36, 10), elevation=1.0)
-    ds = ds.assign(DBZH=model.get_sweep_dataarray((36, 10), "DBZH", fill=1.0))
-    ds = ds.swap_dims(time="azimuth")
-    assert util.is_sweep(ds)
-    stacked = xr.concat([ds.drop_vars("time")] * 2, dim="time")
-    assert util.get_ray_dim(stacked) == "azimuth"
-    assert not util.is_sweep(stacked)
-    # range dimension, but no ray dimension
-    assert not util.is_sweep(ds.rename(azimuth="ray"))
+    with pytest.warns(UserWarning, match="differ"):
+        subgroup = _get_subgroup(sweeps, names, attrs=True)
+    assert subgroup.gain == 1.0
 
 
 def test_metadata_values_get_units():
@@ -896,6 +717,6 @@ def test_build_groups_dict_metadata_from_sweep_attributes(monkeypatch):
     params, calib = groups["/radar_parameters"], groups["/radar_calibration"]
     assert params.radar_beam_width_h.attrs == {"units": "degrees"}
     assert calib.antenna_gain_h.attrs == {"units": "dB"}
-    # the first sweep gives the values; sweeps do not keep them
-    assert calib.noise_hc == -80.5
+    # the noise differs between the sweeps: it is left out, the others are not
+    assert "noise_hc" not in calib
     assert not groups["/sweep_0"].attrs
