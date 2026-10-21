@@ -592,13 +592,13 @@ def _get_subgroup(
     name="radar_parameters",
     units=None,
 ):
-    """Get iris-sigmet root metadata group.
+    """Get a root metadata group from the sweeps.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
 
     With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
     added as well (for backends which have the values as attributes, e.g. of the
     ``how`` groups); variables win. Each name takes the value of the first sweep
-    which has it; a warning for the group ``name`` names the values the sweeps
+    which has it; a warning for the group ``name`` lists the values the sweeps
     disagree about (select another sweep with ``sweep=`` to get its values).
     ``units`` maps names of the group to the ``units`` attribute of the values
     taken from the attributes.
@@ -675,7 +675,7 @@ def _get_radar_calibration(
     The values are attributes of the sweeps. Each name takes the value of the
     first sweep which has it. If the sweeps disagree about a value (e.g. the
     noise level of each cut), the group holds the value of the first selected
-    sweep and a warning names these values; select another sweep with ``sweep=``
+    sweep and a warning lists these values; select another sweep with ``sweep=``
     to get its values. ``units`` maps names to the ``units`` attribute of the
     values.
     """
