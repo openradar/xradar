@@ -656,3 +656,89 @@ def test_cfradial1_export_range_geometry(gamic_file, tmp_path):
     xd.io.to_cfradial1(dtree, tmp_path / "gamic.nc")
     back = xd.io.open_cfradial1_datatree(tmp_path / "gamic.nc")
     np.testing.assert_allclose(back["sweep_9"].ds.range.diff("range"), 150.0)
+
+
+def test_cfradial1_per_sweep_range_helper():
+    ranges = [np.arange(50.0, 350.0, 100.0), np.arange(75.0, 675.0, 150.0)]
+    rng = cf1_export._per_sweep_range(ranges, {"units": "meters"})
+    assert rng.dims == ("sweep", "range")
+    assert rng.shape == (2, 4)
+    np.testing.assert_allclose(rng[0], [50.0, 150.0, 250.0, 350.0])  # continued
+    np.testing.assert_allclose(rng[1], ranges[1])
+    assert rng.attrs["units"] == "meters"
+    np.testing.assert_allclose(rng.attrs["meters_to_center_of_first_gate"], [50, 75])
+    np.testing.assert_allclose(rng.attrs["meters_between_gates"], [100, 150])
+    # a sweep with a single gate has no spacing, its padding is NaN
+    rng = cf1_export._per_sweep_range([np.array([50.0]), ranges[1]], {})
+    assert np.isnan(rng[0, 1:]).all()
+
+
+def test_cfradial1_export_range_geometry_option(gamic_file, tmp_path):
+    with xd.open_datatree(gamic_file, engine="gamic", sweep=[0, 9]) as dtree:
+        with pytest.raises(ValueError, match="range_geometry"):
+            xd.io.to_cfradial1(dtree, tmp_path / "x.nc", range_geometry="other")
+        # the default still raises, and names the option
+        with pytest.raises(ValueError, match="range_geometry=.per_sweep.") as err:
+            xd.io.to_cfradial1(dtree, tmp_path / "x.nc")
+        assert "reindex_range" in str(err.value)
+
+
+def test_cfradial1_export_per_sweep_range(gamic_file, tmp_path):
+    # GAMIC: 100 m gates in the lowest and 150 m gates in the highest sweep,
+    # different numbers of gates, different first gates (50 m and 75 m)
+    path = tmp_path / "per_sweep.nc"
+    with xd.open_datatree(gamic_file, engine="gamic") as dtree:
+        sweeps = [k for k in dtree.children if k.startswith("sweep_")]
+        xd.io.to_cfradial1(dtree, path, range_geometry="per_sweep")
+
+        with xr.open_dataset(path, decode_timedelta=False) as ds:
+            assert ds["range"].dims == ("sweep", "range")
+            assert ds.sizes["sweep"] == len(sweeps)
+            attrs = ds["range"].attrs
+            assert set(np.unique(attrs["meters_to_center_of_first_gate"])) == {50, 75}
+            assert set(np.unique(attrs["meters_between_gates"])) == {100, 150}
+            # increasing in every gate, also in the padding
+            assert (np.diff(ds["range"].values, axis=1) > 0).all()
+
+        # every sweep comes back as it was written: its own range, all gates,
+        # the same values, NaN in the padding
+        with xd.open_datatree(path, engine="cfradial1") as back:
+            for sweep in sweeps:
+                source, result = dtree[sweep].ds, back[sweep].ds
+                ngates = source.sizes["range"]
+                np.testing.assert_allclose(result.range.values[:ngates], source.range)
+                moments = [
+                    name
+                    for name, var in source.data_vars.items()
+                    if "range" in var.dims and var.dtype.kind == "f" and name in result
+                ]
+                assert moments
+                for name in moments:
+                    np.testing.assert_array_equal(
+                        result[name].values[..., :ngates], source[name].values
+                    )
+                    assert np.isnan(result[name].values[..., ngates:]).all()
+
+
+def test_cfradial1_export_per_sweep_range_with_common_geometry(
+    cfradial1_file, tmp_path
+):
+    # one geometry in all sweeps: the usual 1-D range, also when asked per sweep
+    path = tmp_path / "common.nc"
+    with xd.open_datatree(cfradial1_file, engine="cfradial1") as dtree:
+        xd.io.to_cfradial1(dtree, path, range_geometry="per_sweep")
+    with xr.open_dataset(path, decode_timedelta=False) as ds:
+        assert ds["range"].dims == ("range",)
+
+
+def test_cfradial1_per_sweep_range_dataset(gamic_file):
+    # the in-memory dataset and the accessor take the option as well
+    with xd.open_datatree(gamic_file, engine="gamic", sweep=[0, 9]) as dtree:
+        ds = xd.transform.to_cfradial1(dtree, range_geometry="per_sweep")
+        assert ds["range"].dims == ("sweep", "range")
+        assert dtree.xradar.to_cfradial1(range_geometry="per_sweep").identical(ds)
+        assert dtree.xradar.to_cfradial1_dataset(range_geometry="per_sweep").identical(
+            ds
+        )
+        with pytest.raises(ValueError, match="range_geometry"):
+            xd.transform.to_cfradial1(dtree)
