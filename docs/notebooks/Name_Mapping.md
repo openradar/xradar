@@ -15,6 +15,15 @@ kernelspec:
 
 xradar reads each format into the same CfRadial2 / FM301 shaped data model. This page shows how the names of moments and of the metadata are mapped. The tables are built from the mappings the readers and exporters use, so they always describe the installed version.
 
+The standards and formats it refers to:
+
+- WMO FM301, the CF extensions for weather radar data: [WMO CF extensions](https://community.wmo.int/activity-areas/wis/wmo-cf-extensions) and the [FM301 specification](https://wmoomm.sharepoint.com/:b:/s/wmocpdb/EVcEDwHwf6FJtB6anuyBH3QBgA5bE_Uz9jI4FaSkAyowSg?e=jcazi4)
+- CfRadial 2.x (the data model of xradar): [CfRadial 2.0](https://dx.doi.org/10.5065/fy2k-x587) and the [CfRadial documents](https://github.com/NCAR/CfRadial/tree/master/docs) (2.1 draft, 1.x)
+- CfRadial 1.x: [CfRadial documents](https://github.com/NCAR/CfRadial/tree/master/docs)
+- ODIM_H5, the [EUMETNET OPERA data information model](https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/)
+
+The other formats are vendor or institute specific, see the [importers](../importers.md) for their descriptions.
+
 ```{code-cell}
 import pandas as pd
 
@@ -35,7 +44,7 @@ pd.set_option("display.max_rows", None, "display.max_colwidth", 80)
 
 ## Moments
 
-The names of the data model are the FM301 / ODIM_H5 quantity names (`DBZH`, `VRADH`, ...), `xradar.model.sweep_vars_mapping` holds the `standard_name`, `long_name` and `units` of each one. Readers rename the names of their format to these names.
+The names of the data model are the [FM301](https://community.wmo.int/activity-areas/wis/wmo-cf-extensions) / [ODIM_H5](https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/) quantity names (`DBZH`, `VRADH`, ...), `xradar.model.sweep_vars_mapping` holds the `standard_name`, `long_name` and `units` of each one. Readers rename the names of their format to these names.
 
 Reader tables (name in the file -> xradar name):
 
@@ -88,7 +97,7 @@ assert gamic.gamic_mapping["zh"] == "DBZH"
 
 ## Metadata groups
 
-The groups `/radar_parameters` and `/radar_calibration` (CfRadial2 names) are filled from the variables of the sweeps. Names of other formats and of other CfRadial versions are renamed to the CfRadial2 names; these are the names which are read (the others are used as they are):
+The groups `/radar_parameters` and `/radar_calibration` (names of [CfRadial 2](https://dx.doi.org/10.5065/fy2k-x587) / FM301) are filled from the variables of the sweeps. Names of other formats and of other CfRadial versions are renamed to the CfRadial2 names; these are the names which are read (the others are used as they are):
 
 ```{code-cell}
 def renames(subgroup):
