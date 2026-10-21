@@ -364,8 +364,9 @@ def test_rainbow_slice_metadata(fixture, sweep, expected, request, closing):
 
 
 def test_rainbow_slice_metadata_differs_between_slices(rainbow_file2, closing):
-    # the calibration changes with the pulse width: the groups hold the values of
-    # the first selected slice, and a warning names the ones that differ
+    # the calibration changes with the pulse width: values which differ between
+    # the selected slices are left out of the groups, with a warning which lists
+    # them
     with pytest.warns(UserWarning, match="values differ between the sweeps") as record:
         dtree = closing(
             xd.open_datatree(
@@ -375,18 +376,27 @@ def test_rainbow_slice_metadata_differs_between_slices(rainbow_file2, closing):
     messages = " ".join(str(w.message) for w in record)
     assert "radar_receiver_bandwidth" in messages
     assert "radar_constant_h, radar_constant_v" in messages
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 69.477)
-    np.testing.assert_allclose(
-        dtree["radar_parameters"].ds.radar_receiver_bandwidth, 1.2e6
-    )
+    assert "radar_constant_h" not in dtree["radar_calibration"].ds
+    assert "radar_receiver_bandwidth" not in dtree["radar_parameters"].ds
+    # values which agree are there
+    np.testing.assert_allclose(dtree["radar_parameters"].ds.radar_beam_width_h, 0.97)
     # slices which agree do not warn
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
-        closing(
+        agree = closing(
             xd.open_datatree(
                 rainbow_file2, engine="rainbow", sweep=[0, 1], optional_groups=True
             )
         )
+    assert "radar_constant_h" in agree["radar_calibration"].ds
+    # the values of one slice
+    one = closing(
+        xd.open_datatree(rainbow_file2, engine="rainbow", sweep=6, optional_groups=True)
+    )
+    np.testing.assert_allclose(one["radar_calibration"].ds.radar_constant_h, 69.477)
+    np.testing.assert_allclose(
+        one["radar_parameters"].ds.radar_receiver_bandwidth, 1.2e6
+    )
 
 
 @pytest.mark.parametrize(

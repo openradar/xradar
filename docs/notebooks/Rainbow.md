@@ -128,4 +128,4 @@ np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 1.3
 np.testing.assert_almost_equal(dtree["radar_calibration"].radar_constant_h, 74.09, 2)
 ```
 
-The groups hold one set of values: if the slices of a file disagree about a value, the group holds the values of the first selected sweep, and a warning names these values. Select the sweep whose values you need with `sweep=`.
+The groups hold one set of values: if the slices of a file disagree about a value, that value is left out of the group and a warning lists it. Select the sweep whose values you need with `sweep=`.
