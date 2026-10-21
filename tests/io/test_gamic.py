@@ -267,8 +267,9 @@ def test_gamic_radar_metadata_variants(gamic_how_file, closing):
         )
     assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
     calib = dtree["radar_calibration"].ds
-    # the first sweep that has the name, the first sweep for the differing one
-    np.testing.assert_allclose(calib.antenna_gain_h, 44.5)
+    # the antenna gain H differs between the scans: left out; rx_loss_h is only
+    # a number in scan1, the sweeps which have it give the value
+    assert "antenna_gain_h" not in calib
     np.testing.assert_allclose(calib.rx_loss_h, 3.0)
     np.testing.assert_allclose(calib.rx_loss_v, 3.0)
 
