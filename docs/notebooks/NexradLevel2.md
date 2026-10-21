@@ -149,7 +149,7 @@ np.testing.assert_almost_equal(dtree["radar_calibration"].xmit_power_h, 82.48, 2
 np.testing.assert_almost_equal(dtree["radar_calibration"].noise_hc, -78.61, 2)
 ```
 
-The noise level is measured for every cut. For the whole volume the group holds the values of the first cut, and a warning names the values which differ. Select the cut whose values you need with `sweep=`:
+The noise level is measured for every cut. If the selected cuts disagree about it, the noise level is left out of the group and a warning lists it, so that the group does not hold a value which is only right for some of the cuts. Select the cut whose values you need with `sweep=`:
 
 ```{code-cell}
 import warnings
@@ -158,8 +158,9 @@ with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
     dtree = xd.open_datatree(filename, engine="nexradlevel2", optional_groups=True)
 print([str(w.message) for w in caught if "differ" in str(w.message)])
-print("all cuts: noise_hc =", float(dtree["radar_calibration"].noise_hc))
+assert "noise_hc" not in dtree["radar_calibration"]
+assert "xmit_power_h" in dtree["radar_calibration"]
 
 dtree = xd.open_datatree(filename, engine="nexradlevel2", sweep=2, optional_groups=True)
-print("sweep 2:  noise_hc =", float(dtree["radar_calibration"].noise_hc))
+print("sweep 2: noise_hc =", float(dtree["radar_calibration"].noise_hc))
 ```
