@@ -2,9 +2,9 @@
 
 ## 0.13.0 (2026-10-21)
 
-This release brings significant improvements to xradar’s radar data handling, with a unified open_datatree interface and enhanced support across all 13 backends. Numerous fixes improve radar moment decoding, sweep selection, file handling, and CfRadial and ODIM data import and export. Resource management, dependency support, CI reliability, and coordinate reindexing have also been improved. New documentation and notebooks cover gridding, georeferencing, format mappings, and engine discovery. [@aladinor](https://github.com/aladinor) and [@syedhamidali](https://github.com/syedhamidali) are the main contributors to this release, with contributions from [@kmuehlbauer](https://github.com/kmuehlbauer), [@zssherman](https://github.com/zssherman), [@mats-knmi](https://github.com/mats-knmi), [@chfer](https://github.com/chfer) and [@Jah-yee](https://github.com/Jah-yee).
-
 This release brings a unified open_datatree interface (``xd.open_datatree(file, engine=...)`` / ``xr.open_datatree``) for all 13 backends, including the new IMD reader, and engine discovery so that formats unknown to xarray (NEXRAD Level II, IRIS, Rainbow, UF, ...) open without engine. IRIS moment decoding now follows the IRIS Programming Guide (2024), and numerous fixes improve sweep selection, file handling (close() releases files for every backend) and CfRadial and ODIM import and export, including repeatable CfRadial1/2 roundtrips. New documentation and notebooks cover gridding, georeferencing, format mappings and engine discovery, and the project now has an AI Usage Policy.
+
+[@aladinor](https://github.com/aladinor) and [@syedhamidali](https://github.com/syedhamidali) are the main contributors to this release, with contributions from [@kmuehlbauer](https://github.com/kmuehlbauer), [@zssherman](https://github.com/zssherman), [@mats-knmi](https://github.com/mats-knmi), [@chfer](https://github.com/chfer) and [@Jah-yee](https://github.com/Jah-yee).
 
 Please note: xradar now requires Python >= 3.12 and zarr >= 3. The open_*_datatree functions and reindex_angle are deprecated (use ``open_datatree(..., engine=...)`` and ``reindex_coord``). ODIM TH/TV are now read as DBTH/DBTV, and IRIS no-data bins are NaN instead of values such as -32 dBZ.
 
