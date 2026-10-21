@@ -1,6 +1,8 @@
 # History
 
-## Development
+## 0.13.0 (2026-10-21)
+
+This release brings significant improvements to xradar’s radar data handling, with a unified open_datatree interface and enhanced support across all 13 backends. Numerous fixes improve radar moment decoding, sweep selection, file handling, and CfRadial and ODIM data import and export. Resource management, dependency support, CI reliability, and coordinate reindexing have also been improved. New documentation and notebooks cover gridding, georeferencing, format mappings, and engine discovery. [@aladinor](https://github.com/aladinor) and [@syedhamidali](https://github.com/syedhamidali) are the main contributors to this release.
 
 * DOC: Add AI Usage Policy (``docs/ai_policy.md``) adapted from xarray's policy, with xradar-specific guidance for CI, packaging, and dependency changes, copyright and licensing, and disclosure of AI usage ({pull}`363`) by [@aladinor](https://github.com/aladinor)
 * FIX: ``Dataset.close()`` and ``DataTree.close()`` release the file for every backend, also after ``georeference()``/``add_crs()`` and when opening fails (most backends left files open until garbage collection, which can crash HDF5); CfRadial1 caches its data once ({issue}`471`, {issue}`502`, {pull}`472`) by [@aladinor](https://github.com/aladinor)
