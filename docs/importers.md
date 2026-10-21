@@ -64,9 +64,9 @@ dtree = xd.io.open_nexradlevel2_datatree(filename, optional_groups=True)
 ```
 
 The groups hold one set of values. If the sweeps of a file disagree about a value
-(e.g. the calibration or the noise level of each cut), the group holds the values
-of the first selected sweep and a warning names the values which differ. To get
-the values of another sweep, select that sweep:
+(e.g. the calibration or the noise level of each cut), that value is left out of
+the group and a warning lists it, so the group only has values which are the same
+for all sweeps. To get the values of one sweep, select that sweep:
 
 ```python
 # radar_calibration with the values of sweep_4

@@ -397,12 +397,18 @@ def odim_how_file(odim_file, tmp_path):
 
 
 def test_odim_how_metadata(odim_how_file):
-    with xd.open_datatree(odim_how_file, engine="odim", optional_groups=True) as dtree:
+    # the radar constant H differs between the datasets (70, 71, and the top-level
+    # 68.3 for the others): it is left out, with a warning
+    with pytest.warns(
+        UserWarning, match=r"differ between the sweeps \(radar_constant_h\)"
+    ):
+        dtree = xd.open_datatree(odim_how_file, engine="odim", optional_groups=True)
+    with dtree:
         params = dtree["radar_parameters"].ds
         np.testing.assert_allclose(params.radar_antenna_gain_h, 45.8)
         np.testing.assert_allclose(params.radar_antenna_gain_v, 45.6)
         calib = dtree["radar_calibration"].ds
-        np.testing.assert_allclose(calib.radar_constant_h, 70.0)
+        assert "radar_constant_h" not in calib
         np.testing.assert_allclose(calib.radar_constant_v, 68.5)
         np.testing.assert_allclose(calib.base_1km_hc, -44.0)
         np.testing.assert_allclose(calib.base_1km_vc, -44.2)
@@ -421,16 +427,26 @@ def test_odim_how_metadata(odim_how_file):
     [
         (0, 70.0),  # dataset1/how
         ([1], 71.0),  # dataset2/how
-        ([2, 0], 68.3),  # the first selected sweep, here the top-level how
+        ([2], 68.3),  # the top-level how
+        ([2, 3], 68.3),  # sweeps which agree
+        ([2, 0], None),  # sweeps which disagree: left out
     ],
 )
-def test_odim_how_calibration_of_first_selected_sweep(odim_how_file, sweep, expected):
-    with xd.open_datatree(
-        odim_how_file, engine="odim", optional_groups=True, sweep=sweep
-    ) as dtree:
-        np.testing.assert_allclose(
-            dtree["radar_calibration"].ds.radar_constant_h, expected
+def test_odim_how_calibration_of_the_selected_sweeps(odim_how_file, sweep, expected):
+    with warnings.catch_warnings():
+        if expected is None:
+            warnings.simplefilter("ignore", UserWarning)
+        else:
+            warnings.simplefilter("error", UserWarning)
+        dtree = xd.open_datatree(
+            odim_how_file, engine="odim", optional_groups=True, sweep=sweep
         )
+    with dtree:
+        calib = dtree["radar_calibration"].ds
+        if expected is None:
+            assert "radar_constant_h" not in calib
+        else:
+            np.testing.assert_allclose(calib.radar_constant_h, expected)
 
 
 def test_odim_how_metadata_not_without_optional_groups(odim_how_file):
@@ -585,13 +601,17 @@ def test_odim_how_value_missing_in_one_dataset(odim_how_file, closing):
     # not fail because the other datasets have it (it did with a KeyError)
     with h5py.File(odim_how_file, "a") as f:
         f["dataset1/how"].attrs["radconstV"] = b"n/a"
-    with pytest.warns(UserWarning, match="is no number"):
+    with pytest.warns(UserWarning) as record:
         dtree = closing(
             xd.open_datatree(
                 odim_how_file, engine="odim", optional_groups=True, sweep=[0, 1]
             )
         )
+    messages = " ".join(str(w.message) for w in record)
+    assert "is no number" in messages
     calib = dtree["radar_calibration"].ds
-    # the first dataset which has it: dataset2 takes the top-level value
+    # the value of dataset1 is left out, dataset2 takes the top-level value
     np.testing.assert_allclose(calib.radar_constant_v, 68.5)
-    np.testing.assert_allclose(calib.radar_constant_h, 70.0)
+    # the radar constant H differs between the datasets: left out
+    assert "radar_constant_h" not in calib
+    assert "radar_constant_h" in messages

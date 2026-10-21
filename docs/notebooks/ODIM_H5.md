@@ -130,7 +130,7 @@ np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 0.8
 np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_v, 0.896)
 ```
 
-This file has no calibration attributes, so `radar_calibration` is empty. The groups hold one set of values: if the datasets of a file disagree about a value, the group holds the values of the first selected sweep, and a warning names these values. Select the sweep whose values you need with `sweep=`.
+This file has no calibration attributes, so `radar_calibration` is empty. The groups hold one set of values: if the datasets of a file disagree about a value, that value is left out of the group and a warning lists it. Select the sweep whose values you need with `sweep=`.
 
 ```{code-cell}
 display(dtree["radar_calibration"].ds)
