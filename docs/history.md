@@ -3,6 +3,7 @@
 ## Development (unreleased)
 
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
+* ENH: ``.xradar.reindex_angle`` and ``.xradar.reindex_range`` for Dataset (a sweep) and DataTree (every sweep), the same arguments as ``xradar.util.reindex_angle`` and ``reindex_range`` ({issue}`539`, {pull}`544`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 
