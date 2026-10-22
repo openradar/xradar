@@ -3,6 +3,7 @@
 ## Development (unreleased)
 
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
+* FIX: the calibration values of Furuno SCNX files are scaled (the header gives antenna gain, transmit power, radar constant and noise power in tenths) and have ``units``; the transmit power is ``xmit_power_h/v`` in dBm and is written to CfRadial1 files ({issue}`538`, {pull}`543`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 

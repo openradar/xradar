@@ -109,3 +109,41 @@ dtree["sweep_0"].ds.DBZH.plot()
 ```{code-cell}
 dtree["sweep_0"].ds.DBZH.sortby("azimuth").plot(y="azimuth")
 ```
+
+## Calibration of scnx files
+
+With `optional_groups=True` the datatree has the group `radar_calibration`. The scnx header gives the antenna gain, the transmit power, the radar constant and the noise power in tenths (Furuno WR2120 manual, data file type 3); xradar scales the values and sets `units`. The transmit power is given in W in the file, the group has it as `xmit_power_h`/`xmit_power_v` in dBm, the unit of CfRadial.
+
+```{code-cell}
+dtree = xd.open_datatree(filename_scnx, engine="furuno", optional_groups=True)
+calib = dtree["radar_calibration"].ds
+display(calib)
+```
+
+```{code-cell}
+import numpy as np
+
+for name, var in calib.data_vars.items():
+    print(f"{name:28s} {float(var):9.2f} {var.attrs['units']}")
+
+# inside the ranges of the manual: antenna gain 30 to 40 dBi, transmit power 50 to 150 W
+assert 30 <= calib.antenna_gain_h <= 40
+transmit_power_w = 10 ** (float(calib.xmit_power_h) / 10) / 1e3
+print(f"transmit power {transmit_power_w:.1f} W")
+assert 50 <= transmit_power_w <= 150
+```
+
+The values are written to CfRadial1 files with these names.
+
+```{code-cell}
+xd.io.to_cfradial1(dtree, "furuno_scnx_cfradial1.nc", calibs=True)
+with xr.open_dataset("furuno_scnx_cfradial1.nc") as ds:
+    print(ds.r_calib_xmit_power_h.values, ds.r_calib_xmit_power_h.attrs["units"])
+```
+
+The older scn format has no antenna gain or transmit power in its header and keeps the radar constant as it is in the file (mantissa and exponent), without `units`:
+
+```{code-cell}
+dtree_scn = xd.open_datatree(filename_scn, engine="furuno", optional_groups=True)
+display(dtree_scn["radar_calibration"].ds)
+```
