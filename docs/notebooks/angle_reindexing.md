@@ -145,3 +145,59 @@ plt.gca().grid()
 ```{code-cell}
 ds_out2.DBTH.sortby("time").plot(y="time")
 ```
+
+## Reindexing after reading: the accessor methods
+
+`reindex_coord` reindexes while reading. Data which is already open can be reindexed with the `.xradar` accessor, on a sweep (Dataset) and on a whole volume (DataTree). The methods take the arguments of {func}`xradar.util.reindex_angle` and {func}`xradar.util.reindex_range`.
+
+### Angle of a sweep
+
+The same as `fix_angle` above:
+
+```{code-cell}
+params = xd.util.extract_angle_parameters(ds_in)
+ds_acc = xd.util.remove_duplicate_rays(ds_in).xradar.reindex_angle(
+    start_angle=params["start_angle"],
+    stop_angle=params["stop_angle"],
+    angle_res=params["angle_res"],
+    direction=params["direction"],
+)
+xr.testing.assert_identical(ds_acc, ds_out)
+ds_acc.sizes
+```
+
+### Range of all sweeps of a volume
+
+The sweeps of this volume have different gate spacing, 100 m in the first six sweeps and 150 m in the others, and different lengths. CfRadial1 has one `range` axis, so the export asks for one gate geometry:
+
+```{code-cell}
+import numpy as np
+
+dtree = xd.open_datatree(filename, engine="gamic")
+for name in ("sweep_0", "sweep_5", "sweep_6", "sweep_9"):
+    rng = dtree[name].ds.range.values
+    print(f"{name}: {rng.size:5d} gates, first {rng[0]:5.0f} m, spacing {np.median(np.diff(rng)):4.0f} m")
+```
+
+```{code-cell}
+try:
+    dtree.xradar.to_cfradial1()
+except ValueError as err:
+    print(err)
+```
+
+`reindex_range` on the DataTree puts every sweep on one grid. Each gate of the grid takes the nearest gate of the sweep (up to half a grid spacing), so this is a choice of the resolution: here 300 m, which both spacings fit, from 150 m to 36150 m. Gates beyond the last gate of the grid are not kept.
+
+```{code-cell}
+common = dtree.xradar.reindex_range(start_range=150.0, stop_range=36150.0, range_res=300.0)
+ranges = [common[name].ds.range.values for name in ("sweep_0", "sweep_9")]
+assert np.array_equal(*ranges)
+print(f"{ranges[0].size} gates from {ranges[0][0]:.0f} m to {ranges[0][-1]:.0f} m")
+```
+
+Now the volume can be exported, and the sweeps can be stacked (see the Multi-Volume-Concatenation notebook).
+
+```{code-cell}
+cf1 = common.xradar.to_cfradial1()
+dict(cf1.sizes)
+```
