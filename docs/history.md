@@ -3,6 +3,7 @@
 ## Development (unreleased)
 
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
+* ENH: Furuno reader (``optional_groups=True``) fills ``radar_parameters`` with the half-power beam widths from the SCNX header (stored in 1/100 degree, a width of 0 is not set); ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`434`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 
@@ -83,7 +84,6 @@ Please note: xradar now requires Python >= 3.12 and zarr >= 3. The open_*_datatr
 * ENH: ``xd.open_datatree`` finds the engine with ``xd.io.discover_engine`` when ``engine`` is not given, which also works for netCDF/HDF5 based formats (ODIM_H5, GAMIC, CfRadial, IMD) that ``xr.open_datatree`` without ``engine`` hands to xarray's netCDF backends, and stacks a list of files with one sweep each into a volume (``xradar.util.create_volume``); CfRadial2 backend implements ``guess_can_open``; the ``Open-Datatree-Engine`` and ``Open-Any-Format`` notebooks show both ({issue}`225`, {issue}`380`, {pull}`446`) by [@syedhamidali](https://github.com/syedhamidali)
 * DOC: links to the standards (WMO FM301, CfRadial, ODIM_H5) in the ``Name_Mapping`` notebook ({pull}`523`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: the ``radar_calibration`` group of volumes whose sweeps carry different calibration attributes no longer raises ``KeyError``: each value is taken from the first selected sweep which has it. Values the sweeps disagree about (e.g. the noise level of each cut) are left out of the group, so that no value which holds for only a part of the volume is written, and a warning lists them (select the wanted sweep with ``sweep=``). Shared helpers to fill ``radar_parameters`` and ``radar_calibration`` from sweep attributes ({issue}`232`, {pull}`532`) by [@syedhamidali](https://github.com/syedhamidali)
-* ENH: Furuno reader (``optional_groups=True``) fills ``radar_parameters`` with the half-power beam widths from the SCNX header (stored in 1/100 degree, a width of 0 is not set); ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`434`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.12.0 (2026-04-21)
 
