@@ -144,6 +144,43 @@ trees["Halo Photonics lidar"]["sweep_0"]
 trees["Metek MRR2"]["sweep_0"]
 ```
 
+## Are the results sweeps?
+
+Whatever the format, each `sweep_N` node should be a radar sweep in the sense of CfRadial2/FM301. {func}`xradar.util.is_sweep` (also `.xradar.is_sweep()`) checks that from the structure, not from the name: a `range` dimension and one ray dimension (`time`, `azimuth` or `elevation`), `azimuth` and `elevation` along the rays, and at least one moment with the dimensions (ray, range). With `strict=True` the mandatory sweep variables of FM301 (`sweep_number`, `sweep_mode`, `follow_mode`, `prt_mode` and `sweep_fixed_angle`) are required as well.
+
+```{code-cell}
+from xradar.model import required_sweep_metadata_vars
+
+rows = []
+for name, dtree in trees.items():
+    # the sweep node with the coordinates of the root (station position)
+    sweep = dtree["sweep_0"].to_dataset(inherit="all_coords")
+    missing = sorted(set(required_sweep_metadata_vars) - set(sweep.variables))
+    rows.append(
+        {
+            "format": name,
+            "is_sweep": sweep.xradar.is_sweep(),
+            "strict": sweep.xradar.is_sweep(strict=True),
+            "mandatory variables missing": ", ".join(missing),
+        }
+    )
+sweeps_table = pd.DataFrame(rows).set_index("format")
+sweeps_table
+```
+
+```{code-cell}
+assert sweeps_table["is_sweep"].all()
+assert sweeps_table.loc[radars, "strict"].all()
+```
+
+The root of a volume and its metadata groups are no sweeps:
+
+```{code-cell}
+dtree = trees["IRIS/Sigmet"]
+print("root:", dtree.xradar.is_sweep(), "| sweep_0:", dtree["sweep_0"].xradar.is_sweep())
+assert not dtree.xradar.is_sweep() and dtree["sweep_0"].xradar.is_sweep()
+```
+
 ## Files with one sweep each
 
 IMD writes one sweep per file. A list of files is stacked into one volume (sorted by time, see {func}`xradar.util.create_volume`), again without `engine`:
