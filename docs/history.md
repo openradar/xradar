@@ -1,5 +1,7 @@
 # History
 
+## Development (unreleased)
+
 ## 0.13.0 (2026-10-21)
 
 This release brings a unified open_datatree interface (``xd.open_datatree(file, engine=...)`` / ``xr.open_datatree``) for all 13 backends, including the new IMD reader, and engine discovery so that formats unknown to xarray (NEXRAD Level II, IRIS, Rainbow, UF, ...) open without engine. IRIS moment decoding now follows the IRIS Programming Guide (2024), and numerous fixes improve sweep selection, file handling (close() releases files for every backend) and CfRadial and ODIM import and export, including repeatable CfRadial1/2 roundtrips. The CfRadial1 export writes CfRadial 1.4 metadata (``version``, ``Conventions`` with the sub-conventions, the names of the calibration tables), keeps rays which share a timestamp, writes strings as char arrays (which Py-ART can read) and boolean attributes as ``"true"``/``"false"``, and raises a clear error for volumes whose sweeps have different range geometry; ``to_odim`` builds ``what/source`` from the identifiers of the data it read. New documentation and notebooks cover gridding, georeferencing, format mappings and engine discovery, and the project now has an AI Usage Policy.
