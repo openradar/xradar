@@ -2,7 +2,7 @@
 
 ## Development
 
-* FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`) by [@Cherith1222](https://github.com/Cherith1222)
+* FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
 * FIX: ``Dataset.close()`` and ``DataTree.close()`` release the file for every backend, also after ``georeference()``/``add_crs()`` and when opening fails (most backends left files open until garbage collection, which can crash HDF5); CfRadial1 caches its data once ({issue}`471`, {issue}`502`, {pull}`472`) by [@aladinor](https://github.com/aladinor)
 * MNT: CI unit tests use released xarray again, and test jobs time out after 30 minutes ({issue}`495`, {pull}`510`) by [@aladinor](https://github.com/aladinor)
 * FIX: DataMet, Furuno, IRIS (also ``open_iris_datatree``) and Metek accept ``pathlib.Path`` (as HPL and Rainbow do), UF reads datatrees from file-like objects (sweep discovery consumed the object without rewinding), and the CfRadial1 backend applies ``fix_second_angle`` to sweep groups in ``open_dataset`` and ``open_datatree`` (it was accepted but ignored) ({pull}`509`) by [@aladinor](https://github.com/aladinor)
