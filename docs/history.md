@@ -3,6 +3,7 @@
 ## Development (unreleased)
 
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
+* ENH: Furuno reader (``optional_groups=True``) fills ``radar_parameters`` with the half-power beam widths from the SCNX header (stored in 1/100 degree, a width of 0 is not set); ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`434`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 
