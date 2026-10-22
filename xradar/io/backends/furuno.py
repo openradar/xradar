@@ -41,6 +41,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import datetime as dt
 import gzip
 import io
+import math
 import struct
 from collections import OrderedDict
 
@@ -304,6 +305,30 @@ SCN_HEADER = OrderedDict(
         ("tx_pulse_specification", UINT2),
     ]
 )
+
+
+# SCNX header values in tenths (WR2120 manual, 7.3): antenna gain in dBi, transmit
+# power in W (as ``xmit_power`` in dBm), radar constant in dB, noise power in dBZ
+# (#538)
+_SCNX_TENTHS = (
+    "antenna_gain_h",
+    "antenna_gain_v",
+    "tx_power_h",
+    "tx_power_v",
+    "radar_constant_h",
+    "radar_constant_v",
+    "noise_power_short_pulse_h",
+)
+#: ``units`` of the calibration values of SCNX files (the transmit power as dBm)
+_SCNX_UNITS = {
+    "antenna_gain_h": "dBi",
+    "antenna_gain_v": "dBi",
+    "xmit_power_h": "dBm",
+    "xmit_power_v": "dBm",
+    "radar_constant_h": "dB",
+    "radar_constant_v": "dB",
+    "noise_power_short_pulse_h": "dBZ",
+}
 
 
 class FurunoFile:
@@ -708,8 +733,20 @@ class FurunoStore(_ManagedStoreMixin, AbstractDataStore):
         return FrozenDict(attributes)
 
     def get_calibration_parameters(self):
-        vars = [var for var in self.root.header if var in radar_calibration_subgroup]
-        calibration = {var: self.root.header[var] for var in vars}
+        header = self.root.header
+        calibration = {
+            var: header[var] for var in header if var in radar_calibration_subgroup
+        }
+        if header["format_version"] == 10:  # SCNX, the values are in tenths
+            for var in _SCNX_TENTHS:
+                if var in calibration:
+                    calibration[var] = calibration[var] / 10
+            # the transmit power is given in W, CfRadial (xmit_power) has dBm;
+            # 0 is not set
+            for pol in ("h", "v"):
+                watt = calibration.pop(f"tx_power_{pol}", 0)
+                if watt > 0:
+                    calibration[f"xmit_power_{pol}"] = 10 * math.log10(watt * 1e3)
         return FrozenDict(calibration)
 
 
@@ -843,8 +880,12 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
             lambda swp: self.open_dataset(filename_or_obj, group=swp, **ds_kwargs),
             sweeps,
         )
+        scnx = bool(ls_ds) and ls_ds[0].attrs.get("version") == 10
         return _build_groups_dict(
-            ls_ds, optional=optional, optional_groups=optional_groups
+            ls_ds,
+            optional=optional,
+            optional_groups=optional_groups,
+            units=_SCNX_UNITS if scnx else None,
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):
