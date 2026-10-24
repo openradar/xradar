@@ -1960,7 +1960,8 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         From the MSG_31 VOL (volume) and RAD (radial) data blocks, ICD 2620002
         Table XVII-E and XVII-H:
 
-        - ``xmit_power_h/v``: SHV transmitter power in kW, as dBm,
+        - ``xmit_power_h/v``: SHV transmitter power in kW, as dBm, of the first
+          radial of the sweep (it varies between cuts and within a cut),
         - ``noise_hc/vc``: measured noise level in dBm of the first radial of
           the sweep (it varies between cuts, it is no system constant),
         - ``system_phidp``: initial system differential phase in degrees.
@@ -1979,7 +1980,7 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         calibration = {}
         for pol in ("h", "v"):
             power = vol.get(f"power_{pol}")
-            if power is not None and np.isfinite(power) and power > 0:
+            if valid(power, 0.0, 999.9) and power > 0:
                 # kW -> dBm
                 calibration[f"xmit_power_{pol}"] = float(10 * np.log10(power * 1e6))
             noise = rad.get(f"noise_{pol}")
@@ -2238,7 +2239,12 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         ls_ds = [sweep_dict[s] for s in sweep_dict]
         # the calibration values come as attributes of the sweeps; the root
         # takes all attributes of the first sweep, so they are taken out first
-        calibration = _get_radar_calibration(ls_ds, radar_calibration_subgroup)
+        # (the group is only built, with its warning, for optional_groups)
+        calibration = (
+            _get_radar_calibration(ls_ds, radar_calibration_subgroup)
+            if optional_groups
+            else None
+        )
         for ds in ls_ds:
             for name in radar_calibration_subgroup:
                 ds.attrs.pop(name, None)

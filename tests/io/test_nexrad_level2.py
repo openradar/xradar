@@ -3102,3 +3102,74 @@ def test_open_nexradlevel2_not_an_archive(tmp_path):
         open_nexradlevel2_datatree(path)
     with pytest.raises(ValueError, match="Not a NEXRAD Level II archive"):
         open_nexradlevel2_datatree(data.tobytes())
+
+
+def test_nexradlevel2_calibration_is_not_built_without_optional_groups(
+    nexradlevel2_file, closing
+):
+    # the noise differs between the cuts, but no group is built: no warning
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*differ between the sweeps")
+        dtree = closing(xd.open_datatree(nexradlevel2_file, engine="nexradlevel2"))
+    assert "radar_calibration" not in dtree.children
+    assert not {"noise_hc", "xmit_power_h", "system_phidp"} & set(dtree.attrs)
+
+
+def test_nexradlevel2_calibration_power_differs_between_cuts(
+    nexradlevel2_ldm_stride_file, closing
+):
+    # KILX 2023: the transmitter power of the first radial differs between the
+    # cuts as well as the noise, so only the system phase is left for the volume
+    with pytest.warns(
+        UserWarning,
+        match=r"\(noise_hc, noise_vc, xmit_power_h, xmit_power_v\)",
+    ):
+        dtree = closing(
+            xd.open_datatree(
+                nexradlevel2_ldm_stride_file,
+                engine="nexradlevel2",
+                optional_groups=True,
+            )
+        )
+    assert set(dtree["radar_calibration"].ds.data_vars) == {"system_phidp"}
+    # one cut has all values
+    dtree = closing(
+        xd.open_datatree(
+            nexradlevel2_ldm_stride_file,
+            engine="nexradlevel2",
+            sweep=0,
+            optional_groups=True,
+        )
+    )
+    calib = dtree["radar_calibration"].ds
+    expected = {
+        "noise_hc": -81.756,
+        "noise_vc": -81.32,
+        "xmit_power_h": 83.215,
+        "xmit_power_v": 83.112,
+        "system_phidp": 60.0,
+    }
+    assert set(calib.data_vars) == set(expected)
+    for name, value in expected.items():
+        np.testing.assert_allclose(calib[name], value, rtol=1e-4, err_msg=name)
+
+
+@pytest.mark.parametrize(
+    "power, kept",
+    [(0.0, False), (-1.0, False), (np.nan, False), (1000.0, False), (5000.0, False)]
+    + [(177.09, True), (999.9, True)],
+)
+def test_nexradlevel2_store_transmit_power_range(power, kept):
+    # ICD Table XVII-E: 0 to 999.9 kW
+    from types import SimpleNamespace
+
+    from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+    constants = {"VOL": {"power_h": power}, "RAD": {}}
+    store = SimpleNamespace(ds={"sweep_constant_data": constants})
+    calibration = NexradLevel2Store.get_calibration_parameters(store)
+    assert ("xmit_power_h" in calibration) is kept
+    if kept:
+        np.testing.assert_allclose(
+            calibration["xmit_power_h"], 10 * np.log10(power * 1e6)
+        )
