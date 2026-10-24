@@ -425,6 +425,7 @@ class _StubStore(rainbow.RainbowStore):
         if pargroup is not None:
             scan["pargroup"] = pargroup
         root = object.__new__(rainbow.RainbowFile)
+        root._fp = None  # looked up when the file is closed
         root._header = {"scan": scan}
         if sensorinfo is not None:
             root._header["sensorinfo"] = sensorinfo
@@ -494,8 +495,9 @@ def test_rainbow_store_radar_parameters_edge_cases(slc, pargroup, sensorinfo, ex
             {"radar_constant_h": 74.1},
         ),
         ({"rspdphradconst": "77.2", "pw_index": "1"}, {}),
-        # no pulse width index: the first one
-        ({"rspdphradconst": "77.2 74.1"}, {"radar_constant_h": 77.2}),
+        # no pulse width index: only a constant with one value is used
+        ({"rspdphradconst": "77.2"}, {"radar_constant_h": 77.2}),
+        ({"rspdphradconst": "77.2 74.1"}, {}),
         # an index which is no non-negative whole number: no radar constant,
         # not the one of another pulse width (-1 is the last one of a list)
         ({"rspdphradconst": "77.2 74.1", "pw_index": "-1"}, {}),
@@ -510,7 +512,8 @@ def test_rainbow_store_radar_parameters_edge_cases(slc, pargroup, sensorinfo, ex
         "tx-dbm",
         "pulse-width",
         "no-such-pulse-width",
-        "no-index",
+        "no-index-one-value",
+        "no-index-several-values",
         "negative-index",
         "nan-index",
         "inf-index",
@@ -524,3 +527,17 @@ def test_rainbow_store_calibration_parameters_edge_cases(slc, expected):
     assert found.keys() == expected.keys()
     for name, value in expected.items():
         np.testing.assert_allclose(found[name], value, rtol=1e-6)
+
+
+def test_rainbow_store_empty_pargroup():
+    # xmltodict gives None for an empty <pargroup/>
+    store = _StubStore({"spbhorbeam": "0.9"})
+    store.root._header["scan"]["pargroup"] = None
+    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 0.9}
+
+
+def test_rainbow_store_slice_value_before_pargroup_value():
+    store = _StubStore({"spbhorbeam": "0.9"}, pargroup={"spbhorbeam": "1.4"})
+    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 0.9}
+    store = _StubStore({}, pargroup={"spbhorbeam": "1.4"})
+    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 1.4}

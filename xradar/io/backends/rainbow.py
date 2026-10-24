@@ -511,7 +511,7 @@ class RainbowFile(RainbowFileBase):
 
     @property
     def pargroup(self):
-        return self._header["scan"].get("pargroup", {})
+        return self._header["scan"].get("pargroup") or {}
 
     @property
     def sensorinfo(self):
@@ -863,12 +863,17 @@ class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
         calibration = {}
         # the pulse width index is a non-negative whole number, if it is not (or
         # no number) there is no radar constant, instead of one of another pulse
-        # width; no index means the first pulse width
+        # width; without an index the constant is only used if it has one value
         pw_value = self._slice_value("pw_index")
-        pw_index = 0 if pw_value is None else _get_float(pw_value)
-        if pw_index is not None and pw_index >= 0 and pw_index == int(pw_index):
+        pw_index = None if pw_value is None else _get_float(pw_value)
+        if pw_value is None or (
+            pw_index is not None and pw_index >= 0 and pw_index == int(pw_index)
+        ):
             for name, xradar_name in _RAINBOW_RADAR_CONSTANTS.items():
-                value = _get_float(self._slice_value(name), int(pw_index))
+                constant = self._slice_value(name)
+                if pw_index is None and len(str(constant).split()) != 1:
+                    continue
+                value = _get_float(constant, 0 if pw_index is None else int(pw_index))
                 if value is not None:
                     calibration[xradar_name] = value
         for name, xradar_name in _RAINBOW_TX_POWER.items():
