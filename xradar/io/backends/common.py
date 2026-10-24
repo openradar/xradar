@@ -612,7 +612,7 @@ def _get_subgroup(
         if rename:
             subgroup = subgroup.rename_vars({k: rename})
     if attrs:
-        values = _collect_agreeing_attrs(ls_ds, meta_vars, name)
+        values = _collect_consistent_attrs(ls_ds, meta_vars, name)
         values = {
             (meta_vars[k] or k): _value_array(v, (meta_vars[k] or k), units)
             for k, v in values.items()
@@ -665,7 +665,7 @@ def _warn_differing(group, differing):
         )
 
 
-def _collect_agreeing_attrs(ls_ds, names, group):
+def _collect_consistent_attrs(ls_ds, names, group):
     """Values of the attributes ``names`` of the sweeps, without the ones the
     sweeps disagree about, which a warning for ``group`` lists: the group only
     holds what is the same for all sweeps which have it."""
@@ -685,7 +685,7 @@ def _get_radar_calibration(
     ``sweep=`` to get its values. ``units`` maps names to the ``units`` attribute
     of the values.
     """
-    values = _collect_agreeing_attrs(ls_ds, subdict, "radar_calibration")
+    values = _collect_consistent_attrs(ls_ds, subdict, "radar_calibration")
     return xr.Dataset(
         {key: _value_array(value, key, units) for key, value in values.items()}
     )
