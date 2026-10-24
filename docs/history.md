@@ -6,6 +6,7 @@
 * CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
 * ENH: Furuno reader (``optional_groups=True``) fills ``radar_parameters`` with the half-power beam widths from the SCNX header (stored in 1/100 degree, a width of 0 is not set); ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`434`) by [@syedhamidali](https://github.com/syedhamidali)
+* ENH: UF files fill ``radar_parameters`` (``optional_groups=True``) with the beam widths from the field headers of the first ray; the ``BandWidth`` word of the field header is now returned as written in the file (a signed integer, -9999 for missing) instead of divided by 64, which changes ``UFFile.ray_headers``; the receiver bandwidth is not mapped because its scale differs between writers ({issue}`232`, {pull}`439`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 
