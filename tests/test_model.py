@@ -4,6 +4,10 @@
 
 """Tests for `xradar` model package."""
 
+import os
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -204,3 +208,27 @@ def test_get_sweep_dataarray():
     assert attrs["long_name"] == "Equivalent reflectivity factor H"
     assert attrs["short_name"] == "DBZH"
     assert attrs["units"] == "dBZ"
+
+
+def test_moment_attr_keys_keep_the_same_order_across_hash_seeds():
+    code = (
+        "from xradar.model import moment_attrs, sweep_vars_mapping\n"
+        "mapping = sweep_vars_mapping['DBZH']\n"
+        "attrs = {key: mapping[key] for key in moment_attrs if key in mapping}\n"
+        "print(','.join(attrs))\n"
+    )
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    orders = []
+    for seed in ("0", "1", "2"):
+        env = os.environ.copy()
+        env["PYTHONHASHSEED"] = seed
+        env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        orders.append(completed.stdout.strip())
+    assert orders == ["standard_name,long_name,units"] * 3
