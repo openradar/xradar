@@ -152,6 +152,31 @@ display(dtree)
 dtree["sweep_1"]
 ```
 
+## Optional groups: radar_parameters
+
+With `optional_groups=True` the datatree also holds the CfRadial2 metadata groups. For UF files `radar_parameters` has the horizontal and vertical beam width, which are read from the field headers of the first ray (UF stores them in 1/64 degree; -9999 and 0 are missing).
+
+```{code-cell}
+dtree = xd.open_datatree(fname, engine="uf", sweep=0, optional_groups=True)
+display(dtree["radar_parameters"].ds)
+```
+
+```{code-cell}
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 0.953125)
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_v, 0.953125)
+```
+
+The receiver bandwidth is not mapped to `radar_receiver_bandwidth`, because the scale of this word depends on the software which wrote the file (MHz in the UF specification, MHz x 16 for Py-ART, "MHz x 64 ?" in the IRIS programming guide). The field header holds the raw word, -9999 means missing (as in this file).
+
+```{code-cell}
+from xradar.io.backends.uf import UFFile
+
+with UFFile(fname, loaddata=False) as ufh:
+    first_ray = next(iter(ufh.ray_headers.values()))[0]
+    fields = first_ray["dhead"]["fields"]
+    display({name: header["BandWidth"] for name, header in fields.items()})
+```
+
 ## clean up
 
 ```{code-cell}
