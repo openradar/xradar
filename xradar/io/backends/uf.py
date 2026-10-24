@@ -521,9 +521,10 @@ UF_FIELD_HEADER = OrderedDict(
         ("PulseWidth", SINT2),  # Pulse width in meters
         ("BeamWidthH", BIN2),  # Horizontal Beam width in 1/64 of degree
         ("BeamWidthV", BIN2),
-        # Receiver bandwidth: the raw word. The scale depends on the writer (MHz in
-        # the UF specification, MHz * 16 for Py-ART, "MHz * 64 ?" in the IRIS
-        # guide), -9999 is missing; it is not mapped to a radar parameter.
+        # Receiver bandwidth: the raw word. The scale depends on the writer: MHz in
+        # the UF specification, "MHz * 16" in Py-ART (uffile.py, uf_write.py) and
+        # "Mhz*64 ?" in the IRIS programming guide; none of them says why. -9999 is
+        # missing. It is not mapped to a radar parameter.
         ("BandWidth", SINT2),
         ("Polarization", SINT2),
         ("WaveLength", BIN2),  # Wavelength in 1/64 of a cm
@@ -757,13 +758,13 @@ class UFStore(_ManagedStoreMixin, AbstractDataStore):
         )
 
     def get_radar_parameters(self):
-        """Beam widths of the field headers of the first ray, with their xradar names.
+        """Radar parameters of the field headers of the first ray, with their xradar names.
 
-        UF field header words 8 and 9 (https://www.eol.ucar.edu/content/standard-data-formats)
-        are the horizontal and vertical beam width in degrees (x 64 in the file).
-        Each takes the first valid (> 0) value of the fields of the ray; -9999 and
-        0 are missing. The receiver bandwidth (word 10) is not mapped, its scale
-        differs between writers.
+        Mapped are the horizontal and vertical beam width, UF field header words 8
+        and 9 (https://www.eol.ucar.edu/content/standard-data-formats), in degrees
+        (x 64 in the file). Each takes the first valid (> 0) value of the fields of
+        the ray; -9999 and 0 are missing. The receiver bandwidth (word 10) could be
+        added, but its scale differs between writers, see ``UF_FIELD_HEADER``.
         """
         parameters = {}
         for header in self.ds["sweep_data"].values():
