@@ -189,10 +189,15 @@ def test_open_gamic_datatree(gamic_file, closing):
 
 def test_open_gamic_datatree_optional_groups(gamic_file, closing):
     """Test that optional_groups=True includes metadata subgroups."""
-    dtree = closing(open_gamic_datatree(gamic_file, optional_groups=True))
+    with pytest.warns(UserWarning, match="noise_power_h, noise_power_v"):
+        dtree = closing(open_gamic_datatree(gamic_file, optional_groups=True))
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+    # only scan9 has another noise power, so it is left out of the volume group
+    assert "noise_power_h" not in dtree["radar_calibration"]
+    scan9 = closing(open_gamic_datatree(gamic_file, optional_groups=True, sweep=[9]))
+    assert scan9["radar_calibration"]["noise_power_h"].item() == -3.40133
 
 
 def test_gamic_radar_metadata(gamic_file, closing):

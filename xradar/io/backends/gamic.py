@@ -418,7 +418,9 @@ class GamicStore(_ManagedStoreMixin, AbstractDataStore):
         names; values which are no numbers are left out."""
         how = self.root.how
         calibration = {}
-        for var in how.keys() & radar_calibration_subgroup.keys():
+        for var in radar_calibration_subgroup:
+            if var not in how:
+                continue
             value = _to_float(how[var])
             if value is not None:
                 calibration[radar_calibration_subgroup[var] or var] = value
