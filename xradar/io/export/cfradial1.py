@@ -298,12 +298,13 @@ def _per_sweep_range(ranges, attrs):
     and ``meters_between_gates``.
     """
     ngates = max(rng.size for rng in ranges)
-    first = np.array([rng[0] for rng in ranges], dtype="float32")
+    dtype = np.result_type(*ranges)
+    first = np.array([rng[0] for rng in ranges], dtype=dtype)
     spacing = np.array(
         [np.median(np.diff(rng)) if rng.size > 1 else np.nan for rng in ranges],
-        dtype="float32",
+        dtype=dtype,
     )
-    values = np.empty((len(ranges), ngates), dtype="float32")
+    values = np.empty((len(ranges), ngates), dtype=dtype)
     for i, rng in enumerate(ranges):
         values[i, : rng.size] = rng
         values[i, rng.size :] = rng[-1] + spacing[i] * np.arange(

@@ -707,6 +707,8 @@ def test_cfradial1_export_per_sweep_range(gamic_file, tmp_path):
                 source, result = dtree[sweep].ds, back[sweep].ds
                 ngates = source.sizes["range"]
                 np.testing.assert_allclose(result.range.values[:ngates], source.range)
+                for name in ("meters_to_center_of_first_gate", "meters_between_gates"):
+                    assert result.range.attrs[name] == source.range.attrs[name]
                 moments = [
                     name
                     for name, var in source.data_vars.items()
