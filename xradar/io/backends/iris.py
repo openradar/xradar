@@ -4060,6 +4060,9 @@ _IRIS_METADATA = {
     ("task_misc_info", "vertical_beam_width"): ("radar_beam_width_v", 1, 1),
     # kHz, as s-1
     ("task_calib_info", "receiver_bandwidth"): ("radar_receiver_bandwidth", 1000, 1),
+    # pulse width of the task (4.3.52, task_dsp_info), 1/100 us as s: the radar
+    # constant and the noise belong to it
+    ("task_dsp_info", "pulse_width"): ("pulse_width", 1, 100_000_000),
 }
 _IRIS_UNITS = {
     "radar_constant_h": "dB",
@@ -4069,6 +4072,7 @@ _IRIS_UNITS = {
     "radar_beam_width_h": "degrees",
     "radar_beam_width_v": "degrees",
     "radar_receiver_bandwidth": "s-1",
+    "pulse_width": "s",
 }
 
 

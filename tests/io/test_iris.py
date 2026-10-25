@@ -15,7 +15,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
 import xradar as xd
@@ -385,43 +384,29 @@ def test_open_iris_datatree_optional_groups(iris0_file):
     assert "radar_calibration" in dtree.children
 
 
-# IRIS Programming Guide 4.3.50 (task_calib_info) and 4.3.57 (task_misc_info)
+# IRIS Programming Guide 4.3.50 (task_calib_info), 4.3.52 (task_dsp_info) and
+# 4.3.57 (task_misc_info)
 _TASK_METADATA = [
-    # file, beam width, receiver bandwidth (Hz), radar constant H/V (dB),
-    # noise at calibration H/V (dBm)
-    (
-        "cor-main131125105503.RAW2049",
-        (0.95, 0.95),
-        1.048e6,
-        (67.1, 70.1),
-        (-81.4, -81.78),
-    ),
-    (
-        "SUR210819000227.RAWKPJV",
-        (0.95, 0.95),
-        559e3,
-        (63.2, 66.2),
-        (-82.39, -83.09),
-    ),
+    # fixture, beam width, receiver bandwidth (Hz), radar constant H/V (dB),
+    # noise at calibration H/V (dBm), pulse width (s)
+    ("iris0_file", (0.95, 0.95), 1.048e6, (67.1, 70.1), (-81.4, -81.78), 1e-6),
+    ("iris1_file", (0.95, 0.95), 559e3, (63.2, 66.2), (-82.39, -83.09), 2e-6),
+    ("iris_arouca_file", (0.95, 0.95), 601e3, (62.9, 66.2), (-110.35, -110.25), 2e-6),
     # unset receiver bandwidth (0 kHz) is left out
-    (
-        "RAW_NA_000_125_20080411181219",
-        (1.1, 1.1),
-        None,
-        (68.58, 71.58),
-        (-74.61, -75.33),
-    ),
+    ("iris_raw_na_file", (1.1, 1.1), None, (68.58, 71.58), (-74.61, -75.33), 0.8e-6),
 ]
 
 
 @pytest.mark.parametrize("kind", ["path", "bytesio"])
 @pytest.mark.parametrize(
-    "name, beam, bandwidth, constant, noise",
+    "fixture, beam, bandwidth, constant, noise, pulse_width",
     _TASK_METADATA,
-    ids=["cor-main", "SUR", "RAW_NA"],
+    ids=["cor-main", "SUR", "arouca", "RAW_NA"],
 )
-def test_iris_task_metadata(name, beam, bandwidth, constant, noise, kind, closing):
-    filename = DATASETS.fetch(name)
+def test_iris_task_metadata(
+    fixture, beam, bandwidth, constant, noise, pulse_width, kind, request, closing
+):
+    filename = request.getfixturevalue(fixture)
     if kind == "bytesio":
         with open(filename, "rb") as fh:
             filename = io.BytesIO(fh.read())
@@ -440,11 +425,24 @@ def test_iris_task_metadata(name, beam, bandwidth, constant, noise, kind, closin
     np.testing.assert_allclose(calib.radar_constant_v, constant[1])
     np.testing.assert_allclose(calib.noise_hc, noise[0])
     np.testing.assert_allclose(calib.noise_vc, noise[1])
+    # the pulse width the radar constant and the noise belong to
+    np.testing.assert_allclose(calib.pulse_width, pulse_width)
     # the I0 cal values are not noise levels, they are not mapped
     assert not {"i0_dbm_hc", "i0_dbm_vc"} & set(calib.data_vars)
-    assert params.radar_beam_width_h.attrs["units"] == "degrees"
-    assert calib.noise_hc.attrs["units"] == "dBm"
-    assert calib.radar_constant_h.attrs["units"] == "dB"
+    units = {
+        "radar_beam_width_h": "degrees",
+        "radar_beam_width_v": "degrees",
+        "radar_receiver_bandwidth": "s-1",
+        "radar_constant_h": "dB",
+        "radar_constant_v": "dB",
+        "noise_hc": "dBm",
+        "noise_vc": "dBm",
+        "pulse_width": "s",
+    }
+    for group in (params, calib):
+        assert {k: v.attrs["units"] for k, v in group.data_vars.items()} == {
+            k: units[k] for k in group.data_vars
+        }
     # the values are no attributes of the root or of the sweeps
     names = {"radar_constant_h", "noise_hc", "radar_beam_width_h"}
     assert not names & set(dtree.attrs)
