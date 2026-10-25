@@ -24,6 +24,7 @@ import warnings
 import zlib
 from collections import OrderedDict
 from contextlib import ExitStack, suppress
+from functools import partial
 from pathlib import Path, PurePosixPath
 
 import h5netcdf
@@ -584,9 +585,23 @@ def _get_required_root_dataset(ls_ds, optional=True):
     return root
 
 
-def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
-    """Get iris-sigmet root metadata group.
+def _get_subgroup(
+    ls_ds: list[xr.Dataset],
+    subdict,
+    attrs=False,
+    name="radar_parameters",
+    units=None,
+):
+    """Get a root metadata group from the sweeps.
     Variables are fetched from the provided Dataset according to the subdict dictionary.
+
+    With ``attrs=True`` the attributes of the sweeps which are in ``subdict`` are
+    added as well (for backends which have the values as attributes, e.g. of the
+    ``how`` groups); variables win. Each name takes the value of the first sweep
+    which has it. A value the sweeps disagree about is left out and a warning for
+    the group ``name`` lists it (select a sweep with ``sweep=`` to get its
+    values). ``units`` maps names of the group to the ``units`` attribute of the
+    values taken from the attributes.
     """
     meta_vars = subdict
     data_vars = {x for xs in [ds.variables.keys() for ds in ls_ds] for x in xs}
@@ -596,20 +611,84 @@ def _get_subgroup(ls_ds: list[xr.Dataset], subdict):
         rename = meta_vars[k]
         if rename:
             subgroup = subgroup.rename_vars({k: rename})
+    if attrs:
+        values = _collect_consistent_attrs(ls_ds, meta_vars, name)
+        values = {
+            (meta_vars[k] or k): _value_array(v, (meta_vars[k] or k), units)
+            for k, v in values.items()
+            if (meta_vars[k] or k) not in subgroup
+        }
+        subgroup = xr.merge([subgroup, xr.Dataset(values)])
     subgroup.attrs = {}
     return subgroup
 
 
-def _get_radar_calibration(ls_ds: list[xr.Dataset], subdict: dict) -> xr.Dataset:
-    """Get radar calibration root metadata group."""
-    meta_vars = subdict
-    data_vars = {x for xs in [ds.attrs for ds in ls_ds] for x in xs}
-    extract_vars = set(data_vars) & set(meta_vars)
-    if extract_vars:
-        var_dict = {var: ls_ds[0].attrs[var] for var in extract_vars}
-        return xr.Dataset({key: xr.DataArray(value) for key, value in var_dict.items()})
-    else:
-        return xr.Dataset()
+def _value_array(value, name, units=None):
+    """Scalar DataArray of a metadata value, with ``units`` of ``name`` if known."""
+    attrs = {"units": units[name]} if units and name in units else {}
+    return xr.DataArray(value, attrs=attrs)
+
+
+def _same_value(a, b):
+    try:
+        return bool(np.array_equal(a, b, equal_nan=True))
+    except TypeError:  # strings and bytes: isnan is not defined
+        return bool(np.array_equal(a, b))
+
+
+def _collect_attrs(ls_ds, names):
+    """Values of the attributes ``names`` found in the sweeps.
+
+    Returns ``(values, differing)``: ``values`` holds, for each name, the value
+    of the first sweep which has it, ``differing`` lists the names for which
+    another sweep has a different value.
+    """
+    values, differing = {}, set()
+    for ds in ls_ds:
+        for name in sorted(names.keys() & ds.attrs.keys()):
+            value = ds.attrs[name]
+            if name not in values:
+                values[name] = value
+            elif not _same_value(values[name], value):
+                differing.add(name)
+    return values, sorted(differing)
+
+
+def _warn_differing(group, differing):
+    if differing:
+        warnings.warn(
+            f"xradar: {group} values differ between the sweeps "
+            f"({', '.join(differing)}) and are left out of the group; use "
+            "``sweep=`` to select the sweep whose values you need.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def _collect_consistent_attrs(ls_ds, names, group):
+    """Values of the attributes ``names`` of the sweeps, without the ones the
+    sweeps disagree about, which a warning for ``group`` lists: the group only
+    holds what is the same for all sweeps which have it."""
+    values, differing = _collect_attrs(ls_ds, names)
+    _warn_differing(group, differing)
+    return {name: value for name, value in values.items() if name not in differing}
+
+
+def _get_radar_calibration(
+    ls_ds: list[xr.Dataset], subdict: dict, units=None
+) -> xr.Dataset:
+    """Get radar calibration root metadata group.
+
+    The values are attributes of the sweeps. Each name takes the value of the
+    first sweep which has it. A value the sweeps disagree about (e.g. the noise
+    level of each cut) is left out and a warning lists it; select a sweep with
+    ``sweep=`` to get its values. ``units`` maps names to the ``units`` attribute
+    of the values.
+    """
+    values = _collect_consistent_attrs(ls_ds, subdict, "radar_calibration")
+    return xr.Dataset(
+        {key: _value_array(value, key, units) for key, value in values.items()}
+    )
 
 
 def _prepare_backend_ds(ds):
@@ -673,7 +752,65 @@ def _close_all(objs):
             obj.close()
 
 
-def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
+#: arguments of :func:`xradar.util.create_volume` which select and label the sweeps
+_VOLUME_KWARGS = (
+    "time_coverage_start",
+    "time_coverage_end",
+    "min_angle",
+    "max_angle",
+    "volume_number",
+)
+
+
+def _is_file_list(filename_or_obj):
+    """List or tuple of paths (not of bytes chunks, see NEXRAD Level II)."""
+    return isinstance(filename_or_obj, (list, tuple)) and all(
+        isinstance(item, (str, os.PathLike)) for item in filename_or_obj
+    )
+
+
+def _open_sweep_files_as_volume(files, open_file, **kwargs):
+    """Open files with one sweep each and stack them into one volume.
+
+    ``open_file(path, **kwargs)`` opens a file as DataTree. The sweeps of all
+    files are sorted by time and numbered in this order (see
+    :func:`xradar.util.create_volume`), closing the volume closes all files.
+    """
+    volume_kwargs = {k: kwargs.pop(k) for k in _VOLUME_KWARGS if k in kwargs}
+    if len(files) == 1:
+        if volume_kwargs:
+            raise TypeError(
+                f"{', '.join(_VOLUME_KWARGS)} are only valid when opening "
+                "multiple files."
+            )
+        return open_file(files[0], **kwargs)
+    trees = []
+    try:
+        for file in files:
+            trees.append(open_file(file, **kwargs))
+        volume = util.create_volume(trees, **volume_kwargs)
+    except Exception:
+        _close_all(trees)
+        raise
+    # create_volume copies sweeps verbatim: number them by their position
+    for i, key in enumerate(util.get_sweep_keys(volume)):
+        sweep = volume[key].to_dataset()
+        if "sweep_number" in sweep:
+            sweep["sweep_number"] = xr.DataArray(i)
+            volume[key] = xr.DataTree(sweep)
+    # closing the volume closes every source file; the source trees and their
+    # data are not kept
+    closers = [
+        node._close
+        for tree in trees
+        for node in tree.subtree
+        if node._close is not None
+    ]
+    volume.set_close(partial(_call_all, closers))
+    return volume
+
+
+def _build_groups_dict(ls_ds, optional=True, optional_groups=False, units=None):
     """Build CfRadial2 groups dict from a list of sweep Datasets.
 
     Parameters
@@ -685,6 +822,10 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
     optional_groups : bool
         If True, includes ``/radar_parameters``, ``/georeferencing_correction``
         and ``/radar_calibration`` metadata subgroups. Default is False.
+    units : dict, optional
+        ``units`` attribute of values of ``/radar_parameters`` and
+        ``/radar_calibration`` which backends take from the sweep attributes,
+        by name.
 
     Returns
     -------
@@ -699,13 +840,13 @@ def _build_groups_dict(ls_ds, optional=True, optional_groups=False):
         sweeps = [ds.drop_vars(_STATION_VARS, errors="ignore") for ds in ls_ds]
         if optional_groups:
             groups_dict["/radar_parameters"] = _get_subgroup(
-                sweeps, radar_parameters_subgroup
+                sweeps, radar_parameters_subgroup, attrs=True, units=units
             )
             groups_dict["/georeferencing_correction"] = _get_subgroup(
                 sweeps, georeferencing_correction_subgroup
             )
             groups_dict["/radar_calibration"] = _get_radar_calibration(
-                sweeps, radar_calibration_subgroup
+                sweeps, radar_calibration_subgroup, units=units
             )
     except Exception:
         # nothing holds the sweeps' files yet: close them (#471, #502)

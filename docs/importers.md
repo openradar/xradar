@@ -2,6 +2,8 @@
 
 The backends use different approaches to ingest the data.
 
+How the names of moments and metadata of each format are mapped to the data model is shown in the {doc}`notebooks/Name_Mapping` notebook.
+
 ## Engine discovery
 
 Each backend implements ``guess_can_open``, based on the format's signature
@@ -14,11 +16,22 @@ engine = xd.io.discover_engine(filename)
 ds = xr.open_dataset(filename, engine=engine, group="sweep_0")
 ```
 
+``xd.open_datatree(filename)`` without ``engine`` uses ``discover_engine`` and
+works for all formats. A list of files with one sweep each (e.g. IMD, IRIS/Sigmet
+files of single sweeps) is stacked into one volume with
+{func}`xradar.util.create_volume`:
+
+```python
+dtree = xd.open_datatree(filename)
+volume = xd.open_datatree([sweep_file_1, sweep_file_2, sweep_file_3])
+```
+
 For formats which xarray's own backends don't read (e.g. NEXRAD Level II,
-IRIS, Rainbow), ``xr.open_dataset(filename, group="sweep_0")`` also picks the
-xradar engine without passing ``engine``. netCDF/HDF5 based formats (CfRadial,
-ODIM_H5, GAMIC) are claimed by xarray's netCDF backends first, so use
-``discover_engine`` or pass ``engine`` there.
+IRIS, Rainbow), ``xr.open_dataset(filename, group="sweep_0")`` and
+``xr.open_datatree(filename)`` also pick the xradar engine without passing
+``engine``. netCDF/HDF5 based formats (CfRadial, ODIM_H5, GAMIC, IMD) are claimed
+by xarray's netCDF backends first, so use ``xd.open_datatree`` or pass
+``engine`` there.
 
 ## Common DataTree behavior
 
@@ -48,6 +61,16 @@ dtree = xd.io.open_nexradlevel2_datatree(filename)
 
 # Include optional metadata subgroups
 dtree = xd.io.open_nexradlevel2_datatree(filename, optional_groups=True)
+```
+
+The groups hold one set of values. If the sweeps of a file disagree about a value
+(e.g. the calibration or the noise level of each cut), that value is left out of
+the group and a warning lists it, so the group only has values which are the same
+for all sweeps. To get the values of one sweep, select that sweep:
+
+```python
+# radar_calibration with the values of sweep_4
+dtree = xd.open_datatree(filename, sweep=4, optional_groups=True)
 ```
 
 ## CfRadial1

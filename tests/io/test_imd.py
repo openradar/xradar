@@ -297,7 +297,7 @@ def test_open_imd_volumes_optional_groups(imd_volume_files, closing):
 def test_open_imd_datatree_volume_optional_groups_differ(
     imd_volume_files, monkeypatch, closing
 ):
-    # a single set of values can't describe files that differ: first file wins
+    # a single set of values can't describe files that differ: they are left out
     open_single = imd._open_single_imd_datatree
     calls = []
 
@@ -312,12 +312,14 @@ def test_open_imd_datatree_volume_optional_groups_differ(
         return tree
 
     monkeypatch.setattr(imd, "_open_single_imd_datatree", patched)
-    with pytest.warns(UserWarning, match="/radar_calibration differs"):
+    with pytest.warns(UserWarning, match=r"differ between the files \(radarConst\)"):
         dtree = closing(open_imd_datatree(imd_volume_files, optional_groups=True))
     first = closing(open_single(imd_volume_files[0], optional_groups=True))
-    assert float(dtree["radar_calibration"].ds["radarConst"]) == float(
-        first["radar_calibration"].ds["radarConst"]
-    )
+    calib = dtree["radar_calibration"].ds
+    assert "radarConst" not in calib
+    assert set(calib.data_vars) == set(first["radar_calibration"].ds.data_vars) - {
+        "radarConst"
+    }
 
 
 def test_open_dataset_imd_reindex_angle(imd_file, closing):
