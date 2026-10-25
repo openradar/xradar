@@ -343,8 +343,8 @@ def test_open_metek_datatree_optional_groups(metek_pro_gz_file):
 )
 def test_metek_sweep_metadata(fixture, request):
     # the single vertically pointing sweep carries the mandatory sweep
-    # metadata (FM301 Table 301-7a), with the CfRadial 2.1 defaults for
-    # follow_mode and prt_mode (#451)
+    # metadata (FM301 Table 301-7a), follow_mode and prt_mode are "not_set",
+    # as for the other readers (#451)
     fname = request.getfixturevalue(fixture)
     with xr.open_dataset(fname, engine="metek") as ds:
         # lazily opened variables report the stored dtype
@@ -354,5 +354,19 @@ def test_metek_sweep_metadata(fixture, request):
         assert ds["sweep_mode"].values == b"vertical_pointing"
         assert ds["sweep_number"].values == 0
         assert ds["sweep_fixed_angle"].values == 90.0
-        assert ds["follow_mode"].values == b"none"
-        assert ds["prt_mode"].values == b"fixed"
+        assert ds["follow_mode"].values == "not_set"
+        assert ds["prt_mode"].values == "not_set"
+
+
+def test_metek_to_netcdf_roundtrip(metek_pro_gz_file, tmp_path):
+    # time must not carry a "units" attribute, which blocks encoding (#453)
+    dtree = metek.open_metek_datatree(metek_pro_gz_file)
+    assert "units" not in dtree["sweep_0"]["time"].attrs
+    path = tmp_path / "metek.nc"
+    dtree.to_netcdf(path)
+    with xr.open_datatree(path) as back:
+        xr.testing.assert_equal(back["sweep_0"]["time"], dtree["sweep_0"]["time"])
+        np.testing.assert_allclose(
+            back["sweep_0"]["reflectivity"].values,
+            dtree["sweep_0"]["reflectivity"].values,
+        )

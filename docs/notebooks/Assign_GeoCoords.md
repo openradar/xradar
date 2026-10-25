@@ -95,7 +95,7 @@ file2 = DATASETS.fetch("cfrad.20211011_201557.188_to_20211011_201617.720_DOW8_PP
 **Note:** Station coordinates (`latitude`, `longitude`, `altitude`) are stored on the root node of the DataTree. When accessing a sweep dataset directly, use `.to_dataset(inherit="all_coords")` to inherit these coordinates from the root. The `.xradar.georeference()` accessor handles this automatically.
 
 ```{code-cell}
-dtree1 = xd.io.open_cfradial1_datatree(file1)
+dtree1 = xd.open_datatree(file1, engine="cfradial1")
 ```
 
 ```{code-cell}
@@ -131,7 +131,7 @@ plt.show()
 ## Example #2
 
 ```{code-cell}
-dtree2 = xd.io.open_cfradial1_datatree(file2)
+dtree2 = xd.open_datatree(file2, engine="cfradial1")
 ```
 
 ```{code-cell}

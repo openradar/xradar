@@ -4,7 +4,12 @@
 
 """Tests for `xradar` model package."""
 
+import os
+import subprocess
+import sys
+
 import numpy as np
+import pytest
 
 from xradar import model
 
@@ -26,6 +31,65 @@ def test_get_range_attrs_with_float32_precision():
         "spacing_is_constant": "true",
         "meters_to_center_of_first_gate": np.float32(37.500034),
     }
+
+
+@pytest.mark.parametrize("dtype", ["int16", "int32", "int64", "uint32"])
+def test_get_range_attrs_integer_range(dtype):
+    # integer ranges are compared exactly
+    rng = np.arange(125, 125 + 250 * 10, 250, dtype=dtype)
+    range_attrs = model.get_range_attrs(rng)
+    assert range_attrs["spacing_is_constant"] == "true"
+    assert range_attrs["meters_between_gates"] == 250
+    assert range_attrs["meters_to_center_of_first_gate"] == 125
+
+    rng[-1] += 1
+    range_attrs = model.get_range_attrs(rng)
+    assert range_attrs["spacing_is_constant"] == "false"
+    assert "meters_between_gates" not in range_attrs
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_get_range_attrs_float_not_constant(dtype):
+    # deviations larger than the float precision are not constant spacing
+    rng = np.arange(37.5, 75.0 * 100, 75.0, dtype=dtype)
+    rng[50:] += 1.0
+    range_attrs = model.get_range_attrs(rng)
+    assert range_attrs["spacing_is_constant"] == "false"
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        (dict(azimuth=1.0, elevation=1.0), "Either `shape` or"),
+        (dict(sweep="PPI"), "elevation need to be specified"),
+        (dict(sweep="RHI"), "azimuth need to be specified"),
+    ],
+)
+def test_create_sweep_dataset_errors(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        model.create_sweep_dataset(shape=(360, 100), **kwargs)
+
+
+def test_create_sweep_dataset_shape():
+    ds = model.create_sweep_dataset(shape=(720, 100), elevation=1.0)
+    assert ds.azimuth.shape == (720,)
+    assert ds.range.shape == (100,)
+    np.testing.assert_allclose(ds.azimuth.diff("time"), 0.5)
+    ds = model.create_sweep_dataset(shape=(90, 100), azimuth=10.0, sweep="RHI")
+    assert ds.elevation.shape == (90,)
+    np.testing.assert_allclose(ds.elevation.diff("time"), 1.0)
+
+
+def test_get_sweep_dataarray_fill():
+    da = model.get_sweep_dataarray((10, 20), "DBZH", fill=5.0)
+    assert da.dims == ("time", "range")
+    assert da.shape == (10, 20)
+    np.testing.assert_array_equal(da, 5.0)
+    assert da.name == "DBZH"
+    assert da.attrs["units"] == "dBZ"
+    # without fill: range index along each ray
+    da = model.get_sweep_dataarray((3, 4), "DBZH")
+    np.testing.assert_array_equal(da, np.tile(np.arange(4), (3, 1)))
 
 
 # todo: possibly use fixtures here
@@ -144,3 +208,27 @@ def test_get_sweep_dataarray():
     assert attrs["long_name"] == "Equivalent reflectivity factor H"
     assert attrs["short_name"] == "DBZH"
     assert attrs["units"] == "dBZ"
+
+
+def test_moment_attr_keys_keep_the_same_order_across_hash_seeds():
+    code = (
+        "from xradar.model import moment_attrs, sweep_vars_mapping\n"
+        "mapping = sweep_vars_mapping['DBZH']\n"
+        "attrs = {key: mapping[key] for key in moment_attrs if key in mapping}\n"
+        "print(','.join(attrs))\n"
+    )
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    orders = []
+    for seed in ("0", "1", "2"):
+        env = os.environ.copy()
+        env["PYTHONHASHSEED"] = seed
+        env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
+        completed = subprocess.run(
+            [sys.executable, "-c", code],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        orders.append(completed.stdout.strip())
+    assert orders == ["standard_name,long_name,units"] * 3

@@ -94,7 +94,7 @@ ds.DBZH.sortby("azimuth").plot(y="azimuth")
 Furuno scn/scnx files consist only of one sweep. But we might load and combine several sweeps into one DataTree.
 
 ```{code-cell}
-dtree = xd.io.open_furuno_datatree(filename_scn)
+dtree = xd.open_datatree(filename_scn, engine="furuno")
 display(dtree)
 ```
 
@@ -108,4 +108,20 @@ dtree["sweep_0"].ds.DBZH.plot()
 
 ```{code-cell}
 dtree["sweep_0"].ds.DBZH.sortby("azimuth").plot(y="azimuth")
+```
+
+## Optional groups: radar_parameters
+
+With `optional_groups=True` the datatree also has the metadata groups. The Furuno reader fills `radar_parameters` with the half-power beam widths of the file header (the `scn` sample file has none).
+
+```{code-cell}
+dtree = xd.open_datatree(filename_scnx, engine="furuno", optional_groups=True)
+display(dtree["radar_parameters"].ds)
+```
+
+```{code-cell}
+import numpy as np
+
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 2.75)
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_v, 2.76)
 ```

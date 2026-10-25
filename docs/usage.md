@@ -17,6 +17,9 @@ import xradar
 datamodel
 importers
 exporters
+notebooks/Name_Mapping
+notebooks/Open-Datatree-Engine
+notebooks/Open-Any-Format
 notebooks/Accessors
 notebooks/Mapping_Sweeps
 notebooks/CfRadial1_Model_Transformation
@@ -52,6 +55,7 @@ notebooks/plot-ppi
 notebooks/angle_reindexing
 notebooks/NDPointIndex
 notebooks/Multi-Volume-Concatenation
+notebooks/Gridding
 notebooks/multiple-sweeps-into-volume-scan
 notebooks/Transform
 ```
