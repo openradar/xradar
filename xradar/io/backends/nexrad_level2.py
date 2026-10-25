@@ -173,10 +173,13 @@ nexrad_mapping = {
 }
 
 #: special moment codes, ICD 2620002, Table XVII-I (Data Moment
-#: Characteristics and Conversion for Data Names); valid for all moments
-#: and for Message Type 1 data
+#: Characteristics and Conversion for Data Names), note 21; also for
+#: Message Type 1 data
 BELOW_THRESHOLD = 0
 RANGE_FOLDED = 1
+#: CFP codes 0-7 are flags (filter not applied, point filter, dual pol
+#: only, reserved), its data start at 8 (Table XVII-I, note 30)
+CFP_FIRST_DATA = 8
 
 # NEXRAD Level II file structures and sizes
 # The deails on these structures are documented in:
