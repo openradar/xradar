@@ -1781,7 +1781,8 @@ class NexradLevel2ArrayWrapper(BackendArray):
                 x = np.uint8(0xFF)
             data = np.vstack(data) & x
             if self.mask_range_folded:
-                data[data == RANGE_FOLDED] = BELOW_THRESHOLD
+                first_data = CFP_FIRST_DATA if self.name == "CFP" else RANGE_FOLDED + 1
+                data[data < first_data] = BELOW_THRESHOLD
             if data.shape[1] < self.shape[1]:
                 data = np.pad(
                     data,
