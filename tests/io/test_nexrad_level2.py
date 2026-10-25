@@ -957,6 +957,20 @@ def test_nexradlevel2_mask_and_scale_mapping(nexradlevel2_file):
     assert ds.DBZH.isnull().any()
 
 
+def test_nexradlevel2_mask_cfp_flags(closing):
+    """CFP codes 0-7 are flags, not clutter power (ICD Table XVII-I, note 30)."""
+    fname = DATASETS.fetch("KILX20230629_154426_V06")
+    raw = closing(
+        open_dataset(
+            fname, engine="nexradlevel2", group="sweep_0", mask_and_scale=False
+        )
+    )
+    ds = closing(open_dataset(fname, engine="nexradlevel2", group="sweep_0"))
+    assert (raw.CCORH == 2).any()
+    np.testing.assert_array_equal(ds.CCORH.isnull().values, (raw.CCORH < 8).values)
+    assert float(ds.CCORH.min()) >= 0.0
+
+
 def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
     """Test that optional_groups=True includes metadata subgroups."""
     dtree = open_nexradlevel2_datatree(
