@@ -13,6 +13,7 @@ import os
 import shutil
 import struct
 import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -755,3 +756,51 @@ def test_furuno_scnx_calibration_is_exported(furuno_scnx_file, tmp_path, closing
         np.testing.assert_allclose(ds.r_calib_antenna_gain_h, [33.7])
         np.testing.assert_allclose(ds.r_calib_xmit_power_h, [10 * np.log10(72.4e3)])
         assert ds.r_calib_xmit_power_h.attrs["units"] == "dBm"
+
+
+@pytest.mark.parametrize(
+    "fixture, widths",
+    [
+        # SCNX: half-power beam widths in 1/100 degree (275 and 276)
+        ("furuno_scnx_file", (2.75, 2.76)),
+        # SCN (format version 3) has no beam widths in the header
+        ("furuno_scn_file", None),
+    ],
+)
+@pytest.mark.parametrize("as_path", [False, True], ids=["str", "path"])
+def test_open_furuno_datatree_radar_parameters(fixture, widths, as_path, request):
+    filename = request.getfixturevalue(fixture)
+    if as_path:
+        filename = Path(filename)
+    with xd.open_datatree(filename, engine="furuno", optional_groups=True) as dtree:
+        params = dtree["radar_parameters"].ds
+        if widths is None:
+            assert "radar_beam_width_h" not in params
+            assert "radar_beam_width_v" not in params
+        else:
+            np.testing.assert_allclose(params.radar_beam_width_h, widths[0])
+            np.testing.assert_allclose(params.radar_beam_width_v, widths[1])
+        # the values are no attributes of the root or the sweeps
+        assert "half_power_beam_width_h" not in dtree.attrs
+        assert "half_power_beam_width_h" not in dtree["sweep_0"].attrs
+
+
+def test_furuno_store_radar_parameters():
+    from types import SimpleNamespace
+
+    from xradar.io.backends.furuno import FurunoStore
+
+    def params(header):
+        return FurunoStore.get_radar_parameters(
+            SimpleNamespace(root=SimpleNamespace(header=header))
+        )
+
+    assert params({"half_power_beam_width_h": 275, "half_power_beam_width_v": 276}) == {
+        "half_power_beam_width_h": 2.75,
+        "half_power_beam_width_v": 2.76,
+    }
+    # a width of 0 is not set, a missing one is left out
+    assert params({"half_power_beam_width_h": 0, "half_power_beam_width_v": 276}) == {
+        "half_power_beam_width_v": 2.76
+    }
+    assert params({}) == {}

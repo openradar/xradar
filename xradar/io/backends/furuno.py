@@ -749,6 +749,23 @@ class FurunoStore(_ManagedStoreMixin, AbstractDataStore):
                     calibration[f"xmit_power_{pol}"] = 10 * math.log10(watt * 1e3)
         return FrozenDict(calibration)
 
+    def get_radar_parameters(self):
+        """Half-power beam widths of the SCNX header in degrees, under the header
+        names (``radar_parameters_subgroup`` renames them).
+
+        They are stored in 1/100 degree (e.g. 275 for the 2.7 degree beam of the
+        WR2120); SCN files (format version 3) have none. A beam width of 0 is
+        not set.
+        """
+        header = self.root.header
+        params = {}
+        for pol in ("h", "v"):
+            name = f"half_power_beam_width_{pol}"
+            value = header.get(name)
+            if value is not None and value > 0:
+                params[name] = value / 100.0
+        return FrozenDict(params)
+
 
 class FurunoBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Furuno data."""
@@ -832,6 +849,7 @@ class FurunoBackendEntrypoint(BackendEntrypoint):
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
         ds.attrs.update(store.get_calibration_parameters())
+        ds.attrs.update(store.get_radar_parameters())
 
         # ensure close works
         ds._close = store.close

@@ -110,19 +110,32 @@ dtree["sweep_0"].ds.DBZH.plot()
 dtree["sweep_0"].ds.DBZH.sortby("azimuth").plot(y="azimuth")
 ```
 
-## Calibration of scnx files
+## Optional groups: radar_parameters
 
-With `optional_groups=True` the datatree has the group `radar_calibration`. The scnx header gives the antenna gain, the transmit power, the radar constant and the noise power in tenths (Furuno WR2120 manual, data file type 3); xradar scales the values and sets `units`. The transmit power is given in W in the file, the group has it as `xmit_power_h`/`xmit_power_v` in dBm, the unit of CfRadial.
+With `optional_groups=True` the datatree also has the metadata groups. The Furuno reader fills `radar_parameters` with the half-power beam widths of the file header (the `scn` sample file has none).
 
 ```{code-cell}
 dtree = xd.open_datatree(filename_scnx, engine="furuno", optional_groups=True)
-calib = dtree["radar_calibration"].ds
-display(calib)
+display(dtree["radar_parameters"].ds)
 ```
 
 ```{code-cell}
 import numpy as np
 
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 2.75)
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_v, 2.76)
+```
+
+## Calibration of scnx files
+
+With `optional_groups=True` the datatree has the group `radar_calibration`. The scnx header gives the antenna gain, the transmit power, the radar constant and the noise power in tenths (Furuno WR2120 manual, data file type 3); xradar scales the values and sets `units`. The transmit power is given in W in the file, the group has it as `xmit_power_h`/`xmit_power_v` in dBm, the unit of CfRadial.
+
+```{code-cell}
+calib = dtree["radar_calibration"].ds
+display(calib)
+```
+
+```{code-cell}
 for name, var in calib.data_vars.items():
     print(f"{name:28s} {float(var):9.2f} {var.attrs['units']}")
 
