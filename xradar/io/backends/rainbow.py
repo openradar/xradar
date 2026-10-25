@@ -615,9 +615,14 @@ _RAINBOW_PARAMETERS = {
     "rxbandwidth": "radar_receiver_bandwidth",  # Hz (s-1)
 }
 # radar constants (dB), one per pulse width: the one of the slice's `pw_index`
+# RB5 format release 5.57.0, one value for each pulse mode (short, medium, long):
+# rspradconst: single-pol (transmit H, receive H), used if there is no dual-pol one
+# rspdphradconst: dual-pol (transmit H and V, receive H)
+# rspdpvradconst: dual-pol (transmit H and V, receive V)
 _RAINBOW_RADAR_CONSTANTS = {
     "rspdphradconst": "radar_constant_h",
     "rspdpvradconst": "radar_constant_v",
+    "rspradconst": "radar_constant_h",
 }
 # transmitter power in kW, as dBm
 _RAINBOW_TX_POWER = {"gdrx5txpowkwh": "xmit_power_h", "gdrx5txpowkwv": "xmit_power_v"}
@@ -875,7 +880,7 @@ class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
                     continue
                 value = _get_float(constant, 0 if pw_index is None else int(pw_index))
                 if value is not None:
-                    calibration[xradar_name] = value
+                    calibration.setdefault(xradar_name, value)
         for name, xradar_name in _RAINBOW_TX_POWER.items():
             value = _get_float(self._slice_value(name))
             dbm = None if value is None else _kw_to_dbm(value)
