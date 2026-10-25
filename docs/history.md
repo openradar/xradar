@@ -2,7 +2,12 @@
 
 ## Development (unreleased)
 
+* CI: Update python to safe version 3.13.17 (:pull:`547`) by [@zssherman](https://github.com/zssherman)
+* CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
+* ENH: Furuno reader (``optional_groups=True``) fills ``radar_parameters`` with the half-power beam widths from the SCNX header (stored in 1/100 degree, a width of 0 is not set); ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`434`) by [@syedhamidali](https://github.com/syedhamidali)
+* ENH: UF files fill ``radar_parameters`` (``optional_groups=True``) with the beam widths from the field headers of the first ray; the ``BandWidth`` word of the field header is now returned as written in the file (a signed integer, -9999 for missing) instead of divided by 64, which changes ``UFFile.ray_headers``; the receiver bandwidth is not mapped because its scale differs between writers ({issue}`232`, {pull}`439`) by [@syedhamidali](https://github.com/syedhamidali)
+* ENH: ODIM reader (``optional_groups=True``) fills ``radar_parameters`` (beam widths, antenna gains) and ``radar_calibration`` (radar constants, noise as reflectivity at 1 km, two-way radome loss) from the ODIM_H5 ``how`` attributes whose units are the same in ODIM_H5 2.2-2.4; dataset-level ``how`` takes precedence over the top-level ``how``; a value which differs between the selected sweeps is left out of the group (with a warning), select the sweep with ``sweep=`` to get it. Attributes which are no numbers and antenna gains of 0 dB or less (placeholders) are skipped; ``_get_radar_calibration`` takes each value from the first sweep which has it (it raised a ``KeyError`` if a value was missing in the first sweep only). ``_get_subgroup`` can take values from the sweep attributes ({issue}`232`, {pull}`431`) by [@syedhamidali](https://github.com/syedhamidali)
 * TST: every sweep of every engine passes ``xradar.util.is_sweep``, and ``is_sweep(strict=True)`` for all engines except HPL and Metek; the ``Open-Any-Format`` notebook shows the check ({issue}`537`, {pull}`542`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
