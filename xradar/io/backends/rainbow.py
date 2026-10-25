@@ -616,14 +616,14 @@ _RAINBOW_PARAMETERS = {
 }
 # radar constants (dB), one per pulse width: the one of the slice's `pw_index`
 # RB5 format release 5.57.0, one value for each pulse mode (short, medium, long):
-# rspradconst: single-pol (transmit H, receive H), used if there is no dual-pol one
 # rspdphradconst: dual-pol (transmit H and V, receive H)
 # rspdpvradconst: dual-pol (transmit H and V, receive V)
+# rspradconst: single-pol (transmit H, receive H), only if there is no dual-pol one
 _RAINBOW_RADAR_CONSTANTS = {
     "rspdphradconst": "radar_constant_h",
     "rspdpvradconst": "radar_constant_v",
-    "rspradconst": "radar_constant_h",
 }
+_RAINBOW_SINGLE_POL_RADAR_CONSTANT = {"rspradconst": "radar_constant_h"}
 # transmitter power in kW, as dBm
 _RAINBOW_TX_POWER = {"gdrx5txpowkwh": "xmit_power_h", "gdrx5txpowkwv": "xmit_power_v"}
 
@@ -874,13 +874,21 @@ class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
         if pw_value is None or (
             pw_index is not None and pw_index >= 0 and pw_index == int(pw_index)
         ):
-            for name, xradar_name in _RAINBOW_RADAR_CONSTANTS.items():
-                constant = self._slice_value(name)
-                if pw_index is None and len(str(constant).split()) != 1:
-                    continue
-                value = _get_float(constant, 0 if pw_index is None else int(pw_index))
-                if value is not None:
-                    calibration.setdefault(xradar_name, value)
+            for constants in (
+                _RAINBOW_RADAR_CONSTANTS,
+                _RAINBOW_SINGLE_POL_RADAR_CONSTANT,
+            ):
+                # the single-pol constant only without any dual-pol one
+                if calibration:
+                    break
+                for name, xradar_name in constants.items():
+                    constant = self._slice_value(name)
+                    if pw_index is None and len(str(constant).split()) != 1:
+                        continue
+                    index = 0 if pw_index is None else int(pw_index)
+                    value = _get_float(constant, index)
+                    if value is not None:
+                        calibration[xradar_name] = value
         for name, xradar_name in _RAINBOW_TX_POWER.items():
             value = _get_float(self._slice_value(name))
             dbm = None if value is None else _kw_to_dbm(value)

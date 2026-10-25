@@ -511,6 +511,12 @@ def test_rainbow_store_radar_parameters_edge_cases(slc, pargroup, sensorinfo, ex
             {"rspradconst": "70.0", "rspdphradconst": "77.2", "rspdpvradconst": "77.5"},
             {"radar_constant_h": 77.2, "radar_constant_v": 77.5},
         ),
+        # not next to a dual-pol one, also if that has only one of the two
+        ({"rspradconst": "70.0", "rspdpvradconst": "77.5"}, {"radar_constant_v": 77.5}),
+        (
+            {"rspradconst": "70.0", "rspdphradconst": "x", "rspdpvradconst": "77.5"},
+            {"radar_constant_v": 77.5},
+        ),
     ],
     ids=[
         "tx-not-positive",
@@ -527,6 +533,8 @@ def test_rainbow_store_radar_parameters_edge_cases(slc, pargroup, sensorinfo, ex
         "text-index",
         "single-pol",
         "dual-pol-first",
+        "single-pol-not-next-to-dual-v",
+        "single-pol-not-next-to-unparsable-dual-h",
     ],
 )
 def test_rainbow_store_calibration_parameters_edge_cases(slc, expected):
