@@ -16,6 +16,7 @@ import xarray
 from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends.nexrad_level2 import (
     NexradLevel2BackendEntrypoint,
     NEXRADLevel2File,
@@ -985,17 +986,179 @@ def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
     assert "latitude" not in dtree.ds.data_vars
 
 
-def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file):
+def test_nexradlevel2_radar_calibration(nexradlevel2_file, closing):
+    # MSG_31 VOL (ICD Table XVII-E) and RAD (Table XVII-H) data blocks
+    # the noise level differs between the cuts: it is left out, with a warning
+    with pytest.warns(
+        UserWarning, match=r"differ between the sweeps \(noise_hc, noise_vc\)"
+    ):
+        dtree = closing(
+            xd.open_datatree(
+                nexradlevel2_file, engine="nexradlevel2", optional_groups=True
+            )
+        )
+    calib = dtree["radar_calibration"].ds
+    assert not {"noise_hc", "noise_vc"} & set(calib.data_vars)
+    # SHV transmitter power 177.09 kW and 216.34 kW, in dBm
+    np.testing.assert_allclose(calib.xmit_power_h, 82.48184, rtol=1e-6)
+    np.testing.assert_allclose(calib.xmit_power_v, 83.35138, rtol=1e-6)
+    np.testing.assert_allclose(calib.system_phidp, 25.0)
+    # the values are no attributes of the root or of the sweeps
+    assert not {"xmit_power_h", "noise_hc", "system_phidp"} & set(dtree.attrs)
+    assert not {"xmit_power_h", "noise_hc"} & set(dtree["sweep_0"].attrs)
+
+
+@pytest.mark.parametrize(
+    "sweep, noise",
+    [
+        # the noise level is that of the first radial of the selected sweep
+        (0, (-78.60606, -79.29733)),
+        ([1], (-78.60606, -79.29733)),
+        ([4], (-80.15787, -80.79182)),
+        # cuts which agree about it
+        ([0, 1], (-78.60606, -79.29733)),
+        # cuts which disagree: left out
+        ([5, 0], None),
+    ],
+)
+def test_nexradlevel2_radar_calibration_of_the_selected_sweeps(
+    nexradlevel2_file, sweep, noise, closing
+):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore" if noise is None else "error", UserWarning)
+        dtree = closing(
+            xd.open_datatree(
+                nexradlevel2_file,
+                engine="nexradlevel2",
+                sweep=sweep,
+                optional_groups=True,
+            )
+        )
+    calib = dtree["radar_calibration"].ds
+    if noise is None:
+        assert not {"noise_hc", "noise_vc"} & set(calib.data_vars)
+    else:
+        np.testing.assert_allclose(calib.noise_hc, noise[0], rtol=1e-6)
+        np.testing.assert_allclose(calib.noise_vc, noise[1], rtol=1e-6)
+    # the volume constants don't depend on the sweep
+    np.testing.assert_allclose(calib.xmit_power_h, 82.48184, rtol=1e-6)
+    np.testing.assert_allclose(calib.system_phidp, 25.0)
+
+
+def test_nexradlevel2_calibration_warning_says_how_to_select(
+    nexradlevel2_file, closing
+):
+    # the noise level differs between the cuts: the warning tells how to get
+    # the values of one cut, which then opens without a warning
+    with pytest.warns(
+        UserWarning,
+        match=r"differ between the sweeps \(noise_hc, noise_vc\).*``sweep=``",
+    ):
+        closing(
+            xd.open_datatree(
+                nexradlevel2_file, engine="nexradlevel2", optional_groups=True
+            )
+        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        closing(
+            xd.open_datatree(
+                nexradlevel2_file, engine="nexradlevel2", optional_groups=True, sweep=4
+            )
+        )
+
+
+def test_nexradlevel2_radar_calibration_legacy_msg1(nexradlevel2_msg1_file, closing):
+    # legacy MSG_1 files have no RAD block (and no transmitter power)
+    dtree = closing(
+        xd.open_datatree(
+            nexradlevel2_msg1_file,
+            engine="nexradlevel2",
+            sweep=0,
+            optional_groups=True,
+        )
+    )
+    assert "radar_calibration" in dtree.children
+    assert not {"noise_hc", "noise_vc"} & set(dtree["radar_calibration"].ds.data_vars)
+
+
+def test_nexradlevel2_calibration_in_dataset_attrs(nexradlevel2_file):
+    with xarray.open_dataset(
+        nexradlevel2_file, engine="nexradlevel2", group="sweep_4"
+    ) as ds:
+        np.testing.assert_allclose(ds.attrs["noise_hc"], -80.15787, rtol=1e-6)
+        np.testing.assert_allclose(ds.attrs["xmit_power_h"], 82.48184, rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "constants, expected",
+    [
+        ({"VOL": {"power_h": 177.08578, "power_v": 216.34064, "init_phase": 25.0}}, 3),
+        # zero-filled blocks: no power, noise or phase of 0 are no values
+        (
+            {
+                "VOL": {"power_h": 0.0, "power_v": 0.0, "init_phase": 0.0},
+                "RAD": {"noise_h": 0.0, "noise_v": 0.0},
+            },
+            1,  # a system phase of 0 degrees is in range
+        ),
+        # outside the ranges of the ICD, or not finite
+        (
+            {
+                "VOL": {"power_h": np.nan, "init_phase": 400.0},
+                "RAD": {"noise_h": -120.0, "noise_v": np.nan},
+            },
+            0,
+        ),
+        ({}, 0),
+    ],
+)
+def test_nexradlevel2_store_calibration_parameters(constants, expected):
+    from types import SimpleNamespace
+
+    from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+    store = SimpleNamespace(ds={"sweep_constant_data": constants})
+    calibration = NexradLevel2Store.get_calibration_parameters(store)
+    assert len(calibration) == expected, calibration
+    if constants.get("VOL", {}).get("power_h") == 177.08578:
+        assert calibration["xmit_power_h"] == pytest.approx(82.48184, rel=1e-6)
+
+
+def test_open_nexradlevel2_single_dataset_site_as_coords(nexradlevel2_file, closing):
     """Single-dataset access via open_dataset still has lat/lon/alt with site_as_coords=True."""
-    ds = xarray.open_dataset(
-        nexradlevel2_file,
-        engine=NexradLevel2BackendEntrypoint,
-        group="sweep_0",
-        site_as_coords=True,
+    ds = closing(
+        xarray.open_dataset(
+            nexradlevel2_file,
+            engine=NexradLevel2BackendEntrypoint,
+            group="sweep_0",
+            site_as_coords=True,
+        )
     )
     assert "latitude" in ds.coords
     assert "longitude" in ds.coords
     assert "altitude" in ds.coords
+
+
+def test_open_nexradlevel2_datatree_legacy_site_coords_kwarg(nexradlevel2_file):
+    """Legacy `site_coords=` kwarg must reach the coord assignment in open_nexradlevel2_datatree."""
+    dtree = open_nexradlevel2_datatree(
+        nexradlevel2_file, sweep=[0], reindex_angle=False, site_coords=True
+    )
+    root_coords = dtree.ds.coords
+    assert "latitude" in root_coords
+    assert "longitude" in root_coords
+    assert "altitude" in root_coords
+
+
+def test_actual_elevation_cuts_invariant_under_sweep_selection(nexradlevel2_file):
+    """`actual_elevation_cuts` reflects file contents, not user `sweep=` selection."""
+    dtree_all = open_nexradlevel2_datatree(nexradlevel2_file)
+    dtree_subset = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
+    assert (
+        dtree_all.attrs["actual_elevation_cuts"]
+        == dtree_subset.attrs["actual_elevation_cuts"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -2685,6 +2848,37 @@ class TestRealChunkFiles:
         ds = dtree["sweep_0"].to_dataset()
         assert ds.sizes["azimuth"] in (360, 720)
 
+    def test_partial_chunks_pad_mode_engine(self, nexrad_chunks_klot):
+        """Pad mode through the engine API uses the nominal azimuth grid."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:15]]
+        with pytest.warns(UserWarning, match="is incomplete and is padded"):
+            dtree = xd.open_datatree(
+                chunk_bytes, engine="nexradlevel2", incomplete_sweep="pad"
+            )
+        assert dtree["sweep_0"].sizes["azimuth"] in (360, 720)
+
+    def test_partial_chunks_explicit_incomplete_sweep_is_padded(
+        self, nexrad_chunks_klot
+    ):
+        """An explicitly selected incomplete sweep is padded, as on main."""
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:8]]
+        with pytest.warns(UserWarning, match="sweep_1 is incomplete and is padded"):
+            dtree = xd.open_datatree(chunk_bytes, engine="nexradlevel2", sweep=[1])
+        assert dtree["sweep_1"].sizes["azimuth"] == 720
+
+    def test_partial_chunks_drop_warning_points_at_caller(self, nexrad_chunks_klot):
+        chunk_bytes = [f.read_bytes() for f in nexrad_chunks_klot[:8]]
+        for opener in (
+            lambda: xd.open_datatree(chunk_bytes, engine="nexradlevel2"),
+            lambda: open_nexradlevel2_datatree(chunk_bytes),
+        ):
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                opener()
+            dropped = [x for x in w if "Dropped" in str(x.message)]
+            assert len(dropped) == 1
+            assert dropped[0].filename == __file__
+
     def test_partial_chunks_pad_mode_warns(self, nexrad_chunks_klot):
         """Padding an incomplete sweep is announced, also when it overrides
         the user's angle reindexing."""
@@ -3012,3 +3206,74 @@ def test_open_nexradlevel2_not_an_archive(tmp_path):
         open_nexradlevel2_datatree(path)
     with pytest.raises(ValueError, match="Not a NEXRAD Level II archive"):
         open_nexradlevel2_datatree(data.tobytes())
+
+
+def test_nexradlevel2_calibration_is_not_built_without_optional_groups(
+    nexradlevel2_file, closing
+):
+    # the noise differs between the cuts, but no group is built: no warning
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*differ between the sweeps")
+        dtree = closing(xd.open_datatree(nexradlevel2_file, engine="nexradlevel2"))
+    assert "radar_calibration" not in dtree.children
+    assert not {"noise_hc", "xmit_power_h", "system_phidp"} & set(dtree.attrs)
+
+
+def test_nexradlevel2_calibration_power_differs_between_cuts(
+    nexradlevel2_ldm_stride_file, closing
+):
+    # KILX 2023: the transmitter power of the first radial differs between the
+    # cuts as well as the noise, so only the system phase is left for the volume
+    with pytest.warns(
+        UserWarning,
+        match=r"\(noise_hc, noise_vc, xmit_power_h, xmit_power_v\)",
+    ):
+        dtree = closing(
+            xd.open_datatree(
+                nexradlevel2_ldm_stride_file,
+                engine="nexradlevel2",
+                optional_groups=True,
+            )
+        )
+    assert set(dtree["radar_calibration"].ds.data_vars) == {"system_phidp"}
+    # one cut has all values
+    dtree = closing(
+        xd.open_datatree(
+            nexradlevel2_ldm_stride_file,
+            engine="nexradlevel2",
+            sweep=0,
+            optional_groups=True,
+        )
+    )
+    calib = dtree["radar_calibration"].ds
+    expected = {
+        "noise_hc": -81.756,
+        "noise_vc": -81.32,
+        "xmit_power_h": 83.215,
+        "xmit_power_v": 83.112,
+        "system_phidp": 60.0,
+    }
+    assert set(calib.data_vars) == set(expected)
+    for name, value in expected.items():
+        np.testing.assert_allclose(calib[name], value, rtol=1e-4, err_msg=name)
+
+
+@pytest.mark.parametrize(
+    "power, kept",
+    [(0.0, False), (-1.0, False), (np.nan, False), (1000.0, False), (5000.0, False)]
+    + [(177.09, True), (999.9, True)],
+)
+def test_nexradlevel2_store_transmit_power_range(power, kept):
+    # ICD Table XVII-E: 0 to 999.9 kW
+    from types import SimpleNamespace
+
+    from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+    constants = {"VOL": {"power_h": power}, "RAD": {}}
+    store = SimpleNamespace(ds={"sweep_constant_data": constants})
+    calibration = NexradLevel2Store.get_calibration_parameters(store)
+    assert ("xmit_power_h" in calibration) is kept
+    if kept:
+        np.testing.assert_allclose(
+            calibration["xmit_power_h"], 10 * np.log10(power * 1e6)
+        )

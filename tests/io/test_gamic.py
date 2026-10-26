@@ -123,7 +123,7 @@ def test_gamic_dataset_has_close(gamic_file):
     ds.close()
 
 
-def test_open_gamic_datatree(gamic_file):
+def test_open_gamic_datatree(gamic_file, closing):
     # Define kwargs to pass into the function
     kwargs = {
         "sweep": [0, 1],  # Test with specific sweeps
@@ -141,7 +141,7 @@ def test_open_gamic_datatree(gamic_file):
     }
 
     # Call the function with an actual GAMIC HDF5 file
-    dtree = open_gamic_datatree(gamic_file, **kwargs)
+    dtree = closing(open_gamic_datatree(gamic_file, **kwargs))
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
@@ -180,9 +180,9 @@ def test_open_gamic_datatree(gamic_file):
     assert dtree.attrs["source"] == "gamic", "Source should match expected value"
 
 
-def test_open_gamic_datatree_optional_groups(gamic_file):
+def test_open_gamic_datatree_optional_groups(gamic_file, closing):
     """Test that optional_groups=True includes metadata subgroups."""
-    dtree = open_gamic_datatree(gamic_file, optional_groups=True)
+    dtree = closing(open_gamic_datatree(gamic_file, optional_groups=True))
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children

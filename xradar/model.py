@@ -385,8 +385,8 @@ frequency_attrs = {
 }
 
 
-#: required moment attributes
-moment_attrs = {"standard_name", "long_name", "units"}
+#: required moment attributes, keep order stable for readers.
+moment_attrs = ("standard_name", "long_name", "units")
 
 # todo: align this with sweep_dataset_vars
 #: CfRadial 2.1 / FM301 / ODIM_H5 mapping
@@ -557,13 +557,13 @@ sweep_vars_mapping = {
         "standard_name": "signal_noise_ratio_h",
         "long_name": "Signal Noise Ratio H",
         "short_name": "SNRH",
-        "units": "unitless",
+        "units": "dB",
     },
     "SNRV": {
         "standard_name": "signal_noise_ratio_v",
         "long_name": "Signal Noise Ratio V",
         "short_name": "SNRV",
-        "units": "unitless",
+        "units": "dB",
     },
     "SQIH": {
         "standard_name": "signal_quality_index_h",
