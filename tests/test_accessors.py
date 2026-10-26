@@ -283,6 +283,7 @@ def _jittered_sweep(azimuth, range_start, ngates=6, res=250.0):
         coords={
             "azimuth": ("azimuth", np.array(azimuth, dtype="float32")),
             "elevation": ("azimuth", np.full(4, 0.5, dtype="float32")),
+            "time": ("azimuth", np.datetime64("2024-01-01", "s") + np.arange(4)),
             "range": ("range", rng, {"units": "meters"}),
         },
     )
@@ -331,3 +332,19 @@ def test_accessor_reindex_datatree():
         out["sweep_0"].to_dataset().xradar.reindex_range(**rng).DBZH,
         expected.pipe(xd.util.reindex_angle, **angle).DBZH,
     )
+
+
+def test_accessor_reindex_angle_as_reindex_coord():
+    # duplicate rays (sweep_4, sweep_7) and the same result as reading with
+    # reindex_coord
+    fname = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+    angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
+    out = xd.open_datatree(fname, engine="gamic").xradar.reindex_angle(**angle)
+    read = xd.open_datatree(fname, engine="gamic", reindex_coord={"angle": angle})
+    for name in ("sweep_0", "sweep_4", "sweep_7"):
+        xr.testing.assert_identical(
+            out[name].to_dataset(), read[name].to_dataset(inherit="all_coords")
+        )
+    # missing rays get a time
+    ds = read["sweep_0"].to_dataset().isel(azimuth=np.r_[0:100, 110:360])
+    assert not np.isnat(ds.xradar.reindex_angle(**angle).time).any()

@@ -152,17 +152,17 @@ ds_out2.DBTH.sortby("time").plot(y="time")
 
 ### Angle of a sweep
 
-The same as `fix_angle` above:
+The same as `fix_angle` and `ipol_time` above, in one call:
 
 ```{code-cell}
 params = xd.util.extract_angle_parameters(ds_in)
-ds_acc = xd.util.remove_duplicate_rays(ds_in).xradar.reindex_angle(
+ds_acc = ds_in.xradar.reindex_angle(
     start_angle=params["start_angle"],
     stop_angle=params["stop_angle"],
     angle_res=params["angle_res"],
     direction=params["direction"],
 )
-xr.testing.assert_identical(ds_acc, ds_out)
+xr.testing.assert_identical(ds_acc, ds_out2)
 ds_acc.sizes
 ```
 
