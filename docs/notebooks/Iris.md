@@ -14,6 +14,7 @@ kernelspec:
 # Iris/Sigmet - Reader
 
 ```{code-cell}
+import numpy as np
 import xarray as xr
 from open_radar_data import DATASETS
 
@@ -133,6 +134,21 @@ for var in xd.util.get_sweep_dataset_vars(sweep):
     plt.title(var)
 ```
 
-```{code-cell}
+## Optional groups: radar_parameters and radar_calibration
 
+With `optional_groups=True` the datatree also has the metadata groups. The IRIS/Sigmet reader fills them from the task configuration of the ingest header: the beam widths and the receiver bandwidth in `radar_parameters`, the radar constants and the noise at calibration in `radar_calibration`. Values which are not set in the file (0) are left out.
+
+```{code-cell}
+dtree = xd.open_datatree(filename_volume, engine="iris", sweep=0, optional_groups=True)
+display(dtree["radar_parameters"].ds)
+display(dtree["radar_calibration"].ds)
 ```
+
+```{code-cell}
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 0.95, 2)
+np.testing.assert_almost_equal(dtree["radar_calibration"].noise_hc, -81.4, 1)
+np.testing.assert_almost_equal(dtree["radar_calibration"].radar_constant_h, 67.1, 1)
+assert dtree["radar_calibration"].noise_hc.attrs["units"] == "dBm"
+```
+
+The task configuration is the same for every sweep of the file, so the values do not depend on the selected sweep.
