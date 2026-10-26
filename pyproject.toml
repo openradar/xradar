@@ -109,3 +109,5 @@ known-first-party = ["xradar"]
 
 [tool.coverage.run]
 patch = ["subprocess"]
+source = ["xradar"]
+parallel = true
