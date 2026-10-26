@@ -14,6 +14,7 @@ attributes ``units`` ("seconds since YYYY-MM-DDThh:mm:ssZ"), ``calendar``
 import re
 from datetime import datetime
 
+import numpy as np
 import pytest
 
 import xradar as xd
@@ -79,17 +80,8 @@ def test_time_coverage_fm301_attrs(root_ds, name):
     # the variable must be scalar (0-dimensional)
     assert var.ndim == 0
 
-    # the variable itself is a string (str or bytes, depending on backend)
-    assert var.dtype.kind in ("U", "S", "O")
-    # if the variable is of object type, it must contain a string
-    if var.dtype.kind == "O":
-        assert isinstance(var.item(), str)
-    # the string must represent a valid number, being parseable as a float
-    # according to FM301, the time coverage variable represents the number of seconds since a given reference time
-    try:
-        float(var.item())
-    except (ValueError, TypeError):
-        pytest.fail(f"{name} must represent a valid number of seconds")
+    # the variable must be a double (float64): seconds since the reference time
+    assert var.dtype == np.float64, f"{name} must be double, got {var.dtype}"
 
     # check if the required FM301 attributes are present and correctly typed
     attrs = var.attrs
