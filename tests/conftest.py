@@ -185,6 +185,11 @@ def iris1_file():
 
 
 @pytest.fixture(scope="session")
+def iris_raw_na_file():
+    return DATASETS.fetch("RAW_NA_000_125_20080411181219")
+
+
+@pytest.fixture(scope="session")
 def iris_arouca_file():
     return DATASETS.fetch("PRT231225000005.RAWD2A3")
 
