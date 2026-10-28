@@ -107,18 +107,24 @@ def test_datatree_close_releases_file(engine, fixture_name, legacy, request, tmp
 
 
 @pytest.mark.skipif(not _PROC_FD.is_dir(), reason="needs /proc/self/fd")
-def test_imd_volume_close_releases_all_files(imd_volume_files, tmp_path):
+@pytest.mark.parametrize("optional_groups", [False, True])
+def test_imd_volume_close_releases_all_files(
+    imd_volume_files, tmp_path, optional_groups
+):
     files = [_private_copy(f, tmp_path) for f in imd_volume_files]
-    volume = xd.io.open_imd_datatree(files)
+    volume = xd.io.open_imd_datatree(files, optional_groups=optional_groups)
     volume.close()
     assert [_open_handles(f) for f in files] == [0] * len(files)
 
 
 @pytest.mark.skipif(not _PROC_FD.is_dir(), reason="needs /proc/self/fd")
-def test_imd_volumes_close_releases_all_files(imd_volume_files, tmp_path):
+@pytest.mark.parametrize("optional_groups", [False, True])
+def test_imd_volumes_close_releases_all_files(
+    imd_volume_files, tmp_path, optional_groups
+):
     # the vcp_NN tree is flattened with to_dict(), which drops the close
     files = [_private_copy(f, tmp_path) for f in imd_volume_files]
-    tree = xd.io.open_imd_volumes(files)
+    tree = xd.io.open_imd_volumes(files, optional_groups=optional_groups)
     tree.close()
     assert [_open_handles(f) for f in files] == [0] * len(files)
 
