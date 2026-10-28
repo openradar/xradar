@@ -254,10 +254,10 @@ def test_open_uf_datatree(uf_file_1):
     assert dtree[sample_sweep]["DBTH"].shape == (360, 997)
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     assert len(dtree.attrs) == 10
     print(dtree.attrs)
@@ -308,10 +308,10 @@ def test_open_uf_datatree_2(uf_file_2):
     assert dtree[sample_sweep]["DBTH"].shape == (360, 476)
 
     # Station coords should be on root as coordinates
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "CHILL"
@@ -408,7 +408,7 @@ def test_open_uf_datatree_radar_parameters(fixture, width, request, closing):
     dtree = closing(
         xd.open_datatree(filename, engine="uf", sweep=0, optional_groups=True)
     )
-    params = dtree["radar_parameters"].ds
+    params = dtree["radar_parameters"].dataset
     np.testing.assert_allclose(params.radar_beam_width_h, width)
     np.testing.assert_allclose(params.radar_beam_width_v, width)
     assert "radar_receiver_bandwidth" not in params
@@ -433,7 +433,7 @@ def test_uf_radar_parameters_not_in_root_or_sweep_attrs(uf_file_2, closing):
     names = ("radar_beam_width_h", "radar_beam_width_v")
     for name in names:
         assert name not in dtree.attrs
-        assert name in dtree["radar_parameters"].ds
+        assert name in dtree["radar_parameters"].dataset
         assert name not in dtree["sweep_0"].attrs
     # without the optional groups the values are not in the tree at all
     dtree = closing(xd.open_datatree(uf_file_2, engine="uf"))

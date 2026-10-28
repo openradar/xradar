@@ -101,13 +101,13 @@ display(dtree)
 ### Plot Sweep Range vs. Time
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.plot()
+dtree["sweep_0"].dataset.DBZH.plot()
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.sortby("azimuth").plot(y="azimuth")
+dtree["sweep_0"].dataset.DBZH.sortby("azimuth").plot(y="azimuth")
 ```
 
 ## Optional groups: radar_parameters
@@ -116,7 +116,7 @@ With `optional_groups=True` the datatree also has the metadata groups. The Furun
 
 ```{code-cell}
 dtree = xd.open_datatree(filename_scnx, engine="furuno", optional_groups=True)
-display(dtree["radar_parameters"].ds)
+display(dtree["radar_parameters"].dataset)
 ```
 
 ```{code-cell}

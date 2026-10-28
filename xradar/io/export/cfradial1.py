@@ -277,7 +277,48 @@ def _extract_root_dataset(dtree):
     return root_ds
 
 
-def _combine_sweeps(dtree, dim0=None):
+RANGE_GEOMETRIES = ("common", "per_sweep")
+
+
+def _check_range_geometry_option(range_geometry):
+    if range_geometry not in RANGE_GEOMETRIES:
+        raise ValueError(
+            f"`range_geometry` must be one of {RANGE_GEOMETRIES}, "
+            f"got {range_geometry!r}."
+        )
+
+
+def _per_sweep_range(ranges, attrs):
+    """Make the 2-D ``range(sweep, range)`` of CfRadial 1.4 (Section 2.5).
+
+    Every sweep keeps its own gate geometry. Sweeps with fewer gates than the
+    longest one continue their regular grid, so ``range`` increases in all
+    gates (the measurements of those gates are NaN). The first gate and the gate
+    spacing of each sweep are in the attributes ``meters_to_center_of_first_gate``
+    and ``meters_between_gates``.
+    """
+    ngates = max(rng.size for rng in ranges)
+    dtype = np.result_type(*ranges)
+    first = np.array([rng[0] for rng in ranges], dtype=dtype)
+    spacing = np.array(
+        [np.median(np.diff(rng)) if rng.size > 1 else np.nan for rng in ranges],
+        dtype=dtype,
+    )
+    values = np.empty((len(ranges), ngates), dtype=dtype)
+    for i, rng in enumerate(ranges):
+        values[i, : rng.size] = rng
+        values[i, rng.size :] = rng[-1] + spacing[i] * np.arange(
+            1, ngates - rng.size + 1
+        )
+    attrs = {
+        **attrs,
+        "meters_to_center_of_first_gate": first,
+        "meters_between_gates": spacing,
+    }
+    return xr.DataArray(values, dims=("sweep", "range"), attrs=attrs)
+
+
+def _combine_sweeps(dtree, dim0=None, range_geometry="common"):
     """
     Combine all sweep groups into a single ray-indexed CfRadial1 dataset.
 
@@ -288,6 +329,10 @@ def _combine_sweeps(dtree, dim0=None):
     dim0: str, optional
         Either ``azimuth`` or ``elevation``. Inferred per sweep from the
         sweep mode when not provided.
+    range_geometry: {"common", "per_sweep"}, optional
+        ``"common"`` (default) needs the same first gate and gate spacing in all
+        sweeps, ``"per_sweep"`` keeps different geometries in a 2-D
+        ``range(sweep, range)``.
 
     Returns
     -------
@@ -334,24 +379,41 @@ def _combine_sweeps(dtree, dim0=None):
         sweep_datasets.append(sweep_ds)
 
     # CfRadial1 holds one range coordinate for the whole volume, so all sweeps
-    # must share the gate geometry (they may differ in number of gates)
+    # must share the gate geometry (they may differ in number of gates), unless
+    # the range is written per sweep
+    _check_range_geometry_option(range_geometry)
     longest = max((ds.range.values for ds in sweep_datasets), key=len)
-    for i, sweep_ds in enumerate(sweep_datasets):
-        rng = sweep_ds.range.values
-        if not np.allclose(rng, longest[: rng.size]):
-            raise xr.MergeError(
-                "CfRadial1 export requires the same range gate geometry "
-                "(first gate and gate spacing) in all sweeps. The sweeps can be "
-                "reindexed onto one range with `xradar.util.reindex_range` (or "
-                "`reindex_coord=dict(range=dict(...))` when opening), but that "
-                "takes the nearest gate without averaging: gates are dropped or "
-                "repeated, and gates farther than half a gate spacing from the "
-                "new grid are filled with NaN."
-            )
-        # snap onto one range coordinate, the outer join below is exact
-        sweep_datasets[i] = sweep_ds.assign_coords(
-            range=sweep_ds.range.copy(data=longest[: rng.size])
+    differs = any(
+        not np.allclose(ds.range.values, longest[: ds.sizes["range"]])
+        for ds in sweep_datasets
+    )
+    per_sweep_ranges = None
+    if differs and range_geometry == "per_sweep":
+        # gates are joined by position, the 2-D range is made below
+        per_sweep_ranges = [ds.range.values for ds in sweep_datasets]
+        range_attrs = dict(sweep_datasets[0].range.attrs)
+        sweep_datasets = [
+            ds.assign_coords(range=("range", np.arange(ds.sizes["range"])))
+            for ds in sweep_datasets
+        ]
+    elif differs:
+        raise xr.MergeError(
+            "CfRadial1 export requires the same range gate geometry "
+            "(first gate and gate spacing) in all sweeps. Use "
+            '`range_geometry="per_sweep"` to write the range of every sweep '
+            "(CfRadial 1.4 Section 2.5; not every reader supports it), or reindex "
+            "the sweeps onto one range with `xradar.util.reindex_range` (or "
+            "`reindex_coord=dict(range=dict(...))` when opening), but that takes "
+            "the nearest gate without averaging: gates are dropped or repeated, "
+            "and gates farther than half a gate spacing from the new grid are "
+            "filled with NaN."
         )
+    else:
+        # snap onto one range coordinate, the outer join below is exact
+        sweep_datasets = [
+            ds.assign_coords(range=ds.range.copy(data=longest[: ds.sizes["range"]]))
+            for ds in sweep_datasets
+        ]
 
     # concatenate positionally along time in sweep order (matching
     # sweep_start/end_ray_index), rays with identical timestamps must not be
@@ -403,6 +465,9 @@ def _combine_sweeps(dtree, dim0=None):
     combined = combined.drop_vars(georef_coords, errors="ignore")
 
     combined.update(sweep_info)
+    if per_sweep_ranges is not None:
+        combined = combined.drop_vars("range")
+        combined["range"] = _per_sweep_range(per_sweep_ranges, range_attrs)
     combined.update(calculate_sweep_indices(dtree, combined))
     combined = combined.reset_coords(["elevation", "azimuth"])
     combined.update(root_ds)
@@ -502,7 +567,7 @@ def calculate_sweep_indices(dtree, dataset=None):
     return dataset
 
 
-def _build_cfradial1_dataset(dtree, calibs=True):
+def _build_cfradial1_dataset(dtree, calibs=True, range_geometry="common"):
     """
     Build a single CfRadial1 ``Dataset`` from a radar ``DataTree``.
 
@@ -517,6 +582,8 @@ def _build_cfradial1_dataset(dtree, calibs=True):
         Radar xarray.DataTree object.
     calibs: bool, optional
         Whether to include calibration parameters.
+    range_geometry: {"common", "per_sweep"}, optional
+        See :func:`to_cfradial1`.
 
     Returns
     -------
@@ -526,7 +593,7 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     if dtree is None:
         raise ValueError("`dtree` must be a radar xarray.DataTree, not None.")
 
-    cfradial1_ds = _combine_sweeps(dtree)
+    cfradial1_ds = _combine_sweeps(dtree, range_geometry=range_geometry)
 
     # Sweeps are written padded to (time, range). Index variables of the
     # ragged n_points layout would contradict that and make readers try to
@@ -586,7 +653,7 @@ def _build_cfradial1_dataset(dtree, calibs=True):
     return cfradial1_ds
 
 
-def to_cfradial1(dtree=None, filename=None, calibs=True):
+def to_cfradial1(dtree=None, filename=None, calibs=True, range_geometry="common"):
     """
     Convert a radar xarray.DataTree to the CfRadial1 format
     and save it to a file. Ensure that the resulting dataset
@@ -601,8 +668,21 @@ def to_cfradial1(dtree=None, filename=None, calibs=True):
         from the instrument name and first timestamp.
     calibs: bool, optional
         Whether to include calibration parameters.
+    range_geometry: {"common", "per_sweep"}, optional
+        CfRadial1 has one ``range(range)`` for all rays. ``"common"`` (default)
+        needs the same first gate and gate spacing in all sweeps (the number of
+        gates may differ) and raises an error otherwise. ``"per_sweep"`` writes
+        sweeps with different geometries as they are, in a 2-D
+        ``range(sweep, range)`` with the attributes
+        ``meters_to_center_of_first_gate`` and ``meters_between_gates`` per sweep
+        (CfRadial 1.4 Section 2.5). Sweeps with fewer gates continue their grid
+        and have NaN measurements in the remaining gates. If all sweeps share the
+        geometry, the usual 1-D ``range`` is written. xradar reads such files,
+        other readers may not (e.g. Py-ART, ARM-DOE/pyart#1900).
     """
-    cfradial1_ds = _build_cfradial1_dataset(dtree, calibs=calibs)
+    cfradial1_ds = _build_cfradial1_dataset(
+        dtree, calibs=calibs, range_geometry=range_geometry
+    )
 
     if filename is None:
         time = str(cfradial1_ds.time[0].dt.strftime("%Y%m%d_%H%M%S").values)

@@ -82,7 +82,7 @@ def test_reindex_coord_datatree(odim_file, closing):
     dtree = closing(
         open_odim_datatree(odim_file, sweep=0, reindex_coord={"angle": ANGLE})
     )
-    assert dtree["sweep_0"].ds.sizes["azimuth"] == 360
+    assert dtree["sweep_0"].dataset.sizes["azimuth"] == 360
 
 
 def test_reindex_coord_hpl(hpl_file):
