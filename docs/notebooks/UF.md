@@ -116,13 +116,13 @@ display(dtree)
 ### Plot Sweep Range vs. Time
 
 ```{code-cell}
-dtree["sweep_4"].ds.DBZH.sortby("time").plot(y="time", cmap="HomeyerRainbow")
+dtree["sweep_4"].dataset.DBZH.sortby("time").plot(y="time", cmap="HomeyerRainbow")
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_4"].ds.DBZH.plot(cmap="HomeyerRainbow")
+dtree["sweep_4"].dataset.DBZH.plot(cmap="HomeyerRainbow")
 ```
 
 ```{code-cell}
@@ -158,7 +158,7 @@ With `optional_groups=True` the datatree also holds the CfRadial2 metadata group
 
 ```{code-cell}
 dtree = xd.open_datatree(fname, engine="uf", sweep=0, optional_groups=True)
-display(dtree["radar_parameters"].ds)
+display(dtree["radar_parameters"].dataset)
 ```
 
 ```{code-cell}

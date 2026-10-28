@@ -1307,7 +1307,7 @@ def _assign_sweep_attrs(dtree, elev_data):
         sweep_key = f"sweep_{i}"
         if sweep_key not in dtree.children:
             continue
-        dtree[sweep_key].ds.attrs.update(_sweep_attrs_from_msg5_elev(elev))
+        dtree[sweep_key].dataset.attrs.update(_sweep_attrs_from_msg5_elev(elev))
 
 
 def _get_dynamic_scan_type(supplemental):

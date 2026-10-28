@@ -28,12 +28,17 @@ class NotebookItem(pytest.Item):
     def runtest(self):
         old_cwd = os.getcwd()
         old_sys_path = sys.path.copy()
+        old_env = os.environ.copy()
 
         try:
             # ensure project root is importable
-            project_root = str(self.config.rootpath)
-            if project_root not in sys.path:
-                sys.path.insert(0, project_root)
+            project_root = Path(self.config.rootpath)
+            # fix PYTHONPATH and COVERAGE_RCFILE  in environment
+            existing = os.environ.get("PYTHONPATH")
+            os.environ["PYTHONPATH"] = str(project_root) + (
+                os.pathsep + existing if existing else ""
+            )
+            os.environ["COVERAGE_RCFILE"] = str(project_root / "pyproject.toml")
 
             # run in temp dir
             tmp_path = Path(self.config._tmp_path_factory.mktemp("notebook"))
@@ -67,6 +72,11 @@ class NotebookItem(pytest.Item):
                 timeout=600,
                 iopub_timeout=600,
                 allow_errors=False,
+                resources={
+                    "metadata": {
+                        "path": str(tmp_path),
+                    }
+                },
             )
 
             try:
@@ -87,8 +97,11 @@ class NotebookItem(pytest.Item):
                 nbformat.write(nb, f)
 
         finally:
+            # restore the original process state
             os.chdir(old_cwd)
             sys.path = old_sys_path
+            os.environ.clear()
+            os.environ.update(old_env)
 
     def repr_failure(self, excinfo):
         if isinstance(excinfo.value, NotebookException):
