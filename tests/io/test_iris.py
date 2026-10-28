@@ -7,13 +7,18 @@
 Ported from wradlib.
 """
 
+import copy
+import io
+import struct
 import warnings
+from collections import OrderedDict
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends import iris, open_iris_datatree
 from xradar.util import _get_data_file
 
@@ -380,6 +385,145 @@ def test_open_iris_datatree_optional_groups(iris0_file):
     assert "radar_calibration" in dtree.children
 
 
+# IRIS Programming Guide 4.3.50 (task_calib_info), 4.3.52 (task_dsp_info) and
+# 4.3.57 (task_misc_info)
+_TASK_METADATA = [
+    # fixture, beam width, receiver bandwidth (Hz), radar constant H/V (dB),
+    # noise at calibration H/V (dBm), pulse width (s)
+    ("iris0_file", (0.95, 0.95), 1.048e6, (67.1, 70.1), (-81.4, -81.78), 1e-6),
+    ("iris1_file", (0.95, 0.95), 559e3, (63.2, 66.2), (-82.39, -83.09), 2e-6),
+    ("iris_arouca_file", (0.95, 0.95), 601e3, (62.9, 66.2), (-110.35, -110.25), 2e-6),
+    # unset receiver bandwidth (0 kHz) is left out
+    ("iris_raw_na_file", (1.1, 1.1), None, (68.58, 71.58), (-74.61, -75.33), 0.8e-6),
+]
+
+
+@pytest.mark.parametrize("kind", ["path", "bytesio"])
+@pytest.mark.parametrize(
+    "fixture, beam, bandwidth, constant, noise, pulse_width",
+    _TASK_METADATA,
+    ids=["cor-main", "SUR", "arouca", "RAW_NA"],
+)
+def test_iris_task_metadata(
+    fixture, beam, bandwidth, constant, noise, pulse_width, kind, request, closing
+):
+    filename = request.getfixturevalue(fixture)
+    if kind == "bytesio":
+        with open(filename, "rb") as fh:
+            filename = io.BytesIO(fh.read())
+    dtree = closing(
+        xd.open_datatree(filename, engine="iris", sweep=0, optional_groups=True)
+    )
+    params = dtree["radar_parameters"].ds
+    np.testing.assert_allclose(params.radar_beam_width_h, beam[0], rtol=1e-6)
+    np.testing.assert_allclose(params.radar_beam_width_v, beam[1], rtol=1e-6)
+    if bandwidth is None:
+        assert "radar_receiver_bandwidth" not in params
+    else:
+        np.testing.assert_allclose(params.radar_receiver_bandwidth, bandwidth)
+    calib = dtree["radar_calibration"].ds
+    np.testing.assert_allclose(calib.radar_constant_h, constant[0])
+    np.testing.assert_allclose(calib.radar_constant_v, constant[1])
+    np.testing.assert_allclose(calib.noise_hc, noise[0])
+    np.testing.assert_allclose(calib.noise_vc, noise[1])
+    # the pulse width the radar constant and the noise belong to
+    np.testing.assert_allclose(calib.pulse_width, pulse_width)
+    # the I0 cal values are not noise levels, they are not mapped
+    assert not {"i0_dbm_hc", "i0_dbm_vc"} & set(calib.data_vars)
+    units = {
+        "radar_beam_width_h": "degrees",
+        "radar_beam_width_v": "degrees",
+        "radar_receiver_bandwidth": "s-1",
+        "radar_constant_h": "dB",
+        "radar_constant_v": "dB",
+        "noise_hc": "dBm",
+        "noise_vc": "dBm",
+        "pulse_width": "s",
+    }
+    for group in (params, calib):
+        assert {k: v.attrs["units"] for k, v in group.data_vars.items()} == {
+            k: units[k] for k in group.data_vars
+        }
+    # the values are no attributes of the root or of the sweeps
+    names = {"radar_constant_h", "noise_hc", "radar_beam_width_h"}
+    assert not names & set(dtree.attrs)
+    assert not names & set(dtree["sweep_0"].attrs)
+
+
+def test_iris_task_metadata_of_a_selected_sweep(iris0_file, closing):
+    # the values come from the task configuration: any sweep selection has them
+    dtree = closing(
+        xd.open_datatree(iris0_file, engine="iris", sweep=[1], optional_groups=True)
+    )
+    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 67.1)
+
+
+class _TaskStore(iris.IrisStore):
+    """Store on a given task configuration, without a file."""
+
+    def __init__(self, misc, calib):
+        task = {"task_misc_info": misc, "task_calib_info": calib}
+        self._root = SimpleNamespace(ingest_header={"task_configuration": task})
+
+    @property
+    def root(self):
+        return self._root
+
+
+def test_iris_store_task_metadata_skips_unset_values():
+    # 0 is an unset configuration (and a missing field is left out)
+    store = _TaskStore(
+        {}, {"horizontal_radar_constant": 0, "vertical_radar_constant": 6710}
+    )
+    assert dict(store.get_calibration_parameters()) == {"radar_constant_v": 67.1}
+    store = _TaskStore(
+        {"horizontal_beam_width": 0.95, "vertical_beam_width": 0},
+        {"receiver_bandwidth": 0},
+    )
+    assert dict(store.get_radar_parameters()) == {"radar_beam_width_h": 0.95}
+    store = _TaskStore({}, {"receiver_bandwidth": 1048})
+    assert dict(store.get_radar_parameters()) == {"radar_receiver_bandwidth": 1.048e6}
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(7010, 70.1), (-10899, -108.99)])
+def test_iris_store_hundredths_have_no_float_noise(raw, expected):
+    # raw * 0.01 gives 70.10000000000001 and -108.99000000000001
+    store = _TaskStore(
+        {}, {"vertical_radar_constant": raw, "horizontal_noise_calibration": raw}
+    )
+    assert dict(store.get_calibration_parameters()) == {
+        "radar_constant_v": expected,
+        "noise_hc": expected,
+    }
+
+
+def test_iris_i0_cal_values_are_not_mapped():
+    store = _TaskStore(
+        {}, {"horizontal_io_cal_value": -10866, "vertical_io_cal_value": -10899}
+    )
+    assert dict(store.get_calibration_parameters()) == {}
+
+
+def test_receiver_bandwidth_is_decoded_unsigned():
+    # 4.3.50 byte 60: a bandwidth above 32767 kHz is not negative
+    calib = iris.TASK_CALIB_INFO
+    prefix = OrderedDict(list(calib.items())[: list(calib).index("receiver_bandwidth")])
+    offset = struct.calcsize(iris._get_fmt_string(prefix))
+    buffer = bytearray(struct.calcsize(iris._get_fmt_string(calib)))
+    struct.pack_into("<H", buffer, offset, 40000)
+    assert (
+        iris._unpack_dictionary(bytes(buffer), calib, False)["receiver_bandwidth"]
+        == 40000
+    )
+
+
+def test_receiver_bandwidth_is_unsigned():
+    # 4.3.50 byte 60 is UINT2, as in product_end (4.3.25); SINT2 turned values
+    # above 32767 kHz negative
+    assert dict(iris.TASK_CALIB_INFO)["receiver_bandwidth"] is iris.UINT2
+    assert dict(iris.PRODUCT_END)["receiver_bandwidth"] is iris.UINT2
+
+
 def test_first_loaded_moment_aligned_with_others(iris0_file):
     """Regression for openradar/xradar#357.
 
@@ -416,6 +560,129 @@ def test_first_loaded_moment_aligned_with_others(iris0_file):
         assert (
             best_shift(sw["DBZH"].values, sw[moment].values) == 0
         ), f"DBZH is row-rotated relative to {moment}"
+
+
+@pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
+def test_range_attrs_match_range(fixture, request):
+    # the header range fields are in cm, the attrs are in m (#525)
+    path = request.getfixturevalue(fixture)
+    with xd.open_datatree(path, engine="iris") as dtree:
+        rng = dtree["sweep_0"].ds["range"]
+        # also what the CfRadial1 export writes
+        exported = xd.transform.to_cfradial1(dtree)["range"].attrs
+        for attrs in (rng.attrs, exported):
+            np.testing.assert_allclose(
+                attrs["meters_between_gates"], np.diff(rng.values)[0]
+            )
+            np.testing.assert_allclose(
+                attrs["meters_to_center_of_first_gate"], rng.values[0]
+            )
+            assert attrs["spacing_is_constant"] == "true"
+
+
+def _patch_range_info(monkeypatch, **fields):
+    """Serve a deep copy of the ingest header with ``task_range_info`` updated."""
+
+    def header(self):
+        hdr = copy.deepcopy(self._ingest_header)
+        hdr["task_configuration"]["task_range_info"].update(fields)
+        return hdr
+
+    monkeypatch.setattr(iris.IrisIngestHeader, "ingest_header", property(header))
+
+
+@pytest.mark.parametrize(
+    "first_bin, step, spacing, first_centre",
+    [
+        # an odd centimetre step gives the exact header metres (125.01 m);
+        # float32 range values misread such steps beyond about 168 km
+        (12345, 12501, 125.01, 123.45),
+        # a first bin of 0 means the first gate is centred at half a step
+        (0, 30000, 300.0, 150.0),
+    ],
+)
+def test_range_attrs_follow_the_header_exactly(
+    iris0_file, monkeypatch, first_bin, step, spacing, first_centre
+):
+    _patch_range_info(monkeypatch, range_first_bin=first_bin, step_output_bins=step)
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        attrs = ds["range"].attrs
+        first = ds["range"].values[0]
+    assert attrs["meters_between_gates"] == spacing
+    assert attrs["meters_to_center_of_first_gate"] == first_centre
+    assert attrs["spacing_is_constant"] == "true"
+    np.testing.assert_allclose(first, first_centre, rtol=1e-6)
+
+
+def test_range_attrs_variable_spacing_flag(iris0_file, monkeypatch):
+    # with variable bin spacing in the header there is no single gate spacing
+    _patch_range_info(monkeypatch, variable_range_bin_spacing_flag=1)
+    with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
+        attrs = ds["range"].attrs
+        first = ds["range"].values[0]
+    assert attrs["spacing_is_constant"] == "false"
+    assert "meters_between_gates" not in attrs
+    np.testing.assert_allclose(attrs["meters_to_center_of_first_gate"], first)
+
+
+def _task_range_info(first, step, n, variable=0):
+    # range_last_bin as the IRIS headers give it: the last bin for a non-zero
+    # first bin, the end of the last gate for a first bin of 0 (SUR fixture)
+    return {
+        "range_first_bin": first,
+        "range_last_bin": first + step * (n - 1) if first else step * n - 1,
+        "step_output_bins": step,
+        "number_output_bins": n,
+        "variable_range_bin_spacing_flag": variable,
+    }
+
+
+@pytest.mark.parametrize(
+    "first, step, n",
+    [
+        # the #525 case: float32 centimetres were off beyond 2**24 cm
+        pytest.param(12345, 12501, 2400, id="odd-cm-step-to-300km"),
+        # SUR and IDEAM-like headers
+        pytest.param(0, 30000, 833, id="first-bin-zero-sur-header"),
+        pytest.param(100000, 30000, 994, id="ideam-like"),
+        pytest.param(0, 30000, 1, id="one-gate"),
+        pytest.param(0, 30000, 0, id="no-gates"),
+    ],
+)
+def test_range_centers_round_once(first, step, n):
+    # every gate is the float32 nearest the exact header distance (#525)
+    rng = iris._range_centers(_task_range_info(first, step, n))
+    start = first if first else step / 2
+    exact = (start + step * np.arange(n, dtype="int64")) / 1e2
+    assert rng.dtype == np.float32 and rng.size == n
+    np.testing.assert_array_equal(rng, exact.astype("float32"))
+
+
+def test_range_centers_far_gates():
+    # hard-coded far gates of the odd-cm case; float32 centimetres gave
+    # 167886.88 m for gate 1342 before (#525)
+    rng = iris._range_centers(_task_range_info(12345, 12501, 2400))
+    assert rng[1342] == np.float32(167886.87)
+    assert rng[-1] == np.float32(300022.44)
+
+
+def test_range_centers_of_the_sur_header():
+    # the SUR fixture's task_range_info, with hard-coded gate centers
+    task = {
+        "range_first_bin": 0,
+        "range_last_bin": 24989999,
+        "step_output_bins": 30000,
+        "number_output_bins": 833,
+    }
+    rng = iris._range_centers(task)
+    assert rng.size == 833
+    assert (rng[0], rng[1], rng[-1]) == (150.0, 450.0, 249750.0)
+
+
+def test_range_centers_reject_a_zero_step():
+    # a corrupt header must not open with a made-up range
+    with pytest.raises(ZeroDivisionError):
+        iris._range_centers(_task_range_info(100000, 0, 994))
 
 
 @pytest.mark.parametrize(
