@@ -14,6 +14,7 @@ import shutil
 import struct
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -691,6 +692,70 @@ def test_open_furuno_datatree_optional_groups(furuno_scn_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+def test_furuno_scnx_calibration(furuno_scnx_file, closing):
+    # the SCNX header has these values in tenths (#538)
+    dtree = closing(
+        xd.open_datatree(furuno_scnx_file, engine="furuno", optional_groups=True)
+    )
+    calib = dtree["radar_calibration"].dataset
+    expected = {
+        "antenna_gain_h": (33.7, "dBi"),
+        "antenna_gain_v": (33.8, "dBi"),
+        "radar_constant_h": (-129.4, "dB"),
+        "radar_constant_v": (-129.6, "dB"),
+        "noise_power_short_pulse_h": (-60.4, "dBZ"),
+        # 72.4 W and 70.8 W as dBm
+        "xmit_power_h": (10 * np.log10(72.4e3), "dBm"),
+        "xmit_power_v": (10 * np.log10(70.8e3), "dBm"),
+    }
+    assert set(calib.data_vars) == set(expected)
+    for name, (value, units) in expected.items():
+        np.testing.assert_allclose(calib[name], value, rtol=1e-6, err_msg=name)
+        assert calib[name].attrs["units"] == units, name
+    # inside the ranges of the manual: gain 30 to 40 dBi, power 50 to 150 W
+    assert 30 <= calib.antenna_gain_h <= 40
+    assert 50 <= 10 ** (float(calib.xmit_power_h) / 10) / 1e3 <= 150
+
+
+def test_furuno_scn_calibration_is_not_scaled(furuno_scn_file, closing):
+    # SCN files keep the radar constant as mantissa and exponent: no tenths, no units
+    dtree = closing(
+        xd.open_datatree(furuno_scn_file, engine="furuno", optional_groups=True)
+    )
+    calib = dtree["radar_calibration"].dataset
+    assert set(calib.data_vars) == {"radar_constant_h", "radar_constant_v"}
+    assert float(calib.radar_constant_h) < 1e-10
+    assert "units" not in calib.radar_constant_h.attrs
+
+
+def test_furuno_scnx_transmit_power_not_set():
+    # a transmit power of 0 W is "not set", it has no value in dBm
+    header = {
+        "format_version": 10,
+        "tx_power_h": 0,
+        "tx_power_v": 1000,
+        "antenna_gain_h": 350,
+    }
+    store = SimpleNamespace(root=SimpleNamespace(header=header))
+    calibration = dict(FurunoStore.get_calibration_parameters(store))
+    assert set(calibration) == {"xmit_power_v", "antenna_gain_h"}
+    np.testing.assert_allclose(calibration["xmit_power_v"], 10 * np.log10(100e3))
+    np.testing.assert_allclose(calibration["antenna_gain_h"], 35.0)
+
+
+def test_furuno_scnx_calibration_is_exported(furuno_scnx_file, tmp_path, closing):
+    # the group has the CfRadial names, so that the CfRadial1 export writes them
+    dtree = closing(
+        xd.open_datatree(furuno_scnx_file, engine="furuno", optional_groups=True)
+    )
+    out = tmp_path / "scnx_cfradial1.nc"
+    xd.io.to_cfradial1(dtree, out, calibs=True)
+    with open_dataset(out) as ds:
+        np.testing.assert_allclose(ds.r_calib_antenna_gain_h, [33.7])
+        np.testing.assert_allclose(ds.r_calib_xmit_power_h, [10 * np.log10(72.4e3)])
+        assert ds.r_calib_xmit_power_h.attrs["units"] == "dBm"
 
 
 @pytest.mark.parametrize(
