@@ -175,7 +175,7 @@ import numpy as np
 
 dtree = xd.open_datatree(filename, engine="gamic")
 for name in ("sweep_0", "sweep_5", "sweep_6", "sweep_9"):
-    rng = dtree[name].ds.range.values
+    rng = dtree[name].dataset.range.values
     print(f"{name}: {rng.size:5d} gates, first {rng[0]:5.0f} m, spacing {np.median(np.diff(rng)):4.0f} m")
 ```
 
@@ -190,7 +190,7 @@ except ValueError as err:
 
 ```{code-cell}
 common = dtree.xradar.reindex_range(start_range=150.0, stop_range=36150.0, range_res=300.0)
-ranges = [common[name].ds.range.values for name in ("sweep_0", "sweep_9")]
+ranges = [common[name].dataset.range.values for name in ("sweep_0", "sweep_9")]
 assert np.array_equal(*ranges)
 print(f"{ranges[0].size} gates from {ranges[0][0]:.0f} m to {ranges[0][-1]:.0f} m")
 ```
