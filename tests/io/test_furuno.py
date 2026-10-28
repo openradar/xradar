@@ -699,7 +699,7 @@ def test_furuno_scnx_calibration(furuno_scnx_file, closing):
     dtree = closing(
         xd.open_datatree(furuno_scnx_file, engine="furuno", optional_groups=True)
     )
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     expected = {
         "antenna_gain_h": (33.7, "dBi"),
         "antenna_gain_v": (33.8, "dBi"),
@@ -724,7 +724,7 @@ def test_furuno_scn_calibration_is_not_scaled(furuno_scn_file, closing):
     dtree = closing(
         xd.open_datatree(furuno_scn_file, engine="furuno", optional_groups=True)
     )
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     assert set(calib.data_vars) == {"radar_constant_h", "radar_constant_v"}
     assert float(calib.radar_constant_h) < 1e-10
     assert "units" not in calib.radar_constant_h.attrs

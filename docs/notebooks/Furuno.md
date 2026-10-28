@@ -131,7 +131,7 @@ np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_v, 2.7
 With `optional_groups=True` the datatree has the group `radar_calibration`. The scnx header gives the antenna gain, the transmit power, the radar constant and the noise power in tenths (Furuno WR2120 manual, data file type 3); xradar scales the values and sets `units`. The transmit power is given in W in the file, the group has it as `xmit_power_h`/`xmit_power_v` in dBm, the unit of CfRadial.
 
 ```{code-cell}
-calib = dtree["radar_calibration"].ds
+calib = dtree["radar_calibration"].dataset
 display(calib)
 ```
 
@@ -158,5 +158,5 @@ The older scn format has no antenna gain or transmit power in its header and kee
 
 ```{code-cell}
 dtree_scn = xd.open_datatree(filename_scn, engine="furuno", optional_groups=True)
-display(dtree_scn["radar_calibration"].ds)
+display(dtree_scn["radar_calibration"].dataset)
 ```
