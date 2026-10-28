@@ -270,8 +270,8 @@ radar_calibration_subgroup = dict(
         ("receiver_mismatch_loss", None),
         ("receiver_mismatch_loss_h", None),
         ("receiver_mismatch_loss_v", None),
-        ("rx_loss_h", "receiver_mismatch_loss_h"),
-        ("rx_loss_v", "receiver_mismatch_loss_v"),
+        ("rx_loss_h", None),  # gamic, definition not known
+        ("rx_loss_v", None),
         ("radar_constant_h", None),
         ("radar_constant_v", None),
         ("probert_jones_correction", None),
@@ -300,8 +300,8 @@ radar_calibration_subgroup = dict(
         ("noise_source_power_v", None),
         ("noise_power_short_pulse_h", "noise_source_power_h"),
         ("noise_power_short_pulse_v", "noise_source_power_v"),
-        ("noise_power_h", "noise_source_power_h"),  # Gamic
-        ("noise_power_v", "noise_source_power_v"),
+        ("noise_power_h", None),  # gamic, in dB, not the dBm noise source power
+        ("noise_power_v", None),
         ("power_measure_loss_h", None),
         ("power_measure_loss_v", None),
         ("coupler_forward_loss_h", None),
@@ -384,8 +384,8 @@ frequency_attrs = {
 }
 
 
-#: required moment attributes
-moment_attrs = {"standard_name", "long_name", "units"}
+#: required moment attributes, keep order stable for readers.
+moment_attrs = ("standard_name", "long_name", "units")
 
 # todo: align this with sweep_dataset_vars
 #: CfRadial 2.1 / FM301 / ODIM_H5 mapping

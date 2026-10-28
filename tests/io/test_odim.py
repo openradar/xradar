@@ -7,13 +7,18 @@
 ported from wradlib
 """
 
+import io
+import shutil
+import warnings
 from contextlib import nullcontext
 
 import h5netcdf
+import h5py
 import numpy as np
 import pytest
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar as xd
 from xradar.io.backends import odim, open_odim_datatree
 from xradar.io.backends.common import _maybe_recover_surrogate
 
@@ -329,10 +334,10 @@ def test_open_odim_datatree(odim_file, closing):
         1200,
     ), "Shape mismatch for 'DBZH' variable"
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 10
@@ -347,6 +352,195 @@ def test_open_odim_datatree_optional_groups(odim_file, closing):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize(
+    "fixture, expected",
+    [
+        # ODIM_H5 2.2: beamwH/beamwV in /how
+        ("odim_file", (0.896, 0.896)),
+        # ODIM_H5 2.2/2.3: a single beamwidth for both
+        ("odim_file2", (0.95, 0.95)),
+    ],
+)
+def test_odim_how_beam_width(fixture, expected, request):
+    filename = request.getfixturevalue(fixture)
+    with xd.open_datatree(filename, engine="odim", optional_groups=True) as dtree:
+        params = dtree["radar_parameters"].dataset
+        np.testing.assert_allclose(params.radar_beam_width_h, expected[0])
+        np.testing.assert_allclose(params.radar_beam_width_v, expected[1])
+
+
+@pytest.fixture
+def odim_how_file(odim_file, tmp_path):
+    """Copy of ``odim_file`` with antenna and calibration values in ``how``."""
+    path = tmp_path / "odim_how.h5"
+    shutil.copy(odim_file, path)
+    with h5py.File(path, "a") as f:
+        f["how"].attrs.update(
+            dict(
+                antgainH=45.8,
+                antgainV=45.6,
+                radconstH=68.3,
+                radconstV=68.5,
+                NEZH=-44.0,
+                NEZV=-44.2,
+                radomelossH=0.2,
+                radomelossV=0.25,
+                pulsewidth=2.0,
+            )
+        )
+        # dataset-level how takes precedence for that dataset
+        f["dataset1/how"].attrs["radconstH"] = 70.0
+        f["dataset2/how"].attrs["radconstH"] = 71.0
+    return path
+
+
+def test_odim_how_metadata(odim_how_file):
+    # the radar constant H differs between the datasets (70, 71, and the top-level
+    # 68.3 for the others): it is left out, with a warning
+    with pytest.warns(
+        UserWarning, match=r"differ between the sweeps \(radar_constant_h\)"
+    ):
+        dtree = xd.open_datatree(odim_how_file, engine="odim", optional_groups=True)
+    with dtree:
+        params = dtree["radar_parameters"].dataset
+        np.testing.assert_allclose(params.radar_antenna_gain_h, 45.8)
+        np.testing.assert_allclose(params.radar_antenna_gain_v, 45.6)
+        calib = dtree["radar_calibration"].dataset
+        assert "radar_constant_h" not in calib
+        np.testing.assert_allclose(calib.radar_constant_v, 68.5)
+        np.testing.assert_allclose(calib.base_1km_hc, -44.0)
+        np.testing.assert_allclose(calib.base_1km_vc, -44.2)
+        # one-way radome loss in ODIM, two-way in CfRadial
+        np.testing.assert_allclose(calib.two_way_radome_loss_h, 0.4)
+        np.testing.assert_allclose(calib.two_way_radome_loss_v, 0.5)
+        # units differ between ODIM versions, not mapped
+        assert "pulse_width" not in calib
+        # the values are not left in the sweep attributes or the root
+        assert "radar_constant_h" not in dtree.attrs
+        assert "radar_constant_h" not in dtree["sweep_0"].attrs
+
+
+@pytest.mark.parametrize(
+    "sweep, expected",
+    [
+        (0, 70.0),  # dataset1/how
+        ([1], 71.0),  # dataset2/how
+        ([2], 68.3),  # the top-level how
+        ([2, 3], 68.3),  # sweeps which agree
+        ([2, 0], None),  # sweeps which disagree: left out
+    ],
+)
+def test_odim_how_calibration_of_the_selected_sweeps(odim_how_file, sweep, expected):
+    with warnings.catch_warnings():
+        if expected is None:
+            warnings.simplefilter("ignore", UserWarning)
+        else:
+            warnings.simplefilter("error", UserWarning)
+        dtree = xd.open_datatree(
+            odim_how_file, engine="odim", optional_groups=True, sweep=sweep
+        )
+    with dtree:
+        calib = dtree["radar_calibration"].dataset
+        if expected is None:
+            assert "radar_constant_h" not in calib
+        else:
+            np.testing.assert_allclose(calib.radar_constant_h, expected)
+
+
+def test_odim_how_metadata_not_without_optional_groups(odim_how_file):
+    with xd.open_datatree(odim_how_file, engine="odim", sweep=0) as dtree:
+        assert "radar_calibration" not in dtree.children
+        assert "radar_parameters" not in dtree.children
+
+
+@pytest.mark.parametrize("kind", ["path", "str", "filelike", "bytesio"])
+def test_odim_how_metadata_inputs(odim_how_file, kind):
+    if kind == "path":
+        source, close = odim_how_file, None
+    elif kind == "str":
+        source, close = str(odim_how_file), None
+    elif kind == "filelike":
+        source = close = open(odim_how_file, "rb")
+    else:
+        source = io.BytesIO(odim_how_file.read_bytes())
+        close = None
+    try:
+        with xd.open_datatree(
+            source, engine="odim", optional_groups=True, sweep=0
+        ) as dtree:
+            calib = dtree["radar_calibration"].dataset
+            np.testing.assert_allclose(calib.radar_constant_h, 70.0)
+            np.testing.assert_allclose(calib.radar_constant_v, 68.5)
+    finally:
+        if close is not None:
+            close.close()
+
+
+def test_odim_how_attribute_no_number_is_skipped(odim_how_file):
+    with h5py.File(odim_how_file, "a") as f:
+        f["how"].attrs["antgainH"] = b"n/a"
+    with pytest.warns(UserWarning, match=r"antgainH=.*is no number"):
+        with xd.open_datatree(
+            odim_how_file, engine="odim", optional_groups=True, sweep=0
+        ) as dtree:
+            params = dtree["radar_parameters"].dataset
+            assert "radar_antenna_gain_h" not in params
+            # the other values are still there
+            np.testing.assert_allclose(params.radar_antenna_gain_v, 45.6)
+            np.testing.assert_allclose(
+                dtree["radar_calibration"].dataset.radar_constant_v, 68.5
+            )
+
+
+def test_odim_how_zero_antenna_gain_is_a_placeholder(odim_how_file):
+    with h5py.File(odim_how_file, "a") as f:
+        f["how"].attrs.update(dict(antgainH=0.0, antgainV=0.0))
+    with xd.open_datatree(
+        odim_how_file, engine="odim", optional_groups=True, sweep=0
+    ) as dtree:
+        params = dtree["radar_parameters"].dataset
+        assert "radar_antenna_gain_h" not in params
+        assert "radar_antenna_gain_v" not in params
+        # a 0 dB radome loss or radar constant is a value
+        np.testing.assert_allclose(
+            dtree["radar_calibration"].dataset.radar_constant_h, 70.0
+        )
+
+
+def test_odim_how_beamwidth_of_the_dataset_wins(odim_file, tmp_path):
+    # the deprecated `beamwidth` is expanded in its own group: the dataset-level
+    # one wins over a top-level beamwH/beamwV
+    path = tmp_path / "beamwidth.h5"
+    shutil.copy(odim_file, path)
+    with h5py.File(path, "a") as f:
+        f["how"].attrs.update(dict(beamwH=1.0, beamwV=1.0))
+        f["dataset1/how"].attrs["beamwidth"] = 0.95
+    with xd.open_datatree(path, engine="odim", optional_groups=True, sweep=0) as dtree:
+        params = dtree["radar_parameters"].dataset
+        np.testing.assert_allclose(params.radar_beam_width_h, 0.95)
+        np.testing.assert_allclose(params.radar_beam_width_v, 0.95)
+    with xd.open_datatree(path, engine="odim", optional_groups=True, sweep=1) as dtree:
+        np.testing.assert_allclose(
+            dtree["radar_parameters"].dataset.radar_beam_width_h, 1.0
+        )
+
+
+def test_get_odim_how_metadata():
+    top = {"beamwH": 0.9, "beamwV": 1.0, "radomelossH": 0.2, "other": 1}
+    dataset = {"beamwidth": 0.95, "radconstV": np.float64(68.0)}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        metadata = odim._get_odim_how_metadata(top, dataset)
+    assert metadata == {
+        # `beamwidth` of the dataset applies to both, over the top-level values
+        "radar_beam_width_h": 0.95,
+        "radar_beam_width_v": 0.95,
+        "two_way_radome_loss_h": 0.4,
+        "radar_constant_v": 68.0,
+    }
+    assert odim._get_odim_how_metadata() == {}
 
 
 @pytest.mark.parametrize("layout", ["fmi", "odim"])
@@ -389,7 +583,7 @@ def test_open_odim_quality_legend(odim_file, tmp_path, layout, closing):
         qual.create_dataset("legend", data=legend)
 
     dtree = closing(open_odim_datatree(path, sweep=0))
-    ds = dtree["sweep_0"].ds
+    ds = dtree["sweep_0"].dataset
     assert "legend" not in ds.variables
     assert ds.ECHO_CLASS.dims == ds.DBZH.dims
     flag_values = ds.ECHO_CLASS.attrs["flag_values"]
@@ -404,3 +598,24 @@ def test_open_odim_quality_legend(odim_file, tmp_path, layout, closing):
     )
     assert "flag_values" not in ds.DBZH.attrs
     assert "flag_values" not in ds.CLASS.attrs
+
+
+def test_odim_how_value_missing_in_one_dataset(odim_how_file, closing):
+    # a value which is no number in one dataset is left out there; the open must
+    # not fail because the other datasets have it (it did with a KeyError)
+    with h5py.File(odim_how_file, "a") as f:
+        f["dataset1/how"].attrs["radconstV"] = b"n/a"
+    with pytest.warns(UserWarning) as record:
+        dtree = closing(
+            xd.open_datatree(
+                odim_how_file, engine="odim", optional_groups=True, sweep=[0, 1]
+            )
+        )
+    messages = " ".join(str(w.message) for w in record)
+    assert "is no number" in messages
+    calib = dtree["radar_calibration"].dataset
+    # the value of dataset1 is left out, dataset2 takes the top-level value
+    np.testing.assert_allclose(calib.radar_constant_v, 68.5)
+    # the radar constant H differs between the datasets: left out
+    assert "radar_constant_h" not in calib
+    assert "radar_constant_h" in messages

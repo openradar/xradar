@@ -1295,7 +1295,7 @@ def _assign_sweep_attrs(dtree, elev_data):
         sweep_key = f"sweep_{i}"
         if sweep_key not in dtree.children:
             continue
-        dtree[sweep_key].ds.attrs.update(_sweep_attrs_from_msg5_elev(elev))
+        dtree[sweep_key].dataset.attrs.update(_sweep_attrs_from_msg5_elev(elev))
 
 
 def _get_dynamic_scan_type(supplemental):
@@ -1954,6 +1954,43 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
             }.items()
         )
 
+    def get_calibration_parameters(self):
+        """Radar calibration values of the sweep, with CfRadial 2.1 names (Section 7.3).
+
+        From the MSG_31 VOL (volume) and RAD (radial) data blocks, ICD 2620002
+        Table XVII-E and XVII-H:
+
+        - ``xmit_power_h/v``: SHV transmitter power in kW, as dBm, of the first
+          radial of the sweep (it varies between cuts and within a cut),
+        - ``noise_hc/vc``: measured noise level in dBm of the first radial of
+          the sweep (it varies between cuts, it is no system constant),
+        - ``system_phidp``: initial system differential phase in degrees.
+
+        Blocks which are missing (legacy MSG_1 files have no RAD block) and
+        values outside the ranges of the ICD (e.g. from zero-filled blocks) are
+        left out.
+        """
+        constants = self.ds["sweep_constant_data"]
+        vol = constants.get("VOL", {})
+        rad = constants.get("RAD", {})
+
+        def valid(value, low, high):
+            return value is not None and np.isfinite(value) and low <= value <= high
+
+        calibration = {}
+        for pol in ("h", "v"):
+            power = vol.get(f"power_{pol}")
+            if valid(power, 0.0, 999.9) and power > 0:
+                # kW -> dBm
+                calibration[f"xmit_power_{pol}"] = float(10 * np.log10(power * 1e6))
+            noise = rad.get(f"noise_{pol}")
+            if valid(noise, -100.0, -50.0):
+                calibration[f"noise_{pol}c"] = float(noise)
+        phase = vol.get("init_phase")
+        if valid(phase, 0.0, 360.0):
+            calibration["system_phidp"] = float(phase)
+        return FrozenDict(calibration)
+
     def get_attrs(self):
         attrs = {}
 
@@ -2083,6 +2120,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works
         ds._close = store.close
@@ -2199,6 +2237,17 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         )
 
         ls_ds = [sweep_dict[s] for s in sweep_dict]
+        # the calibration values come as attributes of the sweeps; the root
+        # takes all attributes of the first sweep, so they are taken out first
+        # (the group is only built, with its warning, for optional_groups)
+        calibration = (
+            _get_radar_calibration(ls_ds, radar_calibration_subgroup)
+            if optional_groups
+            else None
+        )
+        for ds in ls_ds:
+            for name in radar_calibration_subgroup:
+                ds.attrs.pop(name, None)
         ls_ds_with_root = [xr.Dataset()] + list(ls_ds)
         root, ls_ds_with_root = _assign_root(ls_ds_with_root)
         # Per ICD, total cuts actually recorded in the file (MSG_31 headers),
@@ -2214,9 +2263,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             groups_dict["/georeferencing_correction"] = _get_subgroup(
                 ls_ds_with_root, georeferencing_correction_subgroup
             )
-            groups_dict["/radar_calibration"] = _get_radar_calibration(
-                ls_ds_with_root, radar_calibration_subgroup
-            )
+            groups_dict["/radar_calibration"] = calibration
         # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI). The elev_data
         # index aligns with sweep_{i} because both order by VCP cut index.
         for sweep_path, ds in sweep_dict.items():
@@ -2505,6 +2552,7 @@ def open_sweeps_as_dict(
 
             # assign geo-coords
             group_ds = _apply_site_as_coords(group_ds, site_as_coords)
+            group_ds.attrs.update(store.get_calibration_parameters())
 
             # ensure close works: the steps above build new datasets, and
             # xarray 2026.9.0 drops the close in some of them (#471, #502)

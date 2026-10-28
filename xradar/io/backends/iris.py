@@ -67,6 +67,8 @@ from ...model import (
     get_longitude_attrs,
     get_range_attrs,
     moment_attrs,
+    radar_calibration_subgroup,
+    radar_parameters_subgroup,
     sweep_vars_mapping,
 )
 from .common import (
@@ -545,6 +547,41 @@ def _moment_names(type_names):
             raise ValueError(f"data type {type_name!r} appears twice in one sweep")
         names.append(name)
     return names
+
+
+def _first_bin_cm(task_range_info):
+    """Range of the first gate center in cm: a first bin of 0 is the start
+    of the first gate, its center half a step out."""
+    first = task_range_info["range_first_bin"]
+    return first if first else task_range_info["step_output_bins"] / 2
+
+
+def _range_centers(task_range_info):
+    """Range gate centers (m, float32) from an IRIS ``task_range_info``.
+
+    One center per output bin up to ``range_last_bin``, computed in float64
+    and rounded to float32 once: float32 centimetres step by 2 cm beyond
+    2**24 cm (about 168 km).
+    """
+    step = task_range_info["step_output_bins"]
+    last = task_range_info["range_last_bin"]
+    if not task_range_info["range_first_bin"]:
+        last += step
+    rng = np.arange(_first_bin_cm(task_range_info), last + step, step, "float64")
+    return (rng[: task_range_info["number_output_bins"]] / 1e2).astype("float32")
+
+
+def _range_attrs(task_range_info):
+    """CF ``range`` attributes in metres from an IRIS ``task_range_info``,
+    whose range fields are in cm (#525)."""
+    attrs = get_range_attrs()
+    if task_range_info["variable_range_bin_spacing_flag"]:
+        attrs["spacing_is_constant"] = "false"
+    else:
+        attrs["meters_between_gates"] = task_range_info["step_output_bins"] / 1e2
+        attrs["spacing_is_constant"] = "true"
+    attrs["meters_to_center_of_first_gate"] = _first_bin_cm(task_range_info) / 1e2
+    return attrs
 
 
 def _data_types_from_dsp_mask(words):
@@ -1578,7 +1615,7 @@ TASK_CALIB_INFO = OrderedDict(
         ("vertical_noise_calibration", SINT2),
         ("horizontal_radar_constant", SINT2),
         ("vertical_radar_constant", SINT2),
-        ("receiver_bandwidth", SINT2),
+        ("receiver_bandwidth", UINT2),
         ("flags_2", UINT16_T),
         ("spare_3", {"fmt": "256s"}),
     ]
@@ -4065,6 +4102,43 @@ class IrisArrayWrapper(BackendArray):
         )
 
 
+# IRIS Programming Guide M212927EN-B, 4.3.50 (task_calib_info) and 4.3.57
+# (task_misc_info), mapped to the CfRadial 2.1 names of radar_calibration
+# (Section 7.3) and radar_parameters (Section 7.1).
+# (block, field) of the task configuration: (xradar name, multiplier, divisor).
+# A value of 0 is an unset configuration (the manual's summary of such a task
+# prints "Radar constant: 0.00/0.00 dB, Receiver bandwidth 0 kHz") and is left
+# out. The I0 cal values of task_calib_info are not mapped: they are not the
+# calibrated noise of CfRadial's ``i0_dbm_hc`` (for cor-main the I0 cal value is
+# -108.66 dBm, the noise at calibration -81.40 dBm).
+_IRIS_METADATA = {
+    # 1/100 dB
+    ("task_calib_info", "horizontal_radar_constant"): ("radar_constant_h", 1, 100),
+    ("task_calib_info", "vertical_radar_constant"): ("radar_constant_v", 1, 100),
+    # noise at calibration, 1/100 dBm
+    ("task_calib_info", "horizontal_noise_calibration"): ("noise_hc", 1, 100),
+    ("task_calib_info", "vertical_noise_calibration"): ("noise_vc", 1, 100),
+    # degrees
+    ("task_misc_info", "horizontal_beam_width"): ("radar_beam_width_h", 1, 1),
+    ("task_misc_info", "vertical_beam_width"): ("radar_beam_width_v", 1, 1),
+    # kHz, as s-1
+    ("task_calib_info", "receiver_bandwidth"): ("radar_receiver_bandwidth", 1000, 1),
+    # pulse width of the task (4.3.52, task_dsp_info), 1/100 us as s: the radar
+    # constant and the noise belong to it
+    ("task_dsp_info", "pulse_width"): ("pulse_width", 1, 100_000_000),
+}
+_IRIS_UNITS = {
+    "radar_constant_h": "dB",
+    "radar_constant_v": "dB",
+    "noise_hc": "dBm",
+    "noise_vc": "dBm",
+    "radar_beam_width_h": "degrees",
+    "radar_beam_width_v": "degrees",
+    "radar_receiver_bandwidth": "s-1",
+    "pulse_width": "s",
+}
+
+
 class IrisStore(_ManagedStoreMixin, AbstractDataStore):
     """Store for reading IRIS sweeps via xradar.
 
@@ -4164,26 +4238,8 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         lon, lat, alt = self.root.site_coords
 
         task = self.root.ingest_header["task_configuration"]["task_range_info"]
-        range_first_bin = task["range_first_bin"]
-        range_last_bin = task["range_last_bin"]
-        if range_first_bin == 0:
-            range_first_bin = task["step_output_bins"] / 2
-            range_last_bin += task["step_output_bins"]
-        rng = (
-            np.arange(
-                range_first_bin,
-                range_last_bin + task["step_output_bins"],
-                task["step_output_bins"],
-                dtype="float32",
-            )[: task["number_output_bins"]]
-            / 1e2
-        )
-        range_attrs = get_range_attrs()
-        range_attrs["meters_between_gates"] = task["step_output_bins"] / 2
-        range_attrs["spacing_is_constant"] = (
-            "false" if task["variable_range_bin_spacing_flag"] else "true"
-        )
-        range_attrs["meters_to_center_of_first_gate"] = task["range_first_bin"]
+        rng = _range_centers(task)
+        range_attrs = _range_attrs(task)
 
         rtime = Variable((dim,), rtime, rtime_attrs, encoding)
 
@@ -4248,6 +4304,37 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
             "task_end_info"
         ]["task_description"]
         return FrozenDict(attributes)
+
+    def _task_metadata(self):
+        """Values of the task configuration with their xradar names; 0 is an
+        unset configuration."""
+        task = self.root.ingest_header["task_configuration"]
+        return {
+            name: value * multiplier / divisor
+            for (block, field), (name, multiplier, divisor) in _IRIS_METADATA.items()
+            if (value := task.get(block, {}).get(field))
+        }
+
+    def get_calibration_parameters(self):
+        """Calibration values of the task configuration, with their xradar names."""
+        return FrozenDict(
+            {
+                name: value
+                for name, value in self._task_metadata().items()
+                if name in radar_calibration_subgroup
+            }
+        )
+
+    def get_radar_parameters(self):
+        """Beam widths and receiver bandwidth of the task configuration, with
+        their xradar names."""
+        return FrozenDict(
+            {
+                name: value
+                for name, value in self._task_metadata().items()
+                if name in radar_parameters_subgroup
+            }
+        )
 
 
 def _get_iris_group_names(filename):
@@ -4351,6 +4438,8 @@ class IrisBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_calibration_parameters())
+        ds.attrs.update(store.get_radar_parameters())
 
         # ensure close works
         ds._close = store.close
@@ -4400,7 +4489,7 @@ class IrisBackendEntrypoint(BackendEntrypoint):
             sweeps,
         )
         return _build_groups_dict(
-            ls_ds, optional=optional, optional_groups=optional_groups
+            ls_ds, optional=optional, optional_groups=optional_groups, units=_IRIS_UNITS
         )
 
     def open_datatree(self, filename_or_obj, **kwargs):

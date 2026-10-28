@@ -7,15 +7,18 @@
 import io
 import os
 from collections import OrderedDict
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import xarray
 from xarray import DataTree
 
+import xradar as xd
 from xradar.io.backends.uf import (
     UFBackendEntrypoint,
     UFFile,
+    UFStore,
     open_uf_datatree,
 )
 
@@ -121,7 +124,7 @@ def test_open_uf_file(uf_file_1):
                 ("PulseWidth", -32768),
                 ("BeamWidthH", 0.953125),
                 ("BeamWidthV", 0.953125),
-                ("BandWidth", -156.234375),
+                ("BandWidth", -9999),
                 ("Polarization", 0),
                 ("WaveLength", 3.171875),
                 ("SampleSize", 64),
@@ -251,10 +254,10 @@ def test_open_uf_datatree(uf_file_1):
     assert dtree[sample_sweep]["DBTH"].shape == (360, 997)
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     assert len(dtree.attrs) == 10
     print(dtree.attrs)
@@ -305,10 +308,10 @@ def test_open_uf_datatree_2(uf_file_2):
     assert dtree[sample_sweep]["DBTH"].shape == (360, 476)
 
     # Station coords should be on root as coordinates
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     assert len(dtree.attrs) == 10
     assert dtree.attrs["instrument_name"] == "CHILL"
@@ -393,6 +396,56 @@ def test_open_uf_datatree_optional_groups(uf_file_1):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize(
+    "fixture, width", [("uf_file_1", 0.953125), ("uf_file_2", 1.0)]
+)
+def test_open_uf_datatree_radar_parameters(fixture, width, request, closing):
+    # beam widths in 1/64 degree; the receiver bandwidth scale depends on the
+    # writer (MHz, MHz * 16, MHz * 64), it is not mapped
+    filename = request.getfixturevalue(fixture)
+    dtree = closing(
+        xd.open_datatree(filename, engine="uf", sweep=0, optional_groups=True)
+    )
+    params = dtree["radar_parameters"].dataset
+    np.testing.assert_allclose(params.radar_beam_width_h, width)
+    np.testing.assert_allclose(params.radar_beam_width_v, width)
+    assert "radar_receiver_bandwidth" not in params
+
+
+def test_uf_radar_parameters_first_valid_field():
+    # -9999 and 0 are missing, the next field of the ray can have the value
+    fields = {
+        "DZ": {"BeamWidthH": -9999, "BeamWidthV": 0},
+        "VR": {"BeamWidthH": 0.953125, "BeamWidthV": 1.5},
+        "ZD": {"BeamWidthH": 2.0, "BeamWidthV": 2.0},
+    }
+    store = SimpleNamespace(ds={"sweep_data": fields})
+    assert UFStore.get_radar_parameters(store) == {
+        "radar_beam_width_h": 0.953125,
+        "radar_beam_width_v": 1.5,
+    }
+
+
+def test_uf_radar_parameters_not_in_root_or_sweep_attrs(uf_file_2, closing):
+    dtree = closing(xd.open_datatree(uf_file_2, engine="uf", optional_groups=True))
+    names = ("radar_beam_width_h", "radar_beam_width_v")
+    for name in names:
+        assert name not in dtree.attrs
+        assert name in dtree["radar_parameters"].dataset
+        assert name not in dtree["sweep_0"].attrs
+    # without the optional groups the values are not in the tree at all
+    dtree = closing(xd.open_datatree(uf_file_2, engine="uf"))
+    assert not any(name in dtree.attrs for name in names)
+
+
+def test_uf_bandwidth_is_the_raw_word(uf_file_2):
+    # CHILL writes 1 (MHz), the parser must not scale it
+    with UFFile(uf_file_2) as ufh:
+        first = next(iter(ufh.ray_headers.values()))[0]
+        widths = {f["BandWidth"] for f in first["dhead"]["fields"].values()}
+        assert widths == {1}
 
 
 def test_uf_unsupported_input_type():

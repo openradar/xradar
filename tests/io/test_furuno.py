@@ -13,6 +13,7 @@ import os
 import shutil
 import struct
 import tempfile
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -21,6 +22,7 @@ from xarray.backends import CachingFileManager
 from xarray.core.indexing import OuterIndexer
 from xarray.core.utils import Frozen
 
+import xradar as xd
 from xradar.io.backends import furuno, open_furuno_datatree
 from xradar.io.backends.common import _get_fmt_string
 from xradar.io.backends.furuno import (
@@ -669,10 +671,10 @@ def test_open_furuno_datatree(furuno_scn_file):
     ), f"VRADH should be a data variable in {sample_sweep}"
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Station vars (latitude/longitude/altitude) live as coordinates on the
     # root only; per-sweep datasets do not duplicate them.
@@ -689,3 +691,51 @@ def test_open_furuno_datatree_optional_groups(furuno_scn_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize(
+    "fixture, widths",
+    [
+        # SCNX: half-power beam widths in 1/100 degree (275 and 276)
+        ("furuno_scnx_file", (2.75, 2.76)),
+        # SCN (format version 3) has no beam widths in the header
+        ("furuno_scn_file", None),
+    ],
+)
+@pytest.mark.parametrize("as_path", [False, True], ids=["str", "path"])
+def test_open_furuno_datatree_radar_parameters(fixture, widths, as_path, request):
+    filename = request.getfixturevalue(fixture)
+    if as_path:
+        filename = Path(filename)
+    with xd.open_datatree(filename, engine="furuno", optional_groups=True) as dtree:
+        params = dtree["radar_parameters"].dataset
+        if widths is None:
+            assert "radar_beam_width_h" not in params
+            assert "radar_beam_width_v" not in params
+        else:
+            np.testing.assert_allclose(params.radar_beam_width_h, widths[0])
+            np.testing.assert_allclose(params.radar_beam_width_v, widths[1])
+        # the values are no attributes of the root or the sweeps
+        assert "half_power_beam_width_h" not in dtree.attrs
+        assert "half_power_beam_width_h" not in dtree["sweep_0"].attrs
+
+
+def test_furuno_store_radar_parameters():
+    from types import SimpleNamespace
+
+    from xradar.io.backends.furuno import FurunoStore
+
+    def params(header):
+        return FurunoStore.get_radar_parameters(
+            SimpleNamespace(root=SimpleNamespace(header=header))
+        )
+
+    assert params({"half_power_beam_width_h": 275, "half_power_beam_width_v": 276}) == {
+        "half_power_beam_width_h": 2.75,
+        "half_power_beam_width_v": 2.76,
+    }
+    # a width of 0 is not set, a missing one is left out
+    assert params({"half_power_beam_width_h": 0, "half_power_beam_width_v": 276}) == {
+        "half_power_beam_width_v": 2.76
+    }
+    assert params({}) == {}
