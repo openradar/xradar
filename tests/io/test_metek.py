@@ -7,9 +7,11 @@ Tests for the MRR2 backend for xradar
 """
 
 import numpy as np
+import pytest
 import xarray as xr
 from xarray import DataTree, open_dataset, open_mfdataset
 
+import xradar
 from xradar.io.backends import metek, open_metek_datatree
 
 test_arr_ave = np.array(
@@ -319,10 +321,10 @@ def test_open_metek_datatree(metek_pro_gz_file):
     np.testing.assert_allclose(dtree[sample_sweep]["reflectivity"].values[0], test_arr)
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 9
@@ -334,6 +336,26 @@ def test_open_metek_datatree_optional_groups(metek_pro_gz_file):
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
+
+
+@pytest.mark.parametrize(
+    "fixture", ["metek_ave_gz_file", "metek_pro_gz_file", "metek_raw_gz_file"]
+)
+def test_metek_sweep_metadata(fixture, request):
+    # the single vertically pointing sweep carries the mandatory sweep
+    # metadata (FM301 Table 301-7a), follow_mode and prt_mode are "not_set",
+    # as for the other readers (#451)
+    fname = request.getfixturevalue(fixture)
+    with xr.open_dataset(fname, engine="metek") as ds:
+        # lazily opened variables report the stored dtype
+        assert ds["sweep_mode"].dtype.kind == "S"
+        assert ds["sweep_number"].dtype.kind == "i"
+        assert xradar.model.required_sweep_metadata_vars.issubset(ds.variables)
+        assert ds["sweep_mode"].values == b"vertical_pointing"
+        assert ds["sweep_number"].values == 0
+        assert ds["sweep_fixed_angle"].values == 90.0
+        assert ds["follow_mode"].values == "not_set"
+        assert ds["prt_mode"].values == "not_set"
 
 
 def test_metek_to_netcdf_roundtrip(metek_pro_gz_file, tmp_path):

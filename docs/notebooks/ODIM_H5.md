@@ -90,13 +90,13 @@ display(dtree)
 ### Plot Sweep Range vs. Time
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.sortby("time").plot(y="time")
+dtree["sweep_0"].dataset.DBZH.sortby("time").plot(y="time")
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.plot()
+dtree["sweep_0"].dataset.DBZH.plot()
 ```
 
 ```{code-cell}
@@ -120,7 +120,7 @@ With `optional_groups=True` the datatree also has the metadata groups. The ODIM_
 
 ```{code-cell}
 dtree = xd.open_datatree(filename, engine="odim", sweep=0, optional_groups=True)
-display(dtree["radar_parameters"].ds)
+display(dtree["radar_parameters"].dataset)
 ```
 
 ```{code-cell}
@@ -133,5 +133,5 @@ np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_v, 0.8
 This file has no calibration attributes, so `radar_calibration` is empty. The groups hold one set of values: if the datasets of a file disagree about a value, that value is left out of the group and a warning lists it. Select the sweep whose values you need with `sweep=`.
 
 ```{code-cell}
-display(dtree["radar_calibration"].ds)
+display(dtree["radar_calibration"].dataset)
 ```

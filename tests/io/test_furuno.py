@@ -671,10 +671,10 @@ def test_open_furuno_datatree(furuno_scn_file):
     ), f"VRADH should be a data variable in {sample_sweep}"
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Station vars (latitude/longitude/altitude) live as coordinates on the
     # root only; per-sweep datasets do not duplicate them.
@@ -708,7 +708,7 @@ def test_open_furuno_datatree_radar_parameters(fixture, widths, as_path, request
     if as_path:
         filename = Path(filename)
     with xd.open_datatree(filename, engine="furuno", optional_groups=True) as dtree:
-        params = dtree["radar_parameters"].ds
+        params = dtree["radar_parameters"].dataset
         if widths is None:
             assert "radar_beam_width_h" not in params
             assert "radar_beam_width_v" not in params

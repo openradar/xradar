@@ -346,7 +346,7 @@ for files in xd.io.group_imd_files("/data/imd"):
 
 # Or load all volumes into a single tree
 tree = xd.io.open_imd_volumes("/data/imd")
-tree["vcp_00/sweep_0"].ds["DBZH"]
+tree["vcp_00/sweep_0"].dataset["DBZH"]
 ```
 
 ## Universal Format (UF))

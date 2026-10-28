@@ -183,6 +183,13 @@ def _get_sweep_groups(
         tslice = slice(start_idx[i], end_idx[i] + 1)
         swslice = slice(i, i + 1)
         ds = data.isel(time=tslice, sweep=swslice).squeeze("sweep")
+        # a 2-D range(sweep, range) has the first gate and the gate spacing of
+        # every sweep (CfRadial 1.4 Section 2.5): keep the ones of this sweep
+        if "sweep" in data["range"].dims:
+            for name in ("meters_to_center_of_first_gate", "meters_between_gates"):
+                value = np.atleast_1d(data["range"].attrs.get(name, []))
+                if value.size == root.sizes["sweep"]:
+                    ds["range"].attrs[name] = value[i].item()
 
         ds["sweep_mode"] = _maybe_decode(ds.sweep_mode.compute())
         dim0 = "elevation" if str(ds["sweep_mode"].values) == "rhi" else "azimuth"
