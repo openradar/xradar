@@ -54,7 +54,7 @@ def test_open_cfradial1_datatree(cfradial1_file, closing):
     assert rvars["time_coverage_start"] == b"2008-06-04T00:15:03Z"
     assert rvars["time_coverage_end"] == b"2008-06-04T00:22:17Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(22.526699))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(120.4335022))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(45.0000018))
@@ -68,7 +68,7 @@ def test_open_cfradial1_datatree(cfradial1_file, closing):
         # only iterate sweep groups
         if "sweep" not in grp:
             continue
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         i = ds.sweep_number.values
         assert i == int(grp[7:])
         assert dict(ds.sizes) == {"time": azimuths[i], "range": ranges[i]}
@@ -130,7 +130,7 @@ def test_open_odim_datatree(odim_file, closing):
     assert rvars["time_coverage_start"] == "2018-12-20T06:06:28Z"
     assert rvars["time_coverage_end"] == "2018-12-20T06:10:42Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(-33.7008018))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(151.2089996))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(195.0))
@@ -171,7 +171,7 @@ def test_open_odim_datatree(odim_file, closing):
         200,
     ]
     for i, grp in enumerate(dtree.match("sweep_*")):
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -278,7 +278,7 @@ def test_open_gamic_datatree(gamic_file, closing):
     assert rvars["time_coverage_start"] == "2018-06-01T05:40:47Z"
     assert rvars["time_coverage_end"] == "2018-06-01T05:44:16Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(50.9287272))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(6.4569489))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(310.0))
@@ -324,7 +324,7 @@ def test_open_gamic_datatree(gamic_file, closing):
         1000,
     ]
     for i, grp in enumerate(dtree.match("sweep_*")):
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -523,7 +523,7 @@ def test_open_rainbow_datatree(rainbow_file):
     assert rvars["time_coverage_start"] == "2013-05-10T00:00:06Z"
     assert rvars["time_coverage_end"] == "2013-05-10T00:03:14Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(50.856633))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(6.379967))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(116.7))
@@ -551,7 +551,7 @@ def test_open_rainbow_datatree(rainbow_file):
     azimuths = [361] * 14
     ranges = [400] * 14
     for i, grp in enumerate(dtree.match("sweep_*")):
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -616,7 +616,7 @@ def test_open_iris_datatree(iris0_file):
     assert rvars["time_coverage_start"] == "2013-11-25T10:55:04Z"
     assert rvars["time_coverage_end"] == "2013-11-25T10:59:24Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(9.331))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(-75.2829999))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(143.0))
@@ -646,7 +646,7 @@ def test_open_iris_datatree(iris0_file):
     ranges = [664] * 10
     i = 0
     for grp in dtree.match("sweep_*"):
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -750,7 +750,7 @@ def test_odim_roundtrip(odim_file2, temp_file, compression, compression_opts, cl
     )
     dtree2 = closing(open_odim_datatree(temp_file, reindex_angle=False))
     for d0, d1 in zip(dtree.groups, dtree2.groups):
-        xr.testing.assert_equal(dtree[d0].ds, dtree2[d1].ds)
+        xr.testing.assert_equal(dtree[d0].dataset, dtree2[d1].dataset)
 
 
 def test_odim_optional_how(odim_file2, make_temp_file, closing):
@@ -886,7 +886,9 @@ def test_odim_total_power_roundtrip(odim_file, tmp_path):
         ]
     assert "TH" in quantities and "DBTH" not in quantities
     dtree2 = open_odim_datatree(path)
-    xr.testing.assert_equal(dtree2["sweep_0"].ds.DBTH, dtree["sweep_0"].ds.DBTH)
+    xr.testing.assert_equal(
+        dtree2["sweep_0"].dataset.DBTH, dtree["sweep_0"].dataset.DBTH
+    )
 
 
 def test_write_odim_source(rainbow_file2, temp_file):
@@ -964,7 +966,7 @@ def test_open_datamet_datatree(datamet_file):
     assert rvars["time_coverage_start"] == "2019-07-10T07:00:00Z"
     assert rvars["time_coverage_end"] == "2019-07-10T07:00:00Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(41.9394))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(14.6208))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(710))
@@ -976,7 +978,7 @@ def test_open_datamet_datatree(datamet_file):
     ranges = [493, 493, 493, 664, 832, 832, 1000, 1000, 1332, 1332, 1332]
     i = 0
     for grp in dtree.match("sweep_*"):
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -1024,7 +1026,7 @@ def test_cfradfial2_roundtrip(cfradial1_file, make_temp_file, first_dim, closing
                     assert first_dim in dtree0[d0].dims
                     assert "time" in dtree1[d1].dims
                     assert "time" in dtree2[d2].dims
-                xr.testing.assert_equal(dtree1[d1].ds, dtree2[d2].ds)
+                xr.testing.assert_equal(dtree1[d1].dataset, dtree2[d2].dataset)
 
 
 def test_cfradial_n_points_file(cfradial1n_file, closing):
@@ -1048,7 +1050,7 @@ def test_cfradial_n_points_file(cfradial1n_file, closing):
     assert rvars["time_coverage_start"] == b"2024-05-22T16:00:47Z"
     assert rvars["time_coverage_end"] == b"2024-05-22T16:03:20Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(45.6272661))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(9.1963181))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(241.0))
@@ -1062,7 +1064,7 @@ def test_cfradial_n_points_file(cfradial1n_file, closing):
         # only iterate sweep groups
         if "sweep" not in grp:
             continue
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         i = int(ds.sweep_number.values)
         assert i == int(grp[7:])
         assert dict(ds.sizes) == {
@@ -1118,7 +1120,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     assert rvars["time_coverage_start"] == "2016-06-01T15:00:25Z"
     assert rvars["time_coverage_end"] == "2016-06-01T15:06:06Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(33.65414047))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(-101.81416321))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(1029))
@@ -1179,7 +1181,7 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
     assert len(dtree.groups[1:]) == 11
     for i, grp in enumerate(dtree.match("sweep_*")):
         print(i)
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -1242,7 +1244,7 @@ def test_open_uf_datatree(uf_file_1):
     assert rvars["time_coverage_start"] == "2011-04-27T16:42:32Z"
     assert rvars["time_coverage_end"] == "2011-04-27T16:46:50Z"
     # station coords are now coordinates on root, not data_vars
-    rcoords = dtree.ds.coords
+    rcoords = dtree.dataset.coords
     np.testing.assert_almost_equal(rcoords["latitude"].values, np.array(34.9318099))
     np.testing.assert_almost_equal(rcoords["longitude"].values, np.array(-86.4658203))
     np.testing.assert_almost_equal(rcoords["altitude"].values, np.array(226))
@@ -1315,7 +1317,7 @@ def test_open_uf_datatree(uf_file_1):
     assert len(dtree.groups[1:]) == 14
     for i, grp in enumerate(dtree.match("sweep_*")):
         print(i)
-        ds = dtree[grp].ds
+        ds = dtree[grp].dataset
         assert dict(ds.sizes) == {"azimuth": azimuths[i], "range": ranges[i]}
         assert set(ds.data_vars) & (
             sweep_dataset_vars | non_standard_sweep_dataset_vars
@@ -1350,33 +1352,33 @@ class TestStationCoordsOnRoot:
 
     def test_odim_station_coords_on_root(self, odim_file, closing):
         dtree = closing(open_odim_datatree(odim_file))
-        assert STATION_VARS <= set(dtree.ds.coords)
+        assert STATION_VARS <= set(dtree.dataset.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
-            sweep_ds = dtree[name].ds
+            sweep_ds = dtree[name].dataset
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
 
     def test_nexrad_station_coords_on_root(self, nexradlevel2_file):
         dtree = open_nexradlevel2_datatree(nexradlevel2_file)
-        assert STATION_VARS <= set(dtree.ds.coords)
+        assert STATION_VARS <= set(dtree.dataset.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
-            sweep_ds = dtree[name].ds
+            sweep_ds = dtree[name].dataset
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
 
     def test_gamic_station_coords_on_root(self, gamic_file, closing):
         dtree = closing(open_gamic_datatree(gamic_file))
-        assert STATION_VARS <= set(dtree.ds.coords)
+        assert STATION_VARS <= set(dtree.dataset.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
-            sweep_ds = dtree[name].ds
+            sweep_ds = dtree[name].dataset
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
 
     def test_cfradial1_station_coords_on_root(self, cfradial1_file, closing):
         dtree = closing(open_cfradial1_datatree(cfradial1_file))
-        assert STATION_VARS <= set(dtree.ds.coords)
+        assert STATION_VARS <= set(dtree.dataset.coords)
         for name in [k for k in dtree.children if k.startswith("sweep_")]:
-            sweep_ds = dtree[name].ds
+            sweep_ds = dtree[name].dataset
             assert not (STATION_VARS & set(sweep_ds.coords))
             assert not (STATION_VARS & set(sweep_ds.data_vars))
 
@@ -1393,7 +1395,7 @@ def test_sweep_list_matches_sweep_int(request, fixture, opener, closing):
     # sweep=[0] must select the same sweep as sweep=0 and "sweep_0" (#412)
     filename = request.getfixturevalue(fixture)
     open_datatree = getattr(xradar.io, opener)
-    expected = closing(open_datatree(filename, sweep=0))["sweep_0"].ds
+    expected = closing(open_datatree(filename, sweep=0))["sweep_0"].dataset
     for sweep in ([0], ["sweep_0"]):
         dtree = closing(open_datatree(filename, sweep=sweep))
-        xr.testing.assert_identical(dtree["sweep_0"].ds, expected)
+        xr.testing.assert_identical(dtree["sweep_0"].dataset, expected)

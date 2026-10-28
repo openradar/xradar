@@ -22,7 +22,7 @@ dependencies:
   - pip
   - pyproj
   - pytest
-  - pytest-cov
+  - pytest-cov>=7.1.0
   - pytest-doctestplus
   - pytest-sugar
   - pytest-xdist

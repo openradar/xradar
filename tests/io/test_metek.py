@@ -321,10 +321,10 @@ def test_open_metek_datatree(metek_pro_gz_file):
     np.testing.assert_allclose(dtree[sample_sweep]["reflectivity"].values[0], test_arr)
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 9

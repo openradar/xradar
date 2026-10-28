@@ -106,3 +106,8 @@ select = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["xradar"]
+
+[tool.coverage.run]
+patch = ["subprocess"]
+source = ["xradar"]
+parallel = true
