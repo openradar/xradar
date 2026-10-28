@@ -41,6 +41,11 @@ def pytest_configure(config):
         "filterwarnings",
         r"ignore:.*IRIS multi_prf_mode_flag=\d+ is not defined:UserWarning",
     )
+    # prevent adding DataTree.ds by accident, turn warning into error
+    config.addinivalue_line(
+        "filterwarnings",
+        "error:DataTree.ds is deprecated, use DataTree.dataset instead.:FutureWarning",
+    )
 
 
 @pytest.fixture(params=["file", "filelike"])

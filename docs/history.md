@@ -15,6 +15,7 @@
 * FIX: IRIS ``range`` attributes ``meters_between_gates`` (was half the gate spacing in centimetres, 50x too large) and ``meters_to_center_of_first_gate`` (was the header's first bin in centimetres) are in metres and match the ``range`` coordinate, also in CfRadial exports; with variable bin spacing in the header there is no ``meters_between_gates``; ``range`` is computed in float64 and rounded to float32 once, which removes a centimetre-level error on gates beyond about 168 km ({issue}`525`, {pull}`529`) by [@aladinor](https://github.com/aladinor)
 * FIX: enable subprocess coverage for code coverage in ``pyproject.toml``, adapt ``docs/notebooks/conftest.py`` to enable code coverage for jupyter notebook kernel, pin pytest-cov to 7.1.0 {issue}`556` ({pull}`557`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: tighten scope of tests for FutureWarning to prevent checking for Warnings issued by other sources ({issue}`558`, {pull}`559`) by [@kmuehlbauer](https://github.com/kmuehlbauer))
+* MNT: use ``xarray.DataTree.dataset`` instead of deprecated ``xarray.DataTree.ds``, promote xarray's FutureWarning to error in test suite {issue}`560` ({pull}`561`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.13.0 (2026-10-21)
 

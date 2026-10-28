@@ -69,7 +69,7 @@ Apply basic reflectivity filter. This is just a demonstration.
 
 ```{code-cell}
 def ref_filter(dtree, sweep="sweep_0", field="DBZ"):
-    ds = dtree[sweep].ds
+    ds = dtree[sweep].dataset
     ds = ds.where((ds[field] >= -10) & (ds[field] <= 70))
     red_patch = ds.where(
         (

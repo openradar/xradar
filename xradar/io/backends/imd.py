@@ -839,7 +839,7 @@ def open_imd_volumes(paths, **kwargs):
     --------
     >>> import xradar as xd
     >>> tree = xd.io.open_imd_volumes("/data/JPR220822IMD-B")   # doctest: +SKIP
-    >>> tree["vcp_00/sweep_0"].ds["DBZH"]                       # doctest: +SKIP
+    >>> tree["vcp_00/sweep_0"].dataset["DBZH"]                       # doctest: +SKIP
     """
     groups = group_imd_files(paths)
     if not groups:

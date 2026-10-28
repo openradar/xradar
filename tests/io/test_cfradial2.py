@@ -83,7 +83,7 @@ def test_open_cfradial2_roundtrip(cfradial1_file, temp_file, closing):
         xd.io.to_cfradial2(dtree.copy(), outfile, engine="netcdf4")
         expected = (
             dtree["sweep_0"]
-            .ds["DBZ"]
+            .dataset["DBZ"]
             .drop_vars(["latitude", "longitude", "altitude"], errors="ignore")
             .load()
         )
@@ -95,14 +95,14 @@ def test_open_cfradial2_roundtrip(cfradial1_file, temp_file, closing):
     assert "DBZ" in dtree2["sweep_0"].data_vars
     # cfradial1 attaches station coords to each sweep; cfradial2 places them
     # at root only, so ``expected`` drops them for the DBZ comparison.
-    xr.testing.assert_equal(expected, dtree2["sweep_0"].ds["DBZ"])
-    assert "latitude" in dtree2.ds.coords
-    assert dtree2.ds["latitude"].attrs["standard_name"] == "latitude"
+    xr.testing.assert_equal(expected, dtree2["sweep_0"].dataset["DBZ"])
+    assert "latitude" in dtree2.dataset.coords
+    assert dtree2.dataset["latitude"].attrs["standard_name"] == "latitude"
     assert (
-        dtree2["sweep_0"].ds["range"].attrs["standard_name"]
+        dtree2["sweep_0"].dataset["range"].attrs["standard_name"]
         == "projection_range_coordinate"
     )
-    assert "coordinates" in dtree2["sweep_0"].ds["DBZ"].attrs
+    assert "coordinates" in dtree2["sweep_0"].dataset["DBZ"].attrs
     dtree2.close()
 
 
@@ -124,7 +124,7 @@ def test_open_cfradial2_sweep_selection_and_first_dim(
     assert ("azimuth" in dtree2["sweep_0"].dims) or (
         "elevation" in dtree2["sweep_0"].dims
     )
-    assert dtree2.ds["sweep_group_name"].item() == "sweep_0"
+    assert dtree2.dataset["sweep_group_name"].item() == "sweep_0"
     dtree2.close()
 
 
@@ -137,7 +137,7 @@ def test_open_cfradial2_normalizes_common_aliases(temp_file, closing):
     ):
         dtree = closing(xd.io.open_cfradial2_datatree(outfile, engine="netcdf4"))
 
-    sweep = dtree["sweep_0"].ds
+    sweep = dtree["sweep_0"].dataset
     assert "time" in sweep.coords
     assert "range" in sweep.coords
     assert "azimuth" in sweep.coords
@@ -148,8 +148,8 @@ def test_open_cfradial2_normalizes_common_aliases(temp_file, closing):
     assert sweep["sweep_mode"].item() == "azimuth_surveillance"
     assert sweep["follow_mode"].item() == "none"
     assert sweep["prt_mode"].item() == "fixed"
-    assert dtree.ds["sweep_group_name"].item() == "sweep_0"
-    assert dtree.ds.coords["latitude"].item() == 50.0
+    assert dtree.dataset["sweep_group_name"].item() == "sweep_0"
+    assert dtree.dataset.coords["latitude"].item() == 50.0
     assert dtree.attrs["instrument_name"] == "test-radar"
     assert sweep["time"].attrs["standard_name"] == "time"
     assert sweep["azimuth"].attrs["axis"] == "radial_azimuth_coordinate"
@@ -511,14 +511,14 @@ def test_cfradial2_export_writes_sweep_group_names(odim_file, tmp_path):
     # some readers fill sweep_group_name with the sweep numbers, the file must
     # list the names of the sweep groups
     with xd.open_datatree(odim_file, engine="odim") as dtree:
-        assert dtree.ds["sweep_group_name"].dtype.kind not in "USO"
-        numbers = dtree.ds["sweep_group_name"].values.copy()
+        assert dtree.dataset["sweep_group_name"].dtype.kind not in "USO"
+        numbers = dtree.dataset["sweep_group_name"].values.copy()
         outfile = tmp_path / "names.nc"
         xd.io.to_cfradial2(dtree, outfile)
         # the input is left alone
-        np.testing.assert_array_equal(dtree.ds["sweep_group_name"].values, numbers)
+        np.testing.assert_array_equal(dtree.dataset["sweep_group_name"].values, numbers)
     with xr.open_datatree(outfile) as written:
-        names = [str(n) for n in written.ds["sweep_group_name"].values]
+        names = [str(n) for n in written.dataset["sweep_group_name"].values]
         assert names == [f"sweep_{i}" for i in range(len(numbers))]
         assert names == [k for k in written.children if k.startswith("sweep_")]
 
@@ -556,8 +556,8 @@ def test_cfradial2_reader_string_time_coverage_has_no_units(cfradial2_file):
     # try to decode them as numbers when the written file is read again
     with xd.open_datatree(cfradial2_file, engine="cfradial2") as dtree:
         for name in ("time_coverage_start", "time_coverage_end"):
-            if dtree.ds[name].dtype.kind in "USO":
-                assert "units" not in dtree.ds[name].attrs
+            if dtree.dataset[name].dtype.kind in "USO":
+                assert "units" not in dtree.dataset[name].attrs
 
 
 def test_cfradial2_root_attrs_only_time_coverage_gets_string_time_attrs():
@@ -631,7 +631,7 @@ def test_open_cfradial2_sweep_group_name(cfradial1_file, tmp_path):
     sweeps = [k for k in dtree.children if k.startswith("sweep_")]
     assert sweeps == [f"sweep_{i}" for i in range(len(root_fixed))]
     for i, sweep in enumerate(sweeps):
-        ds = dtree[sweep].ds
+        ds = dtree[sweep].dataset
         # sweep_mode read from the variable -> elevation is the first dimension
         assert "elevation" in ds.dims
         assert str(ds.sweep_mode.values) == "rhi"
@@ -641,7 +641,9 @@ def test_open_cfradial2_sweep_group_name(cfradial1_file, tmp_path):
     # integer selection by position for non `sweep_<n>` group names
     with pytest.warns(UserWarning, match="renumbered"):
         one = xd.io.open_cfradial2_datatree(path, engine="h5netcdf", sweep=1)
-    assert float(one["sweep_0"].ds.sweep_fixed_angle) == pytest.approx(root_fixed[1])
+    assert float(one["sweep_0"].dataset.sweep_fixed_angle) == pytest.approx(
+        root_fixed[1]
+    )
 
 
 def test_open_cfradial2_no_sweeps(tmp_path):
