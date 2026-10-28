@@ -436,7 +436,14 @@ def test_cfradial2_non_sequence_sweep_deprecated(cfradial2_file, sweep, closing)
             xd.open_datatree(cfradial2_file, engine="cfradial2", sweep=sweep)
         )
     assert list(dtree.match("sweep_*")) == ["sweep_0"]
-    assert record[0].filename == __file__
+    deprecation_warnings = [
+        x
+        for x in record
+        if issubclass(x.category, FutureWarning)
+        and "pass a list or tuple" in str(x.message)
+    ]
+    assert len(deprecation_warnings) == 1
+    assert deprecation_warnings[0].filename == __file__
     dtree.close()
 
 
@@ -444,7 +451,14 @@ def test_cfradial2_non_sequence_sweep_warning_points_at_caller(cfradial2_file, c
     # same through xarray's entry point, which is one call deeper
     with pytest.warns(FutureWarning, match="pass a list or tuple") as record:
         dtree = closing(xr.open_datatree(cfradial2_file, engine="cfradial2", sweep={0}))
-    assert record[0].filename == __file__
+    deprecation_warnings = [
+        x
+        for x in record
+        if issubclass(x.category, FutureWarning)
+        and "pass a list or tuple" in str(x.message)
+    ]
+    assert len(deprecation_warnings) == 1
+    assert deprecation_warnings[0].filename == __file__
     dtree.close()
 
 
