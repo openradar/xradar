@@ -641,7 +641,10 @@ class TestDeprecation:
             warnings.simplefilter("always")
             dtree = closing(func(filepath, sweep=0, **extra_kwargs))
             deprecation_warnings = [
-                x for x in w if issubclass(x.category, FutureWarning)
+                x
+                for x in w
+                if issubclass(x.category, FutureWarning)
+                and f"`{func_name}` is deprecated" in str(x.message)
             ]
             assert len(deprecation_warnings) == 1, (
                 f"{func_name} emitted {len(deprecation_warnings)} "
