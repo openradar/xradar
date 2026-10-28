@@ -20,6 +20,7 @@
 * ENH: ``to_cfradial1(..., range_geometry="per_sweep")`` (also ``xradar.transform.to_cfradial1`` and the accessor) writes volumes whose sweeps have different first gate or gate spacing (e.g. GAMIC with 100 m and 150 m gates) with a 2-D ``range(sweep, range)`` and ``meters_to_center_of_first_gate``/``meters_between_gates`` per sweep (CfRadial 1.4 Section 2.5); the default ``"common"`` still raises for them ({issue}`518`, {pull}`521`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: IMD ``open_imd_datatree`` (and ``open_imd_volumes``) with several files no longer drop the ``/radar_parameters``, ``/georeferencing_correction`` and ``/radar_calibration`` groups requested with ``optional_groups=True``; ``create_volume`` only copied the sweeps. The values the files disagree about are left out of the groups, with a ``UserWarning`` naming them ({issue}`468`, {pull}`469`) by [@syedhamidali](https://github.com/syedhamidali)
 * TST: every sweep of every engine passes ``xradar.util.is_sweep``, and ``is_sweep(strict=True)`` for all engines except HPL and Metek; the ``Open-Any-Format`` notebook shows the check ({issue}`537`, {pull}`542`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: the calibration values of Furuno SCNX files are scaled (the header gives antenna gain, transmit power, radar constant and noise power in tenths) and have ``units``; the transmit power is ``xmit_power_h/v`` in dBm and is written to CfRadial1 files ({issue}`538`, {pull}`543`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 
