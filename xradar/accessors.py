@@ -29,7 +29,22 @@ import xarray as xr
 
 from .georeference import add_crs, add_crs_tree, get_crs, get_x_y_z, get_x_y_z_tree
 from .transform import to_cfradial1, to_cfradial2
-from .util import is_sweep, map_over_sweeps
+from .util import (
+    apply_to_sweeps,
+    ipol_time,
+    is_sweep,
+    map_over_sweeps,
+    reindex_angle,
+    reindex_range,
+    remove_duplicate_rays,
+)
+
+
+def _fix_angle(ds, **kwargs):
+    # as reindex_coord while reading: remove duplicate rays, fill the time of
+    # missing rays
+    ds = reindex_angle(remove_duplicate_rays(ds), **kwargs)
+    return ipol_time(ds, **kwargs)
 
 
 def accessor_constructor(self, xarray_obj):
@@ -182,6 +197,25 @@ class XradarDataSetAccessor(XradarAccessor):
         """
         return is_sweep(self.xarray_obj, strict=strict)
 
+    def reindex_angle(self, **kwargs):
+        """Reindex the sweep along its first angle onto a regular grid.
+
+        See :func:`xradar.util.reindex_angle` for the keyword arguments
+        (``start_angle``, ``stop_angle``, ``angle_res``, ``direction``, ``method``
+        and ``tolerance``). As ``reindex_coord`` while reading, duplicate rays are
+        removed first and the time of missing rays is interpolated.
+        """
+        return _fix_angle(self.xarray_obj, **kwargs)
+
+    def reindex_range(self, **kwargs):
+        """Reindex the sweep along range onto a regular grid.
+
+        See :func:`xradar.util.reindex_range` for the keyword arguments
+        (``start_range``, ``stop_range``, ``range_res``, ``method`` and
+        ``tolerance``).
+        """
+        return reindex_range(self.xarray_obj, **kwargs)
+
     def to_cfradial2_datatree(self):
         """Convert a CfRadial1 Dataset to CfRadial2 DataTree."""
         return to_cfradial2(self.xarray_obj)
@@ -244,6 +278,27 @@ class XradarDataTreeAccessor(XradarAccessor):
         See :func:`xradar.util.is_sweep`.
         """
         return is_sweep(self.xarray_obj, strict=strict)
+
+    def reindex_angle(self, **kwargs):
+        """Reindex every sweep along its first angle onto a regular grid.
+
+        See :func:`xradar.util.reindex_angle` for the keyword arguments. The
+        angle grid is the same for all sweeps. As ``reindex_coord`` while reading,
+        duplicate rays are removed first and the time of missing rays is
+        interpolated.
+        """
+        return apply_to_sweeps(self.xarray_obj, _fix_angle, **kwargs)
+
+    def reindex_range(self, **kwargs):
+        """Reindex every sweep along range onto a regular grid.
+
+        See :func:`xradar.util.reindex_range` for the keyword arguments. Without
+        arguments each sweep keeps its own range grid and only gets a regular one
+        (the first gate, the last gate and the median spacing of the sweep); give
+        ``start_range``, ``stop_range`` and ``range_res`` to bring all sweeps onto
+        the same grid.
+        """
+        return apply_to_sweeps(self.xarray_obj, reindex_range, **kwargs)
 
     def map_over_sweeps(self, func, *args, **kwargs):
         """

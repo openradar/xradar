@@ -22,6 +22,7 @@
 * TST: every sweep of every engine passes ``xradar.util.is_sweep``, and ``is_sweep(strict=True)`` for all engines except HPL and Metek; the ``Open-Any-Format`` notebook shows the check ({issue}`537`, {pull}`542`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: the calibration values of Furuno SCNX files are scaled (the header gives antenna gain, transmit power, radar constant and noise power in tenths) and have ``units``; the transmit power is ``xmit_power_h/v`` in dBm and is written to CfRadial1 files ({issue}`538`, {pull}`543`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: the CfRadial1 reader gave each sweep the rays of another sweep when the sweeps of the file were not in time order (e.g. written by ``to_cfradial1`` from ``sweep=[5, 0]``); the sweeps are sliced in file order and sorted by time within each sweep ({issue}`550`, {pull}`551`) by [@syedhamidali](https://github.com/syedhamidali)
+* ENH: ``.xradar.reindex_angle`` and ``.xradar.reindex_range`` for Dataset (a sweep) and DataTree (every sweep), the same arguments as ``xradar.util.reindex_angle`` and ``reindex_range`` ({issue}`539`, {pull}`544`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 
