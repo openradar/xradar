@@ -156,8 +156,9 @@ def _get_sweep_groups(
 
     root = root.rename({"fixed_angle": "sweep_fixed_angle"})
 
-    # conform to cfradial2 standard
-    data = conform_cfradial2_sweep_group(root, optional, "time")
+    # conform to cfradial2 standard, the rays stay in file order, the sweep
+    # indices refer to it (each sweep is sorted below)
+    data = conform_cfradial2_sweep_group(root, optional, "time", sort=False)
     data_vars = {
         k
         for k, v in data.data_vars.items()

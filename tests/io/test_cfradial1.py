@@ -752,3 +752,21 @@ def test_cfradial1_per_sweep_range_dataset(gamic_file):
         )
         with pytest.raises(ValueError, match="range_geometry"):
             xd.transform.to_cfradial1(dtree)
+
+
+def test_cfradial1_sweeps_not_in_time_order(gamic_file, tmp_path, closing):
+    # the sweep ray indices refer to the order of the file, not to the time
+    # sorted rays, so a later sweep written first must keep its own rays (#550)
+    dtree = closing(xd.io.open_gamic_datatree(gamic_file, sweep=[5, 0]))
+    assert dtree["sweep_0"].dataset.time[0] > dtree["sweep_1"].dataset.time[0]
+    xd.io.to_cfradial1(dtree, tmp_path / "unsorted.nc")
+    back = closing(xd.io.open_cfradial1_datatree(tmp_path / "unsorted.nc"))
+    for sweep in ["sweep_0", "sweep_1"]:
+        src, res = dtree[sweep].dataset, back[sweep].dataset
+        assert res.sweep_fixed_angle.item() == src.sweep_fixed_angle.item()
+        np.testing.assert_array_equal(res.time.values, src.time.values)
+        np.testing.assert_allclose(res.azimuth.values, src.azimuth.values)
+        nrange = min(src.sizes["range"], res.sizes["range"])
+        np.testing.assert_array_equal(
+            res.DBZH.values[:, :nrange], src.DBZH.values[:, :nrange]
+        )
