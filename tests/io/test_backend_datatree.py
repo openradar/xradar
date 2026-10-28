@@ -82,7 +82,7 @@ def _assert_cfradial2_structure(dtree, optional_groups=False):
             assert grp in children, f"Missing group: {grp}"
     sweep_groups = [k for k in children if k.startswith("sweep_")]
     assert len(sweep_groups) > 0, "No sweep groups found"
-    root_vars = set(dtree.ds.data_vars)
+    root_vars = set(dtree.dataset.data_vars)
     assert "time_coverage_start" in root_vars
     assert "time_coverage_end" in root_vars
 
@@ -124,8 +124,8 @@ class TestXdOpenDatatree:
             )
         )
         # Station coords are on root (promoted by _assign_root)
-        assert "latitude" in dtree.ds.coords
-        assert "longitude" in dtree.ds.coords
+        assert "latitude" in dtree.dataset.coords
+        assert "longitude" in dtree.dataset.coords
 
     def test_engine_is_discovered(self, engine_and_file, closing):
         engine, filepath = engine_and_file
@@ -375,7 +375,7 @@ class TestIMDMultiFile:
         def station_coords(dtree):
             stations = {"latitude", "longitude", "altitude"}
             return (
-                sorted(stations & set(dtree.ds.coords)),
+                sorted(stations & set(dtree.dataset.coords)),
                 sorted(stations & set(dtree["sweep_0"].to_dataset().variables)),
             )
 
@@ -425,17 +425,17 @@ class TestCfRadial2SiteCoords:
         dtree = closing(
             xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=True)
         )
-        assert "latitude" in dtree.ds.coords
-        assert "longitude" in dtree.ds.coords
-        assert "altitude" in dtree.ds.coords
+        assert "latitude" in dtree.dataset.coords
+        assert "longitude" in dtree.dataset.coords
+        assert "altitude" in dtree.dataset.coords
 
     def test_site_coords_false_drops_station_coords(self, cfradial2_file, closing):
         dtree = closing(
             xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=False)
         )
-        assert "latitude" not in dtree.ds.coords
-        assert "longitude" not in dtree.ds.coords
-        assert "altitude" not in dtree.ds.coords
+        assert "latitude" not in dtree.dataset.coords
+        assert "longitude" not in dtree.dataset.coords
+        assert "altitude" not in dtree.dataset.coords
 
 
 # -- supports_groups attribute -----------------------------------------------
@@ -641,7 +641,10 @@ class TestDeprecation:
             warnings.simplefilter("always")
             dtree = closing(func(filepath, sweep=0, **extra_kwargs))
             deprecation_warnings = [
-                x for x in w if issubclass(x.category, FutureWarning)
+                x
+                for x in w
+                if issubclass(x.category, FutureWarning)
+                and f"`{func_name}` is deprecated" in str(x.message)
             ]
             assert len(deprecation_warnings) == 1, (
                 f"{func_name} emitted {len(deprecation_warnings)} "
@@ -943,7 +946,7 @@ class TestXdOpenDatatreeSweepFiles:
             "sweep_2",
         ]
         np.testing.assert_array_equal(
-            volume.ds.sweep_fixed_angle, reference.ds.sweep_fixed_angle
+            volume.dataset.sweep_fixed_angle, reference.dataset.sweep_fixed_angle
         )
         for i in range(3):
             assert volume[f"sweep_{i}"].sweep_number.item() == i
@@ -956,7 +959,7 @@ class TestXdOpenDatatreeSweepFiles:
         volume = closing(xd.open_datatree(sweep_files[::-1]))
         starts = [volume[f"sweep_{i}"].time.min().values for i in range(3)]
         assert starts == sorted(starts)
-        assert volume.ds.sweep_fixed_angle.values.tolist() == [
+        assert volume.dataset.sweep_fixed_angle.values.tolist() == [
             volume[f"sweep_{i}"].sweep_fixed_angle.item() for i in range(3)
         ]
 
@@ -998,3 +1001,36 @@ class TestXdOpenDatatreeSweepFiles:
     def test_empty_list_raises(self):
         with pytest.raises(ValueError, match="at least one file"):
             xd.open_datatree([])
+
+
+_SWEEP_FILES = [
+    ("odim", "odim_file"),
+    ("cfradial1", "cfradial1_file"),
+    ("cfradial2", "cfradial2_file"),
+    ("nexradlevel2", "nexradlevel2_file"),
+    ("gamic", "gamic_file"),
+    ("iris", "iris0_file"),
+    ("furuno", "furuno_scn_file"),
+    ("rainbow", "rainbow_file"),
+    ("datamet", "datamet_file"),
+    ("uf", "uf_file_1"),
+    ("imd", "imd_file"),
+    ("hpl", "hpl_file"),
+    ("metek", "metek_ave_gz_file"),
+]
+
+
+@pytest.mark.parametrize(
+    ("engine", "fixture"), _SWEEP_FILES, ids=[engine for engine, _ in _SWEEP_FILES]
+)
+def test_sweeps_are_fm301_sweeps(engine, fixture, request, closing):
+    # every reader returns sweeps which `is_sweep` accepts, with the mandatory
+    # FM301 sweep metadata (strict) (#537)
+    filename = request.getfixturevalue(fixture)
+    dtree = closing(xd.open_datatree(filename, engine=engine))
+    names = [name for name in dtree.children if name.startswith("sweep_")]
+    assert names
+    for name in names:
+        sweep = dtree[name].to_dataset(inherit="all_coords")
+        assert xd.util.is_sweep(sweep), (engine, name)
+        assert xd.util.is_sweep(sweep, strict=True), (engine, name)

@@ -41,6 +41,11 @@ def pytest_configure(config):
         "filterwarnings",
         r"ignore:.*IRIS multi_prf_mode_flag=\d+ is not defined:UserWarning",
     )
+    # prevent adding DataTree.ds by accident, turn warning into error
+    config.addinivalue_line(
+        "filterwarnings",
+        "error:DataTree.ds is deprecated, use DataTree.dataset instead.:FutureWarning",
+    )
 
 
 @pytest.fixture(params=["file", "filelike"])
@@ -182,6 +187,11 @@ def iris0_file():
 @pytest.fixture(scope="session")
 def iris1_file():
     return DATASETS.fetch("SUR210819000227.RAWKPJV")
+
+
+@pytest.fixture(scope="session")
+def iris_raw_na_file():
+    return DATASETS.fetch("RAW_NA_000_125_20080411181219")
 
 
 @pytest.fixture(scope="session")

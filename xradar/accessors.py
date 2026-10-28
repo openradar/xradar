@@ -334,13 +334,23 @@ class XradarDataTreeAccessor(XradarAccessor):
 
         return self.xarray_obj.pipe(_func, *args, **kwargs)
 
-    def to_cfradial1_dataset(self, calibs=True):
-        """Convert a CfRadial2 DataTree to CfRadial1 dataset."""
-        return to_cfradial1(self.xarray_obj, calibs=calibs)
+    def to_cfradial1_dataset(self, calibs=True, range_geometry="common"):
+        """Convert a CfRadial2 DataTree to CfRadial1 dataset.
 
-    def to_cfradial1(self, calibs=True):
-        """Convert a CfRadial2 DataTree to CfRadial1 dataset."""
-        return to_cfradial1(self.xarray_obj, calibs=calibs)
+        See :func:`xradar.transform.to_cfradial1` for ``range_geometry``.
+        """
+        return to_cfradial1(
+            self.xarray_obj, calibs=calibs, range_geometry=range_geometry
+        )
+
+    def to_cfradial1(self, calibs=True, range_geometry="common"):
+        """Convert a CfRadial2 DataTree to CfRadial1 dataset.
+
+        See :func:`xradar.transform.to_cfradial1` for ``range_geometry``.
+        """
+        return to_cfradial1(
+            self.xarray_obj, calibs=calibs, range_geometry=range_geometry
+        )
 
     def to_cf1(self):
         """Alias for converting to CfRadial1 dataset."""

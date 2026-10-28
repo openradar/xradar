@@ -187,8 +187,10 @@ def _available_sweeps(tree: DataTree) -> dict[str, str]:
     sweep numbers), the ``sweep_*`` groups are used.
     """
     raw_names = []
-    if "sweep_group_name" in tree.ds:
-        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
+    if "sweep_group_name" in tree.dataset:
+        listed = [
+            _decode_name(v) for v in np.ravel(tree.dataset["sweep_group_name"].values)
+        ]
         raw_names = [name for name in listed if name in tree.children]
         missing = [name for name in listed if name not in tree.children]
         if raw_names and missing:
@@ -585,9 +587,11 @@ def _normalize_cfradial2_tree(
     sweep_nodes = {name: tree[raw] for name, raw in available.items()}
     # fixed angles of the root group, indexed like sweep_group_name
     root_fixed = {}
-    if "sweep_fixed_angle" in tree.ds and "sweep_group_name" in tree.ds:
-        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
-        values = np.ravel(tree.ds["sweep_fixed_angle"].values)
+    if "sweep_fixed_angle" in tree.dataset and "sweep_group_name" in tree.dataset:
+        listed = [
+            _decode_name(v) for v in np.ravel(tree.dataset["sweep_group_name"].values)
+        ]
+        values = np.ravel(tree.dataset["sweep_fixed_angle"].values)
         root_fixed = {
             _normalize_sweep_name(name): value
             for name, value in zip(listed, values, strict=False)

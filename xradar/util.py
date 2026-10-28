@@ -732,10 +732,10 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     inherit = kwargs.pop("inherit", "all_coords")
 
     # Create a new tree dictionary
-    tree = {"/": dtree.ds}  # Start with the root Dataset
+    tree = {"/": dtree.dataset}  # Start with the root Dataset
 
     # Add all nodes except the root
-    tree.update({node.path: node.ds for node in dtree.subtree if node.path != "/"})
+    tree.update({node.path: node.dataset for node in dtree.subtree if node.path != "/"})
 
     # Apply the function to all sweep nodes and update the tree dictionary
     tree.update(
@@ -936,7 +936,7 @@ def create_volume(
     sweep_entries = []
     for dt in sweeps:
         for key in get_sweep_keys(dt):
-            ds = xr.decode_cf(dt[key].ds)
+            ds = xr.decode_cf(dt[key].dataset)
             time = ds["time"].values.astype("datetime64[ns]")
             mask = time != np.datetime64("NaT", "ns")
             time = time[mask]
@@ -966,7 +966,7 @@ def create_volume(
     sweep_entries.sort(key=lambda x: x[1])
 
     # Step 5: Prepare root metadata
-    root_ds = sweeps[0].ds.copy()
+    root_ds = sweeps[0].dataset.copy()
     root_ds = root_ds.drop_vars(
         ["sweep_group_name", "sweep_fixed_angle"], errors="ignore"
     )
