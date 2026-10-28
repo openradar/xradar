@@ -278,12 +278,12 @@ def test_open_imd_datatree_volume_optional_groups(imd_volume_files, closing):
             dtree[name].to_dataset(inherit=False),
             single[name].to_dataset(inherit=False),
         )
-    assert float(dtree["radar_parameters"].ds["radar_beam_width_h"]) > 0
+    assert float(dtree["radar_parameters"].dataset["radar_beam_width_h"]) > 0
     assert {"calibConst", "radarConst", "calNoise"}.issubset(
-        dtree["radar_calibration"].ds.data_vars
+        dtree["radar_calibration"].dataset.data_vars
     )
     # still usable
-    assert "x" in dtree.xradar.georeference()["sweep_0"].ds
+    assert "x" in dtree.xradar.georeference()["sweep_0"].dataset
     # not added by default
     plain = closing(open_imd_datatree(imd_volume_files))
     assert not set(OPTIONAL_GROUPS) & set(plain.children)
@@ -315,9 +315,9 @@ def test_open_imd_datatree_volume_optional_groups_differ(
     with pytest.warns(UserWarning, match=r"differ between the files \(radarConst\)"):
         dtree = closing(open_imd_datatree(imd_volume_files, optional_groups=True))
     first = closing(open_single(imd_volume_files[0], optional_groups=True))
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     assert "radarConst" not in calib
-    assert set(calib.data_vars) == set(first["radar_calibration"].ds.data_vars) - {
+    assert set(calib.data_vars) == set(first["radar_calibration"].dataset.data_vars) - {
         "radarConst"
     }
 
