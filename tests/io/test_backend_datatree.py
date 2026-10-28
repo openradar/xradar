@@ -1001,3 +1001,36 @@ class TestXdOpenDatatreeSweepFiles:
     def test_empty_list_raises(self):
         with pytest.raises(ValueError, match="at least one file"):
             xd.open_datatree([])
+
+
+_SWEEP_FILES = [
+    ("odim", "odim_file"),
+    ("cfradial1", "cfradial1_file"),
+    ("cfradial2", "cfradial2_file"),
+    ("nexradlevel2", "nexradlevel2_file"),
+    ("gamic", "gamic_file"),
+    ("iris", "iris0_file"),
+    ("furuno", "furuno_scn_file"),
+    ("rainbow", "rainbow_file"),
+    ("datamet", "datamet_file"),
+    ("uf", "uf_file_1"),
+    ("imd", "imd_file"),
+    ("hpl", "hpl_file"),
+    ("metek", "metek_ave_gz_file"),
+]
+
+
+@pytest.mark.parametrize(
+    ("engine", "fixture"), _SWEEP_FILES, ids=[engine for engine, _ in _SWEEP_FILES]
+)
+def test_sweeps_are_fm301_sweeps(engine, fixture, request, closing):
+    # every reader returns sweeps which `is_sweep` accepts, with the mandatory
+    # FM301 sweep metadata (strict) (#537)
+    filename = request.getfixturevalue(fixture)
+    dtree = closing(xd.open_datatree(filename, engine=engine))
+    names = [name for name in dtree.children if name.startswith("sweep_")]
+    assert names
+    for name in names:
+        sweep = dtree[name].to_dataset(inherit="all_coords")
+        assert xd.util.is_sweep(sweep), (engine, name)
+        assert xd.util.is_sweep(sweep, strict=True), (engine, name)

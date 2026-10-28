@@ -14,6 +14,14 @@ from nbclient import NotebookClient
 from nbclient.exceptions import CellExecutionError
 
 
+def pytest_configure(config):
+    # prevent adding DataTree.ds by accident, turn warning into error
+    config.addinivalue_line(
+        "filterwarnings",
+        "error:DataTree.ds is deprecated, use DataTree.dataset instead.:FutureWarning",
+    )
+
+
 def pytest_collect_file(parent, file_path):
     if file_path.suffix == ".md" and "-Copy" not in file_path.name:
         return NotebookFile.from_parent(parent=parent, path=file_path)

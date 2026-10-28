@@ -37,6 +37,7 @@ __all__ = [
     "get_nyquist_velocity_attrs",
     "get_range_attrs",
     "get_time_attrs",
+    "get_unambiguous_range_attrs",
     "moment_attrs",
     "sweep_vars_mapping",
     "get_azimuth_dataarray",
@@ -754,6 +755,14 @@ def get_nyquist_velocity_attrs(units="m s-1"):
     return nyquist_attrs
 
 
+def get_unambiguous_range_attrs(units="meters"):
+    unambiguous_range_attrs = {
+        "long_name": "unambiguous_range",
+        "units": units,
+    }
+    return unambiguous_range_attrs
+
+
 def get_moment_attrs(moment):
     """Get Radar Moment CF attributes.
 
@@ -1052,7 +1061,7 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
     return keep_vars
 
 
-def conform_cfradial2_sweep_group(obj, optional, dim0=None):
+def conform_cfradial2_sweep_group(obj, optional, dim0=None, sort=True):
     if dim0 is None:
         # handling first dimension
         dim0 = "elevation" if obj.sweep_mode.load().astype(str) == "rhi" else "azimuth"
@@ -1073,7 +1082,7 @@ def conform_cfradial2_sweep_group(obj, optional, dim0=None):
     # swap dims, if needed
     if dim0 != "time" and dim0 in obj.dims:
         out = out.swap_dims({dim0: "time"})
-    # sort in any case
-    out = out.sortby("time")
+    if sort:
+        out = out.sortby("time")
 
     return out

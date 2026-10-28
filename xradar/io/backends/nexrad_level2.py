@@ -41,6 +41,7 @@ import os
 import struct
 import warnings
 from collections import OrderedDict, defaultdict
+from collections.abc import Mapping
 
 import numpy as np
 import xarray as xr
@@ -86,8 +87,10 @@ from xradar.model import (
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
+    get_nyquist_velocity_attrs,
     get_range_attrs,
     get_time_attrs,
+    get_unambiguous_range_attrs,
     moment_attrs,
     radar_calibration_subgroup,
     radar_parameters_subgroup,
@@ -185,6 +188,15 @@ nexrad_mapping = {
     "RHO": "RHOHV",
     "CFP": "CCORH",
 }
+
+#: special moment codes, ICD 2620002, Table XVII-I (Data Moment
+#: Characteristics and Conversion for Data Names), note 21; also for
+#: Message Type 1 data
+BELOW_THRESHOLD = 0
+RANGE_FOLDED = 1
+#: CFP codes 0-7 are flags (filter not applied, point filter, dual pol
+#: only, reserved), its data start at 8 (Table XVII-I, note 30)
+CFP_FIRST_DATA = 8
 
 # NEXRAD Level II file structures and sizes
 # The deails on these structures are documented in:
@@ -1765,6 +1777,12 @@ class NexradLevel2ArrayWrapper(BackendArray):
         width = {8: 1, 16: 2}[word_size]
         self.dtype = np.dtype(f">u{width}")
         self.shape = (nrays, nbins)
+        mask_and_scale = datastore.mask_and_scale
+        if isinstance(mask_and_scale, Mapping):
+            mask_and_scale = mask_and_scale.get(nexrad_mapping.get(name, name), True)
+        # range folded is merged into below threshold (``_FillValue``) when
+        # masking, so both special codes decode to NaN
+        self.mask_range_folded = mask_and_scale is None or bool(mask_and_scale)
 
     def _getitem(self, key):
         with self.datastore.lock:
@@ -1784,15 +1802,18 @@ class NexradLevel2ArrayWrapper(BackendArray):
                 x = np.uint16(0x7FF)
             else:
                 x = np.uint8(0xFF)
-            if len(data[0]) < self.shape[1]:
-                return np.pad(
-                    np.vstack(data) & x,
-                    ((0, 0), (0, self.shape[1] - len(data[0]))),
+            data = np.vstack(data) & x
+            if self.mask_range_folded:
+                first_data = CFP_FIRST_DATA if self.name == "CFP" else RANGE_FOLDED + 1
+                data[data < first_data] = BELOW_THRESHOLD
+            if data.shape[1] < self.shape[1]:
+                data = np.pad(
+                    data,
+                    ((0, 0), (0, self.shape[1] - data.shape[1])),
                     mode="constant",
-                    constant_values=0,
-                )[key]
-            else:
-                return (np.vstack(data) & x)[key]
+                    constant_values=BELOW_THRESHOLD,
+                )
+            return data[key]
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
@@ -1804,29 +1825,37 @@ class NexradLevel2ArrayWrapper(BackendArray):
 
 
 class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
-    def __init__(self, manager, group=None, lock=NEXRADL2_LOCK):
+    def __init__(self, manager, group=None, lock=NEXRADL2_LOCK, mask_and_scale=True):
         self._manager = manager
         self._group = int(group[6:])
         self._filename = self.filename
         self.lock = ensure_lock(lock)
+        self.mask_and_scale = mask_and_scale
 
     @classmethod
-    def open(cls, filename, mode="r", group=None, lock=None, **kwargs):
+    def open(
+        cls, filename, mode="r", group=None, lock=None, mask_and_scale=True, **kwargs
+    ):
         if lock is None:
             lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return cls(manager, group=group, lock=lock)
+        return cls(manager, group=group, lock=lock, mask_and_scale=mask_and_scale)
 
     @classmethod
-    def open_groups(cls, filename, groups, mode="r", lock=None, **kwargs):
+    def open_groups(
+        cls, filename, groups, mode="r", lock=None, mask_and_scale=True, **kwargs
+    ):
         if lock is None:
             lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return {group: cls(manager, group=group, lock=lock) for group in groups}
+        return {
+            group: cls(manager, group=group, lock=lock, mask_and_scale=mask_and_scale)
+            for group in groups
+        }
 
     @property
     def filename(self):
@@ -1861,6 +1890,8 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         attrs["scale_factor"] = 1.0 / var["scale"]
         attrs["add_offset"] = -var["offset"] / var["scale"]
+        # below threshold (and range folded, see NexradLevel2ArrayWrapper)
+        attrs["_FillValue"] = BELOW_THRESHOLD
         attrs["coordinates"] = (
             "elevation azimuth range latitude longitude altitude time"
         )
@@ -1925,6 +1956,16 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
             fixed_angle = self.root.msg_31_header[header_idx][0]["elevation_angle"]
         fixed_angle *= angle_scale
 
+        # nyquist velocity and unambiguous range, constant over the sweep
+        # MSG_31 RAD block (Table XVII-H) or MSG_1 header (Table III)
+        # scaled by 0.01 m s-1 and 0.1 km
+        rad = self.ds.get("sweep_constant_data", {}).get("RAD", msg_31_header[0])
+        nyquist = rad.get("nyquist_vel", 0) / 100.0
+        unambiguous_range = rad.get("unambig_range", 0) * 100.0
+        # surveillance-only MSG_1 cuts carry zero values
+        nyquist = nyquist if nyquist > 0 else np.nan
+        unambiguous_range = unambiguous_range if unambiguous_range > 0 else np.nan
+
         coords = {
             "azimuth": Variable((dim,), azimuth, get_azimuth_attrs(), encoding),
             "elevation": Variable((dim,), elevation, get_elevation_attrs(), encoding),
@@ -1938,6 +1979,10 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
             "prt_mode": Variable((), prt_mode),
             "follow_mode": Variable((), follow_mode),
             "sweep_fixed_angle": Variable((), fixed_angle),
+            "nyquist_velocity": Variable((), nyquist, get_nyquist_velocity_attrs()),
+            "unambiguous_range": Variable(
+                (), unambiguous_range, get_unambiguous_range_attrs()
+            ),
         }
 
         return coords
@@ -2080,6 +2125,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             filename_or_obj,
             group=group,
             lock=lock,
+            mask_and_scale=mask_and_scale,
             loaddata=False,
         )
 
@@ -2347,6 +2393,9 @@ def open_nexradlevel2_datatree(
     mask_and_scale : bool, optional
         If True, replaces values in the dataset that match `_FillValue` with NaN
         and applies scale and offset adjustments. Default is True.
+        The special moment codes below threshold (0) and range folded (1) are
+        both decoded to NaN. Use ``mask_and_scale=False`` to get the raw codes,
+        e.g. to keep range folded gates distinguishable.
 
     decode_times : bool, optional
         If True, decodes time variables according to CF conventions. Default is True.
@@ -2475,6 +2524,7 @@ def open_sweeps_as_dict(
         filename=filename_or_obj,
         lock=lock,
         groups=sweeps,
+        mask_and_scale=mask_and_scale,
     )
     groups_dict = {}
     for path_group, store in stores.items():

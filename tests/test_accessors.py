@@ -272,3 +272,79 @@ def test_create_xradar_dataarray_accessor():
     )
     xr.testing.assert_equal(da.xradar_test.double(), da * 2)
     assert float(da.xradar_test.total()) == 6.0
+
+
+def _jittered_sweep(azimuth, range_start, ngates=6, res=250.0):
+    # a small PPI whose angles and ranges differ slightly between sweeps
+    rng = (range_start + np.arange(ngates) * res).astype("float32")
+    data = np.arange(4 * ngates, dtype="float32").reshape(4, ngates)
+    return xr.Dataset(
+        {"DBZH": (("azimuth", "range"), data, {"_FillValue": np.float32(np.nan)})},
+        coords={
+            "azimuth": ("azimuth", np.array(azimuth, dtype="float32")),
+            "elevation": ("azimuth", np.full(4, 0.5, dtype="float32")),
+            "time": ("azimuth", np.datetime64("2024-01-01", "s") + np.arange(4)),
+            "range": ("range", rng, {"units": "meters"}),
+        },
+    )
+
+
+def test_accessor_reindex_dataset():
+    ds = _jittered_sweep([44.0, 136.0, 224.0, 316.0], 125.4)
+    # the same as the functions
+    angle = dict(start_angle=0, stop_angle=360, angle_res=90.0, direction=1)
+    rng = dict(start_range=125.0, stop_range=1375.0, range_res=250.0)
+    xr.testing.assert_identical(
+        ds.xradar.reindex_angle(**angle), xd.util.reindex_angle(ds, **angle)
+    )
+    xr.testing.assert_identical(
+        ds.xradar.reindex_range(**rng), xd.util.reindex_range(ds, **rng)
+    )
+    out = ds.xradar.reindex_angle(**angle).xradar.reindex_range(**rng)
+    np.testing.assert_array_equal(out.azimuth, [45.0, 135.0, 225.0, 315.0])
+    np.testing.assert_array_equal(out.range, 125.0 + np.arange(6) * 250.0)
+
+
+def test_accessor_reindex_datatree():
+    sweeps = {
+        "/sweep_0": _jittered_sweep([44.0, 136.0, 224.0, 316.0], 125.4),
+        "/sweep_1": _jittered_sweep([46.0, 134.0, 226.0, 314.0], 124.6),
+    }
+    dtree = xr.DataTree.from_dict({"/": xr.Dataset(attrs={"title": "t"}), **sweeps})
+    angle = dict(start_angle=0, stop_angle=360, angle_res=90.0, direction=1)
+    rng = dict(start_range=125.0, stop_range=1375.0, range_res=250.0)
+    out = dtree.xradar.reindex_angle(**angle).xradar.reindex_range(**rng)
+    # every sweep is on the same grid, so that the sweeps can be stacked
+    for name in ("sweep_0", "sweep_1"):
+        np.testing.assert_array_equal(out[name].azimuth, [45.0, 135.0, 225.0, 315.0])
+        np.testing.assert_array_equal(out[name].range, 125.0 + np.arange(6) * 250.0)
+    stacked = xr.concat(
+        [out["sweep_0"].to_dataset(), out["sweep_1"].to_dataset()], dim="volume_time"
+    )
+    assert stacked.sizes == {"volume_time": 2, "azimuth": 4, "range": 6}
+    assert not np.isnan(stacked.DBZH).any()
+    # the other nodes are not touched, the input is not changed
+    assert out.attrs["title"] == "t"
+    assert dtree["sweep_0"].azimuth[0] == 44.0
+    # same result as the function on a sweep
+    expected = xd.util.reindex_range(sweeps["/sweep_0"], **rng)
+    xr.testing.assert_equal(
+        out["sweep_0"].to_dataset().xradar.reindex_range(**rng).DBZH,
+        expected.pipe(xd.util.reindex_angle, **angle).DBZH,
+    )
+
+
+def test_accessor_reindex_angle_as_reindex_coord():
+    # duplicate rays (sweep_4, sweep_7) and the same result as reading with
+    # reindex_coord
+    fname = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+    angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
+    out = xd.open_datatree(fname, engine="gamic").xradar.reindex_angle(**angle)
+    read = xd.open_datatree(fname, engine="gamic", reindex_coord={"angle": angle})
+    for name in ("sweep_0", "sweep_4", "sweep_7"):
+        xr.testing.assert_identical(
+            out[name].to_dataset(), read[name].to_dataset(inherit="all_coords")
+        )
+    # missing rays get a time
+    ds = read["sweep_0"].to_dataset().isel(azimuth=np.r_[0:100, 110:360])
+    assert not np.isnat(ds.xradar.reindex_angle(**angle).time).any()
