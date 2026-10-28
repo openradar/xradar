@@ -1052,7 +1052,7 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
     return keep_vars
 
 
-def conform_cfradial2_sweep_group(obj, optional, dim0=None):
+def conform_cfradial2_sweep_group(obj, optional, dim0=None, sort=True):
     if dim0 is None:
         # handling first dimension
         dim0 = "elevation" if obj.sweep_mode.load().astype(str) == "rhi" else "azimuth"
@@ -1073,7 +1073,7 @@ def conform_cfradial2_sweep_group(obj, optional, dim0=None):
     # swap dims, if needed
     if dim0 != "time" and dim0 in obj.dims:
         out = out.swap_dims({dim0: "time"})
-    # sort in any case
-    out = out.sortby("time")
+    if sort:
+        out = out.sortby("time")
 
     return out
