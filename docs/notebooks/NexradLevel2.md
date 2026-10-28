@@ -97,13 +97,13 @@ display(dtree)
 ### Plot Sweep Range vs. Time
 
 ```{code-cell}
-dtree["sweep_4"].ds.DBZH.sortby("time").plot(y="time", cmap="HomeyerRainbow")
+dtree["sweep_4"].dataset.DBZH.sortby("time").plot(y="time", cmap="HomeyerRainbow")
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_4"].ds.DBZH.plot(cmap="HomeyerRainbow")
+dtree["sweep_4"].dataset.DBZH.plot(cmap="HomeyerRainbow")
 ```
 
 ```{code-cell}
@@ -139,7 +139,7 @@ With `optional_groups=True` the datatree also has the metadata groups. The NEXRA
 
 ```{code-cell}
 dtree = xd.open_datatree(filename, engine="nexradlevel2", sweep=0, optional_groups=True)
-display(dtree["radar_calibration"].ds)
+display(dtree["radar_calibration"].dataset)
 ```
 
 ```{code-cell}

@@ -103,7 +103,7 @@ dtree1 = dtree1.xradar.georeference()
 ```
 
 ```{code-cell}
-display(dtree1["sweep_0"].ds)
+display(dtree1["sweep_0"].dataset)
 ```
 
 ## Assign lat, lon, and alt
@@ -113,7 +113,7 @@ dtree1 = dtree1.xradar.map_over_sweeps(get_geocoords)
 ```
 
 ```{code-cell}
-display(dtree1["sweep_0"].ds)
+display(dtree1["sweep_0"].dataset)
 ```
 
 ```{code-cell}
@@ -166,12 +166,12 @@ print("Latitude", ds2["latitude"].shape)
 # Fix per-ray station coords on the root node by taking the median.
 # Mobile radars like DOW have per-ray lat/lon which must be collapsed
 # to scalar values before georeferencing.
-root_ds = dtree2.ds
+root_ds = dtree2.dataset
 for coord in ["longitude", "latitude", "altitude"]:
     if coord in root_ds.coords and root_ds[coord].ndim > 0:
         median_val = root_ds[coord].median(skipna=True).item()
         root_ds = root_ds.assign_coords({coord: median_val})
-dtree2.ds = root_ds
+dtree2.dataset = root_ds
 ```
 
 ```{code-cell}
@@ -179,7 +179,7 @@ dtree2 = dtree2.xradar.map_over_sweeps(get_geocoords)
 ```
 
 ```{code-cell}
-display(dtree2["sweep_0"].ds)
+display(dtree2["sweep_0"].dataset)
 ```
 
 ```{code-cell}

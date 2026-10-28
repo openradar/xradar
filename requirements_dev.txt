@@ -17,7 +17,7 @@ cartopy
 s3fs
 zarr>=3
 pytest-xdist
-pytest-cov
+pytest-cov>=7.1.0
 pre-commit
 diff-cover
 myst-nb
