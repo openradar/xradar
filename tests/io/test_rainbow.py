@@ -246,10 +246,10 @@ def test_open_rainbow_datatree(rainbow_file):
     ), "Shape mismatch for 'DBZH' variable"
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 9
@@ -353,8 +353,10 @@ def test_rainbow_slice_metadata(fixture, sweep, expected, request, closing):
         xd.open_datatree(filename, engine="rainbow", sweep=sweep, optional_groups=True)
     )
     found = {
-        **{k: float(v) for k, v in dtree["radar_parameters"].ds.data_vars.items()},
-        **{k: float(v) for k, v in dtree["radar_calibration"].ds.data_vars.items()},
+        **{k: float(v) for k, v in dtree["radar_parameters"].dataset.data_vars.items()},
+        **{
+            k: float(v) for k, v in dtree["radar_calibration"].dataset.data_vars.items()
+        },
     }
     assert set(found) == set(expected)
     for name, value in expected.items():
@@ -376,10 +378,12 @@ def test_rainbow_slice_metadata_differs_between_slices(rainbow_file2, closing):
     messages = " ".join(str(w.message) for w in record)
     assert "radar_receiver_bandwidth" in messages
     assert "radar_constant_h, radar_constant_v" in messages
-    assert "radar_constant_h" not in dtree["radar_calibration"].ds
-    assert "radar_receiver_bandwidth" not in dtree["radar_parameters"].ds
+    assert "radar_constant_h" not in dtree["radar_calibration"].dataset
+    assert "radar_receiver_bandwidth" not in dtree["radar_parameters"].dataset
     # values which agree are there
-    np.testing.assert_allclose(dtree["radar_parameters"].ds.radar_beam_width_h, 0.97)
+    np.testing.assert_allclose(
+        dtree["radar_parameters"].dataset.radar_beam_width_h, 0.97
+    )
     # slices which agree do not warn
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
@@ -388,14 +392,16 @@ def test_rainbow_slice_metadata_differs_between_slices(rainbow_file2, closing):
                 rainbow_file2, engine="rainbow", sweep=[0, 1], optional_groups=True
             )
         )
-    assert "radar_constant_h" in agree["radar_calibration"].ds
+    assert "radar_constant_h" in agree["radar_calibration"].dataset
     # the values of one slice
     one = closing(
         xd.open_datatree(rainbow_file2, engine="rainbow", sweep=6, optional_groups=True)
     )
-    np.testing.assert_allclose(one["radar_calibration"].ds.radar_constant_h, 69.477)
     np.testing.assert_allclose(
-        one["radar_parameters"].ds.radar_receiver_bandwidth, 1.2e6
+        one["radar_calibration"].dataset.radar_constant_h, 69.477
+    )
+    np.testing.assert_allclose(
+        one["radar_parameters"].dataset.radar_receiver_bandwidth, 1.2e6
     )
 
 

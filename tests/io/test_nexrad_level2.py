@@ -769,10 +769,10 @@ def test_open_nexradlevel2_datatree(nexradlevel2_file):
     assert dtree[sample_sweep]["DBZH"].shape == (360, 1832)
 
     # Station coords should be on root as coordinates
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     required_attrs = {
         "instrument_name",
@@ -843,10 +843,10 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     assert dtree[sample_sweep]["DBZH"].shape == (360, 460)
 
     # Station coords should be on root as coordinates
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     required_attrs = {
         "instrument_name",
@@ -878,8 +878,8 @@ def test_open_nexradlevel2_datatree_optional_groups(nexradlevel2_file):
     assert "radar_calibration" in dtree.children
 
     # Station coords should still be on root as coordinates
-    assert "latitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
 
 def test_nexradlevel2_radar_calibration(nexradlevel2_file, closing):
@@ -893,7 +893,7 @@ def test_nexradlevel2_radar_calibration(nexradlevel2_file, closing):
                 nexradlevel2_file, engine="nexradlevel2", optional_groups=True
             )
         )
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     assert not {"noise_hc", "noise_vc"} & set(calib.data_vars)
     # SHV transmitter power 177.09 kW and 216.34 kW, in dBm
     np.testing.assert_allclose(calib.xmit_power_h, 82.48184, rtol=1e-6)
@@ -930,7 +930,7 @@ def test_nexradlevel2_radar_calibration_of_the_selected_sweeps(
                 optional_groups=True,
             )
         )
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     if noise is None:
         assert not {"noise_hc", "noise_vc"} & set(calib.data_vars)
     else:
@@ -975,7 +975,9 @@ def test_nexradlevel2_radar_calibration_legacy_msg1(nexradlevel2_msg1_file, clos
         )
     )
     assert "radar_calibration" in dtree.children
-    assert not {"noise_hc", "noise_vc"} & set(dtree["radar_calibration"].ds.data_vars)
+    assert not {"noise_hc", "noise_vc"} & set(
+        dtree["radar_calibration"].dataset.data_vars
+    )
 
 
 def test_nexradlevel2_calibration_in_dataset_attrs(nexradlevel2_file):
@@ -1041,7 +1043,7 @@ def test_open_nexradlevel2_datatree_legacy_site_coords_kwarg(nexradlevel2_file):
     dtree = open_nexradlevel2_datatree(
         nexradlevel2_file, sweep=[0], reindex_angle=False, site_coords=True
     )
-    root_coords = dtree.ds.coords
+    root_coords = dtree.dataset.coords
     assert "latitude" in root_coords
     assert "longitude" in root_coords
     assert "altitude" in root_coords
@@ -2730,7 +2732,7 @@ class TestRealChunkFiles:
             assert sweeps == []
         else:
             assert sweeps == ["sweep_1"]
-            assert dtree["sweep_1"].ds.sizes["azimuth"] == 720
+            assert dtree["sweep_1"].dataset.sizes["azimuth"] == 720
 
     def test_partial_chunks_pad_mode(self, nexrad_chunks_klot):
         """Partial chunks with pad mode produce full azimuth grid with NaN."""
@@ -2998,7 +3000,7 @@ def test_root_attrs_from_real_file(nexradlevel2_file):
 def test_sweep_attrs_from_real_file(nexradlevel2_file):
     """Per-sweep attrs include waveform and supplemental data from MSG_5_ELEV."""
     dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
-    attrs = dtree["sweep_0"].ds.attrs
+    attrs = dtree["sweep_0"].dataset.attrs
 
     # Known values for KATX VCP-11 sweep_0
     assert attrs["waveform_type"] == "contiguous_surveillance"
@@ -3050,7 +3052,9 @@ def test_open_nexradlevel2_datatree_gunzipped_bytes(nexradlevel2_msg1_file):
     expected = open_nexradlevel2_datatree(nexradlevel2_msg1_file)
     sweeps = [k for k in expected.children if k.startswith("sweep_")]
     assert [k for k in dtree.children if k.startswith("sweep_")] == sweeps
-    xarray.testing.assert_identical(dtree["sweep_0"].ds, expected["sweep_0"].ds)
+    xarray.testing.assert_identical(
+        dtree["sweep_0"].dataset, expected["sweep_0"].dataset
+    )
 
 
 def test_open_nexradlevel2_datatree_filelike_all_sweeps(nexradlevel2_file):
@@ -3060,7 +3064,9 @@ def test_open_nexradlevel2_datatree_filelike_all_sweeps(nexradlevel2_file):
     dtree = open_nexradlevel2_datatree(filelike)
     expected = open_nexradlevel2_datatree(nexradlevel2_file)
     assert len(dtree.children) == len(expected.children)
-    xarray.testing.assert_identical(dtree["sweep_1"].ds, expected["sweep_1"].ds)
+    xarray.testing.assert_identical(
+        dtree["sweep_1"].dataset, expected["sweep_1"].dataset
+    )
 
 
 class _Unseekable(io.RawIOBase):
@@ -3131,7 +3137,7 @@ def test_nexradlevel2_calibration_power_differs_between_cuts(
                 optional_groups=True,
             )
         )
-    assert set(dtree["radar_calibration"].ds.data_vars) == {"system_phidp"}
+    assert set(dtree["radar_calibration"].dataset.data_vars) == {"system_phidp"}
     # one cut has all values
     dtree = closing(
         xd.open_datatree(
@@ -3141,7 +3147,7 @@ def test_nexradlevel2_calibration_power_differs_between_cuts(
             optional_groups=True,
         )
     )
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     expected = {
         "noise_hc": -81.756,
         "noise_vc": -81.32,

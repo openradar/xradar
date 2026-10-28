@@ -364,10 +364,10 @@ def test_open_iris_datatree(iris0_file):
     ), f"VRADH should be a data variable in {sample_sweep}"
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 10
@@ -414,14 +414,14 @@ def test_iris_task_metadata(
     dtree = closing(
         xd.open_datatree(filename, engine="iris", sweep=0, optional_groups=True)
     )
-    params = dtree["radar_parameters"].ds
+    params = dtree["radar_parameters"].dataset
     np.testing.assert_allclose(params.radar_beam_width_h, beam[0], rtol=1e-6)
     np.testing.assert_allclose(params.radar_beam_width_v, beam[1], rtol=1e-6)
     if bandwidth is None:
         assert "radar_receiver_bandwidth" not in params
     else:
         np.testing.assert_allclose(params.radar_receiver_bandwidth, bandwidth)
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     np.testing.assert_allclose(calib.radar_constant_h, constant[0])
     np.testing.assert_allclose(calib.radar_constant_v, constant[1])
     np.testing.assert_allclose(calib.noise_hc, noise[0])
@@ -455,7 +455,9 @@ def test_iris_task_metadata_of_a_selected_sweep(iris0_file, closing):
     dtree = closing(
         xd.open_datatree(iris0_file, engine="iris", sweep=[1], optional_groups=True)
     )
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.radar_constant_h, 67.1)
+    np.testing.assert_allclose(
+        dtree["radar_calibration"].dataset.radar_constant_h, 67.1
+    )
 
 
 class _TaskStore(iris.IrisStore):
@@ -567,7 +569,7 @@ def test_range_attrs_match_range(fixture, request):
     # the header range fields are in cm, the attrs are in m (#525)
     path = request.getfixturevalue(fixture)
     with xd.open_datatree(path, engine="iris") as dtree:
-        rng = dtree["sweep_0"].ds["range"]
+        rng = dtree["sweep_0"].dataset["range"]
         # also what the CfRadial1 export writes
         exported = xd.transform.to_cfradial1(dtree)["range"].attrs
         for attrs in (rng.attrs, exported):

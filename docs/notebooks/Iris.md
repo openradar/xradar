@@ -74,7 +74,7 @@ display(ds)
 
 ## open_iris_datatree
 
-The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.ds`.
+The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.dataset`.
 
 ```{code-cell}
 help(xd.open_datatree)
@@ -105,7 +105,7 @@ display(dtree)
 ### Plot Time vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.azimuth.plot(y="time")
+dtree["sweep_0"].dataset.azimuth.plot(y="time")
 ```
 
 ### Plot Sweep Range vs. Time
@@ -113,13 +113,13 @@ dtree["sweep_0"].ds.azimuth.plot(y="time")
 We need to sort by time and specify the y-coordinate. Please also observe the different resolutions of this plot, compared to the `Azimuth vs. Range` plot below. This is due to second-resolution of the time coordinate.
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.sortby("time").plot(y="time")
+dtree["sweep_0"].dataset.DBZH.sortby("time").plot(y="time")
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.plot()
+dtree["sweep_0"].dataset.DBZH.plot()
 ```
 
 ```{code-cell}
@@ -140,8 +140,8 @@ With `optional_groups=True` the datatree also has the metadata groups. The IRIS/
 
 ```{code-cell}
 dtree = xd.open_datatree(filename_volume, engine="iris", sweep=0, optional_groups=True)
-display(dtree["radar_parameters"].ds)
-display(dtree["radar_calibration"].ds)
+display(dtree["radar_parameters"].dataset)
+display(dtree["radar_calibration"].dataset)
 ```
 
 ```{code-cell}

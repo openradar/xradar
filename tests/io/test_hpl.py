@@ -125,10 +125,10 @@ def test_open_hpl_datatree():
     # all 20 rays of the first sweep (#430)
     assert dtree[sample_sweep]["mean_doppler_velocity"].shape == (20, 400)
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 9
@@ -148,14 +148,16 @@ def test_open_hpl_datatree_optional_groups():
 def test_open_hpl_datatree_sweeps(hpl_file):
     # RHI with 361 rays, the last ray of the sweep is kept (#430)
     dtree = xd.io.open_hpl_datatree(hpl_file)
-    ds = dtree["sweep_0"].ds
+    ds = dtree["sweep_0"].dataset
     assert ds.mean_doppler_velocity.shape == (361, 833)
     assert int(ds.sweep_number) == 0
 
     dtree = xd.io.open_hpl_datatree(DATASETS.fetch("User1_184_20240601_013257.hpl"))
     sweeps = [k for k in dtree.children if k.startswith("sweep_")]
-    assert [int(dtree[k].ds.sweep_number) for k in sweeps] == list(range(len(sweeps)))
-    assert list(dtree.ds.sweep_group_name.values) == sweeps
+    assert [int(dtree[k].dataset.sweep_number) for k in sweeps] == list(
+        range(len(sweeps))
+    )
+    assert list(dtree.dataset.sweep_group_name.values) == sweeps
 
 
 def _modified_hpl(src, dst, extra_header=False, drop_last_line=False):
@@ -243,6 +245,8 @@ def test_open_hpl_datatree_single_ray_sweeps(tmp_path):
     path = _write_hpl(tmp_path / "csm.hpl", up + move + down)
     dtree = xd.io.open_hpl_datatree(str(path))
     sweeps = [k for k in dtree.children if k.startswith("sweep_")]
-    nrays = [dtree[k].ds.mean_doppler_velocity.shape[0] for k in sweeps]
+    nrays = [dtree[k].dataset.mean_doppler_velocity.shape[0] for k in sweeps]
     assert min(nrays) >= 1
-    assert [int(dtree[k].ds.sweep_number) for k in sweeps] == list(range(len(sweeps)))
+    assert [int(dtree[k].dataset.sweep_number) for k in sweeps] == list(
+        range(len(sweeps))
+    )

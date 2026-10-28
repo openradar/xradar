@@ -87,13 +87,13 @@ display(dtree)
 ### Plot Sweep Range vs. Time
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.sortby("time").plot(y="time")
+dtree["sweep_0"].dataset.DBZH.sortby("time").plot(y="time")
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.plot()
+dtree["sweep_0"].dataset.DBZH.plot()
 ```
 
 ```{code-cell}
@@ -117,8 +117,8 @@ With `optional_groups=True` the datatree also has the metadata groups. The Rainb
 
 ```{code-cell}
 dtree = xd.open_datatree(filename, engine="rainbow", sweep=0, optional_groups=True)
-display(dtree["radar_parameters"].ds)
-display(dtree["radar_calibration"].ds)
+display(dtree["radar_parameters"].dataset)
+display(dtree["radar_calibration"].dataset)
 ```
 
 ```{code-cell}

@@ -177,10 +177,10 @@ def test_open_gamic_datatree(gamic_file, closing):
     ), f"VRADV should be a data variable in {sample_sweep}"
 
     # Station coords should be on root as coordinates, NOT on sweeps
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
-    assert "latitude" not in dtree.ds.data_vars
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
+    assert "latitude" not in dtree.dataset.data_vars
 
     # Validate attributes
     assert len(dtree.attrs) == 9
@@ -205,12 +205,12 @@ def test_gamic_radar_metadata(gamic_file, closing):
         xd.open_datatree(gamic_file, engine="gamic", optional_groups=True, sweep=0)
     )
     # /how azimuth_beam (horizontal) and elevation_beam (vertical)
-    params = dtree["radar_parameters"].ds
+    params = dtree["radar_parameters"].dataset
     np.testing.assert_allclose(params.radar_beam_width_h, 1.0)
     np.testing.assert_allclose(params.radar_beam_width_v, 1.0)
     # the scan how, stored as strings, as numbers; the antenna gain with the name
     # of the model, the two values of unknown meaning with their GAMIC names
-    calib = dtree["radar_calibration"].ds
+    calib = dtree["radar_calibration"].dataset
     assert set(calib.data_vars) == {
         "antenna_gain_h",
         "antenna_gain_v",
@@ -270,8 +270,8 @@ def test_gamic_radar_metadata_variants(gamic_how_file, closing):
                 gamic_how_file, engine="gamic", optional_groups=True, sweep=[0, 1]
             )
         )
-    assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
-    calib = dtree["radar_calibration"].ds
+    assert "radar_beam_width_h" not in dtree["radar_parameters"].dataset
+    calib = dtree["radar_calibration"].dataset
     # the antenna gain H differs between the scans: left out; rx_loss_h is only
     # a number in scan1, the sweeps which have it give the value
     assert "antenna_gain_h" not in calib
@@ -288,7 +288,9 @@ def test_gamic_radar_calibration_of_the_selected_sweep(
             gamic_how_file, engine="gamic", optional_groups=True, sweep=sweep
         )
     )
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, expected)
+    np.testing.assert_allclose(
+        dtree["radar_calibration"].dataset.antenna_gain_h, expected
+    )
 
 
 @pytest.mark.parametrize("kind", ["bytesio", "filelike"])
@@ -300,8 +302,10 @@ def test_gamic_radar_metadata_inputs(gamic_file, kind, closing):
     dtree = closing(
         xd.open_datatree(source, engine="gamic", optional_groups=True, sweep=0)
     )
-    np.testing.assert_allclose(dtree["radar_parameters"].ds.radar_beam_width_h, 1.0)
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.antenna_gain_h, 43.0)
+    np.testing.assert_allclose(
+        dtree["radar_parameters"].dataset.radar_beam_width_h, 1.0
+    )
+    np.testing.assert_allclose(dtree["radar_calibration"].dataset.antenna_gain_h, 43.0)
 
 
 def test_gamic_beam_width_no_number_is_skipped(gamic_file, tmp_path, closing):
@@ -312,7 +316,7 @@ def test_gamic_beam_width_no_number_is_skipped(gamic_file, tmp_path, closing):
     dtree = closing(
         xd.open_datatree(path, engine="gamic", optional_groups=True, sweep=0)
     )
-    params = dtree["radar_parameters"].ds
+    params = dtree["radar_parameters"].dataset
     assert "radar_beam_width_h" not in params
     np.testing.assert_allclose(params.radar_beam_width_v, 1.0)
 
@@ -356,6 +360,8 @@ def test_gamic_not_finite_values_are_skipped(gamic_file, tmp_path, closing):
     dtree = closing(
         xd.open_datatree(path, engine="gamic", optional_groups=True, sweep=0)
     )
-    assert "radar_beam_width_h" not in dtree["radar_parameters"].ds
-    assert "noise_power_h" not in dtree["radar_calibration"].ds
-    np.testing.assert_allclose(dtree["radar_calibration"].ds.noise_power_v, -3.5802)
+    assert "radar_beam_width_h" not in dtree["radar_parameters"].dataset
+    assert "noise_power_h" not in dtree["radar_calibration"].dataset
+    np.testing.assert_allclose(
+        dtree["radar_calibration"].dataset.noise_power_v, -3.5802
+    )

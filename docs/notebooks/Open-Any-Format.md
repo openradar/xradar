@@ -78,7 +78,7 @@ for name, path in files.items():
             "file": Path(path).name,
             "engine": xd.io.discover_engine(path),
             "sweeps": len(sweeps),
-            "variables of sweep_0": ", ".join(dtree["sweep_0"].ds.data_vars),
+            "variables of sweep_0": ", ".join(dtree["sweep_0"].dataset.data_vars),
         }
     )
 pd.DataFrame(rows).set_index("format")
@@ -114,7 +114,7 @@ radars = [
 ]
 fig, axes = plt.subplots(2, 5, figsize=(20, 8))
 for ax, name in zip(axes.flat, radars, strict=True):
-    sweep = trees[name].xradar.georeference()["sweep_0"].ds
+    sweep = trees[name].xradar.georeference()["sweep_0"].dataset
     moment = next(m for m in ("DBZH", "DBZ", "DBTH") if m in sweep)
     # mask the no-echo values (below 0 dBZ) for the display
     sweep[moment].where(sweep[moment] >= 0).plot(
@@ -154,7 +154,7 @@ imd_sweep_files = [
     for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
 ]
 volume = xd.open_datatree(imd_sweep_files)
-print(volume.ds.sweep_fixed_angle.values)
+print(volume.dataset.sweep_fixed_angle.values)
 assert len([c for c in volume.children if c.startswith("sweep_")]) == 10
 ```
 
