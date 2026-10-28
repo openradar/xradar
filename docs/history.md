@@ -16,6 +16,7 @@
 * FIX: enable subprocess coverage for code coverage in ``pyproject.toml``, adapt ``docs/notebooks/conftest.py`` to enable code coverage for jupyter notebook kernel, pin pytest-cov to 7.1.0 {issue}`556` ({pull}`557`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: tighten scope of tests for FutureWarning to prevent checking for Warnings issued by other sources ({issue}`558`, {pull}`559`) by [@kmuehlbauer](https://github.com/kmuehlbauer))
 * MNT: use ``xarray.DataTree.dataset`` instead of deprecated ``xarray.DataTree.ds``, promote xarray's FutureWarning to error in test suite {issue}`560` ({pull}`561`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: HPL and Metek readers fill the mandatory FM301 sweep metadata (Table 301-7a): ``follow_mode`` and ``prt_mode`` are ``not_set`` as for the other readers (not in the files), and Metek gets ``sweep_mode`` (``vertical_pointing``), ``sweep_number`` and ``sweep_fixed_angle`` for its single vertically pointing sweep; lazily opened Metek scalars and strings report their stored dtype instead of ``float64`` ({issue}`451`, {pull}`452`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 

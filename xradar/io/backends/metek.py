@@ -185,6 +185,11 @@ variable_attr_dict["velocity"]["dims"] = ("time", "range")
 variable_attr_dict["latitude"]["dims"] = ()
 variable_attr_dict["longitude"]["dims"] = ()
 variable_attr_dict["altitude"]["dims"] = ()
+variable_attr_dict["sweep_mode"] = {"dims": ()}
+variable_attr_dict["sweep_number"] = {"dims": ()}
+variable_attr_dict["sweep_fixed_angle"] = {"dims": ()}
+variable_attr_dict["follow_mode"] = {"dims": ()}
+variable_attr_dict["prt_mode"] = {"dims": ()}
 
 
 def _parse_spectra_line(input_str, num_gates):
@@ -462,6 +467,13 @@ class MRR2File:
 
         self._data["azimuth"] = np.zeros_like(self._data["time"])
         self._data["elevation"] = 90 * np.ones_like(self._data["time"])
+        # mandatory sweep metadata of the single vertically pointing sweep,
+        # follow_mode and prt_mode are not in the file, "not_set" as for the other readers
+        self._data["sweep_mode"] = np.array("vertical_pointing", dtype="|S32")
+        self._data["sweep_number"] = np.array(0)
+        self._data["sweep_fixed_angle"] = np.array(90.0, dtype="float32")
+        self._data["follow_mode"] = np.array("not_set")
+        self._data["prt_mode"] = np.array("not_set")
         self._data["time"] = np.array(self._data["time"])
         temp_drops = None
         temp_number = None
@@ -499,7 +511,11 @@ class MRR2ArrayWrapper(BackendArray):
     ):
         self.data = data
         self.shape = data.shape
-        self.dtype = np.dtype("float64")
+        # scalars (sweep metadata) and strings keep their dtype
+        if data.ndim == 0 or data.dtype.kind == "S":
+            self.dtype = data.dtype
+        else:
+            self.dtype = np.dtype("float64")
 
     def __getitem__(self, key: tuple):
         return indexing.explicit_indexing_adapter(
