@@ -14,6 +14,7 @@ kernelspec:
 # Iris/Sigmet - Reader
 
 ```{code-cell}
+import numpy as np
 import xarray as xr
 from open_radar_data import DATASETS
 
@@ -73,7 +74,7 @@ display(ds)
 
 ## open_iris_datatree
 
-The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.ds`.
+The same works analoguous with the datatree loader. But additionally we can provide a sweep string, number or list. The underlying xarray.Dataset can be accessed with property `.dataset`.
 
 ```{code-cell}
 help(xd.open_datatree)
@@ -104,7 +105,7 @@ display(dtree)
 ### Plot Time vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.azimuth.plot(y="time")
+dtree["sweep_0"].dataset.azimuth.plot(y="time")
 ```
 
 ### Plot Sweep Range vs. Time
@@ -112,13 +113,13 @@ dtree["sweep_0"].ds.azimuth.plot(y="time")
 We need to sort by time and specify the y-coordinate. Please also observe the different resolutions of this plot, compared to the `Azimuth vs. Range` plot below. This is due to second-resolution of the time coordinate.
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.sortby("time").plot(y="time")
+dtree["sweep_0"].dataset.DBZH.sortby("time").plot(y="time")
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZH.plot()
+dtree["sweep_0"].dataset.DBZH.plot()
 ```
 
 ```{code-cell}
@@ -133,6 +134,21 @@ for var in xd.util.get_sweep_dataset_vars(sweep):
     plt.title(var)
 ```
 
-```{code-cell}
+## Optional groups: radar_parameters and radar_calibration
 
+With `optional_groups=True` the datatree also has the metadata groups. The IRIS/Sigmet reader fills them from the task configuration of the ingest header: the beam widths and the receiver bandwidth in `radar_parameters`, the radar constants and the noise at calibration in `radar_calibration`. Values which are not set in the file (0) are left out.
+
+```{code-cell}
+dtree = xd.open_datatree(filename_volume, engine="iris", sweep=0, optional_groups=True)
+display(dtree["radar_parameters"].dataset)
+display(dtree["radar_calibration"].dataset)
 ```
+
+```{code-cell}
+np.testing.assert_almost_equal(dtree["radar_parameters"].radar_beam_width_h, 0.95, 2)
+np.testing.assert_almost_equal(dtree["radar_calibration"].noise_hc, -81.4, 1)
+np.testing.assert_almost_equal(dtree["radar_calibration"].radar_constant_h, 67.1, 1)
+assert dtree["radar_calibration"].noise_hc.attrs["units"] == "dBm"
+```
+
+The task configuration is the same for every sweep of the file, so the values do not depend on the selected sweep.

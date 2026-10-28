@@ -48,7 +48,7 @@ def test_compare_sweeps(temp_file, closing):
     # Compare the values of the DataArrays for all sweeps
     for sweep_num in range(9):  # there are 9 sweeps in this file
         xr.testing.assert_equal(
-            dtree[f"sweep_{sweep_num}"].ds, dtree1[f"sweep_{sweep_num}"].ds
+            dtree[f"sweep_{sweep_num}"].dataset, dtree1[f"sweep_{sweep_num}"].dataset
         )
 
 
@@ -233,7 +233,7 @@ def test_cfradial1_variable_gates_within_sweep(tmp_path, chunks, closing):
 
     for dtree in trees:
         for sw, (r0, r1) in {"sweep_0": (0, 4), "sweep_1": (4, 8)}.items():
-            swp = dtree[sw].ds
+            swp = dtree[sw].dataset
             if "time" not in swp.dims:
                 swp = swp.swap_dims({swp.DBZ.dims[0]: "time"}).sortby("time")
             assert swp.DBZ.shape == (r1 - r0, ngates[r0:r1].max())
@@ -250,12 +250,12 @@ def test_cfradial1_rhi_sweep_dimension(tmp_path, closing):
     path = tmp_path / "ragged_cfradial1.nc"
     ds.to_netcdf(path)
     dtree = closing(xd.io.open_cfradial1_datatree(path))
-    assert "azimuth" in dtree["sweep_0"].ds.dims
-    assert "elevation" in dtree["sweep_1"].ds.dims
+    assert "azimuth" in dtree["sweep_0"].dataset.dims
+    assert "elevation" in dtree["sweep_1"].dataset.dims
     with xr.open_dataset(path, chunks={}) as src:
         dtree = src.xradar.to_cfradial2_datatree()
-    assert dtree["sweep_1"].ds.sweep_mode.item() == "rhi"
-    assert "elevation" in dtree["sweep_1"].ds.dims
+    assert dtree["sweep_1"].dataset.sweep_mode.item() == "rhi"
+    assert "elevation" in dtree["sweep_1"].dataset.dims
 
 
 def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path, closing):
@@ -275,9 +275,9 @@ def test_cfradial1_export_variable_gates_roundtrip(cfradial1n_file, tmp_path, cl
 
     back = closing(xd.io.open_cfradial1_datatree(path))
     for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
-        nrange = dtree[sweep].ds.sizes["range"]
+        nrange = dtree[sweep].dataset.sizes["range"]
         np.testing.assert_array_equal(
-            back[sweep].ds.DBZ.values[:, :nrange], dtree[sweep].ds.DBZ.values
+            back[sweep].dataset.DBZ.values[:, :nrange], dtree[sweep].dataset.DBZ.values
         )
 
 
@@ -294,7 +294,7 @@ def test_cfradial1_export_strings_as_char_arrays(odim_file, tmp_path, closing):
         for name in ["time_coverage_start", "instrument_type", "prt_mode"]:
             assert nc[name].dtype == np.dtype("S1"), name
         assert netCDF4.chartostring(nc["time_coverage_start"][:]) == str(
-            dtree.ds.time_coverage_start.values
+            dtree.dataset.time_coverage_start.values
         )
         attrs = {k: nc.getncattr(k) for k in nc.ncattrs()}
     assert "None" not in attrs.values()
@@ -315,8 +315,10 @@ def test_cfradial1_export_bool_attrs(nexradlevel2_file, tmp_path, closing):
             assert nc.getncattr(name) == str(bool(dtree.attrs[name])).lower()
     back = closing(xd.io.open_cfradial1_datatree(path))
     np.testing.assert_array_equal(
-        back["sweep_0"].ds.DBZH.values[:, : dtree["sweep_0"].ds.sizes["range"]],
-        dtree["sweep_0"].ds.DBZH.values,
+        back["sweep_0"].dataset.DBZH.values[
+            :, : dtree["sweep_0"].dataset.sizes["range"]
+        ],
+        dtree["sweep_0"].dataset.DBZH.values,
     )
 
 
@@ -324,12 +326,12 @@ def test_cfradial1_export_duplicate_ray_times(cfradial1_file, tmp_path):
     # rays sharing a timestamp, also across sweeps, must not be merged on
     # export (#415)
     dtree = xd.io.open_cfradial1_datatree(cfradial1_file, sweep=[0, 1])
-    t0 = dtree["sweep_0"].ds.time.values[0]
+    t0 = dtree["sweep_0"].dataset.time.values[0]
     for sweep in ["sweep_0", "sweep_1"]:
         ds = dtree[sweep].to_dataset()
         ds = ds.assign_coords(time=ds.time.copy(data=np.full_like(ds.time, t0)))
         dtree[sweep] = xr.DataTree(ds)
-    nrays = [dtree[sweep].ds.sizes["azimuth"] for sweep in ["sweep_0", "sweep_1"]]
+    nrays = [dtree[sweep].dataset.sizes["azimuth"] for sweep in ["sweep_0", "sweep_1"]]
 
     path = tmp_path / "duplicate_times.nc"
     xd.io.to_cfradial1(dtree, path)
@@ -343,8 +345,8 @@ def test_cfradial1_export_duplicate_ray_times(cfradial1_file, tmp_path):
     back = xd.io.open_cfradial1_datatree(path)
     for sweep in ["sweep_0", "sweep_1"]:
         np.testing.assert_array_equal(
-            back[sweep].ds.DBZ.values[:, : dtree[sweep].ds.sizes["range"]],
-            dtree[sweep].ds.DBZ.values,
+            back[sweep].dataset.DBZ.values[:, : dtree[sweep].dataset.sizes["range"]],
+            dtree[sweep].dataset.DBZ.values,
         )
 
 
@@ -352,21 +354,23 @@ def test_cfradial1_export_pads_missing_gates_with_nan(nexradlevel2_file, tmp_pat
     # packed moments (uint8, no _FillValue) must be padded with NaN on export,
     # not with raw 0 that decodes to valid data (-33 dBZ)
     dtree = xd.io.open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1])
-    nrange = dtree["sweep_1"].ds.sizes["range"]
-    assert nrange < dtree["sweep_0"].ds.sizes["range"]
+    nrange = dtree["sweep_1"].dataset.sizes["range"]
+    assert nrange < dtree["sweep_0"].dataset.sizes["range"]
     path = tmp_path / "padded.nc"
     xd.io.to_cfradial1(dtree, path)
     with xd.io.open_cfradial1_datatree(path) as back:
-        dbzh = back["sweep_1"].ds.DBZH.values
+        dbzh = back["sweep_1"].dataset.DBZH.values
     assert np.isnan(dbzh[:, nrange:]).all()
-    np.testing.assert_array_equal(dbzh[:, :nrange], dtree["sweep_1"].ds.DBZH.values)
+    np.testing.assert_array_equal(
+        dbzh[:, :nrange], dtree["sweep_1"].dataset.DBZH.values
+    )
 
 
 def test_cfradial1_export_range_within_tolerance(cfradial1_file, tmp_path):
     # a range that differs by less than the tolerance of the geometry check is
     # snapped, it must not interleave gates in the outer join
     dtree = xd.io.open_cfradial1_datatree(cfradial1_file, sweep=[0, 1])
-    nrange = dtree["sweep_0"].ds.sizes["range"]
+    nrange = dtree["sweep_0"].dataset.sizes["range"]
     node = dtree["sweep_1"]
     ds = node.to_dataset(inherit=False)
     node.dataset = ds.assign_coords(range=ds.range + 1e-3)
@@ -379,7 +383,7 @@ def test_cfradial1_export_range_within_tolerance(cfradial1_file, tmp_path):
 def test_cfradial1_export_single_sweep_keeps_scalars(odim_file3, tmp_path):
     # one sweep is not concatenated, its scalars must not get a time dimension
     dtree = xd.io.open_odim_datatree(odim_file3)
-    assert dtree["sweep_0"].ds.nyquist_velocity.dims == ()
+    assert dtree["sweep_0"].dataset.nyquist_velocity.dims == ()
     path = tmp_path / "single_sweep.nc"
     xd.io.to_cfradial1(dtree, path)
     with xr.open_dataset(path, decode_timedelta=False) as out:
@@ -433,7 +437,7 @@ def test_cfradial1_export_drops_sweep_group_name(hpl_file, tmp_path):
 
     outfile = tmp_path / "hpl_cf1.nc"
     with xd.open_datatree(hpl_file, engine="hpl") as dtree:
-        assert "sweep_group_name" in dtree["sweep_0"].ds
+        assert "sweep_group_name" in dtree["sweep_0"].dataset
         nsweeps = len(list(dtree.match("sweep_*")))
         xd.io.to_cfradial1(dtree, outfile)
     with netCDF4.Dataset(outfile) as nc:
@@ -572,9 +576,9 @@ def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
 
     # the written file reads back to the same names
     with xd.io.open_cfradial1_datatree(path, optional_groups=True) as back:
-        assert "radar_receiver_bandwidth" in back["radar_parameters"].ds
-        assert "base_1km_hc" in back["radar_calibration"].ds
-        assert "radar_altitude_correction" in back["georeferencing_correction"].ds
+        assert "radar_receiver_bandwidth" in back["radar_parameters"].dataset
+        assert "base_1km_hc" in back["radar_calibration"].dataset
+        assert "radar_altitude_correction" in back["georeferencing_correction"].dataset
 
 
 def test_cfradial1_unknown_calibration_names(tmp_path):
@@ -586,7 +590,7 @@ def test_cfradial1_unknown_calibration_names(tmp_path):
     filename = DATASETS.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
     path = tmp_path / "unknown_calibration.nc"
     with xd.io.open_cfradial1_datatree(filename, optional_groups=True) as dtree:
-        assert "calibration_constant_hh" in dtree["radar_calibration"].ds
+        assert "calibration_constant_hh" in dtree["radar_calibration"].dataset
         xd.io.to_cfradial1(dtree, path)
     with netCDF4.Dataset(path) as out:
         assert "calibration_constant_hh" in out.variables
@@ -620,21 +624,25 @@ def test_cfradial1_export_split_cuts(nexradlevel2_file, tmp_path):
     dtree.attrs = {
         k: v for k, v in dtree.attrs.items() if not isinstance(v, (bool, np.bool_))
     }
-    assert "VRADH" not in dtree["sweep_0"].ds and "VRADH" in dtree["sweep_1"].ds
+    assert (
+        "VRADH" not in dtree["sweep_0"].dataset and "VRADH" in dtree["sweep_1"].dataset
+    )
     path = tmp_path / "split_cuts.nc"
     xd.io.to_cfradial1(dtree, path)
     back = xd.io.open_cfradial1_datatree(path, first_dim="time")
     for i, sweep in enumerate(["sweep_0", "sweep_1"]):
-        src = dtree[sweep].ds.sortby("time")
-        out = back[sweep].ds
+        src = dtree[sweep].dataset.sortby("time")
+        out = back[sweep].dataset
         assert int(out.sweep_number) == i
         assert float(out.sweep_fixed_angle) == float(src.sweep_fixed_angle)
         np.testing.assert_array_equal(
             out.DBZH.values[:, : src.sizes["range"]], src.DBZH.values
         )
     np.testing.assert_array_equal(
-        back["sweep_1"].ds.VRADH.values[:, : dtree["sweep_1"].ds.sizes["range"]],
-        dtree["sweep_1"].ds.sortby("time").VRADH.values,
+        back["sweep_1"].dataset.VRADH.values[
+            :, : dtree["sweep_1"].dataset.sizes["range"]
+        ],
+        dtree["sweep_1"].dataset.sortby("time").VRADH.values,
     )
 
 
@@ -655,4 +663,92 @@ def test_cfradial1_export_range_geometry(gamic_file, tmp_path):
     )
     xd.io.to_cfradial1(dtree, tmp_path / "gamic.nc")
     back = xd.io.open_cfradial1_datatree(tmp_path / "gamic.nc")
-    np.testing.assert_allclose(back["sweep_9"].ds.range.diff("range"), 150.0)
+    np.testing.assert_allclose(back["sweep_9"].dataset.range.diff("range"), 150.0)
+
+
+def test_cfradial1_per_sweep_range_helper():
+    ranges = [np.arange(50.0, 350.0, 100.0), np.arange(75.0, 675.0, 150.0)]
+    rng = cf1_export._per_sweep_range(ranges, {"units": "meters"})
+    assert rng.dims == ("sweep", "range")
+    assert rng.shape == (2, 4)
+    np.testing.assert_allclose(rng[0], [50.0, 150.0, 250.0, 350.0])  # continued
+    np.testing.assert_allclose(rng[1], ranges[1])
+    assert rng.attrs["units"] == "meters"
+    np.testing.assert_allclose(rng.attrs["meters_to_center_of_first_gate"], [50, 75])
+    np.testing.assert_allclose(rng.attrs["meters_between_gates"], [100, 150])
+    # a sweep with a single gate has no spacing, its padding is NaN
+    rng = cf1_export._per_sweep_range([np.array([50.0]), ranges[1]], {})
+    assert np.isnan(rng[0, 1:]).all()
+
+
+def test_cfradial1_export_range_geometry_option(gamic_file, tmp_path):
+    with xd.open_datatree(gamic_file, engine="gamic", sweep=[0, 9]) as dtree:
+        with pytest.raises(ValueError, match="range_geometry"):
+            xd.io.to_cfradial1(dtree, tmp_path / "x.nc", range_geometry="other")
+        # the default still raises, and names the option
+        with pytest.raises(ValueError, match="range_geometry=.per_sweep.") as err:
+            xd.io.to_cfradial1(dtree, tmp_path / "x.nc")
+        assert "reindex_range" in str(err.value)
+
+
+def test_cfradial1_export_per_sweep_range(gamic_file, tmp_path):
+    # GAMIC: 100 m gates in the lowest and 150 m gates in the highest sweep,
+    # different numbers of gates, different first gates (50 m and 75 m)
+    path = tmp_path / "per_sweep.nc"
+    with xd.open_datatree(gamic_file, engine="gamic") as dtree:
+        sweeps = [k for k in dtree.children if k.startswith("sweep_")]
+        xd.io.to_cfradial1(dtree, path, range_geometry="per_sweep")
+
+        with xr.open_dataset(path, decode_timedelta=False) as ds:
+            assert ds["range"].dims == ("sweep", "range")
+            assert ds.sizes["sweep"] == len(sweeps)
+            attrs = ds["range"].attrs
+            assert set(np.unique(attrs["meters_to_center_of_first_gate"])) == {50, 75}
+            assert set(np.unique(attrs["meters_between_gates"])) == {100, 150}
+            # increasing in every gate, also in the padding
+            assert (np.diff(ds["range"].values, axis=1) > 0).all()
+
+        # every sweep comes back as it was written: its own range, all gates,
+        # the same values, NaN in the padding
+        with xd.open_datatree(path, engine="cfradial1") as back:
+            for sweep in sweeps:
+                source, result = dtree[sweep].dataset, back[sweep].dataset
+                ngates = source.sizes["range"]
+                np.testing.assert_allclose(result.range.values[:ngates], source.range)
+                for name in ("meters_to_center_of_first_gate", "meters_between_gates"):
+                    assert result.range.attrs[name] == source.range.attrs[name]
+                moments = [
+                    name
+                    for name, var in source.data_vars.items()
+                    if "range" in var.dims and var.dtype.kind == "f" and name in result
+                ]
+                assert moments
+                for name in moments:
+                    np.testing.assert_array_equal(
+                        result[name].values[..., :ngates], source[name].values
+                    )
+                    assert np.isnan(result[name].values[..., ngates:]).all()
+
+
+def test_cfradial1_export_per_sweep_range_with_common_geometry(
+    cfradial1_file, tmp_path
+):
+    # one geometry in all sweeps: the usual 1-D range, also when asked per sweep
+    path = tmp_path / "common.nc"
+    with xd.open_datatree(cfradial1_file, engine="cfradial1") as dtree:
+        xd.io.to_cfradial1(dtree, path, range_geometry="per_sweep")
+    with xr.open_dataset(path, decode_timedelta=False) as ds:
+        assert ds["range"].dims == ("range",)
+
+
+def test_cfradial1_per_sweep_range_dataset(gamic_file):
+    # the in-memory dataset and the accessor take the option as well
+    with xd.open_datatree(gamic_file, engine="gamic", sweep=[0, 9]) as dtree:
+        ds = xd.transform.to_cfradial1(dtree, range_geometry="per_sweep")
+        assert ds["range"].dims == ("sweep", "range")
+        assert dtree.xradar.to_cfradial1(range_geometry="per_sweep").identical(ds)
+        assert dtree.xradar.to_cfradial1_dataset(range_geometry="per_sweep").identical(
+            ds
+        )
+        with pytest.raises(ValueError, match="range_geometry"):
+            xd.transform.to_cfradial1(dtree)
