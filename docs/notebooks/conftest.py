@@ -21,6 +21,7 @@ def pytest_configure(config):
         "error:DataTree.ds is deprecated, use DataTree.dataset instead.:FutureWarning",
     )
 
+
 def pytest_collect_file(parent, file_path):
     if file_path.suffix == ".md" and "-Copy" not in file_path.name:
         return NotebookFile.from_parent(parent=parent, path=file_path)
