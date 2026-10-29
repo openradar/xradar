@@ -2,6 +2,7 @@
 
 ## Development (unreleased)
 
+* CI: Updating python as additional security features were added for SSL (:pull:`566`) by [@zssherman](https://github.com/zssherman)
 * CI: Update python to safe version 3.13.17 (:pull:`547`) by [@zssherman](https://github.com/zssherman)
 * CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
