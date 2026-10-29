@@ -92,6 +92,7 @@ jobs:
       uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         files: ./coverage_file.xml
+        disable_search: true
         flags: filetests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
