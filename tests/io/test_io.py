@@ -1388,9 +1388,10 @@ class TestStationCoordsOnRoot:
     [
         ("odim_file", "open_odim_datatree"),
         ("rainbow_file", "open_rainbow_datatree"),
-        ("hpl_file", "open_hpl_datatree"),
+        ("hpl_file1", "open_hpl_datatree"),
     ],
 )
+@pytest.mark.file
 def test_sweep_list_matches_sweep_int(request, fixture, opener, closing):
     # sweep=[0] must select the same sweep as sweep=0 and "sweep_0" (#412)
     filename = request.getfixturevalue(fixture)

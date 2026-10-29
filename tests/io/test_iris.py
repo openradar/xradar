@@ -404,6 +404,7 @@ _TASK_METADATA = [
     _TASK_METADATA,
     ids=["cor-main", "SUR", "arouca", "RAW_NA"],
 )
+@pytest.mark.file
 def test_iris_task_metadata(
     fixture, beam, bandwidth, constant, noise, pulse_width, kind, request, closing
 ):
@@ -1067,6 +1068,7 @@ def test_sqi2_format_scale(name):
 
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt
 @pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
+@pytest.mark.file
 def test_no_data_bins_are_nan(fixture, request):
     """The decoded NaNs are exactly the no-data words (#465): in the table
     decoders and in ``IrisRawFile`` (masked arrays with NaN under the mask,

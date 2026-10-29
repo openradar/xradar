@@ -98,6 +98,7 @@ def test_to_cfradial1_error_with_different_range_bin_sizes(gamic_file):
             xd.transform.to_cfradial1(dtree)
 
 
+@pytest.mark.file
 def test_to_cfradial1_after_map_over_sweeps_where(tmp_path, closing):
     file = DATASETS.fetch("swx_20120520_0641.nc")
     dtree = closing(xd.io.open_cfradial1_datatree(file))

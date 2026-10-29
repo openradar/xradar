@@ -272,6 +272,7 @@ def test_odim_dataset_has_close(odim_file):
     "fixture_name",
     ["odim_file", "odim_file2", "odim_file3", "odim_file4", "odim_file5"],
 )
+@pytest.mark.file
 def test_odim_source_global_attributes(request, fixture_name):
     filename = request.getfixturevalue(fixture_name)
     print(f"Testing file: {filename}")
@@ -363,6 +364,7 @@ def test_open_odim_datatree_optional_groups(odim_file, closing):
         ("odim_file2", (0.95, 0.95)),
     ],
 )
+@pytest.mark.file
 def test_odim_how_beam_width(fixture, expected, request):
     filename = request.getfixturevalue(fixture)
     with xd.open_datatree(filename, engine="odim", optional_groups=True) as dtree:

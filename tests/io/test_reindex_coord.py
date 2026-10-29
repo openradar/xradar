@@ -85,11 +85,11 @@ def test_reindex_coord_datatree(odim_file, closing):
     assert dtree["sweep_0"].dataset.sizes["azimuth"] == 360
 
 
-def test_reindex_coord_hpl(hpl_file):
+def test_reindex_coord_hpl(hpl_file1):
     reindex_coord = {"range": dict(range_res=60.0)}
-    with xr.open_dataset(hpl_file, engine="hpl", group="sweep_0") as ds0:
+    with xr.open_dataset(hpl_file1, engine="hpl", group="sweep_0") as ds0:
         with xr.open_dataset(
-            hpl_file, engine="hpl", group="sweep_0", reindex_coord=reindex_coord
+            hpl_file1, engine="hpl", group="sweep_0", reindex_coord=reindex_coord
         ) as ds:
             assert ds.range.attrs["spacing_is_constant"] == "true"
             assert ds.range.attrs["meters_between_gates"] == 60.0
@@ -113,6 +113,7 @@ def test_apply_reindex_coord_noop(gamic_file):
         ("uf_file_1", "uf"),
     ],
 )
+@pytest.mark.file
 def test_reindex_coord_open_dataset(request, fixture, engine):
     filename = request.getfixturevalue(fixture)
     with xr.open_dataset(

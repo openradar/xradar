@@ -430,13 +430,13 @@ def test_cfradial1_export_sweep_attrs_differ(uf_file_1, tmp_path):
         assert len(list(back.match("sweep_*"))) == nsweeps
 
 
-def test_cfradial1_export_drops_sweep_group_name(hpl_file, tmp_path):
+def test_cfradial1_export_drops_sweep_group_name(hpl_file1, tmp_path):
     # the HPL reader has sweep_group_name in every sweep; it's no CfRadial1
     # variable and made the written file unreadable
     import netCDF4
 
     outfile = tmp_path / "hpl_cf1.nc"
-    with xd.open_datatree(hpl_file, engine="hpl") as dtree:
+    with xd.open_datatree(hpl_file1, engine="hpl") as dtree:
         assert "sweep_group_name" in dtree["sweep_0"].dataset
         nsweeps = len(list(dtree.match("sweep_*")))
         xd.io.to_cfradial1(dtree, outfile)
@@ -449,6 +449,7 @@ def test_cfradial1_export_drops_sweep_group_name(hpl_file, tmp_path):
 @pytest.mark.parametrize(
     "engine, fixture", [("cfradial1", "cfradial1_file"), ("odim", "odim_file")]
 )
+@pytest.mark.file
 def test_cfradial1_export_repeated_with_optional_groups(
     engine, fixture, request, tmp_path
 ):

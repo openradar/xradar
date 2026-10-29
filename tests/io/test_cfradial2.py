@@ -486,6 +486,7 @@ def _assert_same_tree(first, second):
         ("uf", "uf_file_1"),
     ],
 )
+@pytest.mark.file
 def test_cfradial2_repeated_roundtrip_is_stable(engine, fixture, request, tmp_path):
     # read -> write -> read must not change the datasets, however often it is
     # repeated; this includes data read back from a CfRadial2 file, which

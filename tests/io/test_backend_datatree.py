@@ -38,7 +38,7 @@ from xradar.io.backends.common import _STATION_VARS, _resolve_sweeps
         pytest.param(("furuno", "furuno_scn_file"), id="furuno"),
         pytest.param(("rainbow", "rainbow_file"), id="rainbow"),
         pytest.param(("datamet", "datamet_file"), id="datamet"),
-        pytest.param(("hpl", "hpl_file"), id="hpl"),
+        pytest.param(("hpl", "hpl_file1"), id="hpl"),
         pytest.param(("metek", "metek_ave_gz_file"), id="metek"),
         pytest.param(("uf", "uf_file_1"), id="uf"),
         pytest.param(
@@ -255,11 +255,11 @@ class TestXdOpenDatatreeCfRadial1:
 
 
 @pytest.mark.parametrize("first_dim,dim0", [("auto", "azimuth"), ("time", "time")])
-def test_hpl_angle_reindex(hpl_file, first_dim, dim0, closing):
+def test_hpl_angle_reindex(hpl_file1, first_dim, dim0, closing):
     # angle reindexing used to fail while time was still the first dimension
     dtree = closing(
         xd.open_datatree(
-            hpl_file,
+            hpl_file1,
             engine="hpl",
             sweep=0,
             first_dim=first_dim,
@@ -276,6 +276,7 @@ def test_hpl_angle_reindex(hpl_file, first_dim, dim0, closing):
     [("furuno", "furuno_scn_file"), ("metek", "metek_ave_gz_file")],
 )
 @pytest.mark.parametrize("sweep", [1, "sweep_2", [0, 1]])
+@pytest.mark.file
 def test_single_sweep_engines_reject_other_sweeps(engine, fixture_name, sweep, request):
     filepath = request.getfixturevalue(fixture_name)
     with pytest.raises(ValueError, match="single sweep"):
@@ -322,8 +323,8 @@ class TestXrOpenDatatree:
         with xr.open_datatree(datamet_file, engine="datamet") as dtree:
             _assert_cfradial2_structure(dtree)
 
-    def test_xr_open_datatree_hpl(self, hpl_file):
-        with xr.open_datatree(hpl_file, engine="hpl") as dtree:
+    def test_xr_open_datatree_hpl(self, hpl_file1):
+        with xr.open_datatree(hpl_file1, engine="hpl") as dtree:
             _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_metek(self, metek_ave_gz_file):
@@ -624,7 +625,7 @@ _DEPRECATED_FUNCTIONS = {
     "open_furuno_datatree": ("xradar.io.backends.furuno", "furuno_scn_file", {}),
     "open_rainbow_datatree": ("xradar.io.backends.rainbow", "rainbow_file", {}),
     "open_datamet_datatree": ("xradar.io.backends.datamet", "datamet_file", {}),
-    "open_hpl_datatree": ("xradar.io.backends.hpl", "hpl_file", {}),
+    "open_hpl_datatree": ("xradar.io.backends.hpl", "hpl_file1", {}),
     "open_metek_datatree": ("xradar.io.backends.metek", "metek_ave_gz_file", {}),
     "open_uf_datatree": ("xradar.io.backends.uf", "uf_file_1", {}),
 }
@@ -634,6 +635,7 @@ class TestDeprecation:
     """Test that all standalone functions emit FutureWarning."""
 
     @pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+    @pytest.mark.file
     def test_deprecated_function_warns(self, func_name, request, closing):
         func, _, filepath, extra_kwargs, _ = _legacy_and_engine(func_name, request)
 
@@ -688,6 +690,7 @@ def _call_legacy(func, *args, **kwargs):
     ],
     ids=["default", "site_as_coords", "optional", "optional_groups"],
 )
+@pytest.mark.file
 def test_legacy_matches_engine(func_name, legacy_kw, engine_kw, request, closing):
     func, engine, filename, extra, engine_extra = _legacy_and_engine(func_name, request)
     legacy = closing(_call_legacy(func, filename, sweep=0, **extra, **legacy_kw))
@@ -698,6 +701,7 @@ def test_legacy_matches_engine(func_name, legacy_kw, engine_kw, request, closing
 
 
 @pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+@pytest.mark.file
 def test_legacy_chunks(func_name, request, closing):
     func, _, filename, extra, _ = _legacy_and_engine(func_name, request)
     dtree = closing(_call_legacy(func, filename, sweep=0, chunks={}, **extra))
@@ -714,6 +718,7 @@ def test_legacy_chunks(func_name, request, closing):
         if name not in ("open_cfradial2_datatree", "open_metek_datatree")
     ],
 )
+@pytest.mark.file
 def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
     func, _, filename, extra, _ = _legacy_and_engine(func_name, request)
     via_backend_kwargs = closing(
@@ -735,6 +740,7 @@ def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
     ],
     ids=["optional", "Optional"],
 )
+@pytest.mark.file
 def test_legacy_backend_kwargs_optional(
     func, engine, fixture_name, key, request, closing
 ):
@@ -1015,7 +1021,7 @@ _SWEEP_FILES = [
     ("datamet", "datamet_file"),
     ("uf", "uf_file_1"),
     ("imd", "imd_file"),
-    ("hpl", "hpl_file"),
+    ("hpl", "hpl_file1"),
     ("metek", "metek_ave_gz_file"),
 ]
 
@@ -1023,6 +1029,7 @@ _SWEEP_FILES = [
 @pytest.mark.parametrize(
     ("engine", "fixture"), _SWEEP_FILES, ids=[engine for engine, _ in _SWEEP_FILES]
 )
+@pytest.mark.file
 def test_sweeps_are_fm301_sweeps(engine, fixture, request, closing):
     # every reader returns sweeps which `is_sweep` accepts, with the mandatory
     # FM301 sweep metadata (strict) (#537)

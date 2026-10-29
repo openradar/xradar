@@ -8,15 +8,14 @@ import io
 import numpy as np
 import pytest
 import xarray as xr
-from open_radar_data import DATASETS
 from xarray import DataTree, open_dataset, open_mfdataset
 
 import xradar as xd
 
 
-def test_open_datatree_hpl():
+def test_open_datatree_hpl(hpl_file2):
     dtree = xd.io.open_hpl_datatree(
-        DATASETS.fetch("User1_184_20240601_013257.hpl"),
+        hpl_file2,
         sweep=[0, 1, 2, 3, 4, 5, 6, 7, 8],
         backend_kwargs=dict(latitude=41.24276244459537, longitude=-70.1070364814594),
     )
@@ -30,9 +29,9 @@ def test_open_datatree_hpl():
     assert "units" not in dtree["sweep_0"]["time"].attrs
 
 
-def test_open_dataset_hpl():
+def test_open_dataset_hpl(hpl_file2):
     with xr.open_dataset(
-        DATASETS.fetch("User1_184_20240601_013257.hpl"),
+        hpl_file2,
         engine="hpl",
         backend_kwargs=dict(latitude=40, longitude=-70),
     ) as ds:
@@ -41,8 +40,8 @@ def test_open_dataset_hpl():
         assert ds["mean_doppler_velocity"].max() == 19.5306
 
 
-def test_open_dataset_hpl_iobase():
-    with open(DATASETS.fetch("User1_184_20240601_013257.hpl")) as fi:  # noqa
+def test_open_dataset_hpl_iobase(hpl_file2):
+    with open(hpl_file2) as fi:  # noqa
         ds = xr.open_dataset(
             fi, engine="hpl", backend_kwargs=dict(latitude=40, longitude=-70)
         )
@@ -51,9 +50,9 @@ def test_open_dataset_hpl_iobase():
         assert ds["mean_doppler_velocity"].max() == 19.5306
 
 
-def test_open_rhi():
+def test_open_rhi(hpl_file1):
     with xr.open_dataset(
-        DATASETS.fetch("User1_100_20240714_122137.hpl"),
+        hpl_file1,
         engine="hpl",
         backend_kwargs=dict(latitude=41.24276244459537, longitude=-70.1070364814594),
     ) as ds:
@@ -62,9 +61,9 @@ def test_open_rhi():
         assert ds["mean_doppler_velocity"].max() == 19.5306
 
 
-def test_hpl_open_mfdataset_context_manager(hpl_file):
+def test_hpl_open_mfdataset_context_manager(hpl_file1):
     with open_mfdataset(
-        [hpl_file],
+        [hpl_file1],
         engine="hpl",
         concat_dim="volume_time",
         combine="nested",
@@ -75,13 +74,13 @@ def test_hpl_open_mfdataset_context_manager(hpl_file):
         assert callable(getattr(ds, "_close", None))
 
 
-def test_hpl_dataset_has_close(hpl_file):
-    ds = open_dataset(hpl_file, engine="hpl", group="sweep_0")
+def test_hpl_dataset_has_close(hpl_file1):
+    ds = open_dataset(hpl_file1, engine="hpl", group="sweep_0")
     assert callable(getattr(ds, "_close", None))
     ds.close()
 
 
-def test_open_hpl_datatree():
+def test_open_hpl_datatree(hpl_file2):
     # Define the kwargs to pass into the function
     kwargs = {
         "sweep": [0, 1, 2, 3, 4, 5, 6, 7, 8],
@@ -94,8 +93,7 @@ def test_open_hpl_datatree():
     }
 
     # Call the function with an actual HPL file
-    hpl_file = DATASETS.fetch("User1_184_20240601_013257.hpl")
-    dtree = xd.io.open_hpl_datatree(hpl_file, **kwargs)
+    dtree = xd.io.open_hpl_datatree(hpl_file2, **kwargs)
 
     # Assertions
     assert isinstance(dtree, DataTree), "Expected a DataTree instance"
@@ -134,24 +132,29 @@ def test_open_hpl_datatree():
     assert len(dtree.attrs) == 9
 
 
-def test_open_hpl_datatree_optional_groups():
+def test_open_hpl_datatree_optional_groups(hpl_file2):
     """Test that optional_groups=True includes metadata subgroups."""
-    from open_radar_data import DATASETS
-
-    hpl_file = DATASETS.fetch("User1_184_20240601_013257.hpl")
-    dtree = xd.io.open_hpl_datatree(hpl_file, optional_groups=True)
+    dtree = xd.io.open_hpl_datatree(hpl_file2, optional_groups=True)
     assert "radar_parameters" in dtree.children
     assert "georeferencing_correction" in dtree.children
     assert "radar_calibration" in dtree.children
 
 
+@pytest.fixture
+def hpl_fname(request):
+    return request.getfixturevalue(request.param)
+
+
 @pytest.mark.parametrize(
-    "fname", ["User1_184_20240601_013257.hpl", "User1_100_20240714_122137.hpl"]
+    "hpl_fname",
+    ["hpl_file2", "hpl_file1"],
+    indirect=True,
 )
-def test_hpl_sweep_metadata(fname):
+@pytest.mark.file
+def test_hpl_sweep_metadata(hpl_fname):
     # mandatory sweep metadata (FM301 Table 301-7a), follow_mode and prt_mode
     # are not in the file and are "not_set", as for the other readers (#451)
-    dtree = xd.io.open_hpl_datatree(DATASETS.fetch(fname))
+    dtree = xd.io.open_hpl_datatree(hpl_fname)
     ds = dtree["sweep_0"].to_dataset()
     assert xd.model.required_sweep_metadata_vars.issubset(ds.variables)
     assert ds["follow_mode"].values == "not_set"
@@ -160,14 +163,14 @@ def test_hpl_sweep_metadata(fname):
     assert ds["follow_mode"].dtype.kind == ds["prt_mode"].dtype.kind == "U"
 
 
-def test_open_hpl_datatree_sweeps(hpl_file):
+def test_open_hpl_datatree_sweeps(hpl_file1):
     # RHI with 361 rays, the last ray of the sweep is kept (#430)
-    dtree = xd.io.open_hpl_datatree(hpl_file)
+    dtree = xd.io.open_hpl_datatree(hpl_file1)
     ds = dtree["sweep_0"].dataset
     assert ds.mean_doppler_velocity.shape == (361, 833)
     assert int(ds.sweep_number) == 0
 
-    dtree = xd.io.open_hpl_datatree(DATASETS.fetch("User1_184_20240601_013257.hpl"))
+    dtree = xd.io.open_hpl_datatree(hpl_file1)
     sweeps = [k for k in dtree.children if k.startswith("sweep_")]
     assert [int(dtree[k].dataset.sweep_number) for k in sweeps] == list(
         range(len(sweeps))
@@ -187,25 +190,25 @@ def _modified_hpl(src, dst, extra_header=False, drop_last_line=False):
     return dst
 
 
-def test_hpl_header_length(hpl_file, tmp_path):
+def test_hpl_header_length(hpl_file1, tmp_path):
     # header length is taken from the "****" separator
-    path = _modified_hpl(hpl_file, tmp_path / "extra.hpl", extra_header=True)
+    path = _modified_hpl(hpl_file1, tmp_path / "extra.hpl", extra_header=True)
     ds = xr.open_dataset(path, engine="hpl")
     assert ds.mean_doppler_velocity.shape == (361, 833)
     xr.testing.assert_equal(
         ds.mean_doppler_velocity,
-        xr.open_dataset(hpl_file, engine="hpl").mean_doppler_velocity,
+        xr.open_dataset(hpl_file1, engine="hpl").mean_doppler_velocity,
     )
 
 
-def test_hpl_line_count_mismatch(hpl_file, tmp_path):
-    path = _modified_hpl(hpl_file, tmp_path / "broken.hpl", drop_last_line=True)
+def test_hpl_line_count_mismatch(hpl_file1, tmp_path):
+    path = _modified_hpl(hpl_file1, tmp_path / "broken.hpl", drop_last_line=True)
     with pytest.raises(ValueError, match="does not match the expected format"):
         xr.open_dataset(path, engine="hpl")
 
 
-def test_open_dataset_hpl_binary_iobase(hpl_file):
-    with open(hpl_file, "rb") as fh:
+def test_open_dataset_hpl_binary_iobase(hpl_file1):
+    with open(hpl_file1, "rb") as fh:
         buf = io.BytesIO(fh.read())
     ds = xr.open_dataset(buf, engine="hpl")
     assert ds.mean_doppler_velocity.shape == (361, 833)

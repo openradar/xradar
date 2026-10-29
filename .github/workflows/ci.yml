@@ -72,14 +72,26 @@ jobs:
     - name: Version Info
       run: |
         python -c "import xradar, xarray; print(xradar.version.version, xarray.__version__)"
-    - name: Test with pytest
+    - name: Test with pytest file
       run: |
-        pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
-    - name: Upload coverage to Codecov
+        pytest -n auto -m file --dist loadfile --verbose --durations=15 --cov-report xml:coverage_file.xml --cov=xradar --pyargs tests
+    - name: Test with pytest unit
+      run: |
+        pytest -n auto -m "not file" --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
+    - name: Upload coverage to Codecov - unit
       uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         files: ./coverage_unit.xml
         flags: unittests
+        env_vars: RUNNER_OS,PYTHON_VERSION
+        name: codecov-gha
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN}}
+    - name: Upload coverage to Codecov - file
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      with:
+        files: ./coverage_file.xml
+        flags: filetests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
         fail_ci_if_error: false

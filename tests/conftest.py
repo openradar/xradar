@@ -46,6 +46,8 @@ def pytest_configure(config):
         "filterwarnings",
         "error:DataTree.ds is deprecated, use DataTree.dataset instead.:FutureWarning",
     )
+    # dedicated markers
+    config.addinivalue_line("markers", "file: run checks on open-radar-data files")
 
 
 @pytest.fixture(params=["file", "filelike"])
@@ -363,8 +365,13 @@ def uf_file_3(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def hpl_file():
+def hpl_file1():
     return DATASETS.fetch("User1_100_20240714_122137.hpl")
+
+
+@pytest.fixture(scope="session")
+def hpl_file2():
+    return DATASETS.fetch("User1_184_20240601_013257.hpl")
 
 
 @pytest.fixture(scope="session")
@@ -393,3 +400,51 @@ def make_temp_file(tmp_path):
         return tmp_path / f"testfile_{rnd}"
 
     return _make_file
+
+
+FILE_FIXTURES = {
+    "cfradial1_sgp_file",
+    "cfradial1_file",
+    "cfradial2_file",
+    "cfradial1n_file",
+    "odim_file",
+    "odim_file2",
+    "odim_file3",
+    "odim_file4",
+    "odim_file5",
+    "datamet_file",
+    "furuno_scn_file",
+    "furuno_scnx_file",
+    "gamic_file",
+    "rainbow_file",
+    "iris0_file",
+    "iris1_file",
+    "iris_raw_na_file",
+    "iris_arouca_file",
+    "nexradlevel2_file",
+    "nexradlevel2_files",
+    "nexradlevel2_ldm_stride_file",
+    "nexrad_chunks_klot",
+    "nexradlevel2_msg1_file",
+    "nexradlevel2_gzfile",
+    "nexradlevel2_bzfile",
+    "metek_ave_gz_file",
+    "metek_pro_gz_file",
+    "metek_raw_gz_file",
+    "uf_file_1",
+    "uf_file_2",
+    "uf_file_3",
+    "uf_files",
+    "hpl_file1",
+    "hpl_file2",
+    "imd_file",
+    "imd_volume_files",
+    "engine_and_file",
+}
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        fixture_names = getattr(item, "fixturenames", ())
+        if FILE_FIXTURES.intersection(fixture_names):
+            item.add_marker(pytest.mark.file)

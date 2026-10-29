@@ -33,6 +33,7 @@ def test_uf_datatree_from_file_like(uf_file_1):
         ("metek", "metek_ave_gz_file"),
     ],
 )
+@pytest.mark.file
 def test_open_dataset_accepts_pathlike(engine, fixture_name, request):
     filename = request.getfixturevalue(fixture_name)
     kwargs = dict(engine=engine, group="sweep_0")

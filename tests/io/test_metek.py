@@ -341,6 +341,7 @@ def test_open_metek_datatree_optional_groups(metek_pro_gz_file):
 @pytest.mark.parametrize(
     "fixture", ["metek_ave_gz_file", "metek_pro_gz_file", "metek_raw_gz_file"]
 )
+@pytest.mark.file
 def test_metek_sweep_metadata(fixture, request):
     # the single vertically pointing sweep carries the mandatory sweep
     # metadata (FM301 Table 301-7a), follow_mode and prt_mode are "not_set",

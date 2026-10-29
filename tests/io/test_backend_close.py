@@ -48,7 +48,7 @@ def _private_copy(path, tmp_path):
         ("datamet", "datamet_file"),
         ("furuno", "furuno_scn_file"),
         ("gamic", "gamic_file"),
-        ("hpl", "hpl_file"),
+        ("hpl", "hpl_file1"),
         ("iris", "iris0_file"),
         ("metek", "metek_ave_gz_file"),
         ("nexradlevel2", "nexradlevel2_file"),
@@ -56,6 +56,7 @@ def _private_copy(path, tmp_path):
         ("rainbow", "rainbow_file"),
     ],
 )
+@pytest.mark.file
 def test_dataset_close_releases_file(engine, fixture_name, request, tmp_path):
     # datamet, furuno, hpl and metek read their file completely when opened, so
     # they pass without the fix too; they keep close() from regressing
@@ -78,7 +79,7 @@ def test_dataset_close_releases_file(engine, fixture_name, request, tmp_path):
         ("datamet", "datamet_file"),
         ("furuno", "furuno_scn_file"),
         ("gamic", "gamic_file"),
-        ("hpl", "hpl_file"),
+        ("hpl", "hpl_file1"),
         ("imd", "imd_file"),
         ("iris", "iris0_file"),
         ("metek", "metek_ave_gz_file"),
@@ -88,6 +89,7 @@ def test_dataset_close_releases_file(engine, fixture_name, request, tmp_path):
         ("uf", "uf_file_1"),
     ],
 )
+@pytest.mark.file
 def test_datatree_close_releases_file(engine, fixture_name, legacy, request, tmp_path):
     # every group keeps its file's close, so closing the tree releases the
     # file; left to the garbage collector it can crash HDF5 (#471, #502)
@@ -150,8 +152,9 @@ def test_georeferenced_tree_still_closes_its_file(method, odim_file, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "engine,fixture_name", [("hpl", "hpl_file"), ("metek", "metek_ave_gz_file")]
+    "engine,fixture_name", [("hpl", "hpl_file1"), ("metek", "metek_ave_gz_file")]
 )
+@pytest.mark.file
 def test_close_keeps_the_callers_file_object_open(engine, fixture_name, request):
     # the backend closes only files it opened itself (#471)
     with open(request.getfixturevalue(fixture_name), "rb") as fobj:
@@ -163,6 +166,7 @@ def test_close_keeps_the_callers_file_object_open(engine, fixture_name, request)
 
 @pytest.mark.skipif(not _PROC_FD.is_dir(), reason="needs /proc/self/fd")
 @pytest.mark.parametrize("engine", ["cfradial2", "odim"])
+@pytest.mark.file
 def test_datatree_close_releases_file_without_site_coords(engine, request, tmp_path):
     # dropping the station variables must keep the file's close (#471, #502)
     fixture = {"cfradial2": "cfradial2_file", "odim": "odim_file"}[engine]

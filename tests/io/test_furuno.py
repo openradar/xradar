@@ -768,6 +768,7 @@ def test_furuno_scnx_calibration_is_exported(furuno_scnx_file, tmp_path, closing
     ],
 )
 @pytest.mark.parametrize("as_path", [False, True], ids=["str", "path"])
+@pytest.mark.file
 def test_open_furuno_datatree_radar_parameters(fixture, widths, as_path, request):
     filename = request.getfixturevalue(fixture)
     if as_path:

@@ -958,15 +958,21 @@ def test_nexradlevel2_mask_and_scale_mapping(nexradlevel2_file):
     assert ds.DBZH.isnull().any()
 
 
-def test_nexradlevel2_mask_cfp_flags(closing):
+def test_nexradlevel2_mask_cfp_flags(nexradlevel2_ldm_stride_file, closing):
     """CFP codes 0-7 are flags, not clutter power (ICD Table XVII-I, note 30)."""
-    fname = DATASETS.fetch("KILX20230629_154426_V06")
     raw = closing(
         open_dataset(
-            fname, engine="nexradlevel2", group="sweep_0", mask_and_scale=False
+            nexradlevel2_ldm_stride_file,
+            engine="nexradlevel2",
+            group="sweep_0",
+            mask_and_scale=False,
         )
     )
-    ds = closing(open_dataset(fname, engine="nexradlevel2", group="sweep_0"))
+    ds = closing(
+        open_dataset(
+            nexradlevel2_ldm_stride_file, engine="nexradlevel2", group="sweep_0"
+        )
+    )
     assert (raw.CCORH == 2).any()
     np.testing.assert_array_equal(ds.CCORH.isnull().values, (raw.CCORH < 8).values)
     assert float(ds.CCORH.min()) >= 0.0

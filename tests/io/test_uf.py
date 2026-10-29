@@ -401,6 +401,7 @@ def test_open_uf_datatree_optional_groups(uf_file_1):
 @pytest.mark.parametrize(
     "fixture, width", [("uf_file_1", 0.953125), ("uf_file_2", 1.0)]
 )
+@pytest.mark.file
 def test_open_uf_datatree_radar_parameters(fixture, width, request, closing):
     # beam widths in 1/64 degree; the receiver bandwidth scale depends on the
     # writer (MHz, MHz * 16, MHz * 64), it is not mapped

@@ -32,7 +32,7 @@ FILES = [
     ("iris1_file", "iris"),
     ("nexradlevel2_file", "nexradlevel2"),
     ("nexradlevel2_msg1_file", "nexradlevel2"),
-    ("hpl_file", "hpl"),
+    ("hpl_file1", "hpl"),
     ("metek_ave_gz_file", "metek"),
     ("metek_pro_gz_file", "metek"),
     ("uf_file_1", "uf"),
@@ -42,6 +42,7 @@ FILES = [
 
 
 @pytest.mark.parametrize(("fixture", "engine"), FILES)
+@pytest.mark.file
 def test_guess_can_open(request, fixture, engine):
     filename = request.getfixturevalue(fixture)
     # only the matching xradar engine claims the file
@@ -64,6 +65,7 @@ def test_guess_can_open(request, fixture, engine):
         ("metek_ave_gz_file", "metek"),
     ],
 )
+@pytest.mark.file
 def test_guess_can_open_filelike(request, fixture, engine):
     filename = request.getfixturevalue(fixture)
     with open(filename, "rb") as fh:
@@ -87,13 +89,15 @@ def test_guess_can_open_filelike(request, fixture, engine):
         ("imd_file", "imd"),
     ],
 )
+@pytest.mark.file
 def test_guess_can_open_bytes(request, fixture, engine):
     with open(request.getfixturevalue(fixture), "rb") as fh:
         data = fh.read()
     assert xd.io.discover_engine(data) == engine
 
 
-def test_guess_can_open_input_kinds(nexradlevel2_file, hpl_file, rainbow_file):
+@pytest.mark.file
+def test_guess_can_open_input_kinds(nexradlevel2_file, hpl_file1, rainbow_file):
     with open(nexradlevel2_file, "rb") as fh:
         data = fh.read()
     nexrad = plugins.get_backend("nexradlevel2")
@@ -104,7 +108,7 @@ def test_guess_can_open_input_kinds(nexradlevel2_file, hpl_file, rainbow_file):
     with open(rainbow_file, "rb") as fh:
         assert not plugins.get_backend("rainbow").guess_can_open(fh)
     # HPL is read from text streams
-    with open(hpl_file) as fh:
+    with open(hpl_file1) as fh:
         assert plugins.get_backend("hpl").guess_can_open(fh)
         assert fh.tell() == 0
 
