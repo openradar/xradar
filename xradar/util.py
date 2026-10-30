@@ -392,14 +392,32 @@ def extract_angle_parameters(ds):
     # unfortunately this doesn't work if rays are missing at start or end of the sweep
     # so we need to have the possibility to override
     # also accounts for direction of sweep (CW/CCW, up/down)
-    mode = ds.sweep_mode
+    mode = ds.sweep_mode.item()
     if mode == "azimuth_surveillance":
         start_ang = 0
         stop_ang = 360
     elif mode == "rhi":
         # start/stop angle, round to nearest multiple of angle_res
+        # (kept as is: the outer edges below would change existing RHI results)
         start_ang = int(np.round(min_angle / angle_res) * angle_res)
         stop_ang = int(np.round(max_angle / angle_res) * angle_res)
+    elif mode in ("sector", "manual_ppi", "manual_rhi"):
+        # the widest gap is the unscanned part: it must be the one across north
+        if first_angle == "azimuth" and np.diff(unique_angles).max() > (
+            360 - (max_angle - min_angle)
+        ):
+            raise ValueError(
+                f"Can't get start and stop angle of a {mode!r} sweep across "
+                "north: reindex each side of north on its own."
+            )
+        # outer edges of the first and last ray, keeps both of them
+        start_ang = float(np.round(np.floor(min_angle / angle_res) * angle_res, 2))
+        stop_ang = float(np.round((np.floor(max_angle / angle_res) + 1) * angle_res, 2))
+    else:
+        raise ValueError(
+            f"Can't get start and stop angle for sweep_mode {mode!r}: expected "
+            "azimuth_surveillance, rhi, sector, manual_ppi or manual_rhi."
+        )
 
     start_ang, stop_ang = (start_ang, stop_ang)[::direction]
     angle_dict.update(start_angle=start_ang, stop_angle=stop_ang)
