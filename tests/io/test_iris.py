@@ -122,6 +122,25 @@ def test_scan_name_is_stripped(file_fixture, scan_name, request):
         assert dtree.attrs["scan_name"] == scan_name
 
 
+@pytest.mark.parametrize(
+    "scan_mode, sweep_mode",
+    [
+        pytest.param(1, "sector", id="ppi-sector"),
+        pytest.param(2, "rhi", id="rhi"),
+        pytest.param(4, "azimuth_surveillance", id="ppi-full"),
+    ],
+)
+def test_sweep_mode(scan_mode, sweep_mode):
+    assert iris._sweep_mode(scan_mode) == sweep_mode
+
+
+def test_sector_task_sweep_mode(iris1_file, monkeypatch):
+    # no fixture holds a sector task (#574): report the header value of one
+    monkeypatch.setattr(iris.IrisRawFile, "scan_mode", 1)
+    with xd.open_datatree(iris1_file, engine="iris") as dtree:
+        assert dtree["sweep_0"]["sweep_mode"].item() == "sector"
+
+
 def test_decode_array():
     data = np.arange(0, 11)
     np.testing.assert_array_equal(
