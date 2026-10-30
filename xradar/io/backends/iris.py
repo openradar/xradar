@@ -523,6 +523,12 @@ def _moment_names(type_names):
     return names
 
 
+def _sweep_mode(scan_mode):
+    """FM301 ``sweep_mode`` of an IRIS ``antenna_scan_mode``: 1 (PPI sector) is
+    ``sector``, 2 (RHI) is ``rhi``, anything else ``azimuth_surveillance``."""
+    return {1: "sector", 2: "rhi"}.get(scan_mode, "azimuth_surveillance")
+
+
 def _first_bin_cm(task_range_info):
     """Range of the first gate center in cm: a first bin of 0 is the start
     of the first gate, its center half a step out."""
@@ -4201,7 +4207,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         dim = self.root.first_dimension
 
         # get coordinates from IrisFile
-        sweep_mode = "azimuth_surveillance" if dim == "azimuth" else "rhi"
+        sweep_mode = _sweep_mode(self.root.scan_mode)
         # align with CfRadial2 convention
         sweep_number = self._group - 1
         prt_mode = "not_set"
