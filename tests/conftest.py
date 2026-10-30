@@ -46,6 +46,14 @@ def pytest_configure(config):
         "filterwarnings",
         "error:DataTree.ds is deprecated, use DataTree.dataset instead.:FutureWarning",
     )
+    # dedicated markers
+    config.addinivalue_line("markers", "file: run checks on open-radar-data files")
+
+
+@pytest.fixture(scope="session")
+def file_store():
+    """Base fixture for open-radar-data store."""
+    return DATASETS
 
 
 @pytest.fixture(params=["file", "filelike"])
@@ -66,19 +74,19 @@ def closing():
 
 
 @pytest.fixture(scope="session")
-def cfradial1_sgp_file():
-    return DATASETS.fetch("sample_sgp_data.nc")
+def cfradial1_sgp_file(file_store):
+    return file_store.fetch("sample_sgp_data.nc")
 
 
 @pytest.fixture(scope="session")
-def cfradial1_file(tmp_path_factory):
+def cfradial1_file(file_store, tmp_path_factory):
     """Safely fetch the dataset across multiple xdist workers using a lock."""
     shared_dir = tmp_path_factory.getbasetemp().parent
     lockfile = shared_dir / "fetch_cfradial1.lock"
 
     # synchronize the download/cache-check across workers
     with FileLock(str(lockfile)):
-        return DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
+        return file_store.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
 
 
 @pytest.fixture(scope="session")
@@ -120,106 +128,106 @@ def cfradial2_file(_cfradial2_source, tmp_path):
 
 
 @pytest.fixture(scope="session")
-def cfradial1n_file(tmp_path_factory):
-    return DATASETS.fetch("DES_VOL_RAW_20240522_1600.nc")
+def cfradial1n_file(file_store, tmp_path_factory):
+    return file_store.fetch("DES_VOL_RAW_20240522_1600.nc")
 
 
 @pytest.fixture(scope="session")
-def odim_file():
-    return DATASETS.fetch("71_20181220_060628.pvol.h5")
+def odim_file(file_store):
+    return file_store.fetch("71_20181220_060628.pvol.h5")
 
 
 @pytest.fixture(scope="session")
-def odim_file2():
-    return DATASETS.fetch("T_PAGZ35_C_ENMI_20170421090837.hdf")
+def odim_file2(file_store):
+    return file_store.fetch("T_PAGZ35_C_ENMI_20170421090837.hdf")
 
 
 @pytest.fixture(scope="session")
-def odim_file3():
-    return DATASETS.fetch("T_PAZA63_C_LFPW_20230420065041.h5")
+def odim_file3(file_store):
+    return file_store.fetch("T_PAZA63_C_LFPW_20230420065041.h5")
 
 
 @pytest.fixture(scope="session")
-def odim_file4():
-    return DATASETS.fetch("202506090955_fianj_PVOL.h5")
+def odim_file4(file_store):
+    return file_store.fetch("202506090955_fianj_PVOL.h5")
 
 
 @pytest.fixture(scope="session")
-def odim_file5():
-    return DATASETS.fetch("SUR.202506091000.VOL.h5")
+def odim_file5(file_store):
+    return file_store.fetch("SUR.202506091000.VOL.h5")
 
 
 @pytest.fixture(scope="session")
-def datamet_file():
-    return DATASETS.fetch("H-000-VOL-ILMONTE-201907100700.tar.gz")
+def datamet_file(file_store):
+    return file_store.fetch("H-000-VOL-ILMONTE-201907100700.tar.gz")
 
 
 @pytest.fixture(scope="session")
-def furuno_scn_file():
-    return DATASETS.fetch("0080_20210730_160000_01_02.scn.gz")
+def furuno_scn_file(file_store):
+    return file_store.fetch("0080_20210730_160000_01_02.scn.gz")
 
 
 @pytest.fixture(scope="session")
-def furuno_scnx_file():
-    return DATASETS.fetch("2006_20220324_000000_000.scnx.gz")
+def furuno_scnx_file(file_store):
+    return file_store.fetch("2006_20220324_000000_000.scnx.gz")
 
 
 @pytest.fixture(scope="session")
-def gamic_file():
-    return DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+def gamic_file(file_store):
+    return file_store.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
 
 
 @pytest.fixture(scope="session")
-def rainbow_file():
-    return DATASETS.fetch("2013051000000600dBZ.vol")
+def rainbow_file(file_store):
+    return file_store.fetch("2013051000000600dBZ.vol")
 
 
 @pytest.fixture(scope="session")
-def rainbow_file2():
-    return DATASETS.fetch("sample_rainbow_5_59.vol")
+def rainbow_file2(file_store):
+    return file_store.fetch("sample_rainbow_5_59.vol")
 
 
 @pytest.fixture(scope="session")
-def iris0_file():
-    return DATASETS.fetch("cor-main131125105503.RAW2049")
+def iris0_file(file_store):
+    return file_store.fetch("cor-main131125105503.RAW2049")
 
 
 @pytest.fixture(scope="session")
-def iris1_file():
-    return DATASETS.fetch("SUR210819000227.RAWKPJV")
+def iris1_file(file_store):
+    return file_store.fetch("SUR210819000227.RAWKPJV")
 
 
 @pytest.fixture(scope="session")
-def iris_raw_na_file():
-    return DATASETS.fetch("RAW_NA_000_125_20080411181219")
+def iris_raw_na_file(file_store):
+    return file_store.fetch("RAW_NA_000_125_20080411181219")
 
 
 @pytest.fixture(scope="session")
-def iris_arouca_file():
-    return DATASETS.fetch("PRT231225000005.RAWD2A3")
+def iris_arouca_file(file_store):
+    return file_store.fetch("PRT231225000005.RAWD2A3")
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_file():
-    return DATASETS.fetch("KATX20130717_195021_V06")
+def nexradlevel2_file(file_store):
+    return file_store.fetch("KATX20130717_195021_V06")
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_ldm_stride_file():
+def nexradlevel2_ldm_stride_file(file_store):
     """KILX volume with an over-120-message LDM (#376 regression fixture).
 
     LDM 49 of this file contains 120 MSG_31 + 2 MSG_2 = 122 messages.
     Pre-fix, xradar's mod-120 stride dropped the trailing 2 MSG_31s,
     yielding sweep_10 = 358 (on-wire is 360).
     """
-    return DATASETS.fetch("KILX20230629_154426_V06")
+    return file_store.fetch("KILX20230629_154426_V06")
 
 
 @pytest.fixture(scope="session")
-def nexrad_chunks_klot(tmp_path_factory):
+def nexrad_chunks_klot(file_store, tmp_path_factory):
     import tarfile
 
-    archive = DATASETS.fetch("nexrad_level2_chunks_KLOT.tar.gz")
+    archive = file_store.fetch("nexrad_level2_chunks_KLOT.tar.gz")
     extract_dir = tmp_path_factory.mktemp("nexrad_chunks")
     with tarfile.open(archive) as tar:
         tar.extractall(extract_dir, filter="data")
@@ -228,8 +236,8 @@ def nexrad_chunks_klot(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_msg1_file(tmp_path_factory):
-    fnamei = DATASETS.fetch("KLIX20050828_180149.gz")
+def nexradlevel2_msg1_file(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("KLIX20050828_180149.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}_gz"
     )
@@ -243,8 +251,8 @@ def nexradlevel2_msg1_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_gzfile(tmp_path_factory):
-    fnamei = DATASETS.fetch("KLBB20160601_150025_V06.gz")
+def nexradlevel2_gzfile(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("KLBB20160601_150025_V06.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}_gz"
     )
@@ -258,23 +266,13 @@ def nexradlevel2_gzfile(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_bzfile():
-    return DATASETS.fetch("KLBB20160601_150025_V06")
+def nexradlevel2_bzfile(file_store):
+    return file_store.fetch("KLBB20160601_150025_V06")
 
 
 @pytest.fixture(scope="session")
-def nexradlevel2_files(request):
-    return request.getfixturevalue(request.param)
-
-
-@pytest.fixture(scope="session")
-def uf_files(request):
-    return request.getfixturevalue(request.param)
-
-
-@pytest.fixture(scope="session")
-def metek_ave_gz_file(tmp_path_factory):
-    fnamei = DATASETS.fetch("0308.ave.gz")
+def metek_ave_gz_file(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("0308.ave.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
@@ -288,8 +286,8 @@ def metek_ave_gz_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def metek_pro_gz_file(tmp_path_factory):
-    fnamei = DATASETS.fetch("0308.pro.gz")
+def metek_pro_gz_file(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("0308.pro.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
@@ -303,8 +301,8 @@ def metek_pro_gz_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def metek_raw_gz_file(tmp_path_factory):
-    fnamei = DATASETS.fetch("0308.raw.gz")
+def metek_raw_gz_file(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("0308.raw.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
@@ -318,8 +316,8 @@ def metek_raw_gz_file(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def uf_file_1(tmp_path_factory):
-    fnamei = DATASETS.fetch("20110427_164233_rvp8-rel_v001_SUR.uf.gz")
+def uf_file_1(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("20110427_164233_rvp8-rel_v001_SUR.uf.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
@@ -333,8 +331,8 @@ def uf_file_1(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def uf_file_2(tmp_path_factory):
-    fnamei = DATASETS.fetch("CHL19950617_182848.uf.gz")
+def uf_file_2(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("CHL19950617_182848.uf.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
@@ -348,8 +346,8 @@ def uf_file_2(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def uf_file_3(tmp_path_factory):
-    fnamei = DATASETS.fetch("MC3E_NPOL_2011_0524_2356_hid.uf.gz")
+def uf_file_3(file_store, tmp_path_factory):
+    fnamei = file_store.fetch("MC3E_NPOL_2011_0524_2356_hid.uf.gz")
     fnameo = os.path.join(
         tmp_path_factory.mktemp("data"), f"{os.path.basename(fnamei)[:-3]}"
     )
@@ -363,19 +361,24 @@ def uf_file_3(tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def hpl_file():
-    return DATASETS.fetch("User1_100_20240714_122137.hpl")
+def hpl_file1(file_store):
+    return file_store.fetch("User1_100_20240714_122137.hpl")
 
 
 @pytest.fixture(scope="session")
-def imd_file():
-    return DATASETS.fetch("IMD/JPR220822135253-IMD-B.nc")
+def hpl_file2(file_store):
+    return file_store.fetch("User1_184_20240601_013257.hpl")
 
 
 @pytest.fixture(scope="session")
-def imd_volume_files():
+def imd_file(file_store):
+    return file_store.fetch("IMD/JPR220822135253-IMD-B.nc")
+
+
+@pytest.fixture(scope="session")
+def imd_volume_files(file_store):
     return [
-        DATASETS.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
+        file_store.fetch(f"IMD/JPR220822135253-IMD-B.nc{s}")
         for s in ["", ".1", ".2", ".3", ".4", ".5", ".6", ".7", ".8", ".9"]
     ]
 
@@ -393,3 +396,54 @@ def make_temp_file(tmp_path):
         return tmp_path / f"testfile_{rnd}"
 
     return _make_file
+
+
+FILE_FIXTURES = {
+    "file_store",
+    "engine_and_file",
+    "file_fixture",
+}
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        fixture_names = getattr(item, "fixturenames", ())
+        if FILE_FIXTURES.intersection(fixture_names):
+            item.add_marker(pytest.mark.file)
+
+
+@pytest.fixture(autouse=True)
+def check_for_missing_file_marker(request, monkeypatch):
+    """
+    Hooks into every test and intercepts PDATASETS.fetch calls.
+    If the test is not marked as 'file', it fails immediately.
+
+    We can run pytest -m "file" and pytest -m "not file" to run
+    our file based tests and our general unittests in different runs.
+    """
+    # keep reference to original fetch method
+    original_fetch = DATASETS.fetch
+
+    # cache marker check
+    has_marker = request.node.get_closest_marker("file") is not None
+
+    def guarded_fetch(*args, **kwargs):
+        # check if the currently running test has the 'file' marker
+        if not has_marker:
+            # determine which fixtures this test actually uses
+            current_fixtures = getattr(request.node, "fixturenames", ())
+
+            pytest.fail(
+                f"\nMISSING MARKER DETECTED!\n"
+                f"The test '{request.node.name}' loaded data from open-radar-data, "
+                f"but does not have the '@pytest.mark.file' marker.\n\n"
+                f"Possible causes:\n"
+                f"1. One of these active fixtures calls DATASETS.fetch but is missing from FILE_FIXTURES: {list(current_fixtures)}\n"
+                f"2. The test calls DATASETS.fetch directly inside the test body and was not manually marked."
+            )
+
+        # if the marker is present, proceed normally
+        return original_fetch(*args, **kwargs)
+
+    # override the method for the duration of the current test
+    monkeypatch.setattr(DATASETS, "fetch", guarded_fetch)

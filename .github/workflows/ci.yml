@@ -21,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13.17"
+          python-version: "3.13.18"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade "pip>=26.2.2" "certifi>=2026.10.19"
@@ -72,14 +72,28 @@ jobs:
     - name: Version Info
       run: |
         python -c "import xradar, xarray; print(xradar.version.version, xarray.__version__)"
-    - name: Test with pytest
+    - name: Test with pytest file
       run: |
-        pytest -n auto --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
-    - name: Upload coverage to Codecov
+        pytest -n auto -m file --dist loadfile --verbose --durations=15 --cov-report xml:coverage_file.xml --cov=xradar --pyargs tests
+    - name: Test with pytest unit
+      run: |
+        pytest -n auto -m "not file" --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit.xml --cov=xradar --pyargs tests
+    - name: Upload coverage to Codecov - unit
       uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         files: ./coverage_unit.xml
+        disable_search: true
         flags: unittests
+        env_vars: RUNNER_OS,PYTHON_VERSION
+        name: codecov-gha
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN}}
+    - name: Upload coverage to Codecov - file
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      with:
+        files: ./coverage_file.xml
+        disable_search: true
+        flags: filetests
         env_vars: RUNNER_OS,PYTHON_VERSION
         name: codecov-gha
         fail_ci_if_error: false
@@ -218,7 +232,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13.17"
+          python-version: "3.13.18"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade "pip>=26.2.2" "certifi>=2026.10.19"
@@ -256,7 +270,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13.17"
+          python-version: "3.13.18"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade "pip>=26.2.2" "certifi>=2026.10.19"

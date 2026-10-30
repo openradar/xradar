@@ -9,7 +9,6 @@ import warnings
 import numpy as np
 import pytest
 import xarray as xr
-from open_radar_data import DATASETS
 
 import xradar as xd
 from xradar import io, model, util
@@ -45,20 +44,18 @@ def test_get_second_angle(sweep):
     assert util.get_second_angle(ds) == sweep[2]
 
 
-def test_remove_duplicate_rays(closing):
-    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+def test_remove_duplicate_rays(gamic_file, closing):
     ds = closing(
-        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+        xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
     )
     ds_out = util.remove_duplicate_rays(ds)
     assert ds.sizes["azimuth"] == 361
     assert ds_out.sizes["azimuth"] == 360
 
 
-def test_reindex_angle(closing):
-    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+def test_reindex_angle(gamic_file, closing):
     ds = closing(
-        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+        xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
     )
     ds_out = util.remove_duplicate_rays(ds)
     ds_out = util.reindex_angle(
@@ -124,10 +121,9 @@ def test_reindex_range_defaults_and_fill(dtype):
     assert np.isnan(out.DBZH.values[:, 6:]).all()
 
 
-def test_extract_angle_parameters(closing):
-    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+def test_extract_angle_parameters(gamic_file, closing):
     ds = closing(
-        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+        xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
     )
     angle_dict = util.extract_angle_parameters(ds)
     expected_dict = {
@@ -253,10 +249,9 @@ def test_extract_angle_parameters2(low, high):
         assert angle_dict[k] == expected_dict[k]
 
 
-def test_ipol_time(closing):
-    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+def test_ipol_time(gamic_file, closing):
     ds = closing(
-        xr.open_dataset(filename, group="sweep_7", engine="gamic", first_dim="auto")
+        xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
     )
 
     # remove block of rays (100-150)
@@ -523,9 +518,9 @@ def test_map_over_sweeps_decorator_dummy_function(cfradial1_sgp_file, closing):
     assert np.all(np.isclose(non_nan_values, 0))
 
 
-def test_get_required_root_dataset():
+def test_get_required_root_dataset(file_store):
 
-    filename = DATASETS.fetch("cor-main131125105503.RAW2049")
+    filename = file_store.fetch("cor-main131125105503.RAW2049")
     sweeps = [f"sweep_{i}" for i in range(10)]
     ls_ds = [xr.open_dataset(filename, engine="iris", group=sweep) for sweep in sweeps]
     root = _get_required_root_dataset(ls_ds, optional=True)
@@ -553,8 +548,8 @@ def test_get_required_root_dataset():
     assert root.attrs["comment"] == "AEROCIVIL OPERATIONAL DUAL POLE SCAN"
 
 
-def test_get_radar_calibration(closing):
-    filename = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
+def test_get_radar_calibration(file_store, closing):
+    filename = file_store.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
     sweeps = [f"sweep_{i}" for i in range(10)]
     ls_ds = [
         closing(xr.open_dataset(filename, engine="gamic", group=sweep))

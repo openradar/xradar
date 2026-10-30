@@ -2,6 +2,7 @@
 
 ## Development (unreleased)
 
+* CI: Updating python as additional security features were added for SSL (:pull:`566`) by [@zssherman](https://github.com/zssherman)
 * CI: Update python to safe version 3.13.17 (:pull:`547`) by [@zssherman](https://github.com/zssherman)
 * CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)
 * FIX: moment CF attributes ``standard_name``, ``long_name`` and ``units`` stay in that order instead of following the process hash seed ({issue}`528`, {pull}`531`) by [@Cherith1222](https://github.com/Cherith1222)
@@ -25,6 +26,7 @@
 * FIX: the CfRadial1 reader gave each sweep the rays of another sweep when the sweeps of the file were not in time order (e.g. written by ``to_cfradial1`` from ``sweep=[5, 0]``); the sweeps are sliced in file order and sorted by time within each sweep ({issue}`550`, {pull}`551`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: ``.xradar.reindex_angle`` and ``.xradar.reindex_range`` for Dataset (a sweep) and DataTree (every sweep), the same arguments as ``xradar.util.reindex_angle`` and ``reindex_range`` ({issue}`539`, {pull}`544`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: NEXRAD Level 2 reader exposes ``nyquist_velocity`` and ``unambiguous_range`` per sweep (MSG_31 radial data block / MSG_1 header) and masks the special moment codes below threshold (``0``) and range folded (``1``) to ``NaN`` via ``_FillValue`` when ``mask_and_scale=True``; raw codes stay available with ``mask_and_scale=False`` ({pull}`457`) by [@syedhamidali](https://github.com/syedhamidali)
+* TST: Mark open-radar-data tests during collection, detect missing markers at runtime, and split CI into ``filetests`` and ``unittests`` runs with separate coverage reports ({issue}`156`, {pull}`567`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 
 ## 0.13.0 (2026-10-21)
 

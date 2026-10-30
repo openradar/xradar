@@ -478,7 +478,7 @@ def _assert_same_tree(first, second):
 
 
 @pytest.mark.parametrize(
-    "engine, fixture",
+    "engine, file_fixture",
     [
         ("cfradial1", "cfradial1_file"),
         ("odim", "odim_file"),
@@ -486,11 +486,13 @@ def _assert_same_tree(first, second):
         ("uf", "uf_file_1"),
     ],
 )
-def test_cfradial2_repeated_roundtrip_is_stable(engine, fixture, request, tmp_path):
+def test_cfradial2_repeated_roundtrip_is_stable(
+    engine, file_fixture, request, tmp_path
+):
     # read -> write -> read must not change the datasets, however often it is
     # repeated; this includes data read back from a CfRadial2 file, which
     # keeps CF settings in the encoding (attributes and encoding must not clash)
-    filename = request.getfixturevalue(fixture)
+    filename = request.getfixturevalue(file_fixture)
     trees = []
     with xd.open_datatree(filename, engine=engine) as source:
         current = source
