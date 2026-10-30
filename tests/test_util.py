@@ -151,6 +151,46 @@ def test_extract_angle_parameters(gamic_file, closing):
     assert angle_dict == expected_dict
 
 
+def _partial_sweep(azimuth, mode):
+    ds = model.create_sweep_dataset(a1gate=0, direction=1, azimuth=azimuth)
+    return ds.swap_dims({"time": "azimuth"}).assign_coords(sweep_mode=mode)
+
+
+@pytest.mark.parametrize("mode", ["sector", "manual_ppi", "manual_rhi"])
+@pytest.mark.parametrize(
+    "first, last, start, stop",
+    [
+        pytest.param(30.5, 119.5, 30, 120, id="even"),
+        pytest.param(31.5, 120.5, 31, 121, id="odd"),
+    ],
+)
+def test_extract_angle_parameters_partial_scan(mode, first, last, start, stop):
+    # both edge rays stay inside the start and stop angle (#573)
+    ds = _partial_sweep(np.arange(first, last + 1, 1.0), mode)
+
+    angle_dict = util.extract_angle_parameters(ds)
+
+    assert angle_dict["start_angle"] == start
+    assert angle_dict["stop_angle"] == stop
+    assert angle_dict["expected_angle_span"] == 90
+    assert angle_dict["expected_number_rays"] == 90
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+
+def test_extract_angle_parameters_sector_across_north():
+    azimuth = np.concatenate([np.arange(0.5, 30.0), np.arange(330.5, 360.0)])
+    with pytest.raises(ValueError, match="across north"):
+        util.extract_angle_parameters(_partial_sweep(azimuth, "sector"))
+
+
+@pytest.mark.parametrize("mode", ["vertical_pointing", "pointing", "unknown"])
+def test_extract_angle_parameters_unsupported_mode(mode):
+    azimuth = np.arange(30.5, 120.0, 1.0)
+    with pytest.raises(ValueError, match=f"sweep_mode '{mode}'"):
+        util.extract_angle_parameters(_partial_sweep(azimuth, mode))
+
+
 @pytest.mark.parametrize("low", [-0.25, -0.1, 0])
 @pytest.mark.parametrize("high", [0.25, 0.1, 0])
 def test_extract_angle_parameters2(low, high):
