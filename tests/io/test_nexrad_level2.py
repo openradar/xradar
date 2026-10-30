@@ -25,27 +25,33 @@ from xradar.io.backends.nexrad_level2 import (
 
 
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_open_nexrad_level2_backend(nexradlevel2_files):
-    with NEXRADLevel2File(nexradlevel2_files, loaddata=False) as nex:
+@pytest.mark.file
+def test_open_nexrad_level2_backend(file_fixture, request):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    with NEXRADLevel2File(nexradlevel2_file, loaddata=False) as nex:
         nsweeps = nex.msg_5["number_elevation_cuts"]
 
     sweeps = [f"sweep_{i}" for i in range(nsweeps)]
     assert nsweeps == 11
     for i, group in enumerate(sweeps):
         with xarray.open_dataset(
-            nexradlevel2_files, engine=NexradLevel2BackendEntrypoint, group=group
+            nexradlevel2_file, engine=NexradLevel2BackendEntrypoint, group=group
         ) as ds:
             assert ds.attrs["instrument_name"] == "KLBB"
             assert int(ds.sweep_number.values) == i
 
 
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_open_nexradlevel2_file(nexradlevel2_files):
-    with NEXRADLevel2File(nexradlevel2_files) as fh:
+@pytest.mark.file
+def test_open_nexradlevel2_file(file_fixture, request):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    with NEXRADLevel2File(nexradlevel2_file) as fh:
 
         # volume header
         assert fh.volume_header["tape"] == b"AR2V0006."
@@ -958,15 +964,21 @@ def test_nexradlevel2_mask_and_scale_mapping(nexradlevel2_file):
     assert ds.DBZH.isnull().any()
 
 
-def test_nexradlevel2_mask_cfp_flags(closing):
+def test_nexradlevel2_mask_cfp_flags(nexradlevel2_ldm_stride_file, closing):
     """CFP codes 0-7 are flags, not clutter power (ICD Table XVII-I, note 30)."""
-    fname = DATASETS.fetch("KILX20230629_154426_V06")
     raw = closing(
         open_dataset(
-            fname, engine="nexradlevel2", group="sweep_0", mask_and_scale=False
+            nexradlevel2_ldm_stride_file,
+            engine="nexradlevel2",
+            group="sweep_0",
+            mask_and_scale=False,
         )
     )
-    ds = closing(open_dataset(fname, engine="nexradlevel2", group="sweep_0"))
+    ds = closing(
+        open_dataset(
+            nexradlevel2_ldm_stride_file, engine="nexradlevel2", group="sweep_0"
+        )
+    )
     assert (raw.CCORH == 2).any()
     np.testing.assert_array_equal(ds.CCORH.isnull().values, (raw.CCORH < 8).values)
     assert float(ds.CCORH.min()) >= 0.0

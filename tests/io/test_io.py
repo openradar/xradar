@@ -9,7 +9,6 @@ import h5py
 import numpy as np
 import pytest
 import xarray as xr
-from open_radar_data import DATASETS
 
 import xradar.io
 from tests import skip_import
@@ -819,8 +818,8 @@ def test_write_odim_source_from_attrs(odim_file, odim_file2, make_temp_file, clo
         xradar.io.to_odim(dtree, make_temp_file())
 
 
-def test_write_odim_source_all_identifiers(make_temp_file, closing):
-    dtree = closing(open_odim_datatree(DATASETS.fetch("202506090955_fianj_PVOL.h5")))
+def test_write_odim_source_all_identifiers(odim_file4, make_temp_file, closing):
+    dtree = closing(open_odim_datatree(odim_file4))
     temp_file = make_temp_file()
     xradar.io.to_odim(dtree, temp_file)
     with h5py.File(temp_file) as f:
@@ -1091,10 +1090,12 @@ def test_cfradial_n_points_file(cfradial1n_file, closing):
 
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_open_nexradlevel2_datatree_sweep(nexradlevel2_files, sweep):
-    dtree = open_nexradlevel2_datatree(nexradlevel2_files, sweep=sweep)
+def test_open_nexradlevel2_datatree_sweep(file_fixture, request, sweep):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=sweep)
     if isinstance(sweep, (str, int)):
         lswp = len([sweep])
     else:
@@ -1103,10 +1104,13 @@ def test_open_nexradlevel2_datatree_sweep(nexradlevel2_files, sweep):
 
 
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_open_nexradlevel2_datatree(nexradlevel2_files):
-    dtree = open_nexradlevel2_datatree(nexradlevel2_files)
+@pytest.mark.file
+def test_open_nexradlevel2_datatree(file_fixture, request):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file)
     # root_attrs
     attrs = dtree.attrs
     assert attrs["Conventions"] == "None"
@@ -1201,10 +1205,13 @@ def test_open_nexradlevel2_datatree(nexradlevel2_files):
 
 @skip_import("dask")
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_nexradlevel2_dask_load(nexradlevel2_files):
-    ds = xr.open_dataset(nexradlevel2_files, group="sweep_0", engine="nexradlevel2")
+@pytest.mark.file
+def test_nexradlevel2_dask_load(file_fixture, request):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    ds = xr.open_dataset(nexradlevel2_file, group="sweep_0", engine="nexradlevel2")
     dsc = ds.chunk()
     dsc.load()
 
@@ -1218,10 +1225,12 @@ def test_iris_dask_load(iris0_file):
 
 @pytest.mark.parametrize("sweep", ["sweep_0", 0, [0, 1], ["sweep_0", "sweep_1"]])
 @pytest.mark.parametrize(
-    "uf_files", ["uf_file_1", "uf_file_2", "uf_file_3"], indirect=True
+    "file_fixture",
+    ["uf_file_1", "uf_file_2", "uf_file_3"],
 )
-def test_open_uf_datatree_sweep(uf_files, sweep):
-    dtree = open_uf_datatree(uf_files, sweep=sweep)
+def test_open_uf_datatree_sweep(file_fixture, request, sweep):
+    uf_file = request.getfixturevalue(file_fixture)
+    dtree = open_uf_datatree(uf_file, sweep=sweep)
     if isinstance(sweep, (str, int)):
         lswp = len([sweep])
     else:
@@ -1337,10 +1346,13 @@ def test_open_uf_datatree(uf_file_1):
 
 @skip_import("dask")
 @pytest.mark.parametrize(
-    "uf_files", ["uf_file_1", "uf_file_2", "uf_file_3"], indirect=True
+    "file_fixture",
+    ["uf_file_1", "uf_file_2", "uf_file_3"],
 )
-def test_uf_dask_load(uf_files):
-    ds = xr.open_dataset(uf_files, group="sweep_0", engine="uf", chunks={})
+@pytest.mark.file
+def test_uf_dask_load(file_fixture, request):
+    uf_file = request.getfixturevalue(file_fixture)
+    ds = xr.open_dataset(uf_file, group="sweep_0", engine="uf", chunks={})
     ds.load()
 
 
@@ -1384,16 +1396,16 @@ class TestStationCoordsOnRoot:
 
 
 @pytest.mark.parametrize(
-    "fixture, opener",
+    "file_fixture, opener",
     [
         ("odim_file", "open_odim_datatree"),
         ("rainbow_file", "open_rainbow_datatree"),
-        ("hpl_file", "open_hpl_datatree"),
+        ("hpl_file1", "open_hpl_datatree"),
     ],
 )
-def test_sweep_list_matches_sweep_int(request, fixture, opener, closing):
+def test_sweep_list_matches_sweep_int(request, file_fixture, opener, closing):
     # sweep=[0] must select the same sweep as sweep=0 and "sweep_0" (#412)
-    filename = request.getfixturevalue(fixture)
+    filename = request.getfixturevalue(file_fixture)
     open_datatree = getattr(xradar.io, opener)
     expected = closing(open_datatree(filename, sweep=0))["sweep_0"].dataset
     for sweep in ([0], ["sweep_0"]):

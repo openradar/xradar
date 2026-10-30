@@ -297,7 +297,7 @@ def test_rainbow_pathlib(rainbow_file):
 
 
 @pytest.mark.parametrize(
-    "fixture, sweep, expected",
+    "file_fixture, sweep, expected",
     [
         # Rainbow 5.36: beam width from sensorinfo, radar constants per pulse
         # width ("77.20 74.09 71.03" with pw_index 1), nothing else
@@ -347,8 +347,8 @@ def test_rainbow_pathlib(rainbow_file):
     ],
     ids=["5.36", "5.59-slice0", "5.59-slice6"],
 )
-def test_rainbow_slice_metadata(fixture, sweep, expected, request, closing):
-    filename = request.getfixturevalue(fixture)
+def test_rainbow_slice_metadata(file_fixture, sweep, expected, request, closing):
+    filename = request.getfixturevalue(file_fixture)
     dtree = closing(
         xd.open_datatree(filename, engine="rainbow", sweep=sweep, optional_groups=True)
     )

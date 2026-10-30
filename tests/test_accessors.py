@@ -5,7 +5,6 @@
 import numpy as np
 import xarray as xr
 from numpy.testing import assert_almost_equal, assert_raises
-from open_radar_data import DATASETS
 
 import xradar as xd
 
@@ -205,10 +204,9 @@ def test_map_over_sweeps_invalid_input():
         tree.xradar.map_over_sweeps(invalid_rain_rate, ref_field="INVALID_FIELD")
 
 
-def test_accessor_to_cfradial1(closing):
+def test_accessor_to_cfradial1(cfradial1_file, closing):
     """Test the accessor function to convert DataTree to CfRadial1 Dataset."""
-    file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = closing(xd.io.open_cfradial1_datatree(file))
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_file))
 
     # Use accessor method to convert to CfRadial1
     ds_cf1 = dtree.xradar.to_cfradial1_dataset()
@@ -227,10 +225,9 @@ def test_accessor_to_cfradial1(closing):
     ), "Missing sweep_mode in CfRadial1 dataset"
 
 
-def test_accessor_to_cfradial2(closing):
+def test_accessor_to_cfradial2(cfradial1_file, closing):
     """Test the accessor function to convert CfRadial1 Dataset back to DataTree."""
-    file = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = closing(xd.io.open_cfradial1_datatree(file, optional_groups=True))
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_file, optional_groups=True))
 
     # Convert to CfRadial1 dataset
     ds_cf1 = dtree.xradar.to_cfradial1_dataset()
@@ -334,13 +331,12 @@ def test_accessor_reindex_datatree():
     )
 
 
-def test_accessor_reindex_angle_as_reindex_coord():
+def test_accessor_reindex_angle_as_reindex_coord(gamic_file):
     # duplicate rays (sweep_4, sweep_7) and the same result as reading with
     # reindex_coord
-    fname = DATASETS.fetch("DWD-Vol-2_99999_20180601054047_00.h5")
     angle = dict(start_angle=0, stop_angle=360, angle_res=1.0, direction=1)
-    out = xd.open_datatree(fname, engine="gamic").xradar.reindex_angle(**angle)
-    read = xd.open_datatree(fname, engine="gamic", reindex_coord={"angle": angle})
+    out = xd.open_datatree(gamic_file, engine="gamic").xradar.reindex_angle(**angle)
+    read = xd.open_datatree(gamic_file, engine="gamic", reindex_coord={"angle": angle})
     for name in ("sweep_0", "sweep_4", "sweep_7"):
         xr.testing.assert_identical(
             out[name].to_dataset(), read[name].to_dataset(inherit="all_coords")
