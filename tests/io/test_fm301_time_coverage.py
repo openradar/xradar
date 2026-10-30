@@ -62,6 +62,7 @@ pytestmark = pytest.mark.xfail(
 
 # Return the root dataset and close its owning DataTree after each test.
 @pytest.fixture(params=ENGINES)
+@pytest.mark.file
 def root_ds(request):
     engine, fixture_name = request.param
     filepath = request.getfixturevalue(fixture_name)
