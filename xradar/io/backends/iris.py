@@ -183,6 +183,7 @@ def _azimuth_centers(start, stop):
 
     Works for either rotation direction (sector sweeps alternate): a ray
     across north is unwrapped the shorter way round.
+    A ray exactly 180 degrees wide is ambiguous and is not unwrapped.
 
     Parameters
     ----------
@@ -3867,6 +3868,7 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
 
             if self.rawdata:
                 # raw BIN2 counts, not degrees: keep the previous arithmetic
+                # (counter-clockwise rays are not handled)
                 zero_index = np.where(azi_start - azi_stop > 5)
                 azi_stop2 = azi_stop.copy()
                 azi_stop2[zero_index[0]] += 360
