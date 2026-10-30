@@ -4268,7 +4268,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         attributes["source"] = "Sigmet"
         attributes["scan_name"] = self.root.product_hdr["product_configuration"][
             "task_name"
-        ]
+        ].strip()
         attributes["instrument_name"] = self.root.ingest_header["ingest_configuration"][
             "site_name"
         ].strip()
