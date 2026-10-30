@@ -400,15 +400,14 @@ _TASK_METADATA = [
 
 @pytest.mark.parametrize("kind", ["path", "bytesio"])
 @pytest.mark.parametrize(
-    "fixture, beam, bandwidth, constant, noise, pulse_width",
+    "file_fixture, beam, bandwidth, constant, noise, pulse_width",
     _TASK_METADATA,
     ids=["cor-main", "SUR", "arouca", "RAW_NA"],
 )
-@pytest.mark.file
 def test_iris_task_metadata(
-    fixture, beam, bandwidth, constant, noise, pulse_width, kind, request, closing
+    file_fixture, beam, bandwidth, constant, noise, pulse_width, kind, request, closing
 ):
-    filename = request.getfixturevalue(fixture)
+    filename = request.getfixturevalue(file_fixture)
     if kind == "bytesio":
         with open(filename, "rb") as fh:
             filename = io.BytesIO(fh.read())
@@ -565,10 +564,10 @@ def test_first_loaded_moment_aligned_with_others(iris0_file):
         ), f"DBZH is row-rotated relative to {moment}"
 
 
-@pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
-def test_range_attrs_match_range(fixture, request):
+@pytest.mark.parametrize("file_fixture", ["iris0_file", "iris1_file"])
+def test_range_attrs_match_range(file_fixture, request):
     # the header range fields are in cm, the attrs are in m (#525)
-    path = request.getfixturevalue(fixture)
+    path = request.getfixturevalue(file_fixture)
     with xd.open_datatree(path, engine="iris") as dtree:
         rng = dtree["sweep_0"].dataset["range"]
         # also what the CfRadial1 export writes
@@ -1067,13 +1066,12 @@ def test_sqi2_format_scale(name):
 
 
 @pytest.mark.filterwarnings("error::RuntimeWarning")  # RHOHV no-data before sqrt
-@pytest.mark.parametrize("fixture", ["iris0_file", "iris1_file"])
-@pytest.mark.file
-def test_no_data_bins_are_nan(fixture, request):
+@pytest.mark.parametrize("file_fixture", ["iris0_file", "iris1_file"])
+def test_no_data_bins_are_nan(file_fixture, request):
     """The decoded NaNs are exactly the no-data words (#465): in the table
     decoders and in ``IrisRawFile`` (masked arrays with NaN under the mask,
     #467), and as counts in the Dataset (rays reordered)."""
-    path = request.getfixturevalue(fixture)
+    path = request.getfixturevalue(file_fixture)
     raw = iris.IrisRawFile(path, loaddata=False, rawdata=True)
     decoded = iris.IrisRawFile(path, loaddata=False)
     sweep = 1  # IRIS numbers sweeps from 1: the file's first sweep is sweep_0

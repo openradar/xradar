@@ -759,7 +759,7 @@ def test_furuno_scnx_calibration_is_exported(furuno_scnx_file, tmp_path, closing
 
 
 @pytest.mark.parametrize(
-    "fixture, widths",
+    "file_fixture, widths",
     [
         # SCNX: half-power beam widths in 1/100 degree (275 and 276)
         ("furuno_scnx_file", (2.75, 2.76)),
@@ -768,9 +768,8 @@ def test_furuno_scnx_calibration_is_exported(furuno_scnx_file, tmp_path, closing
     ],
 )
 @pytest.mark.parametrize("as_path", [False, True], ids=["str", "path"])
-@pytest.mark.file
-def test_open_furuno_datatree_radar_parameters(fixture, widths, as_path, request):
-    filename = request.getfixturevalue(fixture)
+def test_open_furuno_datatree_radar_parameters(file_fixture, widths, as_path, request):
+    filename = request.getfixturevalue(file_fixture)
     if as_path:
         filename = Path(filename)
     with xd.open_datatree(filename, engine="furuno", optional_groups=True) as dtree:

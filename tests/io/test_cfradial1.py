@@ -6,7 +6,6 @@
 import numpy as np
 import pytest
 import xarray as xr
-from open_radar_data import DATASETS
 
 import xradar as xd
 from xradar.io.export import cfradial1 as cf1_export
@@ -31,13 +30,10 @@ def test_cfradial1_dataset_has_close(cfradial1_file):
     ds.close()
 
 
-def test_compare_sweeps(temp_file, closing):
-    # Fetch the radar data file
-    filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-
+def test_compare_sweeps(cfradial1_file, temp_file, closing):
     # Open the data tree
     # todo: implement a roundtrip function
-    dtree = closing(xd.io.open_cfradial1_datatree(filename))
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_file))
     # Save the modified data tree to the temporary file
     xd.io.to_cfradial1(dtree.copy(), temp_file, calibs=True)
 
@@ -148,9 +144,8 @@ def test_cfradial1_export_helper_empty_sweep_info_and_time_fallback():
     assert mapped["DBZ"].dims == ("time", "range")
 
 
-def test_cfradial1_export_auto_filename(tmp_path, monkeypatch, closing):
-    filename = DATASETS.fetch("cfrad.20080604_002217_000_SPOL_v36_SUR.nc")
-    dtree = closing(xd.io.open_cfradial1_datatree(filename))
+def test_cfradial1_export_auto_filename(cfradial1_file, tmp_path, monkeypatch, closing):
+    dtree = closing(xd.io.open_cfradial1_datatree(cfradial1_file))
 
     # filename=None derives the name from instrument_name + first timestamp
     monkeypatch.chdir(tmp_path)
@@ -447,15 +442,14 @@ def test_cfradial1_export_drops_sweep_group_name(hpl_file1, tmp_path):
 
 
 @pytest.mark.parametrize(
-    "engine, fixture", [("cfradial1", "cfradial1_file"), ("odim", "odim_file")]
+    "engine, file_fixture", [("cfradial1", "cfradial1_file"), ("odim", "odim_file")]
 )
-@pytest.mark.file
 def test_cfradial1_export_repeated_with_optional_groups(
-    engine, fixture, request, tmp_path
+    engine, file_fixture, request, tmp_path
 ):
     # data read with optional_groups=True from a file written by xradar can be
     # exported again, and the groups survive any number of round trips
-    filename = request.getfixturevalue(fixture)
+    filename = request.getfixturevalue(file_fixture)
     groups = ("radar_parameters", "radar_calibration", "georeferencing_correction")
     with xd.open_datatree(filename, engine=engine, optional_groups=True) as source:
         current = source
@@ -582,13 +576,13 @@ def test_cfradial1_export_metadata_group_names(cfradial1_file, tmp_path):
         assert "radar_altitude_correction" in back["georeferencing_correction"].dataset
 
 
-def test_cfradial1_unknown_calibration_names(tmp_path):
+def test_cfradial1_unknown_calibration_names(file_store, tmp_path):
     # variables on the r_calib dimension with non-standard names must not
     # break reading the radar_calibration group and keep their names on
     # export (#419)
     import netCDF4
 
-    filename = DATASETS.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
+    filename = file_store.fetch("20220628072500_savevol_COSMO_LOOKUP_TEMP.nc")
     path = tmp_path / "unknown_calibration.nc"
     with xd.io.open_cfradial1_datatree(filename, optional_groups=True) as dtree:
         assert "calibration_constant_hh" in dtree["radar_calibration"].dataset

@@ -25,7 +25,7 @@ def test_uf_datatree_from_file_like(uf_file_1):
 
 
 @pytest.mark.parametrize(
-    "engine,fixture_name",
+    "engine,file_fixture",
     [
         ("datamet", "datamet_file"),
         ("furuno", "furuno_scn_file"),
@@ -33,9 +33,8 @@ def test_uf_datatree_from_file_like(uf_file_1):
         ("metek", "metek_ave_gz_file"),
     ],
 )
-@pytest.mark.file
-def test_open_dataset_accepts_pathlike(engine, fixture_name, request):
-    filename = request.getfixturevalue(fixture_name)
+def test_open_dataset_accepts_pathlike(engine, file_fixture, request):
+    filename = request.getfixturevalue(file_fixture)
     kwargs = dict(engine=engine, group="sweep_0")
     with (
         xr.open_dataset(str(filename), **kwargs) as expected,

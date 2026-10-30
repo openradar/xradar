@@ -269,12 +269,11 @@ def test_odim_dataset_has_close(odim_file):
 
 
 @pytest.mark.parametrize(
-    "fixture_name",
+    "file_fixture",
     ["odim_file", "odim_file2", "odim_file3", "odim_file4", "odim_file5"],
 )
-@pytest.mark.file
-def test_odim_source_global_attributes(request, fixture_name):
-    filename = request.getfixturevalue(fixture_name)
+def test_odim_source_global_attributes(request, file_fixture):
+    filename = request.getfixturevalue(file_fixture)
     print(f"Testing file: {filename}")
 
     # Build expected global attrs from raw /what/source.
@@ -356,7 +355,7 @@ def test_open_odim_datatree_optional_groups(odim_file, closing):
 
 
 @pytest.mark.parametrize(
-    "fixture, expected",
+    "file_fixture, expected",
     [
         # ODIM_H5 2.2: beamwH/beamwV in /how
         ("odim_file", (0.896, 0.896)),
@@ -364,9 +363,8 @@ def test_open_odim_datatree_optional_groups(odim_file, closing):
         ("odim_file2", (0.95, 0.95)),
     ],
 )
-@pytest.mark.file
-def test_odim_how_beam_width(fixture, expected, request):
-    filename = request.getfixturevalue(fixture)
+def test_odim_how_beam_width(file_fixture, expected, request):
+    filename = request.getfixturevalue(file_fixture)
     with xd.open_datatree(filename, engine="odim", optional_groups=True) as dtree:
         params = dtree["radar_parameters"].dataset
         np.testing.assert_allclose(params.radar_beam_width_h, expected[0])

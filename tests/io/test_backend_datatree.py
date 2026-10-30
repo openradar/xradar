@@ -272,13 +272,12 @@ def test_hpl_angle_reindex(hpl_file1, first_dim, dim0, closing):
 
 
 @pytest.mark.parametrize(
-    "engine,fixture_name",
+    "engine,file_fixture",
     [("furuno", "furuno_scn_file"), ("metek", "metek_ave_gz_file")],
 )
 @pytest.mark.parametrize("sweep", [1, "sweep_2", [0, 1]])
-@pytest.mark.file
-def test_single_sweep_engines_reject_other_sweeps(engine, fixture_name, sweep, request):
-    filepath = request.getfixturevalue(fixture_name)
+def test_single_sweep_engines_reject_other_sweeps(engine, file_fixture, sweep, request):
+    filepath = request.getfixturevalue(file_fixture)
     with pytest.raises(ValueError, match="single sweep"):
         xd.open_datatree(filepath, engine=engine, sweep=sweep)
 
@@ -602,7 +601,7 @@ class TestEngineRegistry:
 
 # -- Backward compatibility & deprecation tests ------------------------------
 
-# Map of deprecated function names to (import_path, engine, fixture_name)
+# Map of deprecated function names to (import_path, engine, file_fixture)
 _DEPRECATED_FUNCTIONS = {
     "open_odim_datatree": ("xradar.io.backends.odim", "odim_file", {}),
     "open_gamic_datatree": ("xradar.io.backends.gamic", "gamic_file", {}),
@@ -732,7 +731,7 @@ def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
 
 
 @pytest.mark.parametrize(
-    "func,engine,fixture_name,key",
+    "func,engine,file_fixture,key",
     [
         (xd.io.open_odim_datatree, "odim", "odim_file", "optional"),
         # capital-O ``Optional`` is the old GAMIC spelling, accepted everywhere
@@ -740,11 +739,10 @@ def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
     ],
     ids=["optional", "Optional"],
 )
-@pytest.mark.file
 def test_legacy_backend_kwargs_optional(
-    func, engine, fixture_name, key, request, closing
+    func, engine, file_fixture, key, request, closing
 ):
-    filename = request.getfixturevalue(fixture_name)
+    filename = request.getfixturevalue(file_fixture)
     legacy = closing(_call_legacy(func, filename, sweep=0, backend_kwargs={key: False}))
     expected = closing(
         xd.open_datatree(filename, engine=engine, sweep=0, optional=False)
@@ -1027,13 +1025,12 @@ _SWEEP_FILES = [
 
 
 @pytest.mark.parametrize(
-    ("engine", "fixture"), _SWEEP_FILES, ids=[engine for engine, _ in _SWEEP_FILES]
+    ("engine", "file_fixture"), _SWEEP_FILES, ids=[engine for engine, _ in _SWEEP_FILES]
 )
-@pytest.mark.file
-def test_sweeps_are_fm301_sweeps(engine, fixture, request, closing):
+def test_sweeps_are_fm301_sweeps(engine, file_fixture, request, closing):
     # every reader returns sweeps which `is_sweep` accepts, with the mandatory
     # FM301 sweep metadata (strict) (#537)
-    filename = request.getfixturevalue(fixture)
+    filename = request.getfixturevalue(file_fixture)
     dtree = closing(xd.open_datatree(filename, engine=engine))
     names = [name for name in dtree.children if name.startswith("sweep_")]
     assert names

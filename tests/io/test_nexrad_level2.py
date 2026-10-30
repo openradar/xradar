@@ -25,27 +25,33 @@ from xradar.io.backends.nexrad_level2 import (
 
 
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_open_nexrad_level2_backend(nexradlevel2_files):
-    with NEXRADLevel2File(nexradlevel2_files, loaddata=False) as nex:
+@pytest.mark.file
+def test_open_nexrad_level2_backend(file_fixture, request):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    with NEXRADLevel2File(nexradlevel2_file, loaddata=False) as nex:
         nsweeps = nex.msg_5["number_elevation_cuts"]
 
     sweeps = [f"sweep_{i}" for i in range(nsweeps)]
     assert nsweeps == 11
     for i, group in enumerate(sweeps):
         with xarray.open_dataset(
-            nexradlevel2_files, engine=NexradLevel2BackendEntrypoint, group=group
+            nexradlevel2_file, engine=NexradLevel2BackendEntrypoint, group=group
         ) as ds:
             assert ds.attrs["instrument_name"] == "KLBB"
             assert int(ds.sweep_number.values) == i
 
 
 @pytest.mark.parametrize(
-    "nexradlevel2_files", ["nexradlevel2_gzfile", "nexradlevel2_bzfile"], indirect=True
+    "file_fixture",
+    ["nexradlevel2_gzfile", "nexradlevel2_bzfile"],
 )
-def test_open_nexradlevel2_file(nexradlevel2_files):
-    with NEXRADLevel2File(nexradlevel2_files) as fh:
+@pytest.mark.file
+def test_open_nexradlevel2_file(file_fixture, request):
+    nexradlevel2_file = request.getfixturevalue(file_fixture)
+    with NEXRADLevel2File(nexradlevel2_file) as fh:
 
         # volume header
         assert fh.volume_header["tape"] == b"AR2V0006."

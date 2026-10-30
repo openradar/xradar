@@ -105,7 +105,7 @@ def test_apply_reindex_coord_noop(gamic_file):
 
 
 @pytest.mark.parametrize(
-    "fixture, engine",
+    "file_fixture, engine",
     [
         ("cfradial1_file", "cfradial1"),
         ("rainbow_file", "rainbow"),
@@ -113,9 +113,8 @@ def test_apply_reindex_coord_noop(gamic_file):
         ("uf_file_1", "uf"),
     ],
 )
-@pytest.mark.file
-def test_reindex_coord_open_dataset(request, fixture, engine):
-    filename = request.getfixturevalue(fixture)
+def test_reindex_coord_open_dataset(request, file_fixture, engine):
+    filename = request.getfixturevalue(file_fixture)
     with xr.open_dataset(
         filename, group="sweep_0", engine=engine, reindex_coord={"angle": ANGLE}
     ) as ds:

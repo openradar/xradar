@@ -146,15 +146,14 @@ def hpl_fname(request):
 
 
 @pytest.mark.parametrize(
-    "hpl_fname",
+    "file_fixture",
     ["hpl_file2", "hpl_file1"],
-    indirect=True,
 )
-@pytest.mark.file
-def test_hpl_sweep_metadata(hpl_fname):
+def test_hpl_sweep_metadata(file_fixture, request):
     # mandatory sweep metadata (FM301 Table 301-7a), follow_mode and prt_mode
     # are not in the file and are "not_set", as for the other readers (#451)
-    dtree = xd.io.open_hpl_datatree(hpl_fname)
+    filename = request.getfixturevalue(file_fixture)
+    dtree = xd.io.open_hpl_datatree(filename)
     ds = dtree["sweep_0"].to_dataset()
     assert xd.model.required_sweep_metadata_vars.issubset(ds.variables)
     assert ds["follow_mode"].values == "not_set"
