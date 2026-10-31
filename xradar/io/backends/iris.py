@@ -178,6 +178,33 @@ def decode_bin_angle(bin_angle, mode=None):
     return 360.0 * bin_angle / 2 ** (mode * 8)
 
 
+def _azimuth_centers(start, stop):
+    """Beam center azimuth of each ray from its start and stop azimuth.
+
+    Works for either rotation direction (sector sweeps alternate): a ray
+    across north is unwrapped the shorter way round.
+    A ray exactly 180 degrees wide is ambiguous and is not unwrapped.
+
+    Parameters
+    ----------
+    start, stop : :class:`numpy:numpy.ndarray`
+        Start and stop azimuth of each ray in degrees, [0, 360).
+
+    Returns
+    -------
+    az : :class:`numpy:numpy.ndarray`
+        Beam center azimuth in degrees, [0, 360).
+    """
+    # at most one applies: a clockwise or a counter-clockwise ray across north
+    stop = np.where(start - stop > 180, stop + 360, stop)
+    stop = np.where(stop - start > 180, stop - 360, stop)
+    az = (start + stop) / 2.0
+    # negatives first: one closer to 0 than half an ulp rounds up to 360
+    az[az < 0] += 360
+    az[az >= 360] -= 360
+    return az
+
+
 def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None):
     """Decode data array.
 
@@ -3839,13 +3866,16 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
             ele_stop = dec_data[:, 3]
             ele_stop[ele_stop > 180] -= 360
 
-            # calculate beam center values
-            # find locations with reasonable difference
-            zero_index = np.where(azi_start - azi_stop > 5)
-            azi_stop2 = azi_stop.copy()
-            azi_stop2[zero_index[0]] += 360
-            az = (azi_start + azi_stop2) / 2.0
-            az[az >= 360] -= 360
+            if self.rawdata:
+                # raw BIN2 counts, not degrees: keep the previous arithmetic
+                # (counter-clockwise rays are not handled)
+                zero_index = np.where(azi_start - azi_stop > 5)
+                azi_stop2 = azi_stop.copy()
+                azi_stop2[zero_index[0]] += 360
+                az = (azi_start + azi_stop2) / 2.0
+                az[az >= 360] -= 360
+            else:
+                az = _azimuth_centers(azi_start, azi_stop)
             el = (ele_start + ele_stop) / 2.0
 
             sweep_data["azi_start"] = azi_start
