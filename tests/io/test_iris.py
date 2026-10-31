@@ -59,6 +59,70 @@ def test_decode_bin_angle():
 
 
 @pytest.mark.parametrize(
+    "start, stop, center",
+    [
+        pytest.param(10.0, 11.0, 10.5, id="cw"),
+        pytest.param(359.56, 0.51, 0.035, id="cw-across-north"),
+        pytest.param(11.0, 10.0, 10.5, id="ccw"),
+        pytest.param(0.51, 359.56, 0.035, id="ccw-across-north"),
+        pytest.param(0.1, 359.0, 359.55, id="ccw-across-north-west"),
+        pytest.param(20.0, 10.0, 15.0, id="ccw-wide-ray"),
+        pytest.param(0.0, 0.0, 0.0, id="on-north"),
+    ],
+)
+def test_azimuth_centers(start, stop, center):
+    # the beam center does not depend on the rotation direction (#526)
+    az = iris._azimuth_centers(np.array([start]), np.array([stop]))
+    np.testing.assert_allclose(az, [center], atol=1e-9)
+    assert 0 <= az[0] < 360
+
+
+@pytest.mark.parametrize("stop", [360 - 2e-13, np.nextafter(360, 0)])
+def test_azimuth_centers_stay_below_360(stop):
+    # a center just below 0 must not wrap to exactly 360
+    az = iris._azimuth_centers(np.array([0.0]), np.array([stop]))
+    assert 0 <= az[0] < 360
+
+
+def test_counter_clockwise_sweep_keeps_beam_centers(iris1_file, monkeypatch):
+    # sector sweeps alternate in direction; turning the antenna the other way
+    # (start and stop azimuth swapped) must leave every beam center in place,
+    # also for the ray across north (#526)
+    def azimuths():
+        with iris.IrisRawFile(iris1_file, loaddata=False) as raw:
+            raw.get_moment(1, raw.data_types[0])
+            sweep = raw.data[1]["sweep_data"]
+            return sweep["azi_start"].copy(), sweep["azimuth"].copy()
+
+    start, clockwise = azimuths()
+    # the fixture's first ray straddles north, which is the case that broke
+    assert (start > 359).any() and (clockwise < 1).any()
+    decode = iris.IrisRawFile.decode_data
+
+    def counter_clockwise(self, data, prod):
+        out = decode(self, data, prod)
+        if prod is iris.BIN2 and out.ndim == 2 and out.shape[1] == 4:
+            out = out[:, [2, 1, 0, 3]]
+        return out
+
+    monkeypatch.setattr(iris.IrisRawFile, "decode_data", counter_clockwise)
+    swapped, counter = azimuths()
+    assert not np.array_equal(swapped, start)  # the antenna really turned
+    np.testing.assert_allclose(counter, clockwise, atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    "file_fixture, scan_name",
+    [("iris0_file", "SURV_HV_300"), ("iris1_file", "PPI1_H")],
+)
+def test_scan_name_is_stripped(file_fixture, scan_name, request):
+    # the task name is a fixed-width field padded with blanks (#575)
+    path = request.getfixturevalue(file_fixture)
+    with xd.open_datatree(path, engine="iris") as dtree:
+        assert dtree.attrs["scan_name"] == scan_name
+
+
+@pytest.mark.parametrize(
     "scan_mode, sweep_mode",
     [
         pytest.param(1, "sector", id="ppi-sector"),
