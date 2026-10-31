@@ -536,18 +536,20 @@ def _moment_names(type_names):
 
     Types map through ``iris_mapping``. When two types of one sweep map to
     the same name (e.g. the 1- and 2-byte flavors ``DB_DBZ`` and
-    ``DB_DBZ2`` both map to ``DBZH``), the first keeps the CfRadial name and
-    each later one keeps its Sigmet name, so no moment is lost.
+    ``DB_DBZ2`` both map to ``DBZH``), the last one keeps the CfRadial name
+    and each earlier one its Sigmet name, so no moment is lost. Types come in
+    ascending order, where the finer 2-byte flavor is the later one.
     """
+    type_names = list(type_names)
     names = []
-    for type_name in type_names:
+    for type_name in reversed(type_names):
         name = iris_mapping.get(type_name, type_name)
         if name in names:
             name = type_name
-        if name in names:
+        if name in names or type_names.count(type_name) > 1:
             raise ValueError(f"data type {type_name!r} appears twice in one sweep")
         names.append(name)
-    return names
+    return names[::-1]
 
 
 def _first_bin_cm(task_range_info):
@@ -4189,7 +4191,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         if mname is None:
             mname = iris_mapping.get(name, name)
         # CF attrs of the mapped moment, also when a colliding type keeps its
-        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
+        # Sigmet name (DB_DBZ next to DB_DBZ2 is still reflectivity)
         mapping = sweep_vars_mapping.get(iris_mapping.get(name, name), {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         if name in ["DB_HCLASS", "DB_HCLASS2"]:

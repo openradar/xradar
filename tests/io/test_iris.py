@@ -919,29 +919,61 @@ def _header_stub():
 
 
 def test_moment_names_keep_colliding_types():
+    # the later, finer flavor keeps the CfRadial name (#527)
     assert iris._moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
-        "DBZH",
+        "DB_DBZ",
         "VRADH",
-        "DB_DBZ2",
+        "DBZH",
     ]
-    assert iris._moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    assert iris._moment_names(("DB_DBZ", "DB_VEL")) == ["DBZH", "VRADH"]
     with pytest.raises(ValueError, match="appears twice"):
         iris._moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
 
 
+def test_moment_names_give_the_name_to_the_2_byte_flavor():
+    codes = {v["name"]: k for k, v in iris.SIGMET_DATA_TYPES.items()}
+    pairs = {}
+    for type_name, name in iris.iris_mapping.items():
+        pairs.setdefault(name, []).append(type_name)
+    pairs = {name: types for name, types in pairs.items() if len(types) > 1}
+    assert pairs
+
+    for name, types in pairs.items():
+        types = sorted(types, key=codes.get)  # ascending, as in the file
+        assert iris._moment_names(types) == [types[0], name]
+        sizes = [
+            np.dtype(iris.SIGMET_DATA_TYPES[codes[t]]["dtype"]).itemsize for t in types
+        ]
+        assert sizes == [1, 2]
+
+
+def test_moment_names_never_lose_a_moment(monkeypatch):
+    monkeypatch.setitem(iris.iris_mapping, "TYPE_A", "TYPE_B")
+    with pytest.raises(ValueError, match="appears twice"):
+        iris._moment_names(["TYPE_B", "TYPE_A"])
+
+
+def test_data_types_come_in_ascending_order():
+    # the 2-byte flavor is the later one: DB_DBZ, DB_DBZ2 and, in the next
+    # mask words, DB_SNR8, DB_SNR16
+    mask = [1 << 2 | 1 << 9, 0, 1 << 1 | 1 << 2, 0]
+    assert iris._data_types_from_dsp_mask(mask) == [2, 9, 65, 66]
+
+
 def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
-    """Two types mapping to one CfRadial name used to keep only the later
-    one; now the second keeps its Sigmet name. (The collision is staged by
-    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    """Two types mapping to one CfRadial name are both kept: the later one
+    takes the name, the earlier one keeps its Sigmet name. (The collision is
+    staged by mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to
+    DB_DBZ2.)"""
     with open_dataset(iris0_file, engine="iris", group="sweep_0") as before:
         dbzh, vradh = before.DBZH.values, before.VRADH.values
     monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
     with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
-        assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
-        np.testing.assert_array_equal(ds.DBZH.values, dbzh)
-        np.testing.assert_array_equal(ds.DB_VEL.values, vradh)
+        assert {"DBZH", "DB_DBZ"} <= set(ds.data_vars)
+        np.testing.assert_array_equal(ds.DBZH.values, vradh)
+        np.testing.assert_array_equal(ds.DB_DBZ.values, dbzh)
         # CF attrs follow the mapped name, also under the Sigmet name
-        assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+        assert ds.DB_DBZ.attrs["units"] == ds.DBZH.attrs["units"]
 
 
 #: each decode path with the wavelength and PRF it reads from ``_header_stub``
