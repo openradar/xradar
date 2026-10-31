@@ -2,6 +2,7 @@
 
 ## Development (unreleased)
 
+* MNT: require Python >= 3.13 (``requires-python``, classifiers, CI environments), drop Python 3.12, test on Python 3.13 and 3.14 with conda and on Python 3.15 with a uv chain following CONTRIBUTING.md (notebook and xarray-nightly tests on 3.14), unpin ``zarr`` (``zarr>=3`` → ``zarr``) and add ``jupytext`` to the dev requirements ({pull}`579`) by [@egouden](https://github.com/egouden)
 * CI: Updating python as additional security features were added for SSL (:pull:`566`) by [@zssherman](https://github.com/zssherman)
 * CI: Update python to safe version 3.13.17 (:pull:`547`) by [@zssherman](https://github.com/zssherman)
 * CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)

@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python >=3.12,<3.14
+  - python >=3.13,<3.15
   - pydata-sphinx-theme
   - pip
   - cffconvert
@@ -12,6 +12,7 @@ dependencies:
   - sphinx-copybutton
   - sphinx-favicon
   - ipykernel
+  - jupytext
   - h5netcdf
   - h5py
   - lat_lon_parser
@@ -30,7 +31,7 @@ dependencies:
   - arm_pyart
   - wradlib
   - ffmpeg
-  - zarr>=3
+  - zarr
   - pytest-xdist
   - pytest-cov
   - pre-commit

@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.13", "3.14"]
         numpy-version: ["2"]
 
     steps:
@@ -113,7 +113,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13"]
+        python-version: ["3.14"]
         numpy-version: ["2"]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,7 +163,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.13" ]
+        python-version: [ "3.14" ]
         numpy-version: [ "2" ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -214,6 +214,42 @@ jobs:
       - name: Test with pytest
         run: |
           pytest -n auto --dist loadscope --verbose --durations=15 --pyargs tests
+
+  build_3:
+    name: xradar unit tests - uv python 3.15
+    runs-on: ubuntu-latest
+    # a hang fails the job instead of holding it for GitHub's 6 hours
+    timeout-minutes: 30
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements*.txt
+            pyproject.toml
+      - name: Install system dependencies (CONTRIBUTING.md)
+        run: sudo apt-get update && sudo apt-get install -y build-essential ffmpeg libhdf5-dev libnetcdf-dev pandoc
+      - name: Install xradar with uv (CONTRIBUTING.md)
+        run: |
+          uv python install 3.15
+          uv venv --python 3.15
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          uv pip install -e .[dev] --no-binary=netcdf4 --no-binary=h5py
+      - name: Version Info
+        run: |
+          python -c "import xradar, xarray; print(xradar.version.version, xarray.__version__)"
+      - name: Test with pytest file
+        run: |
+          pytest -n auto -m file --dist loadfile --verbose --durations=15 --cov-report xml:coverage_file_uv315.xml --cov=xradar --pyargs tests
+      - name: Test with pytest unit
+        run: |
+          pytest -n auto -m "not file" --dist loadfile --verbose --durations=15 --cov-report xml:coverage_unit_uv315.xml --cov=xradar --pyargs tests
 
   test_build_distribution_testpypi:
     name: test build distribution for testpypi
