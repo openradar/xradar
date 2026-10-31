@@ -27,6 +27,8 @@
 * ENH: ``.xradar.reindex_angle`` and ``.xradar.reindex_range`` for Dataset (a sweep) and DataTree (every sweep), the same arguments as ``xradar.util.reindex_angle`` and ``reindex_range`` ({issue}`539`, {pull}`544`) by [@syedhamidali](https://github.com/syedhamidali)
 * ENH: NEXRAD Level 2 reader exposes ``nyquist_velocity`` and ``unambiguous_range`` per sweep (MSG_31 radial data block / MSG_1 header) and masks the special moment codes below threshold (``0``) and range folded (``1``) to ``NaN`` via ``_FillValue`` when ``mask_and_scale=True``; raw codes stay available with ``mask_and_scale=False`` ({pull}`457`) by [@syedhamidali](https://github.com/syedhamidali)
 * TST: Mark open-radar-data tests during collection, detect missing markers at runtime, and split CI into ``filetests`` and ``unittests`` runs with separate coverage reports ({issue}`156`, {pull}`567`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
+* FIX: the IRIS root attribute ``scan_name`` no longer keeps the padding of its fixed-width field (``"SURV_HV_300"``, was ``"SURV_HV_300 "``) ({issue}`575`, {pull}`578`) by [@aladinor](https://github.com/aladinor)
+* FIX: IRIS beam-center azimuth of counter-clockwise rays (sector sweeps alternate direction) that cross north or are wider than 5 degrees was off by 180 degrees; the center is now unwrapped the shorter way round in either rotation direction ({issue}`526`, {pull}`530`) by [@aladinor](https://github.com/aladinor)
 * FIX: ``util.extract_angle_parameters`` supports ``sector``, ``manual_ppi`` and ``manual_rhi`` sweeps (it failed with ``UnboundLocalError``); sectors across north and modes without a start and stop angle raise a ``ValueError`` ({issue}`573`, {pull}`576`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.13.0 (2026-10-21)
