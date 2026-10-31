@@ -111,6 +111,17 @@ def test_counter_clockwise_sweep_keeps_beam_centers(iris1_file, monkeypatch):
     np.testing.assert_allclose(counter, clockwise, atol=1e-9)
 
 
+@pytest.mark.parametrize(
+    "file_fixture, scan_name",
+    [("iris0_file", "SURV_HV_300"), ("iris1_file", "PPI1_H")],
+)
+def test_scan_name_is_stripped(file_fixture, scan_name, request):
+    # the task name is a fixed-width field padded with blanks (#575)
+    path = request.getfixturevalue(file_fixture)
+    with xd.open_datatree(path, engine="iris") as dtree:
+        assert dtree.attrs["scan_name"] == scan_name
+
+
 def test_decode_array():
     data = np.arange(0, 11)
     np.testing.assert_array_equal(
