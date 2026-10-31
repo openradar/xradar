@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.12
+  - python>=3.13
   - cartopy
   - cmweather
   - codecov
@@ -33,5 +33,5 @@ dependencies:
   - arm_pyart
   - wradlib
   - ffmpeg
-  - zarr>=3
+  - zarr
   - xarray>=2026.9.0
