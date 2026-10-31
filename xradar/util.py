@@ -189,8 +189,9 @@ def reindex_angle(
     start_angle : float
         Start angle of dataset.
     stop_angle : float
-        Stop angle of dataset. Above 360 for a sector across north, as returned by
-        :func:`extract_angle_parameters`: the result is folded back into 0 to 360.
+        Stop angle of dataset. For a sector across north one of the two angles is
+        above 360, as returned by :func:`extract_angle_parameters`: the result is
+        folded back into 0 to 360.
     angle_res : float
         Angle resolution of the dataset.
     direction : int
@@ -238,9 +239,8 @@ def reindex_angle(
     ds = ds.sortby(first_angle)
     ds = _reindex_angle(ds, ang, tolerance, method=method)
     if across_north:
-        ds = ds.assign_coords(
-            {first_angle: ds[first_angle].copy(data=ds[first_angle].values % 360)}
-        )
+        ds[first_angle] = ds[first_angle] % 360
+        ds = ds.sortby(first_angle, ascending=direction > 0)
 
     # check secondary angle coordinate (no nan)
     # set nan values to reasonable median
@@ -330,14 +330,16 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters. A sector across north gets a ``stop_angle``
-        above 360. ``angle_res`` is negative for rays in counter-clockwise order.
+        Dictionary with parameters. For a sector across north, ``stop_angle``
+        (``start_angle`` if counter-clockwise) is above 360. ``angle_res`` is
+        negative for rays in counter-clockwise order.
 
     Raises
     ------
     ValueError
-        If ``sweep_mode`` has no start and stop angle, or a sector has less than
-        two rays at different angles.
+        If ``sweep_mode`` has no start and stop angle, a sector has less than two
+        rays at different angles, or a ``manual_rhi`` sweep has azimuth as its
+        first dimension.
     """
     angle_dict = {}
 
@@ -425,29 +427,49 @@ def extract_angle_parameters(ds):
         start_ang = int(np.round(min_angle / angle_res) * angle_res)
         stop_ang = int(np.round(max_angle / angle_res) * angle_res)
     elif mode in ("sector", "manual_ppi", "manual_rhi"):
+        if mode == "manual_rhi" and first_angle == "azimuth":
+            raise ValueError(
+                "Can't get start and stop angle of a 'manual_rhi' sweep with azimuth "
+                "as its first dimension: use `ds.swap_dims(azimuth='elevation')`."
+            )
         res = abs(float(angle_res))
         if not res > 0:
             raise ValueError(
                 f"Can't get start and stop angle of a {mode!r} sweep: it needs "
                 "at least two rays at different angles."
             )
-        first, last = float(min_angle), float(max_angle)
+        angles = unique_angles[np.isfinite(unique_angles)]
+        first, last = float(angles[0]), float(angles[-1])
+        steps = np.diff(angles)
         full_circle = False
         if first_angle == "azimuth":
             # the widest gap around the circle is the unscanned part, whatever
             # the ray order (the first dimension is sorted by angle or by time);
             # a sector across north stops above 360
-            angles = unique_angles[np.isfinite(unique_angles)]
             gaps = np.diff(angles, append=angles[0] + 360)
             widest = gaps.argmax()
+            steps = np.delete(gaps, widest)
             first = float(angles[(widest + 1) % angles.size])
             last = float(angles[widest])
             if last < first:
                 last += 360
             full_circle = gaps.max() <= 1.5 * res
-        # half a ray outside the first and last ray, so that both stay centered
-        start_ang = 0 if full_circle else round(first - res / 2, 6)
-        stop_ang = 360 if full_circle else round(last + res / 2, 6)
+        # the mean spacing over the sweep is steadier than the median step, so
+        # its rounded value is shared by sweeps of a volume, unless the rounding
+        # error adds up over the sweep and the last ray would miss the grid
+        rays = int(np.round(steps / abs(float(median_diff))).sum()) + 1
+        res = (last - first) / max(rays - 1, 1)
+        rounded = round(res, 2)
+        if abs(last - first - (rays - 1) * rounded) < rounded / 4:
+            res = rounded
+        angle_res = res * direction
+        angle_dict.update(angle_res=np.asarray(angle_res))
+        # half a ray outside the first and last ray, snapped to half-resolution
+        # steps so that sweeps of the same sector share their grid
+        start_ang = round(round((first - res / 2) / (res / 2)) * res / 2, 6)
+        stop_ang = round(start_ang + rays * res, 6)
+        if full_circle:
+            start_ang, stop_ang = 0, 360
     else:
         raise ValueError(
             f"Can't get start and stop angle for sweep_mode {mode!r}: expected "
