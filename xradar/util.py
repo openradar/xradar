@@ -166,6 +166,14 @@ def _reindex_dim(ds, dim, array, tolerance, method="nearest"):
     return ds
 
 
+def _angle_span(start_angle, stop_angle, direction, first_angle):
+    """Return the span of a sweep, an azimuth sector may wrap across north."""
+    span = (stop_angle - start_angle) * direction
+    if first_angle == "azimuth" and -360 < span < 0:
+        span += 360
+    return abs(span)
+
+
 def reindex_angle(
     ds,
     start_angle=None,
@@ -189,7 +197,10 @@ def reindex_angle(
     start_angle : float
         Start angle of dataset.
     stop_angle : float
-        Stop angle of dataset.
+        Stop angle of dataset. A sector across north goes from 330 to 30 (from 30
+        to 330 if counter-clockwise), as returned by
+        :func:`extract_angle_parameters`. The same sector given as 330 to 390 works
+        too, and the result is within 0 to 360.
     angle_res : float
         Angle resolution of the dataset.
     direction : int
@@ -205,6 +216,8 @@ def reindex_angle(
     ds : xarray.Dataset
         Reindexed dataset
     """
+    # negative for counter-clockwise sweeps in extract_angle_parameters
+    angle_res = abs(angle_res)
     if tolerance is None:
         tolerance = angle_res / 2.0
 
@@ -212,8 +225,17 @@ def reindex_angle(
     first_angle = get_first_angle(ds)
     second_angle = get_second_angle(ds)
 
-    expected_angle_span = abs(stop_angle - start_angle)
+    expected_angle_span = _angle_span(start_angle, stop_angle, direction, first_angle)
     expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
+
+    # a sector across north goes on the grid above 360, and the rays are unwrapped
+    # at the middle of the unscanned part, so that rays next to north stay neighbours
+    low = start_angle if direction > 0 else stop_angle
+    high = low + expected_angle_span
+    sector = first_angle == "azimuth" and expected_angle_span < 360
+    across_north = sector and high > 360
+    if sector and direction < 0:
+        start_angle = high
 
     # create reindexing angle
     ang = start_angle + direction * np.arange(
@@ -222,9 +244,17 @@ def reindex_angle(
         angle_res,
         dtype=ds[first_angle].dtype,
     )
+    if across_north:
+        pivot = (low + high - 360) / 2
+        unwrapped = ds[first_angle].copy(data=ds[first_angle].values % 360)
+        unwrapped = unwrapped.where(unwrapped >= pivot, unwrapped + 360)
+        ds = ds.assign_coords({first_angle: unwrapped}).pipe(remove_duplicate_rays)
 
     ds = ds.sortby(first_angle)
     ds = _reindex_angle(ds, ang, tolerance, method=method)
+    if across_north:
+        ds[first_angle] = ds[first_angle] % 360
+        ds = ds.sortby(first_angle, ascending=direction > 0)
 
     # check secondary angle coordinate (no nan)
     # set nan values to reasonable median
@@ -314,7 +344,17 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters.
+        Dictionary with parameters. A sector across north goes from 330 to 30, or
+        from 30 to 330 if counter-clockwise. ``angle_res`` is negative for rays in
+        counter-clockwise order. For a sector the edges and ``direction`` follow the
+        rays in time, whatever their order in ``ds``.
+
+    Raises
+    ------
+    ValueError
+        If ``sweep_mode`` has no start and stop angle, a sector has less than two
+        rays at different angles, or a ``manual_rhi`` sweep has azimuth as its
+        first dimension.
     """
     angle_dict = {}
 
@@ -336,7 +376,8 @@ def extract_angle_parameters(ds):
     )
 
     # 3. get unique angles
-    unique_angles = np.unique(ds[first_angle])
+    fdim = ds[first_angle]
+    unique_angles, inverse_idx = np.unique(fdim, return_inverse=True)
 
     # check if azimuth can be sorted
     # check if time can be sorted
@@ -352,7 +393,6 @@ def extract_angle_parameters(ds):
     angle_dict.update(a1gate_idx=a1gate_idx, a1gate_val=a1gate_val)
 
     # 5. angle differences
-    fdim = ds[first_angle]
     diff = fdim.diff(first_angle)
 
     # this captures different angle spacing
@@ -392,30 +432,84 @@ def extract_angle_parameters(ds):
     # unfortunately this doesn't work if rays are missing at start or end of the sweep
     # so we need to have the possibility to override
     # also accounts for direction of sweep (CW/CCW, up/down)
-    mode = ds.sweep_mode
+    mode = str(np.asarray(ds.sweep_mode).squeeze())
     if mode == "azimuth_surveillance":
         start_ang = 0
         stop_ang = 360
     elif mode == "rhi":
         # start/stop angle, round to nearest multiple of angle_res
+        # (kept as is: the outer edges below would change existing RHI results)
         start_ang = int(np.round(min_angle / angle_res) * angle_res)
         stop_ang = int(np.round(max_angle / angle_res) * angle_res)
+    elif mode in ("sector", "manual_ppi", "manual_rhi"):
+        if mode == "manual_rhi" and first_angle == "azimuth":
+            raise ValueError(
+                "Can't get start and stop angle of a 'manual_rhi' sweep with azimuth "
+                "as its first dimension: use `ds.swap_dims(azimuth='elevation')`."
+            )
+        res = abs(float(angle_res))
+        # rays with the same time stay in the order they came in, so take the
+        # edges from the whole path and the direction from the net travel
+        measured = np.argsort(ds.time.values, kind="stable")
+        measured = measured[ds.time.notnull().values[measured]]
+        scan = unique_angles[inverse_idx][measured].astype("float64")
+        path = scan[np.isfinite(scan)]
+        if first_angle == "azimuth":
+            path = np.unwrap(path, period=360)
+        if not res > 0 or path.size < 2 or path.min() == path.max():
+            raise ValueError(
+                f"Can't get start and stop angle of a {mode!r} sweep: it needs "
+                "at least two rays at different angles."
+            )
+        first, last = path.min(), path.max()
+        if first_angle == "azimuth":
+            first, last = first % 360, first % 360 + last - first
+        full_circle = first_angle == "azimuth" and last - first >= 360 - 1.5 * res
+        direction = 1 if path[-1] >= path[0] else -1
+        angle_dict.update(ascending=np.asarray(direction > 0), direction=direction)
+        gaps = np.diff(np.sort(path))
+        # the mean spacing over the sweep is steadier than the median step, so
+        # its rounded value is shared by sweeps of a volume, unless the rounding
+        # error adds up over the sweep and the last ray would miss the grid
+        rays = int(np.round(gaps / abs(float(median_diff))).sum()) + 1
+        res = (last - first) / max(rays - 1, 1)
+        rounded = round(res, 2)
+        if abs(last - first - (rays - 1) * rounded) < rounded / 4:
+            res = rounded
+        angle_res = res * direction
+        angle_dict.update(angle_res=np.asarray(angle_res))
+        # half a ray outside the first and last ray, snapped to half-resolution
+        # steps so that sweeps of the same sector share their grid
+        start_ang = round(round((first - res / 2) / (res / 2)) * res / 2, 6)
+        stop_ang = round(start_ang + rays * res, 6)
+        if first_angle == "azimuth":
+            start_ang = round(start_ang % 360, 6)
+            stop_ang = round(stop_ang % 360, 6) or 360
+        if full_circle:
+            start_ang, stop_ang = 0, 360
+    else:
+        raise ValueError(
+            f"Can't get start and stop angle for sweep_mode {mode!r}: expected "
+            "azimuth_surveillance, rhi, sector, manual_ppi or manual_rhi."
+        )
 
     start_ang, stop_ang = (start_ang, stop_ang)[::direction]
     angle_dict.update(start_angle=start_ang, stop_angle=stop_ang)
 
     # 10. expected angle span
-    expected_angle_span = abs(stop_ang - start_ang)
+    expected_angle_span = _angle_span(start_ang, stop_ang, direction, first_angle)
     angle_dict.update(expected_angle_span=expected_angle_span)
 
-    # 11. incomplete sweep
-    missing_rays = (angle_res * fdim.size) < expected_angle_span
-    excess_rays = (angle_res * fdim.size) > expected_angle_span
-    angle_dict.update(missing_rays=missing_rays.values, excess_rays=excess_rays.values)
-
-    # 12. expected number of rays
-    expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
+    # 11. expected number of rays
+    expected_number_rays = int(
+        np.round(expected_angle_span / abs(angle_res), decimals=0)
+    )
     angle_dict.update(expected_number_rays=expected_number_rays)
+
+    # 12. incomplete sweep
+    missing_rays = fdim.size < expected_number_rays
+    excess_rays = fdim.size > expected_number_rays
+    angle_dict.update(missing_rays=missing_rays, excess_rays=excess_rays)
 
     return angle_dict
 

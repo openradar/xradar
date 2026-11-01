@@ -29,6 +29,7 @@
 * TST: Mark open-radar-data tests during collection, detect missing markers at runtime, and split CI into ``filetests`` and ``unittests`` runs with separate coverage reports ({issue}`156`, {pull}`567`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: the IRIS root attribute ``scan_name`` no longer keeps the padding of its fixed-width field (``"SURV_HV_300"``, was ``"SURV_HV_300 "``) ({issue}`575`, {pull}`578`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS beam-center azimuth of counter-clockwise rays (sector sweeps alternate direction) that cross north or are wider than 5 degrees was off by 180 degrees; the center is now unwrapped the shorter way round in either rotation direction ({issue}`526`, {pull}`530`) by [@aladinor](https://github.com/aladinor)
+* FIX: ``util.extract_angle_parameters`` supports ``sector``, ``manual_ppi`` and elevation-first ``manual_rhi`` sweeps (it failed with ``UnboundLocalError``); sectors across north go from 330 to 30, which ``util.reindex_angle`` accepts, and modes without a start and stop angle raise a ``ValueError``. For counter-clockwise rays ``expected_number_rays`` is now positive, ``missing_rays`` and ``excess_rays`` compare ray counts, and ``reindex_angle`` accepts the negative ``angle_res`` ({issue}`573`, {pull}`576`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.13.0 (2026-10-21)
 
