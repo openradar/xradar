@@ -200,17 +200,21 @@ def test_extract_angle_parameters_partial_scan(mode, first, last, start, stop):
 
 
 @pytest.mark.parametrize(
-    "order, start, stop, direction",
+    "step, by_angle, start, stop, direction",
     [
-        pytest.param(lambda az: az, 330, 390, 1, id="time-order"),
-        pytest.param(np.sort, 330, 390, 1, id="sorted-by-angle"),
-        pytest.param(lambda az: az[::-1], 390, 330, -1, id="counter-clockwise"),
+        pytest.param(1, False, 330, 390, 1, id="time-order"),
+        pytest.param(1, True, 330, 390, 1, id="sorted-by-angle"),
+        pytest.param(-1, False, 390, 330, -1, id="counter-clockwise"),
+        pytest.param(-1, True, 390, 330, -1, id="ccw-sorted-by-angle"),
     ],
 )
-def test_extract_angle_parameters_sector_across_north(order, start, stop, direction):
+def test_extract_angle_parameters_sector_across_north(
+    step, by_angle, start, stop, direction
+):
     # the rays may come in any order, the stop angle goes past 360 (#573)
     azimuth = np.concatenate([np.arange(330.5, 360.0), np.arange(0.5, 30.0)])
-    ds = _partial_sweep(order(azimuth), "sector")
+    ds = _partial_sweep(azimuth[::step], "sector")
+    ds = ds.sortby("azimuth") if by_angle else ds
 
     angle_dict = util.extract_angle_parameters(ds)
 
@@ -221,6 +225,125 @@ def test_extract_angle_parameters_sector_across_north(order, start, stop, direct
     assert angle_dict["expected_number_rays"] == 60
     assert not angle_dict["missing_rays"]
     assert not angle_dict["excess_rays"]
+
+
+@pytest.mark.parametrize("by_angle", [False, True], ids=["time-order", "by-angle"])
+@pytest.mark.parametrize(
+    "first, last, start, stop",
+    [
+        pytest.param(45.5, 315, 45, 315, id="wide"),
+        pytest.param(105.5, 375, 105, 375, id="wide-across-north"),
+    ],
+)
+def test_extract_angle_parameters_sector_wider_than_half_circle(
+    by_angle, first, last, start, stop
+):
+    ds = _partial_sweep(np.arange(first, last) % 360, "sector")
+    ds = ds.sortby("azimuth") if by_angle else ds
+
+    angle_dict = util.extract_angle_parameters(ds)
+
+    assert angle_dict["start_angle"] == start
+    assert angle_dict["stop_angle"] == stop
+    assert angle_dict["direction"] == 1
+
+
+def test_extract_angle_parameters_sector_hole_wider_than_unscanned_part():
+    # 25 rays lost inside the sweep, only 10 degrees are not scanned
+    azimuth = np.delete(np.arange(0.5, 350.0), np.arange(100, 125))
+
+    angle_dict = util.extract_angle_parameters(_partial_sweep(azimuth, "sector"))
+
+    assert angle_dict["start_angle"] == 0
+    assert angle_dict["stop_angle"] == 350
+    assert angle_dict["direction"] == 1
+    assert angle_dict["missing_rays"]
+
+
+def test_extract_angle_parameters_sector_overrun_is_a_full_circle():
+    azimuth = np.arange(0.5, 370.0) % 360
+
+    angle_dict = util.extract_angle_parameters(_partial_sweep(azimuth, "sector"))
+
+    assert angle_dict["start_angle"] == 0
+    assert angle_dict["stop_angle"] == 360
+    assert angle_dict["direction"] == 1
+
+
+@pytest.mark.parametrize("rays_per_tick", [1.5, 1.8, 14])
+@pytest.mark.parametrize(
+    "azimuth, start, stop, direction",
+    [
+        pytest.param(np.arange(45.5, 315), 45, 315, 1, id="cw"),
+        pytest.param(np.arange(314.5, 45, -1), 315, 45, -1, id="ccw"),
+        pytest.param(np.arange(300.5, 420) % 360, 300, 420, 1, id="cw-across-north"),
+        pytest.param(
+            np.arange(59.5, -60, -1) % 360, 420, 300, -1, id="ccw-across-north"
+        ),
+    ],
+)
+def test_extract_angle_parameters_sector_with_tied_times(
+    rays_per_tick, azimuth, start, stop, direction
+):
+    # IRIS ray times are whole seconds: rays of one tick stay in angle order
+    ds = _partial_sweep(azimuth, "sector").sortby("azimuth")
+    ticks = (np.arange(azimuth.size) / rays_per_tick).astype(int)
+    start_time = np.datetime64("2026-01-01T00:00:00")
+    time = start_time + ticks[np.argsort(azimuth)] * np.timedelta64(1, "s")
+    ds = ds.assign_coords(time=("azimuth", time))
+
+    angle_dict = util.extract_angle_parameters(ds)
+
+    assert angle_dict["start_angle"] == start
+    assert angle_dict["stop_angle"] == stop
+    assert angle_dict["direction"] == direction
+    assert bool(angle_dict["ascending"]) == (direction > 0)
+    assert np.sign(angle_dict["angle_res"]) == direction
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+
+@pytest.mark.parametrize("ray", [0, 150, -1], ids=["first", "middle", "last"])
+def test_extract_angle_parameters_sector_ignores_rays_without_time(ray):
+    ds = _partial_sweep(np.arange(0.5, 300.0), "sector")
+    time = ds.time.values.copy()
+    time[ray] = np.datetime64("NaT")
+    ds = ds.assign_coords(time=("azimuth", time))
+
+    angle_dict = util.extract_angle_parameters(ds)
+
+    assert angle_dict["direction"] == 1
+    assert angle_dict["expected_angle_span"] == 300 - (ray != 150)
+
+
+@pytest.mark.parametrize(
+    "azimuth, tied",
+    [
+        pytest.param(np.arange(359.5, 0.0, -1), False, id="ccw"),
+        pytest.param(np.arange(359.5, 0.0, -1), True, id="ccw-tied"),
+        pytest.param(
+            np.r_[np.arange(99.5, 0.0, -1), np.arange(359.5, 100.0, -1)],
+            False,
+            id="a1gate",
+        ),
+    ],
+)
+def test_extract_angle_parameters_full_circle_uses_the_given_order(azimuth, tied):
+    # only sectors go by time: other sweeps keep their result in angle order
+    ds = _partial_sweep(azimuth, "azimuth_surveillance").sortby("azimuth")
+    if tied:
+        ticks = np.arange(azimuth.size)[::-1] // 2
+        start_time = np.datetime64("2026-01-01T00:00:00")
+        time = start_time + ticks * np.timedelta64(1, "s")
+        ds = ds.assign_coords(time=("azimuth", time))
+
+    angle_dict = util.extract_angle_parameters(ds)
+
+    assert angle_dict["direction"] == 1
+    assert angle_dict["angle_res"] == 1
+    assert angle_dict["start_angle"] == 0
+    assert angle_dict["stop_angle"] == 360
+    assert angle_dict["uniform_angle_spacing"]
 
 
 def test_extract_angle_parameters_sector_with_a_hole_is_not_across_north():

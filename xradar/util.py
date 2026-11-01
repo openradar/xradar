@@ -332,7 +332,8 @@ def extract_angle_parameters(ds):
     angle_dict : dict
         Dictionary with parameters. For a sector across north, ``stop_angle``
         (``start_angle`` if counter-clockwise) is above 360. ``angle_res`` is
-        negative for rays in counter-clockwise order.
+        negative for rays in counter-clockwise order. For a sector the edges and
+        ``direction`` follow the rays in time, whatever their order in ``ds``.
 
     Raises
     ------
@@ -360,8 +361,11 @@ def extract_angle_parameters(ds):
         max_time=max_time.values,
     )
 
-    # 3. get unique angles
-    unique_angles = np.unique(ds[first_angle])
+    # 3. get unique angles, and the rays with a time in order of measurement
+    fdim = ds[first_angle]
+    unique_angles, inverse_idx = np.unique(fdim, return_inverse=True)
+    measured = np.argsort(ds.time.values, kind="stable")
+    measured = measured[ds.time.notnull().values[measured]]
 
     # check if azimuth can be sorted
     # check if time can be sorted
@@ -377,7 +381,6 @@ def extract_angle_parameters(ds):
     angle_dict.update(a1gate_idx=a1gate_idx, a1gate_val=a1gate_val)
 
     # 5. angle differences
-    fdim = ds[first_angle]
     diff = fdim.diff(first_angle)
 
     # this captures different angle spacing
@@ -438,22 +441,22 @@ def extract_angle_parameters(ds):
                 f"Can't get start and stop angle of a {mode!r} sweep: it needs "
                 "at least two rays at different angles."
             )
-        angles = unique_angles[np.isfinite(unique_angles)]
-        first, last = float(angles[0]), float(angles[-1])
-        steps = np.diff(angles)
-        full_circle = False
+        # rays with the same time stay in the order they came in, so take the
+        # edges from the whole path and the direction from the net travel
+        scan = unique_angles[inverse_idx][measured].astype("float64")
+        scan = scan[np.isfinite(scan)]
+        steps = np.diff(scan)
         if first_angle == "azimuth":
-            # the widest gap around the circle is the unscanned part, whatever
-            # the ray order (the first dimension is sorted by angle or by time);
+            steps = (steps + 180) % 360 - 180
+        path = scan[0] + np.r_[0, np.cumsum(steps)]
+        first, last = path.min(), path.max()
+        if first_angle == "azimuth":
             # a sector across north stops above 360
-            gaps = np.diff(angles, append=angles[0] + 360)
-            widest = gaps.argmax()
-            steps = np.delete(gaps, widest)
-            first = float(angles[(widest + 1) % angles.size])
-            last = float(angles[widest])
-            if last < first:
-                last += 360
-            full_circle = gaps.max() <= 1.5 * res
+            first, last = first % 360, first % 360 + last - first
+        full_circle = first_angle == "azimuth" and last - first >= 360 - 1.5 * res
+        direction = 1 if path[-1] >= path[0] else -1
+        angle_dict.update(ascending=np.asarray(direction > 0), direction=direction)
+        steps = np.diff(np.sort(path))
         # the mean spacing over the sweep is steadier than the median step, so
         # its rounded value is shared by sweeps of a volume, unless the rounding
         # error adds up over the sweep and the last ray would miss the grid
