@@ -157,7 +157,7 @@ def _partial_sweep(azimuth, mode):
     return ds.assign(ray=("azimuth", np.arange(ds.azimuth.size, dtype="float64")))
 
 
-def _reindex(ds):
+def _reindex(ds, **kwargs):
     params = util.extract_angle_parameters(ds)
     return util.reindex_angle(
         ds,
@@ -165,6 +165,7 @@ def _reindex(ds):
         stop_angle=params["stop_angle"],
         angle_res=float(params["angle_res"]),
         direction=params["direction"],
+        **kwargs,
     )
 
 
@@ -363,16 +364,8 @@ def test_extract_angle_parameters_sector_with_a_hole_is_not_across_north():
 def test_reindex_angle_sector_across_north(dtype, tolerance, step, offset):
     azimuth = np.arange(330.0, 390.0)[:: int(step)] % 360 + offset
     ds = _partial_sweep(azimuth.astype(dtype), "sector")
-    params = util.extract_angle_parameters(ds)
 
-    out = util.reindex_angle(
-        ds,
-        start_angle=params["start_angle"],
-        stop_angle=params["stop_angle"],
-        angle_res=float(params["angle_res"]),
-        direction=params["direction"],
-        tolerance=tolerance,
-    )
+    out = _reindex(ds, tolerance=tolerance)
 
     _assert_keeps_every_ray(out, azimuth)
     assert (out.azimuth.diff("azimuth") * step > 0).all()
@@ -416,19 +409,24 @@ def test_angle_span(start, stop, direction, span):
     assert util._angle_span(start, stop, direction, "azimuth") == span
 
 
+@pytest.mark.parametrize("start", [0, 360])
+def test_reindex_angle_counter_clockwise_sector_from_north(start):
+    azimuth = np.arange(359.5, 330.0, -1)
+    ds = _partial_sweep(azimuth, "sector")
+
+    out = util.reindex_angle(
+        ds, start_angle=start, stop_angle=330, angle_res=1.0, direction=-1
+    )
+
+    _assert_keeps_every_ray(out, azimuth)
+
+
 def test_reindex_angle_keeps_rays_next_to_north():
     # within tolerance of a grid point, on the other side of north
     azimuth = np.r_[np.arange(350.0, 360.0), 359.7, np.arange(1.0, 6.0)]
     ds = _partial_sweep(azimuth, "sector")
-    params = util.extract_angle_parameters(ds)
 
-    out = util.reindex_angle(
-        ds,
-        start_angle=params["start_angle"],
-        stop_angle=params["stop_angle"],
-        angle_res=1.0,
-        direction=params["direction"],
-    )
+    out = _reindex(ds)
 
     _assert_keeps_every_ray(out, azimuth)
 
@@ -436,15 +434,8 @@ def test_reindex_angle_keeps_rays_next_to_north():
 def test_reindex_angle_sector_with_rays_on_0_and_360():
     azimuth = np.r_[np.arange(350.0, 361.0), np.arange(0.0, 11.0)]
     ds = _partial_sweep(azimuth, "sector").pipe(util.remove_duplicate_rays)
-    params = util.extract_angle_parameters(ds)
 
-    out = util.reindex_angle(
-        ds,
-        start_angle=params["start_angle"],
-        stop_angle=params["stop_angle"],
-        angle_res=1.0,
-        direction=params["direction"],
-    )
+    out = _reindex(ds)
 
     assert out.azimuth.min() >= 0
     assert out.azimuth.max() < 360
@@ -454,15 +445,8 @@ def test_reindex_angle_sector_with_rays_on_0_and_360():
 def test_reindex_angle_sector_with_a_ray_on_360():
     azimuth = np.concatenate([np.arange(350.0, 361.0), np.arange(1.0, 10.0)])
     ds = _partial_sweep(azimuth, "sector")
-    params = util.extract_angle_parameters(ds)
 
-    out = util.reindex_angle(
-        ds,
-        start_angle=params["start_angle"],
-        stop_angle=params["stop_angle"],
-        angle_res=1.0,
-        direction=params["direction"],
-    )
+    out = _reindex(ds)
 
     assert out.azimuth.max() < 360
     _assert_keeps_every_ray(out, azimuth)
@@ -620,6 +604,17 @@ def test_extract_angle_parameters_plain_string_mode():
 @pytest.mark.parametrize("azimuth", [[45.5], [45.5, 45.5]], ids=["one", "same-angle"])
 def test_extract_angle_parameters_sector_needs_two_angles(azimuth):
     ds = _partial_sweep(np.array(azimuth), "sector")
+    with pytest.raises(ValueError, match="at least two rays"):
+        util.extract_angle_parameters(ds)
+
+
+@pytest.mark.parametrize("timed", [0, 1], ids=["no-time", "one-time"])
+def test_extract_angle_parameters_sector_needs_two_rays_with_time(timed):
+    ds = _partial_sweep(np.arange(30.5, 60.0), "sector")
+    time = ds.time.values.copy()
+    time[timed:] = np.datetime64("NaT")
+    ds = ds.assign_coords(time=("azimuth", time))
+
     with pytest.raises(ValueError, match="at least two rays"):
         util.extract_angle_parameters(ds)
 

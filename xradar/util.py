@@ -232,9 +232,10 @@ def reindex_angle(
     # at the middle of the unscanned part, so that rays next to north stay neighbours
     low = start_angle if direction > 0 else stop_angle
     high = low + expected_angle_span
-    across_north = first_angle == "azimuth" and expected_angle_span < 360 < high
-    if across_north:
-        start_angle = low if direction > 0 else high
+    sector = first_angle == "azimuth" and expected_angle_span < 360
+    across_north = sector and high > 360
+    if sector and direction < 0:
+        start_angle = high
 
     # create reindexing angle
     ang = start_angle + direction * np.arange(
@@ -374,11 +375,9 @@ def extract_angle_parameters(ds):
         max_time=max_time.values,
     )
 
-    # 3. get unique angles, and the rays with a time in order of measurement
+    # 3. get unique angles
     fdim = ds[first_angle]
     unique_angles, inverse_idx = np.unique(fdim, return_inverse=True)
-    measured = np.argsort(ds.time.values, kind="stable")
-    measured = measured[ds.time.notnull().values[measured]]
 
     # check if azimuth can be sorted
     # check if time can be sorted
@@ -449,30 +448,30 @@ def extract_angle_parameters(ds):
                 "as its first dimension: use `ds.swap_dims(azimuth='elevation')`."
             )
         res = abs(float(angle_res))
-        if not res > 0:
+        # rays with the same time stay in the order they came in, so take the
+        # edges from the whole path and the direction from the net travel
+        measured = np.argsort(ds.time.values, kind="stable")
+        measured = measured[ds.time.notnull().values[measured]]
+        scan = unique_angles[inverse_idx][measured].astype("float64")
+        path = scan[np.isfinite(scan)]
+        if first_angle == "azimuth":
+            path = np.unwrap(path, period=360)
+        if not res > 0 or path.size < 2 or path.min() == path.max():
             raise ValueError(
                 f"Can't get start and stop angle of a {mode!r} sweep: it needs "
                 "at least two rays at different angles."
             )
-        # rays with the same time stay in the order they came in, so take the
-        # edges from the whole path and the direction from the net travel
-        scan = unique_angles[inverse_idx][measured].astype("float64")
-        scan = scan[np.isfinite(scan)]
-        steps = np.diff(scan)
-        if first_angle == "azimuth":
-            steps = (steps + 180) % 360 - 180
-        path = scan[0] + np.r_[0, np.cumsum(steps)]
         first, last = path.min(), path.max()
         if first_angle == "azimuth":
             first, last = first % 360, first % 360 + last - first
         full_circle = first_angle == "azimuth" and last - first >= 360 - 1.5 * res
         direction = 1 if path[-1] >= path[0] else -1
         angle_dict.update(ascending=np.asarray(direction > 0), direction=direction)
-        steps = np.diff(np.sort(path))
+        gaps = np.diff(np.sort(path))
         # the mean spacing over the sweep is steadier than the median step, so
         # its rounded value is shared by sweeps of a volume, unless the rounding
         # error adds up over the sweep and the last ray would miss the grid
-        rays = int(np.round(steps / abs(float(median_diff))).sum()) + 1
+        rays = int(np.round(gaps / abs(float(median_diff))).sum()) + 1
         res = (last - first) / max(rays - 1, 1)
         rounded = round(res, 2)
         if abs(last - first - (rays - 1) * rounded) < rounded / 4:
