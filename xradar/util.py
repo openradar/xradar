@@ -166,6 +166,14 @@ def _reindex_dim(ds, dim, array, tolerance, method="nearest"):
     return ds
 
 
+def _angle_span(start_angle, stop_angle, direction, first_angle):
+    """Return the span of a sweep, an azimuth sector may wrap across north."""
+    span = (stop_angle - start_angle) * direction
+    if first_angle == "azimuth" and -360 < span < 0:
+        span += 360
+    return abs(span)
+
+
 def reindex_angle(
     ds,
     start_angle=None,
@@ -189,9 +197,10 @@ def reindex_angle(
     start_angle : float
         Start angle of dataset.
     stop_angle : float
-        Stop angle of dataset. For a sector across north one of the two angles is
-        above 360, as returned by :func:`extract_angle_parameters`: the result is
-        folded back into 0 to 360.
+        Stop angle of dataset. A sector across north goes from 330 to 30 (from 30
+        to 330 if counter-clockwise), as returned by
+        :func:`extract_angle_parameters`. The same sector given as 330 to 390 works
+        too, and the result is within 0 to 360.
     angle_res : float
         Angle resolution of the dataset.
     direction : int
@@ -216,8 +225,16 @@ def reindex_angle(
     first_angle = get_first_angle(ds)
     second_angle = get_second_angle(ds)
 
-    expected_angle_span = abs(stop_angle - start_angle)
+    expected_angle_span = _angle_span(start_angle, stop_angle, direction, first_angle)
     expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
+
+    # a sector across north goes on the grid above 360, and the rays are unwrapped
+    # at the middle of the unscanned part, so that rays next to north stay neighbours
+    low = start_angle if direction > 0 else stop_angle
+    high = low + expected_angle_span
+    across_north = first_angle == "azimuth" and expected_angle_span < 360 < high
+    if across_north:
+        start_angle = low if direction > 0 else high
 
     # create reindexing angle
     ang = start_angle + direction * np.arange(
@@ -226,12 +243,8 @@ def reindex_angle(
         angle_res,
         dtype=ds[first_angle].dtype,
     )
-    # a sector across north stops above 360: unwrap the rays onto the grid at the
-    # middle of the unscanned part, so that rays next to north stay neighbours
-    high = max(start_angle, stop_angle)
-    across_north = first_angle == "azimuth" and high > 360 and expected_angle_span < 360
     if across_north:
-        pivot = (min(start_angle, stop_angle) + high - 360) / 2
+        pivot = (low + high - 360) / 2
         unwrapped = ds[first_angle].copy(data=ds[first_angle].values % 360)
         unwrapped = unwrapped.where(unwrapped >= pivot, unwrapped + 360)
         ds = ds.assign_coords({first_angle: unwrapped}).pipe(remove_duplicate_rays)
@@ -330,10 +343,10 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters. For a sector across north, ``stop_angle``
-        (``start_angle`` if counter-clockwise) is above 360. ``angle_res`` is
-        negative for rays in counter-clockwise order. For a sector the edges and
-        ``direction`` follow the rays in time, whatever their order in ``ds``.
+        Dictionary with parameters. A sector across north goes from 330 to 30, or
+        from 30 to 330 if counter-clockwise. ``angle_res`` is negative for rays in
+        counter-clockwise order. For a sector the edges and ``direction`` follow the
+        rays in time, whatever their order in ``ds``.
 
     Raises
     ------
@@ -451,7 +464,6 @@ def extract_angle_parameters(ds):
         path = scan[0] + np.r_[0, np.cumsum(steps)]
         first, last = path.min(), path.max()
         if first_angle == "azimuth":
-            # a sector across north stops above 360
             first, last = first % 360, first % 360 + last - first
         full_circle = first_angle == "azimuth" and last - first >= 360 - 1.5 * res
         direction = 1 if path[-1] >= path[0] else -1
@@ -471,6 +483,9 @@ def extract_angle_parameters(ds):
         # steps so that sweeps of the same sector share their grid
         start_ang = round(round((first - res / 2) / (res / 2)) * res / 2, 6)
         stop_ang = round(start_ang + rays * res, 6)
+        if first_angle == "azimuth":
+            start_ang = round(start_ang % 360, 6)
+            stop_ang = round(stop_ang % 360, 6) or 360
         if full_circle:
             start_ang, stop_ang = 0, 360
     else:
@@ -483,7 +498,7 @@ def extract_angle_parameters(ds):
     angle_dict.update(start_angle=start_ang, stop_angle=stop_ang)
 
     # 10. expected angle span
-    expected_angle_span = abs(stop_ang - start_ang)
+    expected_angle_span = _angle_span(start_ang, stop_ang, direction, first_angle)
     angle_dict.update(expected_angle_span=expected_angle_span)
 
     # 11. expected number of rays

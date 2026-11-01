@@ -202,16 +202,16 @@ def test_extract_angle_parameters_partial_scan(mode, first, last, start, stop):
 @pytest.mark.parametrize(
     "step, by_angle, start, stop, direction",
     [
-        pytest.param(1, False, 330, 390, 1, id="time-order"),
-        pytest.param(1, True, 330, 390, 1, id="sorted-by-angle"),
-        pytest.param(-1, False, 390, 330, -1, id="counter-clockwise"),
-        pytest.param(-1, True, 390, 330, -1, id="ccw-sorted-by-angle"),
+        pytest.param(1, False, 330, 30, 1, id="time-order"),
+        pytest.param(1, True, 330, 30, 1, id="sorted-by-angle"),
+        pytest.param(-1, False, 30, 330, -1, id="counter-clockwise"),
+        pytest.param(-1, True, 30, 330, -1, id="ccw-sorted-by-angle"),
     ],
 )
 def test_extract_angle_parameters_sector_across_north(
     step, by_angle, start, stop, direction
 ):
-    # the rays may come in any order, the stop angle goes past 360 (#573)
+    # the rays may come in any order, the angles stay within 0 to 360 (#573)
     azimuth = np.concatenate([np.arange(330.5, 360.0), np.arange(0.5, 30.0)])
     ds = _partial_sweep(azimuth[::step], "sector")
     ds = ds.sortby("azimuth") if by_angle else ds
@@ -232,7 +232,7 @@ def test_extract_angle_parameters_sector_across_north(
     "first, last, start, stop",
     [
         pytest.param(45.5, 315, 45, 315, id="wide"),
-        pytest.param(105.5, 375, 105, 375, id="wide-across-north"),
+        pytest.param(105.5, 375, 105, 15, id="wide-across-north"),
     ],
 )
 def test_extract_angle_parameters_sector_wider_than_half_circle(
@@ -276,9 +276,9 @@ def test_extract_angle_parameters_sector_overrun_is_a_full_circle():
     [
         pytest.param(np.arange(45.5, 315), 45, 315, 1, id="cw"),
         pytest.param(np.arange(314.5, 45, -1), 315, 45, -1, id="ccw"),
-        pytest.param(np.arange(300.5, 420) % 360, 300, 420, 1, id="cw-across-north"),
+        pytest.param(np.arange(300.5, 420) % 360, 300, 60, 1, id="cw-across-north"),
         pytest.param(
-            np.arange(59.5, -60, -1) % 360, 420, 300, -1, id="ccw-across-north"
+            np.arange(59.5, -60, -1) % 360, 60, 300, -1, id="ccw-across-north"
         ),
     ],
 )
@@ -376,6 +376,44 @@ def test_reindex_angle_sector_across_north(dtype, tolerance, step, offset):
 
     _assert_keeps_every_ray(out, azimuth)
     assert (out.azimuth.diff("azimuth") * step > 0).all()
+
+
+@pytest.mark.parametrize(
+    "step, start, stop, direction",
+    [
+        pytest.param(1, 330, 30, 1, id="cw"),
+        pytest.param(1, 330, 390, 1, id="cw-above-360"),
+        pytest.param(-1, 30, 330, -1, id="ccw"),
+        pytest.param(-1, 390, 330, -1, id="ccw-above-360"),
+    ],
+)
+def test_reindex_angle_sector_across_north_angles(step, start, stop, direction):
+    azimuth = np.concatenate([np.arange(330.5, 360.0), np.arange(0.5, 30.0)])[::step]
+    ds = _partial_sweep(azimuth, "sector")
+
+    out = util.reindex_angle(
+        ds, start_angle=start, stop_angle=stop, angle_res=1.0, direction=direction
+    )
+
+    assert out.azimuth.size == 60
+    assert out.azimuth.min() >= 0
+    assert out.azimuth.max() <= 360
+    _assert_keeps_every_ray(out, azimuth)
+
+
+@pytest.mark.parametrize(
+    "start, stop, direction, span",
+    [
+        pytest.param(0, 360, 1, 360, id="full-circle"),
+        pytest.param(360, 0, -1, 360, id="ccw-full-circle"),
+        pytest.param(270, 360, 1, 90, id="stop-on-north"),
+        pytest.param(360, 270, -1, 90, id="ccw-start-on-north"),
+        pytest.param(330, 30, 1, 60, id="across-north"),
+        pytest.param(30, 330, -1, 60, id="ccw-across-north"),
+    ],
+)
+def test_angle_span(start, stop, direction, span):
+    assert util._angle_span(start, stop, direction, "azimuth") == span
 
 
 def test_reindex_angle_keeps_rays_next_to_north():
@@ -482,7 +520,7 @@ def test_extract_angle_parameters_sector_ignores_nan_angles():
     angle_dict = util.extract_angle_parameters(_partial_sweep(azimuth, "sector"))
 
     assert angle_dict["start_angle"] == 330
-    assert angle_dict["stop_angle"] == 390
+    assert angle_dict["stop_angle"] == 30
 
 
 def test_extract_angle_parameters_counter_clockwise_flags():
