@@ -29,6 +29,7 @@
 * TST: Mark open-radar-data tests during collection, detect missing markers at runtime, and split CI into ``filetests`` and ``unittests`` runs with separate coverage reports ({issue}`156`, {pull}`567`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: the IRIS root attribute ``scan_name`` no longer keeps the padding of its fixed-width field (``"SURV_HV_300"``, was ``"SURV_HV_300 "``) ({issue}`575`, {pull}`578`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS beam-center azimuth of counter-clockwise rays (sector sweeps alternate direction) that cross north or are wider than 5 degrees was off by 180 degrees; the center is now unwrapped the shorter way round in either rotation direction ({issue}`526`, {pull}`530`) by [@aladinor](https://github.com/aladinor)
+* FIX: CfRadial1 export writes the GAMIC calibration values which are no CfRadial 2.1 names (``noise_power_h/v`` in dB and ``rx_loss_h/v``) without the ``r_calib_`` prefix, which made them look like CfRadial names; they read back in the same ``radar_calibration`` group ({issue}`555`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 

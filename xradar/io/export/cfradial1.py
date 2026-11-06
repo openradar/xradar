@@ -137,9 +137,17 @@ def _sweep_group_names(dtree):
     return [name for name in dtree.groups if "sweep" in name]
 
 
+#: calibration values of GAMIC files which are no CfRadial 2.1 names: the noise
+#: power is in dB (not the dBm noise source power) and the meaning of the receiver
+#: loss is not known. They are written without the ``r_calib_`` prefix, which
+#: would make them look like CfRadial names (#555)
+VENDOR_CALIBRATION_NAMES = {"noise_power_h", "noise_power_v", "rx_loss_h", "rx_loss_v"}
+
 #: CfRadial2.1 calibration names, as read by xradar (the ones that get the
 #: ``r_calib_`` prefix on export, other names are written back unchanged)
-CALIBRATION_NAMES = {v or k for k, v in radar_calibration_subgroup.items()}
+CALIBRATION_NAMES = {
+    v or k for k, v in radar_calibration_subgroup.items()
+} - VENDOR_CALIBRATION_NAMES
 
 #: CfRadial version written by the exporter (#388)
 CFRADIAL1_VERSION = "1.4"
