@@ -186,6 +186,47 @@ def test_extract_angle_parameters_descending_rhi():
     assert angle_dict["direction"] == -1
     assert angle_dict["angle_res"] == 1.0
     assert angle_dict["expected_number_rays"] == 90
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+    out = util.reindex_angle(
+        rhi,
+        angle_dict["start_angle"],
+        angle_dict["stop_angle"],
+        angle_dict["angle_res"],
+        angle_dict["direction"],
+    )
+    np.testing.assert_array_equal(out.elevation.values, rhi.elevation.values)
+
+
+def test_extract_angle_parameters_reversed_real_sweep(gamic_file, closing):
+    # the GAMIC sweep turns clockwise, reversed it is a counter-clockwise sweep
+    ds = closing(
+        xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
+    )
+    cw = util.remove_duplicate_rays(ds)
+    ccw = cw.isel(azimuth=slice(None, None, -1))
+    cw_dict = util.extract_angle_parameters(cw)
+    ccw_dict = util.extract_angle_parameters(ccw)
+    assert ccw_dict["direction"] == -1
+    for key in [
+        "angle_res",
+        "expected_angle_span",
+        "expected_number_rays",
+        "missing_rays",
+        "excess_rays",
+    ]:
+        assert ccw_dict[key] == cw_dict[key], key
+
+    def reindex(sweep, p):
+        return util.reindex_angle(
+            sweep, p["start_angle"], p["stop_angle"], p["angle_res"], p["direction"]
+        )
+
+    cw_out = reindex(cw, cw_dict)
+    ccw_out = reindex(ccw, ccw_dict)
+    assert ccw_out.sizes["azimuth"] == 360
+    xr.testing.assert_identical(ccw_out.isel(azimuth=slice(None, None, -1)), cw_out)
 
 
 def test_reindex_angle_ignores_sign_of_angle_res():

@@ -321,7 +321,10 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters.
+        Dictionary with parameters. ``angle_res`` is always positive, the sweep
+        direction is ``direction`` (1 for clockwise or ascending, -1 for
+        counter-clockwise or descending). ``missing_rays`` and ``excess_rays``
+        compare the number of rays with ``expected_number_rays``.
     """
     angle_dict = {}
 
