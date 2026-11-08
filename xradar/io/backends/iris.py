@@ -178,6 +178,33 @@ def decode_bin_angle(bin_angle, mode=None):
     return 360.0 * bin_angle / 2 ** (mode * 8)
 
 
+def _azimuth_centers(start, stop):
+    """Beam center azimuth of each ray from its start and stop azimuth.
+
+    Works for either rotation direction (sector sweeps alternate): a ray
+    across north is unwrapped the shorter way round.
+    A ray exactly 180 degrees wide is ambiguous and is not unwrapped.
+
+    Parameters
+    ----------
+    start, stop : :class:`numpy:numpy.ndarray`
+        Start and stop azimuth of each ray in degrees, [0, 360).
+
+    Returns
+    -------
+    az : :class:`numpy:numpy.ndarray`
+        Beam center azimuth in degrees, [0, 360).
+    """
+    # at most one applies: a clockwise or a counter-clockwise ray across north
+    stop = np.where(start - stop > 180, stop + 360, stop)
+    stop = np.where(stop - start > 180, stop - 360, stop)
+    az = (start + stop) / 2.0
+    # negatives first: one closer to 0 than half an ulp rounds up to 360
+    az[az < 0] += 360
+    az[az >= 360] -= 360
+    return az
+
+
 def decode_array(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=None):
     """Decode data array.
 
@@ -509,18 +536,20 @@ def _moment_names(type_names):
 
     Types map through ``iris_mapping``. When two types of one sweep map to
     the same name (e.g. the 1- and 2-byte flavors ``DB_DBZ`` and
-    ``DB_DBZ2`` both map to ``DBZH``), the first keeps the CfRadial name and
-    each later one keeps its Sigmet name, so no moment is lost.
+    ``DB_DBZ2`` both map to ``DBZH``), the last one keeps the CfRadial name
+    and each earlier one its Sigmet name, so no moment is lost. Types come in
+    ascending order, where the finer 2-byte flavor is the later one.
     """
+    type_names = list(type_names)
     names = []
-    for type_name in type_names:
+    for type_name in reversed(type_names):
         name = iris_mapping.get(type_name, type_name)
         if name in names:
             name = type_name
-        if name in names:
+        if name in names or type_names.count(type_name) > 1:
             raise ValueError(f"data type {type_name!r} appears twice in one sweep")
         names.append(name)
-    return names
+    return names[::-1]
 
 
 def _first_bin_cm(task_range_info):
@@ -3839,13 +3868,16 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
             ele_stop = dec_data[:, 3]
             ele_stop[ele_stop > 180] -= 360
 
-            # calculate beam center values
-            # find locations with reasonable difference
-            zero_index = np.where(azi_start - azi_stop > 5)
-            azi_stop2 = azi_stop.copy()
-            azi_stop2[zero_index[0]] += 360
-            az = (azi_start + azi_stop2) / 2.0
-            az[az >= 360] -= 360
+            if self.rawdata:
+                # raw BIN2 counts, not degrees: keep the previous arithmetic
+                # (counter-clockwise rays are not handled)
+                zero_index = np.where(azi_start - azi_stop > 5)
+                azi_stop2 = azi_stop.copy()
+                azi_stop2[zero_index[0]] += 360
+                az = (azi_start + azi_stop2) / 2.0
+                az[az >= 360] -= 360
+            else:
+                az = _azimuth_centers(azi_start, azi_stop)
             el = (ele_start + ele_stop) / 2.0
 
             sweep_data["azi_start"] = azi_start
@@ -4159,7 +4191,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         if mname is None:
             mname = iris_mapping.get(name, name)
         # CF attrs of the mapped moment, also when a colliding type keeps its
-        # Sigmet name (DB_DBZ2 next to DB_DBZ is still reflectivity)
+        # Sigmet name (DB_DBZ next to DB_DBZ2 is still reflectivity)
         mapping = sweep_vars_mapping.get(iris_mapping.get(name, name), {})
         attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
         if name in ["DB_HCLASS", "DB_HCLASS2"]:

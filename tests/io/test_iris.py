@@ -59,6 +59,59 @@ def test_decode_bin_angle():
 
 
 @pytest.mark.parametrize(
+    "start, stop, center",
+    [
+        pytest.param(10.0, 11.0, 10.5, id="cw"),
+        pytest.param(359.56, 0.51, 0.035, id="cw-across-north"),
+        pytest.param(11.0, 10.0, 10.5, id="ccw"),
+        pytest.param(0.51, 359.56, 0.035, id="ccw-across-north"),
+        pytest.param(0.1, 359.0, 359.55, id="ccw-across-north-west"),
+        pytest.param(20.0, 10.0, 15.0, id="ccw-wide-ray"),
+        pytest.param(0.0, 0.0, 0.0, id="on-north"),
+    ],
+)
+def test_azimuth_centers(start, stop, center):
+    # the beam center does not depend on the rotation direction (#526)
+    az = iris._azimuth_centers(np.array([start]), np.array([stop]))
+    np.testing.assert_allclose(az, [center], atol=1e-9)
+    assert 0 <= az[0] < 360
+
+
+@pytest.mark.parametrize("stop", [360 - 2e-13, np.nextafter(360, 0)])
+def test_azimuth_centers_stay_below_360(stop):
+    # a center just below 0 must not wrap to exactly 360
+    az = iris._azimuth_centers(np.array([0.0]), np.array([stop]))
+    assert 0 <= az[0] < 360
+
+
+def test_counter_clockwise_sweep_keeps_beam_centers(iris1_file, monkeypatch):
+    # sector sweeps alternate in direction; turning the antenna the other way
+    # (start and stop azimuth swapped) must leave every beam center in place,
+    # also for the ray across north (#526)
+    def azimuths():
+        with iris.IrisRawFile(iris1_file, loaddata=False) as raw:
+            raw.get_moment(1, raw.data_types[0])
+            sweep = raw.data[1]["sweep_data"]
+            return sweep["azi_start"].copy(), sweep["azimuth"].copy()
+
+    start, clockwise = azimuths()
+    # the fixture's first ray straddles north, which is the case that broke
+    assert (start > 359).any() and (clockwise < 1).any()
+    decode = iris.IrisRawFile.decode_data
+
+    def counter_clockwise(self, data, prod):
+        out = decode(self, data, prod)
+        if prod is iris.BIN2 and out.ndim == 2 and out.shape[1] == 4:
+            out = out[:, [2, 1, 0, 3]]
+        return out
+
+    monkeypatch.setattr(iris.IrisRawFile, "decode_data", counter_clockwise)
+    swapped, counter = azimuths()
+    assert not np.array_equal(swapped, start)  # the antenna really turned
+    np.testing.assert_allclose(counter, clockwise, atol=1e-9)
+
+
+@pytest.mark.parametrize(
     "file_fixture, scan_name",
     [("iris0_file", "SURV_HV_300"), ("iris1_file", "PPI1_H")],
 )
@@ -866,29 +919,61 @@ def _header_stub():
 
 
 def test_moment_names_keep_colliding_types():
+    # the later, finer flavor keeps the CfRadial name (#527)
     assert iris._moment_names(["DB_DBZ", "DB_VEL", "DB_DBZ2"]) == [
-        "DBZH",
+        "DB_DBZ",
         "VRADH",
-        "DB_DBZ2",
+        "DBZH",
     ]
-    assert iris._moment_names(["DB_DBZ2", "DB_DBZ"]) == ["DBZH", "DB_DBZ"]
+    assert iris._moment_names(("DB_DBZ", "DB_VEL")) == ["DBZH", "VRADH"]
     with pytest.raises(ValueError, match="appears twice"):
         iris._moment_names(["DB_DBZ", "DB_DBZ2", "DB_DBZ2"])
 
 
+def test_moment_names_give_the_name_to_the_2_byte_flavor():
+    codes = {v["name"]: k for k, v in iris.SIGMET_DATA_TYPES.items()}
+    pairs = {}
+    for type_name, name in iris.iris_mapping.items():
+        pairs.setdefault(name, []).append(type_name)
+    pairs = {name: types for name, types in pairs.items() if len(types) > 1}
+    assert pairs
+
+    for name, types in pairs.items():
+        types = sorted(types, key=codes.get)  # ascending, as in the file
+        assert iris._moment_names(types) == [types[0], name]
+        sizes = [
+            np.dtype(iris.SIGMET_DATA_TYPES[codes[t]]["dtype"]).itemsize for t in types
+        ]
+        assert sizes == [1, 2]
+
+
+def test_moment_names_never_lose_a_moment(monkeypatch):
+    monkeypatch.setitem(iris.iris_mapping, "TYPE_A", "TYPE_B")
+    with pytest.raises(ValueError, match="appears twice"):
+        iris._moment_names(["TYPE_B", "TYPE_A"])
+
+
+def test_data_types_come_in_ascending_order():
+    # the 2-byte flavor is the later one: DB_DBZ, DB_DBZ2 and, in the next
+    # mask words, DB_SNR8, DB_SNR16
+    mask = [1 << 2 | 1 << 9, 0, 1 << 1 | 1 << 2, 0]
+    assert iris._data_types_from_dsp_mask(mask) == [2, 9, 65, 66]
+
+
 def test_eager_reader_keeps_both_colliding_moments(iris0_file, monkeypatch):
-    """Two types mapping to one CfRadial name used to keep only the later
-    one; now the second keeps its Sigmet name. (The collision is staged by
-    mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to DB_DBZ2.)"""
+    """Two types mapping to one CfRadial name are both kept: the later one
+    takes the name, the earlier one keeps its Sigmet name. (The collision is
+    staged by mapping DB_VEL onto DBZH: no fixture has DB_DBZ next to
+    DB_DBZ2.)"""
     with open_dataset(iris0_file, engine="iris", group="sweep_0") as before:
         dbzh, vradh = before.DBZH.values, before.VRADH.values
     monkeypatch.setitem(iris.iris_mapping, "DB_VEL", "DBZH")
     with open_dataset(iris0_file, engine="iris", group="sweep_0") as ds:
-        assert {"DBZH", "DB_VEL"} <= set(ds.data_vars)
-        np.testing.assert_array_equal(ds.DBZH.values, dbzh)
-        np.testing.assert_array_equal(ds.DB_VEL.values, vradh)
+        assert {"DBZH", "DB_DBZ"} <= set(ds.data_vars)
+        np.testing.assert_array_equal(ds.DBZH.values, vradh)
+        np.testing.assert_array_equal(ds.DB_DBZ.values, dbzh)
         # CF attrs follow the mapped name, also under the Sigmet name
-        assert ds.DB_VEL.attrs["units"] == ds.DBZH.attrs["units"]
+        assert ds.DB_DBZ.attrs["units"] == ds.DBZH.attrs["units"]
 
 
 #: each decode path with the wavelength and PRF it reads from ``_header_stub``

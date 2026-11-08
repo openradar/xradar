@@ -29,6 +29,8 @@
 * ENH: NEXRAD Level 2 reader exposes ``nyquist_velocity`` and ``unambiguous_range`` per sweep (MSG_31 radial data block / MSG_1 header) and masks the special moment codes below threshold (``0``) and range folded (``1``) to ``NaN`` via ``_FillValue`` when ``mask_and_scale=True``; raw codes stay available with ``mask_and_scale=False`` ({pull}`457`) by [@syedhamidali](https://github.com/syedhamidali)
 * TST: Mark open-radar-data tests during collection, detect missing markers at runtime, and split CI into ``filetests`` and ``unittests`` runs with separate coverage reports ({issue}`156`, {pull}`567`) by [@kmuehlbauer](https://github.com/kmuehlbauer)
 * FIX: the IRIS root attribute ``scan_name`` no longer keeps the padding of its fixed-width field (``"SURV_HV_300"``, was ``"SURV_HV_300 "``) ({issue}`575`, {pull}`578`) by [@aladinor](https://github.com/aladinor)
+* FIX: IRIS beam-center azimuth of counter-clockwise rays (sector sweeps alternate direction) that cross north or are wider than 5 degrees was off by 180 degrees; the center is now unwrapped the shorter way round in either rotation direction ({issue}`526`, {pull}`530`) by [@aladinor](https://github.com/aladinor)
+* FIX: when two IRIS data types of a sweep map to one moment name, the finer 2-byte flavor keeps the name, as it did before 0.13.0: ``DBZH`` holds ``DB_DBZ2`` and the 1-byte field is ``DB_DBZ``. 0.13.0 had the 1-byte field as ``DBZH`` and the 2-byte field as ``DB_DBZ2``, which no longer exists ({issue}`527`, {pull}`580`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.13.0 (2026-10-21)
 
