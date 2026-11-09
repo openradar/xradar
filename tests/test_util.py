@@ -107,6 +107,165 @@ def test_reindex_range(dtype):
     assert not np.isnan(combined.DBZH).any()
 
 
+def _full_sweep():
+    """Full 360 degree PPI sweep: 600 azimuth samples 0.6 degrees apart,
+    11 gates of 200 m starting at 100 m."""
+    azimuth = np.arange(600) * 0.6 + 0.3
+    rng = 100.0 + np.arange(11) * 200.0
+    dbzh = np.arange(11, dtype="float32") * 10.0  # 0, 10, ..., 100 dBZ
+    ds = xr.Dataset(
+        {
+            "DBZH": (
+                ("azimuth", "range"),
+                np.tile(dbzh, (600, 1)),
+                {"units": "dBZ", "long_name": "Reflectivity"},
+            )
+        },
+        coords={
+            "azimuth": azimuth,
+            "range": ("range", rng, {"units": "meters"}),
+        },
+    )
+    ds["sweep_number"] = xr.DataArray(0)
+    ds["sweep_mode"] = xr.DataArray("azimuth_surveillance")
+    ds["sweep_fixed_angle"] = xr.DataArray(0.6)
+    return ds
+
+
+def _expected_dbzh(range_out, rng, lin, block_gates):
+    """Average *lin* over blocks and interpolate like rescale does."""
+    used = (lin.size // block_gates) * block_gates
+    blocks = np.array(
+        [lin[i : i + block_gates].mean() for i in range(0, used, block_gates)]
+    )
+    centers = rng[:used].reshape(-1, block_gates).mean(axis=1)
+    values = np.interp(range_out, centers, blocks)  # clamped at both ends
+    # np.interp clamps, rescale extrapolates along the end blocks
+    slope_lo = (blocks[1] - blocks[0]) / (centers[1] - centers[0])
+    slope_hi = (blocks[-1] - blocks[-2]) / (centers[-1] - centers[-2])
+    values = np.where(
+        range_out < centers[0],
+        blocks[0] + (range_out - centers[0]) * slope_lo,
+        values,
+    )
+    values = np.where(
+        range_out > centers[-1],
+        blocks[-1] + (range_out - centers[-1]) * slope_hi,
+        values,
+    )
+    # clip to the measured block values
+    values = np.clip(values, blocks.min(), blocks.max())
+    return 10 * np.log10(values)
+
+
+def test_rescale_multiple_of_scales():
+    # both scales are exact multiples: 1.2/0.6 = 2 azimuth samples, 1000/200 = 5 gates
+    ds = _full_sweep()
+    before = ds.DBZH.values.copy()
+    out = util.rescale(ds, 1.2, 1000.0)
+
+    # 600 rays in blocks of 2, 11 gates in blocks of 5 (last gate trimmed),
+    # then both interpolated onto the target grids
+    assert dict(out.sizes) == {"azimuth": 300, "range": 2}
+    np.testing.assert_array_equal(out.range.values, [500.0, 1500.0])
+    np.testing.assert_allclose(
+        out.azimuth.values, ds.azimuth.values.reshape(-1, 2).mean(axis=1)
+    )
+
+    # DBZH is averaged in linear space; the block centres sit at the target
+    # gates
+    lin = 10 ** (before[0].astype("float64") / 10)
+    expected = _expected_dbzh(out.range.values, ds.range.values, lin, 5)
+    np.testing.assert_allclose(out.DBZH.values, np.tile(expected, (300, 1)), rtol=1e-5)
+    assert np.isfinite(out.DBZH.values).all()
+
+    # attributes, metadata variables and the input sweep are left as they are
+    assert out.DBZH.attrs == ds.DBZH.attrs
+    for var in util.get_sweep_metadata_vars(ds):
+        xr.testing.assert_identical(out[var], ds[var])
+    np.testing.assert_array_equal(ds.DBZH.values, before)
+
+
+def test_rescale_irregular_scales():
+    # no exact multiples: averaging uses the nearest integer factor (2 rays,
+    # 2 gates), the output grid is the requested one
+    ds = _full_sweep()
+    out = util.rescale(ds, 1.0, 500.0)
+
+    # both dimensions averaged in blocks of two, then interpolated
+    assert dict(out.sizes) == {"azimuth": 360, "range": 4}
+    np.testing.assert_array_equal(out.range.values, [250.0, 750.0, 1250.0, 1750.0])
+    np.testing.assert_array_equal(out.azimuth.values, np.arange(0.5, 360, 1.0))
+
+    # block centres 200, 600, ..., 1800 m interpolated onto 250, 750, 1250,
+    # 1750 m in linear space
+    lin = 10 ** (ds.DBZH.values[0].astype("float64") / 10)
+    expected = _expected_dbzh(out.range.values, ds.range.values, lin, 2)
+    np.testing.assert_allclose(out.DBZH.values, np.tile(expected, (360, 1)), rtol=1e-5)
+    assert np.isfinite(out.DBZH.values).all()
+
+    # a grid off the block centres extrapolates at both ends, clipped to the
+    # measured values
+    coarse = util.rescale(ds, 1.0, 700.0)
+    np.testing.assert_array_equal(coarse.range.values, [350.0, 1050.0, 1750.0])
+    assert np.isfinite(coarse.DBZH.values).all()
+    assert coarse.DBZH.values.min() >= ds.DBZH.values.min()
+    assert coarse.DBZH.values.max() <= ds.DBZH.values.max()
+
+
+def test_rescale_cyclic_moments():
+    # PHIDP wraps at 360 degrees, VRADH at +/- nyquist: seams must be
+    # averaged on the circle
+    ds = _full_sweep()
+    phidp = np.array([10.0, 350.0] * 5 + [10.0])  # 11 gates across the seam
+    vrad = np.array([15.0, -15.0] * 5 + [15.0])
+    ds["PHIDP"] = (("azimuth", "range"), np.tile(phidp, (600, 1)))
+    ds["VRADH"] = (("azimuth", "range"), np.tile(vrad, (600, 1)))
+    ds["nyquist_velocity"] = xr.DataArray(15.0, attrs={"units": "m/s"})
+    out = util.rescale(ds, 1.2, 1000.0)
+
+    def circ(values):
+        theta = np.deg2rad(values)
+        return np.rad2deg(np.arctan2(np.sin(theta).mean(), np.cos(theta).mean()))
+
+    # the blocks are centred at 500 and 1500 m, where the target gates sit
+    np.testing.assert_allclose(
+        out.PHIDP.values[0],
+        [circ(phidp[:5]) % 360, circ(phidp[5:10]) % 360],
+        rtol=1e-6,
+    )
+    # a linear mean across the seam would give 146 and 212 degrees
+    assert abs(out.PHIDP.values[0, 0] - phidp[:5].mean()) > 100
+    assert ((0 <= out.PHIDP.values) & (out.PHIDP.values < 360)).all()
+
+    # +Nyquist and -Nyquist are aliases: their circular mean is not 0 m/s
+    np.testing.assert_allclose(out.VRADH.values[0], [15.0, -15.0], atol=1e-6)
+    # nyquist_velocity is kept
+    xr.testing.assert_identical(out.nyquist_velocity, ds.nyquist_velocity)
+
+
+def test_rescale_nearest():
+    # moments outside the whitelists keep measured values, not interpolated
+    # fractions
+    ds = _full_sweep()
+    flag = np.tile(np.arange(11) % 4, (600, 1)).astype("int16")
+    ds["CLASS"] = (("azimuth", "range"), flag)
+    # velocities cannot be averaged on the circle without nyquist_velocity
+    vrad = np.tile(np.linspace(-10.0, 10.0, 11), (600, 1))
+    ds["VRADH"] = (("azimuth", "range"), vrad)
+    # moments without a range or ray dimension have no target grid
+    ds["OTHER"] = (("azimuth", "foo"), np.zeros((600, 3)))
+    out = util.rescale(ds, 1.0, 500.0)
+
+    assert out.CLASS.dtype == ds.CLASS.dtype
+    ia = np.abs(out.azimuth.values[:, None] - ds.azimuth.values).argmin(1)
+    ir = np.abs(out.range.values[:, None] - ds.range.values).argmin(1)
+    np.testing.assert_array_equal(out.CLASS.values, flag[np.ix_(ia, ir)])
+    # every output velocity is one that was measured
+    assert set(np.unique(out.VRADH.values)) <= set(np.unique(vrad))
+    assert "OTHER" not in out
+
+
 @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int32, np.int64])
 def test_reindex_range_defaults_and_fill(dtype):
     ds = _range_sweep(dtype(250), dtype(500), 6)

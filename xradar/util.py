@@ -32,6 +32,7 @@ __all__ = [
     "get_sweep_dataset_vars",
     "get_sweep_metadata_vars",
     "select_sweep_dataset_vars",
+    "rescale",
     "create_volume",
 ]
 
@@ -908,6 +909,203 @@ def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=
     sweep_out = sweep[select]
 
     return sweep_out
+
+
+def _rescale_factors(values, scale):
+    """Integer factor to average over and target grid for *values*.
+
+    Centres half a step apart (``scale/2, 3*scale/2, ...``) within *values*;
+    at most half of *values* is averaged over, so two blocks remain.
+    """
+    step = abs(values[1] - values[0])  # constant by convention
+    lo, hi = values.min(), values.max()
+    # first centre at or after the first value
+    first = np.ceil((lo - scale / 2) / scale) * scale + scale / 2
+    # keep a centre at hi
+    grid = np.arange(min(first, hi), hi + scale * 1e-9, scale)
+    factor = max(round(scale / step), 1)  # nearest integer, at least one
+    factor = min(factor, max(values.size // 2, 1))  # keep two blocks
+    return factor, grid
+
+
+#: dB-valued moments, block-averaged in linear space
+_db_vars = frozenset(
+    {
+        "DBZH",
+        "DBZV",
+        "DBTH",
+        "DBTV",
+        "DBZ",
+        "DBM",
+        "DBMHC",
+        "DBMHX",
+        "DBMVC",
+        "DBMVX",
+        "SNR",
+        "SNRHC",
+        "SNRHX",
+        "SNRVC",
+        "SNRVX",
+    }
+)
+
+#: cyclic moments, block-averaged on the circle
+_phase_vars = frozenset({"PHIDP", "UPHIDP", "PHIHX"})
+_velocity_vars = frozenset({"VRADH", "VRADV", "VEL", "VR"})
+
+#: moments block-averaged in their own units; all others nearest-neighbour
+_mean_vars = frozenset(
+    {
+        "ZH",
+        "ZV",
+        "TH",
+        "TV",
+        "WRADH",
+        "WRADV",
+        "KDP",
+        "RHOHV",
+        "RHOHX",
+        "RHOVX",
+        "NCP",
+        "NCPH",
+        "NCPV",
+        "ZDR",
+        "LDR",
+        "LDRH",
+        "LDRV",
+        "RR",
+        "REC",
+    }
+)
+
+
+def _mean_along(sweep_var_ds, var, dim, factor, period=None):
+    """Block mean along *dim*, on the circle of *period* when given."""
+    if factor == 1:
+        return sweep_var_ds
+    if period is None:
+        return sweep_var_ds.coarsen({dim: factor}, boundary="trim").mean()
+    theta = 2 * np.pi * sweep_var_ds[var] / period
+    ds = sweep_var_ds.assign(_sin=np.sin(theta), _cos=np.cos(theta))
+    ds = ds.coarsen({dim: factor}, boundary="trim").mean()
+    mean = np.arctan2(ds["_sin"], ds["_cos"]) * period / (2 * np.pi)
+    return ds.drop_vars(["_sin", "_cos"]).assign({var: mean})
+
+
+def _interp_along(sweep_var_ds, var, dim, target, period=None):
+    """Interpolate onto *target* along *dim*, extrapolating at both ends."""
+    if period is None:
+        return sweep_var_ds.interp({dim: target}, kwargs={"fill_value": "extrapolate"})
+    theta = 2 * np.pi * sweep_var_ds[var] / period
+    ds = sweep_var_ds.assign(_sin=np.sin(theta), _cos=np.cos(theta))
+    ds = ds.interp({dim: target}, kwargs={"fill_value": "extrapolate"})
+    mean = np.arctan2(ds["_sin"], ds["_cos"]) * period / (2 * np.pi)
+    return ds.drop_vars(["_sin", "_cos"]).assign({var: mean})
+
+
+def _nearest_along(sweep_var_ds, dim, target):
+    """Nearest measured sample on *dim*, placed on the *target* grid."""
+    idx = np.abs(sweep_var_ds[dim].values[:, None] - target[None, :]).argmin(0)
+    return sweep_var_ds.isel({dim: idx}).assign_coords({dim: target})
+
+
+def rescale(sweep, ascale, rscale):
+    """Resample a sweep onto a coarser azimuth/elevation and range grid.
+
+    Range is resampled first, then azimuth/elevation; both dimensions are
+    averaged over an integer number of gates or samples and interpolated
+    onto the target grid. dB-valued moments are averaged in linear space,
+    cyclic moments (``PHIDP``, ``VRADH``, ...) on the circle, the other
+    whitelisted moments in their own units and every remaining moment
+    nearest-neighbour. The input sweep is left unchanged.
+
+    Parameters
+    ----------
+    sweep : xarray.Dataset
+        Radar sweep dataset following WMO conventions, with at least two
+        gates and two azimuth/elevation samples.
+
+    ascale : float
+        Target azimuth (PPI) or elevation (RHI) resolution in degrees,
+        rounded to the nearest multiple of the current resolution when
+        averaging.
+
+    rscale : float
+        Target gate spacing in meters, rounded to the nearest multiple of the
+        current gate spacing when averaging.
+
+    Returns
+    -------
+    sweep_out : xarray.Dataset
+        Rescaled sweep with the metadata variables of *sweep* unchanged.
+
+    Notes
+    -----
+    Incomplete last blocks are dropped (``boundary="trim"``), the
+    extrapolated ends of averaged moments are clipped to the measured
+    values and moments without a target grid are left out.
+    """
+    ray_dim = get_ray_dim(sweep)
+    nrange, target_range = _rescale_factors(sweep.range.values, rscale)
+    nray, target_ray = _rescale_factors(sweep[ray_dim].values, ascale)
+
+    sweep_new = []
+    for var in get_sweep_dataset_vars(sweep, non_standard=True):
+        if set(sweep[var].dims) - {"range", ray_dim}:
+            continue  # no target grid along other dimensions
+        period, kind = None, "nearest"
+        if var in _phase_vars:
+            period, kind = 360.0, "circular"
+        elif var in _velocity_vars and "nyquist_velocity" in sweep:
+            period, kind = 2.0 * float(sweep["nyquist_velocity"]), "circular"
+        elif var in _db_vars:
+            kind = "db"
+        elif var in _mean_vars:
+            kind = "mean"
+
+        sweep_var_ds = sweep[[var]]
+        if kind == "nearest":
+            sweep_var_ds = _nearest_along(sweep_var_ds, "range", target_range)
+            sweep_var_ds = _nearest_along(sweep_var_ds, ray_dim, target_ray)
+            sweep_new.append(sweep_var_ds)
+            continue
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if kind == "db":
+                sweep_var_ds[var] = 10 ** (sweep_var_ds[var] / 10)
+
+            # range first, then azimuth/elevation; the target grid reaches
+            # past the trimmed blocks
+            if nrange > 1:
+                sweep_var_ds = _mean_along(sweep_var_ds, var, "range", nrange, period)
+            if kind != "circular":
+                limits = float(sweep_var_ds[var].min()), float(sweep_var_ds[var].max())
+            sweep_var_ds = _interp_along(
+                sweep_var_ds, var, "range", target_range, period
+            )
+            if nray > 1:
+                sweep_var_ds = _mean_along(sweep_var_ds, var, ray_dim, nray, period)
+            sweep_var_ds = _interp_along(sweep_var_ds, var, ray_dim, target_ray, period)
+
+            if kind == "circular":
+                # cyclic results follow the convention of the input
+                if var in _phase_vars and np.nanmin(sweep[var].values) >= 0:
+                    sweep_var_ds[var] = sweep_var_ds[var] % period
+            else:
+                # extrapolation can leave the measured values
+                sweep_var_ds[var] = sweep_var_ds[var].clip(*limits)
+                if kind == "db":
+                    sweep_var_ds[var] = 10 * np.log10(sweep_var_ds[var])
+        sweep_var_ds[var].attrs = sweep[var].attrs
+        sweep_new.append(sweep_var_ds)
+
+    sweep_new = xr.merge(sweep_new, compat="override")
+
+    for var in get_sweep_metadata_vars(sweep, optional=True):
+        sweep_new[var] = sweep[var]
+
+    return sweep_new
 
 
 def round_datetime64_to_second(dt):
