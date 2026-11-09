@@ -323,10 +323,13 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters. ``angle_res`` is always positive, the sweep
-        direction is ``direction`` (1 for clockwise or ascending, -1 for
-        counter-clockwise or descending). ``missing_rays`` and ``excess_rays``
-        compare the number of rays with ``expected_number_rays``.
+        Dictionary with parameters. The angle and time ranges, ``a1gate`` and the
+        ``*_are_unique`` checks describe all rays of ``ds``. The angle parameters
+        from ``uniform_angle_spacing`` on are estimated without duplicate rays,
+        see :py:func:`remove_duplicate_rays`. ``angle_res`` is always positive,
+        the sweep direction is ``direction`` (1 for clockwise or ascending, -1
+        for counter-clockwise or descending). ``missing_rays`` and
+        ``excess_rays`` compare the number of rays with ``expected_number_rays``.
     """
     angle_dict = {}
 
@@ -363,12 +366,16 @@ def extract_angle_parameters(ds):
     a1gate_val = ds.time.idxmin(first_angle).values
     angle_dict.update(a1gate_idx=a1gate_idx, a1gate_val=a1gate_val)
 
+    # duplicate rays would skew the angle parameters below
+    if not angles_are_unique:
+        ds = remove_duplicate_rays(ds)
+
     # 5. angle differences
     fdim = ds[first_angle]
     diff = fdim.diff(first_angle)
 
     # this captures different angle spacing
-    # catches also missing rays and double rays
+    # catches also missing rays
     # and other erroneous ray alignments which result in different first_angle values
 
     # 6. this finds the median of those diff-values which are over some quantile

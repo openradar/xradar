@@ -125,6 +125,7 @@ def test_extract_angle_parameters(gamic_file, closing):
     ds = closing(
         xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
     )
+    # the ray at 243.52 degrees is stored twice, it is not an excess ray
     angle_dict = util.extract_angle_parameters(ds)
     expected_dict = {
         "a1gate_idx": np.array(243),
@@ -133,7 +134,7 @@ def test_extract_angle_parameters(gamic_file, closing):
         "angles_are_unique": False,
         "ascending": np.array(True),
         "direction": 1,
-        "excess_rays": np.array(True),
+        "excess_rays": np.array(False),
         "expected_angle_span": 360,
         "expected_number_rays": 360,
         "first_angle": "azimuth",
@@ -149,6 +150,11 @@ def test_extract_angle_parameters(gamic_file, closing):
         "uniform_angle_spacing": False,
     }
     assert angle_dict == expected_dict
+
+    # the time range and first ray don't depend on which duplicate comes first
+    flipped = util.extract_angle_parameters(ds.sortby("azimuth", ascending=False))
+    for key in ["min_time", "max_time", "a1gate_val", "excess_rays"]:
+        assert flipped[key] == angle_dict[key], key
 
 
 def _ppi(direction=1, **kwargs):
@@ -264,6 +270,18 @@ def test_remove_duplicate_rays_keeps_ray_order(direction):
     out = util.remove_duplicate_rays(_with_duplicate_ray(ds))
     xr.testing.assert_identical(out, ds)
     assert util.extract_angle_parameters(out)["direction"] == direction
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_extract_angle_parameters_removes_duplicate_rays(direction):
+    ds = _ppi(direction=direction)
+    angle_dict = util.extract_angle_parameters(_with_duplicate_ray(ds))
+    expected = util.extract_angle_parameters(ds)
+    # the copy has the same angle and time
+    for key in ["angles_are_unique", "times_are_unique"]:
+        assert expected.pop(key)
+        assert not angle_dict.pop(key)
+    assert angle_dict == expected
 
 
 @pytest.mark.parametrize("direction", [1, -1])

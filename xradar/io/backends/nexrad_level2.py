@@ -2554,7 +2554,6 @@ def open_sweeps_as_dict(
             # For incomplete sweeps in pad mode, auto-detect angle parameters
             # and force angle reindex even without reindex_coord["angle"]
             if decode_coords and sweep_idx in incomplete_sweeps:
-                group_ds = group_ds.pipe(util.remove_duplicate_rays)
                 angle_params = util.extract_angle_parameters(group_ds)
                 # use the nominal azimuth spacing of the sweep (MSG_31
                 # azimuth_resolution), the measured one is jittery (#396)
