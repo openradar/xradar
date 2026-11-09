@@ -105,7 +105,8 @@ def remove_duplicate_rays(ds):
     Returns
     -------
     ds : xarray.Dataset
-        Dataset with duplicate rays removed
+        Dataset with duplicate rays removed. The first ray of each angle is kept
+        and the rays stay in their order.
     """
     first_angle = get_first_angle(ds)
 
@@ -115,7 +116,7 @@ def remove_duplicate_rays(ds):
         # if times have been calculated with wrong number of rays
         # (ODIM_H5, we would need to recalculate the times
         # how should we find out?
-        ds = ds.isel({first_angle: idx})
+        ds = ds.isel({first_angle: np.sort(idx)})
 
     return ds
 
@@ -182,6 +183,7 @@ def reindex_angle(
 ):
     """Reindex along first angle.
 
+    Duplicate rays are removed first, see :py:func:`remove_duplicate_rays`.
     Missing values will be filled by variable's ``_FillValue``.
 
     Parameters
@@ -230,7 +232,7 @@ def reindex_angle(
         dtype=ds[first_angle].dtype,
     )
 
-    ds = ds.sortby(first_angle)
+    ds = remove_duplicate_rays(ds).sortby(first_angle)
     ds = _reindex_angle(ds, ang, tolerance, method=method)
 
     # check secondary angle coordinate (no nan)

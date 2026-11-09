@@ -36,14 +36,13 @@ from .util import (
     map_over_sweeps,
     reindex_angle,
     reindex_range,
-    remove_duplicate_rays,
 )
 
 
 def _fix_angle(ds, **kwargs):
-    # as reindex_coord while reading: remove duplicate rays, fill the time of
-    # missing rays
-    ds = reindex_angle(remove_duplicate_rays(ds), **kwargs)
+    # as reindex_coord while reading: reindex_angle removes duplicate rays,
+    # ipol_time fills the time of missing rays
+    ds = reindex_angle(ds, **kwargs)
     return ipol_time(ds, **kwargs)
 
 
