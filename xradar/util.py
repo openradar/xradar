@@ -166,6 +166,11 @@ def _reindex_dim(ds, dim, array, tolerance, method="nearest"):
     return ds
 
 
+def _angle_span(start_angle, stop_angle):
+    """Return the angle span of a sweep from its start and stop angle."""
+    return abs(stop_angle - start_angle)
+
+
 def reindex_angle(
     ds,
     start_angle=None,
@@ -191,7 +196,8 @@ def reindex_angle(
     stop_angle : float
         Stop angle of dataset.
     angle_res : float
-        Angle resolution of the dataset.
+        Angle resolution of the dataset, positive. The sign is ignored, the
+        sweep direction comes from ``direction``.
     direction : int
         Sweep direction, -1 -> CCW, 1 -> CW.
     method : str
@@ -205,6 +211,7 @@ def reindex_angle(
     ds : xarray.Dataset
         Reindexed dataset
     """
+    angle_res = abs(angle_res)
     if tolerance is None:
         tolerance = angle_res / 2.0
 
@@ -212,7 +219,7 @@ def reindex_angle(
     first_angle = get_first_angle(ds)
     second_angle = get_second_angle(ds)
 
-    expected_angle_span = abs(stop_angle - start_angle)
+    expected_angle_span = _angle_span(start_angle, stop_angle)
     expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
 
     # create reindexing angle
@@ -314,7 +321,10 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters.
+        Dictionary with parameters. ``angle_res`` is always positive, the sweep
+        direction is ``direction`` (1 for clockwise or ascending, -1 for
+        counter-clockwise or descending). ``missing_rays`` and ``excess_rays``
+        compare the number of rays with ``expected_number_rays``.
     """
     angle_dict = {}
 
@@ -384,7 +394,8 @@ def extract_angle_parameters(ds):
     angle_dict.update(ascending=ascending.values, direction=direction)
 
     # 8. calculate angle resolution from median_diff and rounding
-    angle_res = np.round(median_diff, decimals=2)
+    # always positive, the sweep direction is in ``direction``
+    angle_res = np.round(abs(median_diff), decimals=2)
     angle_dict.update(angle_res=angle_res.values)
 
     # 9. start/stop angle
@@ -405,17 +416,17 @@ def extract_angle_parameters(ds):
     angle_dict.update(start_angle=start_ang, stop_angle=stop_ang)
 
     # 10. expected angle span
-    expected_angle_span = abs(stop_ang - start_ang)
+    expected_angle_span = _angle_span(start_ang, stop_ang)
     angle_dict.update(expected_angle_span=expected_angle_span)
 
-    # 11. incomplete sweep
-    missing_rays = (angle_res * fdim.size) < expected_angle_span
-    excess_rays = (angle_res * fdim.size) > expected_angle_span
-    angle_dict.update(missing_rays=missing_rays.values, excess_rays=excess_rays.values)
-
-    # 12. expected number of rays
+    # 11. expected number of rays
     expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
     angle_dict.update(expected_number_rays=expected_number_rays)
+
+    # 12. incomplete sweep, compare ray counts
+    missing_rays = np.asarray(fdim.size < expected_number_rays)
+    excess_rays = np.asarray(fdim.size > expected_number_rays)
+    angle_dict.update(missing_rays=missing_rays, excess_rays=excess_rays)
 
     return angle_dict
 

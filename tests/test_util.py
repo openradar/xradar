@@ -151,6 +151,106 @@ def test_extract_angle_parameters(gamic_file, closing):
     assert angle_dict == expected_dict
 
 
+def _ppi(direction=1, **kwargs):
+    ds = model.create_sweep_dataset(a1gate=0, direction=direction, **kwargs)
+    ds = ds.swap_dims({"time": "azimuth"})
+    return ds.assign_coords(sweep_mode="azimuth_surveillance")
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_extract_angle_parameters_direction(direction):
+    # rays in time order, counter-clockwise azimuth falls from 359.5 to 0.5
+    ds = _ppi(direction=direction)
+    angle_dict = util.extract_angle_parameters(ds)
+    assert angle_dict["direction"] == direction
+    assert angle_dict["angle_res"] == 1.0
+    assert angle_dict["expected_number_rays"] == 360
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+    out = util.reindex_angle(
+        ds,
+        angle_dict["start_angle"],
+        angle_dict["stop_angle"],
+        angle_dict["angle_res"],
+        angle_dict["direction"],
+    )
+    np.testing.assert_array_equal(out.azimuth.values, ds.azimuth.values)
+
+
+def test_extract_angle_parameters_descending_rhi():
+    elevation = np.arange(0.5, 90, 1.0)
+    rhi = model.create_sweep_dataset(sweep="RHI", elevation=elevation[::-1])
+    rhi = rhi.swap_dims({"time": "elevation"}).assign_coords(sweep_mode="rhi")
+    angle_dict = util.extract_angle_parameters(rhi)
+    assert angle_dict["direction"] == -1
+    assert angle_dict["angle_res"] == 1.0
+    assert angle_dict["expected_number_rays"] == 90
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+    out = util.reindex_angle(
+        rhi,
+        angle_dict["start_angle"],
+        angle_dict["stop_angle"],
+        angle_dict["angle_res"],
+        angle_dict["direction"],
+    )
+    np.testing.assert_array_equal(out.elevation.values, rhi.elevation.values)
+
+
+def test_extract_angle_parameters_reversed_real_sweep(gamic_file, closing):
+    # the GAMIC sweep turns clockwise, reversed it is a counter-clockwise sweep
+    ds = closing(
+        xr.open_dataset(gamic_file, group="sweep_7", engine="gamic", first_dim="auto")
+    )
+    cw = util.remove_duplicate_rays(ds)
+    ccw = cw.isel(azimuth=slice(None, None, -1))
+    cw_dict = util.extract_angle_parameters(cw)
+    ccw_dict = util.extract_angle_parameters(ccw)
+    assert ccw_dict["direction"] == -1
+    for key in [
+        "angle_res",
+        "expected_angle_span",
+        "expected_number_rays",
+        "missing_rays",
+        "excess_rays",
+    ]:
+        assert ccw_dict[key] == cw_dict[key], key
+
+    def reindex(sweep, p):
+        return util.reindex_angle(
+            sweep, p["start_angle"], p["stop_angle"], p["angle_res"], p["direction"]
+        )
+
+    cw_out = reindex(cw, cw_dict)
+    ccw_out = reindex(ccw, ccw_dict)
+    assert ccw_out.sizes["azimuth"] == 360
+    xr.testing.assert_identical(ccw_out.isel(azimuth=slice(None, None, -1)), cw_out)
+
+
+def test_reindex_angle_ignores_sign_of_angle_res():
+    ds = _ppi(direction=-1)
+    kwargs = dict(start_angle=360, stop_angle=0, direction=-1)
+    neg = util.reindex_angle(ds, angle_res=-1.0, **kwargs)
+    pos = util.reindex_angle(ds, angle_res=1.0, **kwargs)
+    xr.testing.assert_identical(neg, pos)
+    assert neg.sizes["azimuth"] == 360
+
+
+def test_extract_angle_parameters_compares_ray_counts():
+    # 514 rays of 0.7 degrees span 359.8 degrees: a full sweep, nothing missing
+    ds = _ppi(azimuth=np.arange(0.35, 360, 0.7))
+    angle_dict = util.extract_angle_parameters(ds)
+    assert angle_dict["expected_number_rays"] == ds.sizes["azimuth"] == 514
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+    one_less = util.extract_angle_parameters(ds.isel(azimuth=slice(1, None)))
+    assert one_less["missing_rays"]
+    assert not one_less["excess_rays"]
+
+
 @pytest.mark.parametrize("low", [-0.25, -0.1, 0])
 @pytest.mark.parametrize("high", [0.25, 0.1, 0])
 def test_extract_angle_parameters2(low, high):
