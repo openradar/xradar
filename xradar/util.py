@@ -106,11 +106,12 @@ def remove_duplicate_rays(ds):
     -------
     ds : xarray.Dataset
         Dataset with duplicate rays removed. The first ray of each angle is kept
-        and the rays stay in their order.
+        and the rays stay in their order. Rays with a NaN angle are kept.
     """
     first_angle = get_first_angle(ds)
 
-    _, idx = np.unique(ds[first_angle], return_index=True)
+    # a NaN angle does not make two rays duplicates
+    _, idx = np.unique(ds[first_angle], return_index=True, equal_nan=False)
     if len(idx) < len(ds[first_angle]):
         # todo:
         # if times have been calculated with wrong number of rays
@@ -329,7 +330,8 @@ def extract_angle_parameters(ds):
         see :py:func:`remove_duplicate_rays`. ``angle_res`` is always positive,
         the sweep direction is ``direction`` (1 for clockwise or ascending, -1
         for counter-clockwise or descending). ``missing_rays`` and
-        ``excess_rays`` compare the number of rays with ``expected_number_rays``.
+        ``excess_rays`` compare the number of rays without duplicates with
+        ``expected_number_rays``.
     """
     angle_dict = {}
 
@@ -351,7 +353,8 @@ def extract_angle_parameters(ds):
     )
 
     # 3. get unique angles
-    unique_angles = np.unique(ds[first_angle])
+    # as in remove_duplicate_rays, a NaN angle does not make two rays duplicates
+    unique_angles = np.unique(ds[first_angle], equal_nan=False)
 
     # check if azimuth can be sorted
     # check if time can be sorted
