@@ -8,6 +8,7 @@ Ported from wradlib.
 """
 
 import copy
+import gc
 import io
 import struct
 import warnings
@@ -1270,3 +1271,14 @@ def test_snr8_matches_reflectivity_on_arouca(iris_arouca_file):
     assert resid.size > 5000
     assert np.abs(np.median(resid)) < 0.05
     assert np.mean(np.abs(resid) <= 0.5) > 0.95
+
+
+@pytest.mark.parametrize("engine", ["iris", None], ids=["engine", "discovered"])
+def test_open_datatree_does_not_leave_the_file_open(iris0_file, engine):
+    # the sweeps are listed (and the engine guessed) by reading the header,
+    # which must not leave a file object behind (#548)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always", ResourceWarning)
+        xd.open_datatree(iris0_file, engine=engine).close()
+        gc.collect()
+    assert not [w for w in record if w.category is ResourceWarning]
