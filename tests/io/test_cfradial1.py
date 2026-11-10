@@ -765,3 +765,44 @@ def test_cfradial1_sweeps_not_in_time_order(gamic_file, tmp_path, closing):
         np.testing.assert_array_equal(
             res.DBZH.values[:, :nrange], src.DBZH.values[:, :nrange]
         )
+
+
+def test_cfradial1_export_vendor_calibration_names(gamic_file, tmp_path, closing):
+    # GAMIC values which are no CfRadial 2.1 names are not written as
+    # ``r_calib_*`` (#555), the CfRadial names still are
+    dtree = closing(
+        xd.open_datatree(gamic_file, engine="gamic", sweep=0, optional_groups=True)
+    )
+    calib = dtree["radar_calibration"].dataset
+    vendor = {"noise_power_h", "noise_power_v", "rx_loss_h", "rx_loss_v"}
+    assert vendor <= set(calib.data_vars)
+    path = tmp_path / "gamic_calib.nc"
+    xd.io.to_cfradial1(dtree, path, calibs=True)
+    with xr.open_dataset(path, decode_timedelta=False) as ds:
+        assert vendor <= set(ds.variables)
+        assert not {f"r_calib_{name}" for name in vendor} & set(ds.variables)
+        assert "r_calib_antenna_gain_h" in ds.variables
+        assert ds["noise_power_h"].dims == ("r_calib",)
+    # the values read back in the same group
+    back = closing(xd.open_datatree(path, engine="cfradial1", optional_groups=True))
+    for name in calib.data_vars:
+        np.testing.assert_allclose(
+            back["radar_calibration"].dataset[name].values, calib[name].values
+        )
+
+
+def test_cfradial1_map_radar_calibration_names():
+    calib = xr.Dataset(
+        {
+            "antenna_gain_h": 43.0,
+            "noise_power_h": -3.8,
+            "not_in_the_model": 1.0,
+        }
+    )
+    mapped = cf1_export._map_radar_calibration(calib)
+    # CfRadial names get the prefix, vendor and unknown names do not
+    assert set(mapped.data_vars) == {
+        "r_calib_antenna_gain_h",
+        "noise_power_h",
+        "not_in_the_model",
+    }
