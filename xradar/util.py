@@ -66,14 +66,29 @@ def get_first_angle(ds):
     Returns
     -------
     first_angle : str
-        Name of first angle dimension.
+        Name of first angle dimension, ``azimuth`` or ``elevation``.
+
+    Raises
+    ------
+    ValueError
+        If the dataset has none or both of them as a dimension with a coordinate.
     """
-    first_angle = list(set(ds.dims) & set(ds.coords) ^ {"range"})[0]
-    if first_angle == "time":
+    # only the angles are candidates, other dimensions with a coordinate
+    # (e.g. ``frequency``) must not be picked, whatever the order of a set is
+    angles = [
+        name
+        for name in ("azimuth", "elevation")
+        if name in ds.dims and name in ds.coords
+    ]
+    if len(angles) == 1:
+        return angles[0]
+    if angles:
+        raise ValueError("both ``azimuth`` and ``elevation`` are dimensions")
+    if "time" in ds.dims:
         raise ValueError(
             "first dimension is ``time``, but needed ``azimuth`` or ``elevation``"
         )
-    return first_angle
+    raise ValueError("neither ``azimuth`` nor ``elevation`` is a dimension")
 
 
 def get_second_angle(ds):

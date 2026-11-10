@@ -4,6 +4,9 @@
 
 """Tests for `xradar` util package."""
 
+import os
+import subprocess
+import sys
 import warnings
 
 import numpy as np
@@ -36,6 +39,51 @@ def test_get_first_angle(sweep):
         util.get_first_angle(ds)
     ds = ds.swap_dims({"time": sweep[1]})
     assert util.get_first_angle(ds) == sweep[1]
+
+
+def test_get_first_angle_ignores_other_dimensions(sweep):
+    # a dimension with a coordinate which is no angle, e.g. frequency, must not
+    # be returned (#581)
+    ds = model.create_sweep_dataset(sweep=sweep[0]).swap_dims({"time": sweep[1]})
+    ds = ds.assign_coords(frequency=("frequency", [5.6e9]))
+    assert "frequency" in ds.dims
+    assert util.get_first_angle(ds) == sweep[1]
+
+
+@pytest.mark.parametrize("seed", ["0", "1", "2", "3", "4"])
+def test_get_first_angle_does_not_depend_on_the_hash_seed(seed):
+    # the first of a set was returned: the order of strings follows the seed
+    code = (
+        "import numpy as np, xarray as xr\n"
+        "from xradar import util\n"
+        "ds = xr.Dataset(coords={'azimuth': ('azimuth', np.arange(0.5, 360.0)),"
+        " 'range': ('range', np.arange(3.0)),"
+        " 'frequency': ('frequency', [5.6e9])})\n"
+        "print(util.get_first_angle(ds))\n"
+    )
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = seed
+    env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
+    out = subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "azimuth"
+
+
+def test_get_first_angle_without_or_with_both_angles():
+    ds = xr.Dataset(coords={"range": ("range", np.arange(3.0))})
+    with pytest.raises(ValueError, match="neither"):
+        util.get_first_angle(ds)
+    both = xr.Dataset(
+        coords={
+            "azimuth": ("azimuth", np.arange(3.0)),
+            "elevation": ("elevation", np.arange(2.0)),
+        }
+    )
+    with pytest.raises(ValueError, match="both"):
+        util.get_first_angle(both)
 
 
 def test_get_second_angle(sweep):
