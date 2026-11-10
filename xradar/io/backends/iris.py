@@ -618,7 +618,9 @@ def _check_identifier(identifier):
 @contextlib.contextmanager
 def _get_iris_memmap_handle(filename):
     if isinstance(filename, str):
-        yield np.memmap(open(filename, "rb"), mode="r")
+        # the memmap keeps its own mapping, the file object can be closed
+        with open(filename, "rb") as fp:
+            yield np.memmap(fp, mode="r")
     elif isinstance(filename, io.BytesIO):
         # only read first record
         yield np.frombuffer(filename.read(RECORD_BYTES), dtype=np.uint8)
