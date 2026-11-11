@@ -317,45 +317,37 @@ def reindex_range(
 def _sector_limits(ds, first_angle, angle_res):
     """Return the edges and the direction of a sector from its rays in time order.
 
-    The edges hold every ray and are multiples of ``angle_res``. A sector that
-    covers the full circle (a ray at either end may miss) goes from 0 to 360. The
-    direction is the net travel from the first to the last measured ray, so the
-    antenna may turn around within the sweep. Rays flagged in
-    ``antenna_transition`` are not part of the sector and are left out.
+    The edges hold every measured ray and are multiples of ``angle_res``. A sector
+    that covers the full circle (a ray at either end may miss) goes from 0 to 360.
+    The direction is the net travel from the first to the last measured ray, so
+    the antenna may turn around within the sweep. Rays without time and rays
+    flagged in ``antenna_transition`` are not part of the scan and are left out.
     """
-    angle = ds[first_angle].values.astype("float64")
-    valid = np.isfinite(angle)
+    measured = ds.time.notnull().values & np.isfinite(ds[first_angle].values)
     if "antenna_transition" in ds.variables:
-        valid &= ds["antenna_transition"].values != 1
-    timed = valid & ds.time.notnull().values
-    path = angle[timed][np.argsort(ds.time.values[timed], kind="stable")]
+        measured &= ds["antenna_transition"].values != 1
+    order = np.argsort(ds.time.values[measured], kind="stable")
+    path = ds[first_angle].values[measured][order].astype("float64")
     if first_angle == "azimuth":
         # rays more than 180 degrees apart are taken as crossing north
         path = np.unwrap(path, period=360)
     if path.size < 2 or path.min() == path.max() or not angle_res > 0:
         raise ValueError(
             "Can't get start and stop angle of a sector: it needs at least two "
-            "rays at different angles."
+            "measured rays at different angles, not flagged in antenna_transition."
         )
     direction = 1 if path[-1] >= path[0] else -1
-    # rays without time count for the edges, next to the measured rays
-    untimed = angle[valid & ~timed]
     if first_angle == "azimuth":
-        middle = (path.min() + path.max()) / 2
-        untimed = untimed + 360 * np.round((middle - untimed) / 360)
-    lowest = min(path.min(), untimed.min(initial=np.inf))
-    highest = max(path.max(), untimed.max(initial=-np.inf))
-    if first_angle == "azimuth":
-        if highest - lowest + 2 * angle_res >= 360:
+        if path.max() - path.min() + 2 * angle_res >= 360:
             return 0, 360, direction
-        if lowest < 0 or highest >= 360:
+        if path.min() < 0 or path.max() >= 360:
             raise ValueError(
                 "Can't get start and stop angle of a sector across north or "
                 "outside 0 to 360 degrees: not supported yet."
             )
     # rounded first, so that a ray on a multiple of angle_res stays in its cell
-    low = np.floor(np.round(lowest / angle_res, 6)) * angle_res
-    high = (np.floor(np.round(highest / angle_res, 6)) + 1) * angle_res
+    low = np.floor(np.round(path.min() / angle_res, 6)) * angle_res
+    high = (np.floor(np.round(path.max() / angle_res, 6)) + 1) * angle_res
     return round(float(low), 6), round(float(high), 6), direction
 
 
@@ -378,9 +370,9 @@ def extract_angle_parameters(ds):
         for counter-clockwise or descending). ``missing_rays`` and
         ``excess_rays`` compare the number of rays without duplicates with
         ``expected_number_rays``. For ``sector``, ``manual_ppi`` and
-        ``manual_rhi`` sweeps the start and stop angle hold every ray
+        ``manual_rhi`` sweeps the start and stop angle hold every measured ray
         and ``direction`` is the net travel of the rays in time order, rays
-        flagged in ``antenna_transition`` left out.
+        without time or flagged in ``antenna_transition`` left out.
 
     Raises
     ------

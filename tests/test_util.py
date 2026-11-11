@@ -415,28 +415,36 @@ def test_extract_angle_parameters_full_circle_sector(dropped):
 
 
 def test_extract_angle_parameters_sector_edges():
-    # rays on multiples of angle_res, the first one without time
-    ds = _sector(np.arange(7, 107) / 10)
-    ds = ds.assign_coords(time=ds.time.where(ds.azimuth > 0.7))
-    angle_dict = util.extract_angle_parameters(ds)
+    # rays on multiples of angle_res
+    angle_dict = util.extract_angle_parameters(_sector(np.arange(7, 107) / 10))
     assert _limits(angle_dict) == [0.7, 10.7, 0.1, 1]
     assert angle_dict["expected_number_rays"] == 100
 
 
-@pytest.mark.parametrize("direction", [1, -1])
-def test_extract_angle_parameters_wide_sector_ray_without_time(direction):
-    # the first ray has no time, 220 degrees from the last one
-    ds = _sector(np.arange(30.5, 250, 1.0)[::direction])
-    ds = ds.assign_coords(time=ds.time.where(np.arange(220) > 0))
+@pytest.mark.parametrize(
+    "timed",
+    [np.arange(300) > 0, np.arange(300) < 2, np.arange(300) < 100],
+    ids=["first-untimed", "two-timed", "first-100-timed"],
+)
+def test_extract_angle_parameters_sector_leaves_out_rays_without_time(timed):
+    ds = _sector(np.arange(0.5, 300, 1.0))
+    ds = ds.assign_coords(time=ds.time.where(timed))
     angle_dict = util.extract_angle_parameters(ds)
-    assert _limits(angle_dict) == [30, 250][::direction] + [1.0, direction]
-    assert angle_dict["expected_number_rays"] == 220
+    edges = np.flatnonzero(timed)[[0, -1]]
+    assert _limits(angle_dict) == [float(edges[0]), float(edges[1] + 1), 1.0, 1]
+
+
+def test_extract_angle_parameters_sector_after_reindex_angle():
+    # the cells reindex_angle adds have no time and don't move the limits
+    out = util.reindex_angle(_sector(np.arange(0.5, 300, 1.0)), 0, 330, 1.0, 1)
+    assert out.time.isnull().sum() == 30
+    assert _limits(util.extract_angle_parameters(out)) == [0, 300, 1.0, 1]
 
 
 def test_extract_angle_parameters_sector_needs_two_measured_rays():
     ds = _sector(np.arange(30.5, 120, 1.0))
     ds = ds.assign_coords(time=ds.time.where(np.arange(90) == 0))
-    with pytest.raises(ValueError, match="two rays"):
+    with pytest.raises(ValueError, match="two measured rays"):
         util.extract_angle_parameters(ds)
 
 
@@ -457,7 +465,7 @@ def test_extract_angle_parameters_manual_rhi():
     [
         (np.r_[np.arange(330.5, 360), np.arange(0.5, 30)], "across north"),
         (np.arange(-169.5, -100), "outside 0 to 360"),
-        (np.full(10, 45.0), "two rays"),
+        (np.full(10, 45.0), "two measured rays"),
     ],
     ids=["across-north", "negative", "one-angle"],
 )
