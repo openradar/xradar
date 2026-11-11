@@ -79,14 +79,6 @@ def cfradial1_sgp_file(file_store):
 
 
 @pytest.fixture(scope="session")
-def cfradial1_dow8_sector_file(file_store):
-    # DOW8 sector scan, the antenna turns around within the sweep
-    return file_store.fetch(
-        "cfrad.20211011_201711.345_to_20211011_201732.860_DOW8_PPI.nc"
-    )
-
-
-@pytest.fixture(scope="session")
 def cfradial1_file(file_store, tmp_path_factory):
     """Safely fetch the dataset across multiple xdist workers using a lock."""
     shared_dir = tmp_path_factory.getbasetemp().parent

@@ -386,7 +386,20 @@ def test_extract_angle_parameters_sector_antenna_turns_around():
     azimuth = np.r_[np.arange(59.5, 30, -1.0), np.arange(30.5, 120, 1.0)]
     angle_dict = util.extract_angle_parameters(_sector(azimuth))
     assert _limits(angle_dict) == [30, 120, 1.0, 1]
+    assert angle_dict["ascending"]
     assert angle_dict["expected_number_rays"] == 90
+
+
+def test_extract_angle_parameters_sector_leaves_out_antenna_transition():
+    # the antenna moves from 200 down to 30 degrees, then scans the sector to 60,
+    # stored first, the transition rays are kept as duplicates of the scan rays
+    azimuth = np.r_[np.arange(199.5, 30, -1.0), np.arange(30.5, 60, 1.0)]
+    ds = _sector(azimuth)
+    transition = (np.arange(azimuth.size) < 170).astype("int8")
+    ds = ds.assign(antenna_transition=("azimuth", transition))
+    angle_dict = util.extract_angle_parameters(ds)
+    assert _limits(angle_dict) == [30, 60, 1.0, 1]
+    assert angle_dict["expected_number_rays"] == 30
 
 
 @pytest.mark.parametrize("dropped", [None, 100, 0])
@@ -403,11 +416,28 @@ def test_extract_angle_parameters_full_circle_sector(dropped):
 
 def test_extract_angle_parameters_sector_edges():
     # rays on multiples of angle_res, the first one without time
-    ds = _sector(np.arange(100, 200) / 10)
-    ds = ds.assign_coords(time=ds.time.where(ds.azimuth > 10))
+    ds = _sector(np.arange(7, 107) / 10)
+    ds = ds.assign_coords(time=ds.time.where(ds.azimuth > 0.7))
     angle_dict = util.extract_angle_parameters(ds)
-    assert _limits(angle_dict) == [10.0, 20.0, 0.1, 1]
+    assert _limits(angle_dict) == [0.7, 10.7, 0.1, 1]
     assert angle_dict["expected_number_rays"] == 100
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+def test_extract_angle_parameters_wide_sector_ray_without_time(direction):
+    # the first ray has no time, 220 degrees from the last one
+    ds = _sector(np.arange(30.5, 250, 1.0)[::direction])
+    ds = ds.assign_coords(time=ds.time.where(np.arange(220) > 0))
+    angle_dict = util.extract_angle_parameters(ds)
+    assert _limits(angle_dict) == [30, 250][::direction] + [1.0, direction]
+    assert angle_dict["expected_number_rays"] == 220
+
+
+def test_extract_angle_parameters_sector_needs_two_measured_rays():
+    ds = _sector(np.arange(30.5, 120, 1.0))
+    ds = ds.assign_coords(time=ds.time.where(np.arange(90) == 0))
+    with pytest.raises(ValueError, match="two rays"):
+        util.extract_angle_parameters(ds)
 
 
 def test_extract_angle_parameters_manual_rhi():
@@ -444,19 +474,30 @@ def test_extract_angle_parameters_unknown_sweep_mode(mode):
         util.extract_angle_parameters(ds)
 
 
-def test_extract_angle_parameters_real_sector(cfradial1_dow8_sector_file, closing):
-    # the antenna moves counter-clockwise from 146 to 34 degrees, then scans the
-    # sector clockwise to 326 degrees
+@pytest.mark.parametrize(
+    "name, start, stop",
+    [
+        ("cfrad.20211011_201557.188_to_20211011_201617.720_DOW8_PPI.nc", 34.0, 326.5),
+        ("cfrad.20211011_201711.345_to_20211011_201732.860_DOW8_PPI.nc", 33.5, 326.5),
+        ("cfrad.20211011_202304.515_to_20211011_202326.412_DOW8_PPI.nc", 33.5, 326.5),
+    ],
+    ids=["across-north-transition", "turning-transition", "elevation-transition"],
+)
+def test_extract_angle_parameters_real_sector(file_store, closing, name, start, stop):
+    # DOW8 sector scans from 34 to 326 degrees, clockwise; the antenna_transition
+    # rays before them move across north, back from 146 degrees, or down from 62
+    # degrees elevation
     ds = closing(
-        xr.open_dataset(cfradial1_dow8_sector_file, engine="cfradial1", group="sweep_0")
+        xr.open_dataset(file_store.fetch(name), engine="cfradial1", group="sweep_0")
     )
     assert ds.sweep_mode == "sector"
     angle_dict = util.extract_angle_parameters(ds)
-    assert _limits(angle_dict) == [33.5, 326.5, 0.5, 1]
-    assert angle_dict["expected_number_rays"] == 586
+    assert _limits(angle_dict) == [start, stop, 0.5, 1]
+    expected = round((stop - start) / 0.5)
+    assert angle_dict["expected_number_rays"] == expected
 
     out = util.reindex_angle(ds, *_limits(angle_dict))
-    assert out.sizes["azimuth"] == 586
+    assert out.sizes["azimuth"] == expected
     assert out.time.notnull().all()
 
 
