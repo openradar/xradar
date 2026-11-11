@@ -377,9 +377,10 @@ def extract_angle_parameters(ds):
     Raises
     ------
     ValueError
-        If ``sweep_mode`` has no start and stop angle, a sector has less than
-        two rays at different angles or crosses north, or a ``manual_rhi``
-        sweep has azimuth as its first dimension.
+        If ``sweep_mode`` has no start and stop angle, a sector has fewer than
+        two measured rays (with time, not flagged in ``antenna_transition``)
+        at different angles or crosses north, or a ``manual_rhi`` sweep has
+        azimuth as its first dimension.
     """
     angle_dict = {}
 

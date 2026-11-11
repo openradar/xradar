@@ -434,11 +434,14 @@ def test_extract_angle_parameters_sector_leaves_out_rays_without_time(timed):
     assert _limits(angle_dict) == [float(edges[0]), float(edges[1] + 1), 1.0, 1]
 
 
-def test_extract_angle_parameters_sector_after_reindex_angle():
-    # the cells reindex_angle adds have no time and don't move the limits
-    out = util.reindex_angle(_sector(np.arange(0.5, 300, 1.0)), 0, 330, 1.0, 1)
-    assert out.time.isnull().sum() == 30
-    assert _limits(util.extract_angle_parameters(out)) == [0, 300, 1.0, 1]
+@pytest.mark.parametrize("stop", [330, 360])
+def test_extract_angle_parameters_sector_after_reindex_angle(stop):
+    # the cells reindex_angle adds have no time and don't move the limits, also
+    # when they fill the circle
+    ds = _sector(np.arange(30.5, 300, 1.0))
+    out = util.reindex_angle(ds, 0, stop, 1.0, 1)
+    assert out.time.isnull().sum() == stop - 270
+    assert _limits(util.extract_angle_parameters(out)) == [30, 300, 1.0, 1]
 
 
 def test_extract_angle_parameters_sector_needs_two_measured_rays():
