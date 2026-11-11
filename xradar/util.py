@@ -110,7 +110,8 @@ def remove_duplicate_rays(ds):
     """
     first_angle = get_first_angle(ds)
 
-    # a NaN angle does not make two rays duplicates
+    # np.unique counts all NaN angles as one value by default (equal_nan=True),
+    # which would drop every ray with a NaN angle but the first; keep them all
     _, idx = np.unique(ds[first_angle], return_index=True, equal_nan=False)
     if len(idx) < len(ds[first_angle]):
         # todo:
@@ -353,7 +354,8 @@ def extract_angle_parameters(ds):
     )
 
     # 3. get unique angles
-    # as in remove_duplicate_rays, a NaN angle does not make two rays duplicates
+    # as in remove_duplicate_rays, rays with a NaN angle are not duplicates
+    # (np.unique counts all NaN as one value unless equal_nan=False)
     unique_angles = np.unique(ds[first_angle], equal_nan=False)
 
     # check if azimuth can be sorted
