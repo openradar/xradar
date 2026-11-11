@@ -226,6 +226,10 @@ sweep_dataset_vars = {
     "NCPV",
     "RR",
     "REC",
+    "RATE",
+    "HCLASS",
+    "SRMV",
+    "ACRR",
 }
 
 #: non-standard sweep dataset variable names
@@ -457,6 +461,12 @@ sweep_vars_mapping = {
         "short_name": "VRADH",
         "units": "meters per seconds",
     },
+    "SRMV": {
+        "standard_name": "storm_relative_radial_velocity_of_scatterers_away_from_instrument",
+        "long_name": "Storm-relative mean radial velocity",
+        "short_name": "SRMV",
+        "units": "meters per seconds",
+    },
     "VRADV": {
         "standard_name": "radial_velocity_of_scatterers_away_from_instrument_v",
         "long_name": "Radial velocity of scatterers away from instrument V",
@@ -600,6 +610,18 @@ sweep_vars_mapping = {
         "long_name": "rainfall_rate",
         "short_name": "RATE",
         "units": "mm h-1",
+    },
+    "ACRR": {
+        "standard_name": "lwe_thickness_of_precipitation_amount",
+        "long_name": "Accumulated precipitation",
+        "short_name": "ACRR",
+        "units": "mm",
+    },
+    "HCLASS": {
+        "standard_name": "hydrometeor_classification",
+        "long_name": "Hydrometeor classification",
+        "short_name": "HCLASS",
+        "units": "unitless",
     },
     "DBM": {
         "standard_name": "radar_received_signal_power",
