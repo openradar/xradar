@@ -33,5 +33,5 @@ dependencies:
   - arm_pyart
   - wradlib
   - ffmpeg
-  - zarr
+  - zarr>=3
   - xarray>=2026.9.0
