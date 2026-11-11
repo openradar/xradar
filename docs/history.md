@@ -2,7 +2,6 @@
 
 ## Development (unreleased)
 
-* MNT: require Python >= 3.13 (``requires-python``, classifiers, CI environments), drop Python 3.12, test on Python 3.13 and 3.14 with conda and on Python 3.15 with a uv chain following CONTRIBUTING.md (notebook and xarray-nightly tests on 3.14), unpin ``zarr`` (``zarr>=3`` → ``zarr``) and add ``jupytext`` to the dev requirements ({pull}`579`) by [@egouden](https://github.com/egouden)
 * CI: Updating python as additional security features were added for SSL (:pull:`566`) by [@zssherman](https://github.com/zssherman)
 * CI: Update python to safe version 3.13.17 (:pull:`547`) by [@zssherman](https://github.com/zssherman)
 * CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)
@@ -32,6 +31,8 @@
 * FIX: IRIS beam-center azimuth of counter-clockwise rays (sector sweeps alternate direction) that cross north or are wider than 5 degrees was off by 180 degrees; the center is now unwrapped the shorter way round in either rotation direction ({issue}`526`, {pull}`530`) by [@aladinor](https://github.com/aladinor)
 * FIX: when two IRIS data types of a sweep map to one moment name, the finer 2-byte flavor keeps the name, as it did before 0.13.0: ``DBZH`` holds ``DB_DBZ2`` and the 1-byte field is ``DB_DBZ``. 0.13.0 had the 1-byte field as ``DBZH`` and the 2-byte field as ``DB_DBZ2``, which no longer exists ({issue}`527`, {pull}`580`) by [@aladinor](https://github.com/aladinor)
 * FIX: ``xradar.util.extract_angle_parameters`` returns a positive ``angle_res`` for counter-clockwise PPI and descending RHI sweeps (the sweep direction is ``direction``); it was negative, which gave a negative ``expected_number_rays``, ``missing_rays`` always true and an empty sweep from ``reindex_angle``. ``reindex_angle`` ignores the sign of ``angle_res``. ``missing_rays`` and ``excess_rays`` compare the number of rays with ``expected_number_rays`` instead of ``angle_res`` times the number of rays, so a full clockwise sweep of 514 rays at 0.7 degrees no longer counts as missing rays (part of {issue}`573`, {pull}`583`) by [@aladinor](https://github.com/aladinor)
+* MNT: require Python >= 3.13 (``requires-python``, classifiers, CI environments), drop Python 3.12, test on Python 3.13 and 3.14 with conda and on Python 3.15 with a uv chain following CONTRIBUTING.md (notebook and xarray-nightly tests on 3.14), do only one coverage upload per build, add ``jupytext`` to the dev requirements ({pull}`579`) by [@egouden](https://github.com/egouden)
+
 
 
 ## 0.13.0 (2026-10-21)
