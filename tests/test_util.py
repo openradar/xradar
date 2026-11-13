@@ -72,18 +72,29 @@ def test_get_first_angle_does_not_depend_on_the_hash_seed(seed):
     assert out.stdout.strip() == "azimuth"
 
 
-def test_get_first_angle_without_or_with_both_angles():
-    ds = xr.Dataset(coords={"range": ("range", np.arange(3.0))})
-    with pytest.raises(ValueError, match="neither"):
-        util.get_first_angle(ds)
+def test_get_first_angle_errors():
+    rng = ("range", np.arange(3.0))
+    # no angle dimension
+    with pytest.raises(ValueError, match="dimension"):
+        util.get_first_angle(xr.Dataset(coords={"range": rng}))
+    # both angles
     both = xr.Dataset(
         coords={
+            "range": rng,
             "azimuth": ("azimuth", np.arange(3.0)),
             "elevation": ("elevation", np.arange(2.0)),
         }
     )
     with pytest.raises(ValueError, match="both"):
         util.get_first_angle(both)
+    # no range dimension, not a sweep
+    with pytest.raises(ValueError, match="range"):
+        util.get_first_angle(xr.Dataset(coords={"azimuth": ("azimuth", [1.0, 2.0])}))
+    # an angle dimension without a coordinate
+    no_coord = xr.Dataset({"DBZH": (("azimuth", "range"), np.zeros((3, 3)))})
+    no_coord = no_coord.assign_coords(range=rng)
+    with pytest.raises(ValueError, match="without a coordinate"):
+        util.get_first_angle(no_coord)
 
 
 def test_get_second_angle(sweep):
