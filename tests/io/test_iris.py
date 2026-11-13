@@ -168,6 +168,27 @@ def test_decoded_data_keeps_declared_dtype(file_fixture, request):
     assert loaded["DBZH"].dtype == loaded["elevation"].dtype == np.float32
 
 
+@pytest.mark.parametrize(
+    "decoder, kwargs",
+    [
+        (iris.decode_array, {"scale": 2.0, "offset": -64.0, "mask": 0.0}),
+        (iris.decode_vel, {"scale": 127.0, "offset": -128.0, "nyquist": 26.7}),
+        (iris.decode_width, {"scale": 256.0, "offset": 0.0, "nyquist": 26.7}),
+        (iris.decode_phidp, {"scale": 254.0, "offset": -1.0}),
+        (iris.decode_phidp2, {"scale": 65534.0, "offset": -1.0}),
+        (iris.decode_sqi, {"scale": 253.0, "offset": -1.0}),
+        (iris.decode_kdp, {"wavelength": 10.0}),
+    ],
+    ids=["array", "vel", "width", "phidp", "phidp2", "sqi", "kdp"],
+)
+def test_moment_decoders_return_float32(decoder, kwargs):
+    # the moments are declared float32 (#585); raw 0 is no data
+    raw = np.arange(1, 256, dtype="uint8")
+    if decoder is iris.decode_kdp:
+        raw = raw.astype("int8")
+    assert decoder(raw, **kwargs).dtype == np.float32
+
+
 def test_decode_velc():
     """4.4.42: raw 128 is zero velocity, one step of 75 / 127 m/s on both
     sides, raw 0 is no data (#477)."""
@@ -319,10 +340,7 @@ def test_decode_data(iris0_file, file_or_filelike):
 
     # Check that the decoded data is as expected
     assert isinstance(decoded_data, np.ndarray), "Decoded data should be a numpy array"
-    assert decoded_data.dtype in [
-        np.float32,
-        np.float64,
-    ], "Decoded data should have float32 or float64 type"
+    assert decoded_data.dtype == np.float32
 
     # Expected decoded values
     expected_data = [-13.325, 13.325, 26.65, 1692.275, 3384.55]
