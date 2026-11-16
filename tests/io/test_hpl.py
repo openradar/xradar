@@ -267,3 +267,61 @@ def test_open_hpl_datatree_single_ray_sweeps(tmp_path):
     assert [int(dtree[k].dataset.sweep_number) for k in sweeps] == list(
         range(len(sweeps))
     )
+
+
+def test_hpl_rhi_rays_are_not_transitions(hpl_file1):
+    # the elevation of an RHI changes from ray to ray, the azimuth stays (#593)
+    with xd.open_datatree(hpl_file1, engine="hpl") as dtree:
+        ds = dtree["sweep_0"].to_dataset()
+        assert ds.sweep_mode.item() == b"rhi"
+        assert (ds.azimuth == ds.sweep_fixed_angle).all()
+        assert not ds.antenna_transition.any()
+
+
+def test_hpl_ppi_rays_are_not_transitions(hpl_file2):
+    # every ray of these PPI sweeps is at the fixed elevation (#593)
+    with xd.open_datatree(hpl_file2, engine="hpl") as dtree:
+        for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
+            ds = dtree[sweep].to_dataset()
+            assert (ds.elevation == ds.sweep_fixed_angle).all()
+            assert not ds.antenna_transition.any()
+
+
+def test_hpl_antenna_transition_off_the_fixed_angle(tmp_path):
+    # the antenna leaves the 2 degree sweep for one ray at 2.5 degrees (#593)
+    rays = [(az, 2.0) for az in range(0, 100, 10)]
+    rays[4] = (40, 2.5)
+    path = _write_hpl(tmp_path / "ppi.hpl", rays + [(az, 4.0) for az in range(10)])
+    with xd.open_datatree(path, engine="hpl") as dtree:
+        ds = dtree["sweep_0"].to_dataset()
+        assert float(ds.sweep_fixed_angle) == 2.0
+        np.testing.assert_array_equal(
+            ds.antenna_transition.values, ds.elevation.values == 2.5
+        )
+
+
+def test_hpl_antenna_transition_elevation_comes_back(tmp_path):
+    # the 2 degree sweep holds the rays at 4 degrees between its two parts
+    rays = [(az, el) for el in (2.0, 4.0, 2.0) for az in range(0, 50, 10)]
+    path = _write_hpl(tmp_path / "back.hpl", rays)
+    with xd.open_datatree(path, engine="hpl") as dtree:
+        ds = dtree["sweep_0"].to_dataset()
+        assert float(ds.sweep_fixed_angle) == 2.0
+        np.testing.assert_array_equal(
+            ds.antenna_transition.values, ds.elevation.values == 4.0
+        )
+
+
+def test_hpl_rhi_antenna_transition_off_the_fixed_azimuth(tmp_path):
+    # one ray of the RHI at 90 degrees azimuth is at 95 degrees
+    rays = [(90.0, el) for el in range(0, 20, 2)]
+    rays[5] = (95.0, 10)
+    path = _write_hpl(tmp_path / "rhi.hpl", rays)
+    with xd.open_datatree(path, engine="hpl") as dtree:
+        ds = dtree["sweep_0"].to_dataset()
+        assert ds.sweep_mode.item() == b"rhi"
+        assert float(ds.sweep_fixed_angle) == 90.0
+        # the sweep comes sorted by azimuth
+        np.testing.assert_array_equal(
+            ds.antenna_transition.values, ds.azimuth.values == 95.0
+        )
