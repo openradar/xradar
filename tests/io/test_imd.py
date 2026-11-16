@@ -5,12 +5,14 @@
 """Tests for `io.backends.imd` module."""
 
 import os
+import warnings
 
 import numpy as np
 import pytest
+import xarray as xr
 from xarray import DataTree, open_dataset
 
-from xradar.io.backends import group_imd_files, open_imd_datatree, open_imd_volumes
+from xradar.io.backends import group_imd_files, imd, open_imd_datatree, open_imd_volumes
 from xradar.io.backends.imd import _conform_imd_sweep, imd_mapping
 
 
@@ -66,14 +68,14 @@ def test_open_imd_datatree_single_file(imd_file, closing):
     assert "/" in [n.path for n in dtree.subtree]
     assert "sweep_0" in dtree.children
     # station coords on root, not on sweep
-    assert "latitude" in dtree.ds.coords
-    assert "longitude" in dtree.ds.coords
-    assert "altitude" in dtree.ds.coords
+    assert "latitude" in dtree.dataset.coords
+    assert "longitude" in dtree.dataset.coords
+    assert "altitude" in dtree.dataset.coords
     # sweep_group_name and sweep_fixed_angle on root
-    assert "sweep_group_name" in dtree.ds.variables
-    assert "sweep_fixed_angle" in dtree.ds.variables
+    assert "sweep_group_name" in dtree.dataset.variables
+    assert "sweep_fixed_angle" in dtree.dataset.variables
     # moment present on sweep
-    sw0 = dtree["sweep_0"].ds
+    sw0 = dtree["sweep_0"].dataset
     assert set(sw0.data_vars) & {"DBZH", "VRADH", "DBTH", "WRADH"}
 
 
@@ -83,11 +85,11 @@ def test_open_imd_datatree_volume(imd_volume_files, closing):
     sweep_groups = [k for k in dtree.match("sweep_*")]
     assert len(sweep_groups) == len(imd_volume_files)
     # sweeps sorted by fixed angle ascending
-    angles = dtree.ds["sweep_fixed_angle"].values
+    angles = dtree.dataset["sweep_fixed_angle"].values
     assert np.all(np.diff(angles) >= 0)
     # sweep_number matches position
     for i, sw in enumerate(sweep_groups):
-        assert int(dtree[sw].ds["sweep_number"].values) == i
+        assert int(dtree[sw].dataset["sweep_number"].values) == i
 
 
 def test_xr_open_datatree_imd_engine(imd_file, closing):
@@ -128,11 +130,11 @@ def test_open_imd_datatree_angle_filter(imd_volume_files, closing):
     """min_angle/max_angle forwarded to util.create_volume."""
     # Load first to learn the actual angles, then filter to just the lowest.
     dtree = closing(open_imd_datatree(imd_volume_files))
-    angles = sorted(float(a) for a in dtree.ds["sweep_fixed_angle"].values)
+    angles = sorted(float(a) for a in dtree.dataset["sweep_fixed_angle"].values)
     cutoff = (angles[0] + angles[1]) / 2  # keep only the first sweep
 
     filtered = closing(open_imd_datatree(imd_volume_files, max_angle=cutoff))
-    filtered_angles = [float(a) for a in filtered.ds["sweep_fixed_angle"].values]
+    filtered_angles = [float(a) for a in filtered.dataset["sweep_fixed_angle"].values]
     assert len(filtered_angles) == 1
     assert filtered_angles[0] <= cutoff
 
@@ -240,7 +242,7 @@ def test_open_imd_datatree_optional_groups(imd_file, closing):
     assert "radar_calibration" in dtree.children
 
     # radar_parameters must carry IMD's mapped beam widths / bandwidth
-    rp = dtree["radar_parameters"].ds
+    rp = dtree["radar_parameters"].dataset
     assert "radar_beam_width_h" in rp.variables
     assert "radar_beam_width_v" in rp.variables
     assert "radar_receiver_bandwidth" in rp.variables
@@ -249,15 +251,75 @@ def test_open_imd_datatree_optional_groups(imd_file, closing):
     assert 0 < bw_h < 10
 
     # georeferencing_correction is legitimately empty -- IMD has no corrections
-    assert not dtree["georeferencing_correction"].ds.data_vars
+    assert not dtree["georeferencing_correction"].dataset.data_vars
 
     # radar_calibration carries IMD-named cal scalars (not canonical CfRadial2).
     # pulse_width now lives on the sweep per FM 301 Table 8a, not in cal.
-    rc = dtree["radar_calibration"].ds
+    rc = dtree["radar_calibration"].dataset
     expected_cal = {"calibConst", "radarConst", "calNoise"}
     assert expected_cal.issubset(
         rc.data_vars
     ), f"expected {expected_cal} in /radar_calibration, got {set(rc.data_vars)}"
+
+
+OPTIONAL_GROUPS = ["radar_parameters", "georeferencing_correction", "radar_calibration"]
+
+
+def test_open_imd_datatree_volume_optional_groups(imd_volume_files, closing):
+    # create_volume only copies the sweeps, the optional groups of a volume
+    # from several files were dropped (#468)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)  # the files of a volume agree
+        dtree = closing(open_imd_datatree(imd_volume_files, optional_groups=True))
+    single = closing(open_imd_datatree(imd_volume_files[0], optional_groups=True))
+    assert len(dtree.match("sweep_*")) == len(imd_volume_files)
+    for name in OPTIONAL_GROUPS:
+        xr.testing.assert_identical(
+            dtree[name].to_dataset(inherit=False),
+            single[name].to_dataset(inherit=False),
+        )
+    assert float(dtree["radar_parameters"].dataset["radar_beam_width_h"]) > 0
+    assert {"calibConst", "radarConst", "calNoise"}.issubset(
+        dtree["radar_calibration"].dataset.data_vars
+    )
+    # still usable
+    assert "x" in dtree.xradar.georeference()["sweep_0"].dataset
+    # not added by default
+    plain = closing(open_imd_datatree(imd_volume_files))
+    assert not set(OPTIONAL_GROUPS) & set(plain.children)
+
+
+def test_open_imd_volumes_optional_groups(imd_volume_files, closing):
+    tree = closing(open_imd_volumes(imd_volume_files, optional_groups=True))
+    assert set(OPTIONAL_GROUPS).issubset(tree["vcp_00"].children)
+
+
+def test_open_imd_datatree_volume_optional_groups_differ(
+    imd_volume_files, monkeypatch, closing
+):
+    # a single set of values can't describe files that differ: they are left out
+    open_single = imd._open_single_imd_datatree
+    calls = []
+
+    def patched(filename, **kwargs):
+        tree = open_single(filename, **kwargs)
+        calls.append(filename)
+        if len(calls) == 2:
+            calib = tree["radar_calibration"].to_dataset(inherit=False)
+            tree["radar_calibration"] = DataTree(
+                calib.assign(radarConst=calib["radarConst"] + 1.0)
+            )
+        return tree
+
+    monkeypatch.setattr(imd, "_open_single_imd_datatree", patched)
+    with pytest.warns(UserWarning, match=r"differ between the files \(radarConst\)"):
+        dtree = closing(open_imd_datatree(imd_volume_files, optional_groups=True))
+    first = closing(open_single(imd_volume_files[0], optional_groups=True))
+    calib = dtree["radar_calibration"].dataset
+    assert "radarConst" not in calib
+    assert set(calib.data_vars) == set(first["radar_calibration"].dataset.data_vars) - {
+        "radarConst"
+    }
 
 
 def test_open_dataset_imd_reindex_angle(imd_file, closing):
@@ -287,7 +349,7 @@ def test_open_dataset_imd_reindex_angle(imd_file, closing):
 def test_open_imd_datatree_has_cfradial2_required_vars(imd_file, closing):
     """FM 301 Table 7a: prt_mode and follow_mode are required on each sweep."""
     dtree = closing(open_imd_datatree(imd_file))
-    sw = dtree["sweep_0"].ds
+    sw = dtree["sweep_0"].dataset
     assert "prt_mode" in sw.variables
     assert "follow_mode" in sw.variables
     assert str(sw["prt_mode"].values) in {"fixed", "staggered", "not_set"}

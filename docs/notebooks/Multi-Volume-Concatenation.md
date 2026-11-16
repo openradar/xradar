@@ -76,10 +76,7 @@ def fix_angle(ds):
     ascending = median_diff > 0
     direction = 1 if ascending else -1
 
-    # first find exact duplicates and remove
-    ds = xd.util.remove_duplicate_rays(ds)
-
-    # second reindex according to retrieved parameters
+    # reindex according to retrieved parameters, removes duplicate rays
     ds = xd.util.reindex_angle(
         ds, start_ang, stop_ang, angle_res, direction, method="nearest"
     )

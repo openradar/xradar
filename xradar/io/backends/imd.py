@@ -46,6 +46,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 import glob as _glob
 import os
 import re
+import warnings
 from functools import partial
 
 import numpy as np
@@ -71,6 +72,7 @@ from .common import (
     _call_all,
     _close_all,
     _compose_docstring,
+    _external_stacklevel,
     _get_reindex_coord,
     _get_subgroup,
     _input_kind,
@@ -689,6 +691,42 @@ def _open_single_imd_datatree(filename, **kwargs):
     )
 
 
+#: optional CfRadial2 groups of a single-file tree
+_IMD_OPTIONAL_GROUPS = (
+    "radar_parameters",
+    "georeferencing_correction",
+    "radar_calibration",
+)
+
+
+def _attach_optional_groups(volume, sweep_trees):
+    """Attach the optional groups of the sweep files to a combined volume.
+
+    :func:`xradar.util.create_volume` only copies the sweeps, so the optional
+    groups of the single-file trees are lost. They hold volume-level metadata
+    that is the same in all files of a volume. The values the files disagree
+    about are left out of the group, with a warning.
+    """
+    for name in _IMD_OPTIONAL_GROUPS:
+        # no inherited coordinates, the root of a single-file tree has
+        # ``sweep: 1`` which does not align with the volume
+        groups = [tree[name].to_dataset(inherit=False) for tree in sweep_trees]
+        differing = [
+            var
+            for var in groups[0].data_vars
+            if not all(groups[0][var].equals(ds.get(var)) for ds in groups[1:])
+        ]
+        if differing:
+            warnings.warn(
+                f"xradar: {name} values differ between the files "
+                f"({', '.join(differing)}) and are left out of the group; open "
+                "a single file to get its values.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+        volume[name] = DataTree(groups[0].drop_vars(differing))
+
+
 def open_imd_datatree(filename_or_obj, **kwargs):
     """Open IMD radar file(s) as a :py:class:`xarray.DataTree`.
 
@@ -736,7 +774,9 @@ def open_imd_datatree(filename_or_obj, **kwargs):
         ``site_coords`` is accepted as an alias.
     optional_groups : bool
         Include ``/radar_parameters``, ``/georeferencing_correction`` and
-        ``/radar_calibration`` subgroups. Defaults to ``False``.
+        ``/radar_calibration`` subgroups. Defaults to ``False``. With multiple
+        files the values the files disagree about are left out of the groups,
+        with a ``UserWarning``.
     time_coverage_start, time_coverage_end, min_angle, max_angle, volume_number
         Forwarded to :func:`xradar.util.create_volume` when multi-file
         input is provided.
@@ -785,6 +825,8 @@ def open_imd_datatree(filename_or_obj, **kwargs):
             sw_ds = volume[key].to_dataset()
             sw_ds["sweep_number"] = xr.DataArray(i)
             volume[key] = DataTree(sw_ds)
+        if kwargs.get("optional_groups"):
+            _attach_optional_groups(volume, sweep_trees)
         # create_volume builds new nodes (and may drop or reorder sweeps), so
         # closing the volume closes every source file instead (#471, #502);
         # keep only the file closers, not the source trees and their data
@@ -839,7 +881,7 @@ def open_imd_volumes(paths, **kwargs):
     --------
     >>> import xradar as xd
     >>> tree = xd.io.open_imd_volumes("/data/JPR220822IMD-B")   # doctest: +SKIP
-    >>> tree["vcp_00/sweep_0"].ds["DBZH"]                       # doctest: +SKIP
+    >>> tree["vcp_00/sweep_0"].dataset["DBZH"]                       # doctest: +SKIP
     """
     groups = group_imd_files(paths)
     if not groups:

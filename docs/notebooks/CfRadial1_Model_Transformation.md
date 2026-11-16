@@ -241,7 +241,7 @@ with xr.set_options(display_expand_data_vars=True, display_expand_attrs=True):
 ```{code-cell}
 for grp in dtree.groups:
     print(grp)
-    xr.testing.assert_equal(dtree[grp].ds, dtree2[grp].ds)
+    xr.testing.assert_equal(dtree[grp].dataset, dtree2[grp].dataset)
 ```
 
 #### Roundtrip with `xradar.io.to_cfradial2`
@@ -272,7 +272,7 @@ with xr.set_options(display_expand_data_vars=True, display_expand_attrs=True):
 ```{code-cell}
 for grp in dtree3.groups:
     print(grp)
-    xr.testing.assert_equal(dtree3[grp].ds, dtree4[grp].ds)
+    xr.testing.assert_equal(dtree3[grp].dataset, dtree4[grp].dataset)
 ```
 
 ### Datasets

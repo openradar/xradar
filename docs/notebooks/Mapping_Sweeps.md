@@ -60,7 +60,7 @@ display(dtree)
 ```
 
 ```{code-cell}
-for var in dtree["sweep_0"].ds:
+for var in dtree["sweep_0"].dataset:
     print(var)
 ```
 

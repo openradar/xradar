@@ -42,6 +42,16 @@ If you are proposing a feature:
 * Remember that this is a volunteer-driven project, and that contributions
   are welcome :)
 
+## AI Usage Policy
+
+xradar contributors may use AI tools as part of their workflow. Please read the
+[AI Usage Policy](https://github.com/openradar/xradar/blob/main/docs/ai_policy.md)
+before submitting an AI-assisted contribution. In short: you are responsible
+for every line of code in your PR, PR descriptions and review replies must be
+your own words, you must have the right to contribute the code under xradar's
+MIT license, and changes that are hard to review — as well as CI, packaging, and
+dependency changes — should start with an issue rather than a surprise diff.
+
 ## Get Started!
 
 Ready to contribute? Here's how to set up `xradar` for local development.
@@ -82,8 +92,8 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     ```bash
     sudo apt install build-essential ffmpeg libhdf5-dev libnetcdf-dev pandoc
     sudo snap install astral-uv --classic
-    uv python install 3.13
-    uv venv --python 3.13
+    uv python install 3.14
+    uv venv --python 3.14
     source .venv/bin/activate
     uv pip install -e .[dev] --no-binary=netcdf4 --no-binary=h5py
     ```
@@ -93,8 +103,8 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     ```powershell
     winget install ffmpeg
     winget install uv
-    uv python install 3.13
-    uv venv --python 3.13
+    uv python install 3.14
+    uv venv --python 3.14
     .venv\Scripts\Activate.ps1
     uv pip install -e .[dev]
     ```

@@ -98,13 +98,13 @@ display(dtree)
 ### Plot Sweep Range vs. Time
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZ.plot()
+dtree["sweep_0"].dataset.DBZ.plot()
 ```
 
 ### Plot Sweep Range vs. Azimuth
 
 ```{code-cell}
-dtree["sweep_0"].ds.DBZ.sortby("azimuth").plot(y="azimuth")
+dtree["sweep_0"].dataset.DBZ.sortby("azimuth").plot(y="azimuth")
 ```
 
 ```{code-cell}

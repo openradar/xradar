@@ -38,7 +38,7 @@ from xradar.io.backends.common import _STATION_VARS, _resolve_sweeps
         pytest.param(("furuno", "furuno_scn_file"), id="furuno"),
         pytest.param(("rainbow", "rainbow_file"), id="rainbow"),
         pytest.param(("datamet", "datamet_file"), id="datamet"),
-        pytest.param(("hpl", "hpl_file"), id="hpl"),
+        pytest.param(("hpl", "hpl_file1"), id="hpl"),
         pytest.param(("metek", "metek_ave_gz_file"), id="metek"),
         pytest.param(("uf", "uf_file_1"), id="uf"),
         pytest.param(
@@ -82,7 +82,7 @@ def _assert_cfradial2_structure(dtree, optional_groups=False):
             assert grp in children, f"Missing group: {grp}"
     sweep_groups = [k for k in children if k.startswith("sweep_")]
     assert len(sweep_groups) > 0, "No sweep groups found"
-    root_vars = set(dtree.ds.data_vars)
+    root_vars = set(dtree.dataset.data_vars)
     assert "time_coverage_start" in root_vars
     assert "time_coverage_end" in root_vars
 
@@ -124,8 +124,33 @@ class TestXdOpenDatatree:
             )
         )
         # Station coords are on root (promoted by _assign_root)
-        assert "latitude" in dtree.ds.coords
-        assert "longitude" in dtree.ds.coords
+        assert "latitude" in dtree.dataset.coords
+        assert "longitude" in dtree.dataset.coords
+
+    def test_engine_is_discovered(self, engine_and_file, closing):
+        engine, filepath = engine_and_file
+        dtree = closing(xd.open_datatree(filepath, sweep=0))
+        xr.testing.assert_identical(
+            dtree, closing(xd.open_datatree(filepath, engine=engine, sweep=0))
+        )
+
+    @pytest.mark.parametrize("engine", ["cfradial1", "imd"])
+    def test_engine_is_discovered_netcdf(
+        self, engine, cfradial1_file, imd_file, closing
+    ):
+        # netCDF files which xr.open_datatree hands to xarray's own backend
+        filepath = {"cfradial1": cfradial1_file, "imd": imd_file}[engine]
+        dtree = closing(xd.open_datatree(filepath))
+        xr.testing.assert_identical(
+            dtree, closing(xd.open_datatree(filepath, engine=engine))
+        )
+        assert any(name.startswith("sweep_") for name in dtree.children)
+
+    def test_undiscoverable_file_raises(self, tmp_path):
+        path = tmp_path / "other.dat"
+        path.write_bytes(b"no radar data here")
+        with pytest.raises(ValueError, match="None of the xradar engines"):
+            xd.open_datatree(path)
 
     def test_unknown_engine_raises(self, odim_file):
         with pytest.raises(ValueError, match="Unknown engine"):
@@ -230,11 +255,11 @@ class TestXdOpenDatatreeCfRadial1:
 
 
 @pytest.mark.parametrize("first_dim,dim0", [("auto", "azimuth"), ("time", "time")])
-def test_hpl_angle_reindex(hpl_file, first_dim, dim0, closing):
+def test_hpl_angle_reindex(hpl_file1, first_dim, dim0, closing):
     # angle reindexing used to fail while time was still the first dimension
     dtree = closing(
         xd.open_datatree(
-            hpl_file,
+            hpl_file1,
             engine="hpl",
             sweep=0,
             first_dim=first_dim,
@@ -247,12 +272,12 @@ def test_hpl_angle_reindex(hpl_file, first_dim, dim0, closing):
 
 
 @pytest.mark.parametrize(
-    "engine,fixture_name",
+    "engine,file_fixture",
     [("furuno", "furuno_scn_file"), ("metek", "metek_ave_gz_file")],
 )
 @pytest.mark.parametrize("sweep", [1, "sweep_2", [0, 1]])
-def test_single_sweep_engines_reject_other_sweeps(engine, fixture_name, sweep, request):
-    filepath = request.getfixturevalue(fixture_name)
+def test_single_sweep_engines_reject_other_sweeps(engine, file_fixture, sweep, request):
+    filepath = request.getfixturevalue(file_fixture)
     with pytest.raises(ValueError, match="single sweep"):
         xd.open_datatree(filepath, engine=engine, sweep=sweep)
 
@@ -297,8 +322,8 @@ class TestXrOpenDatatree:
         with xr.open_datatree(datamet_file, engine="datamet") as dtree:
             _assert_cfradial2_structure(dtree)
 
-    def test_xr_open_datatree_hpl(self, hpl_file):
-        with xr.open_datatree(hpl_file, engine="hpl") as dtree:
+    def test_xr_open_datatree_hpl(self, hpl_file1):
+        with xr.open_datatree(hpl_file1, engine="hpl") as dtree:
             _assert_cfradial2_structure(dtree)
 
     def test_xr_open_datatree_metek(self, metek_ave_gz_file):
@@ -350,7 +375,7 @@ class TestIMDMultiFile:
         def station_coords(dtree):
             stations = {"latitude", "longitude", "altitude"}
             return (
-                sorted(stations & set(dtree.ds.coords)),
+                sorted(stations & set(dtree.dataset.coords)),
                 sorted(stations & set(dtree["sweep_0"].to_dataset().variables)),
             )
 
@@ -400,17 +425,17 @@ class TestCfRadial2SiteCoords:
         dtree = closing(
             xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=True)
         )
-        assert "latitude" in dtree.ds.coords
-        assert "longitude" in dtree.ds.coords
-        assert "altitude" in dtree.ds.coords
+        assert "latitude" in dtree.dataset.coords
+        assert "longitude" in dtree.dataset.coords
+        assert "altitude" in dtree.dataset.coords
 
     def test_site_coords_false_drops_station_coords(self, cfradial2_file, closing):
         dtree = closing(
             xd.open_datatree(cfradial2_file, engine="cfradial2", site_coords=False)
         )
-        assert "latitude" not in dtree.ds.coords
-        assert "longitude" not in dtree.ds.coords
-        assert "altitude" not in dtree.ds.coords
+        assert "latitude" not in dtree.dataset.coords
+        assert "longitude" not in dtree.dataset.coords
+        assert "altitude" not in dtree.dataset.coords
 
 
 # -- supports_groups attribute -----------------------------------------------
@@ -576,7 +601,7 @@ class TestEngineRegistry:
 
 # -- Backward compatibility & deprecation tests ------------------------------
 
-# Map of deprecated function names to (import_path, engine, fixture_name)
+# Map of deprecated function names to (import_path, engine, file_fixture)
 _DEPRECATED_FUNCTIONS = {
     "open_odim_datatree": ("xradar.io.backends.odim", "odim_file", {}),
     "open_gamic_datatree": ("xradar.io.backends.gamic", "gamic_file", {}),
@@ -599,7 +624,7 @@ _DEPRECATED_FUNCTIONS = {
     "open_furuno_datatree": ("xradar.io.backends.furuno", "furuno_scn_file", {}),
     "open_rainbow_datatree": ("xradar.io.backends.rainbow", "rainbow_file", {}),
     "open_datamet_datatree": ("xradar.io.backends.datamet", "datamet_file", {}),
-    "open_hpl_datatree": ("xradar.io.backends.hpl", "hpl_file", {}),
+    "open_hpl_datatree": ("xradar.io.backends.hpl", "hpl_file1", {}),
     "open_metek_datatree": ("xradar.io.backends.metek", "metek_ave_gz_file", {}),
     "open_uf_datatree": ("xradar.io.backends.uf", "uf_file_1", {}),
 }
@@ -609,6 +634,7 @@ class TestDeprecation:
     """Test that all standalone functions emit FutureWarning."""
 
     @pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+    @pytest.mark.file
     def test_deprecated_function_warns(self, func_name, request, closing):
         func, _, filepath, extra_kwargs, _ = _legacy_and_engine(func_name, request)
 
@@ -616,7 +642,10 @@ class TestDeprecation:
             warnings.simplefilter("always")
             dtree = closing(func(filepath, sweep=0, **extra_kwargs))
             deprecation_warnings = [
-                x for x in w if issubclass(x.category, FutureWarning)
+                x
+                for x in w
+                if issubclass(x.category, FutureWarning)
+                and f"`{func_name}` is deprecated" in str(x.message)
             ]
             assert len(deprecation_warnings) == 1, (
                 f"{func_name} emitted {len(deprecation_warnings)} "
@@ -660,6 +689,7 @@ def _call_legacy(func, *args, **kwargs):
     ],
     ids=["default", "site_as_coords", "optional", "optional_groups"],
 )
+@pytest.mark.file
 def test_legacy_matches_engine(func_name, legacy_kw, engine_kw, request, closing):
     func, engine, filename, extra, engine_extra = _legacy_and_engine(func_name, request)
     legacy = closing(_call_legacy(func, filename, sweep=0, **extra, **legacy_kw))
@@ -670,6 +700,7 @@ def test_legacy_matches_engine(func_name, legacy_kw, engine_kw, request, closing
 
 
 @pytest.mark.parametrize("func_name", list(_DEPRECATED_FUNCTIONS))
+@pytest.mark.file
 def test_legacy_chunks(func_name, request, closing):
     func, _, filename, extra, _ = _legacy_and_engine(func_name, request)
     dtree = closing(_call_legacy(func, filename, sweep=0, chunks={}, **extra))
@@ -686,6 +717,7 @@ def test_legacy_chunks(func_name, request, closing):
         if name not in ("open_cfradial2_datatree", "open_metek_datatree")
     ],
 )
+@pytest.mark.file
 def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
     func, _, filename, extra, _ = _legacy_and_engine(func_name, request)
     via_backend_kwargs = closing(
@@ -699,7 +731,7 @@ def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
 
 
 @pytest.mark.parametrize(
-    "func,engine,fixture_name,key",
+    "func,engine,file_fixture,key",
     [
         (xd.io.open_odim_datatree, "odim", "odim_file", "optional"),
         # capital-O ``Optional`` is the old GAMIC spelling, accepted everywhere
@@ -708,9 +740,9 @@ def test_legacy_backend_kwargs_reach_backend(func_name, request, closing):
     ids=["optional", "Optional"],
 )
 def test_legacy_backend_kwargs_optional(
-    func, engine, fixture_name, key, request, closing
+    func, engine, file_fixture, key, request, closing
 ):
-    filename = request.getfixturevalue(fixture_name)
+    filename = request.getfixturevalue(file_fixture)
     legacy = closing(_call_legacy(func, filename, sweep=0, backend_kwargs={key: False}))
     expected = closing(
         xd.open_datatree(filename, engine=engine, sweep=0, optional=False)
@@ -892,3 +924,117 @@ def test_cfradial2_close_releases_file(cfradial2_file, tmp_path):
     dtree.load()
     dtree.close()
     assert open_handles() == 0
+
+
+class TestXdOpenDatatreeSweepFiles:
+    """xd.open_datatree() stacks a list of single-sweep files into a volume."""
+
+    @pytest.fixture
+    def sweep_files(self, cfradial2_file, tmp_path, closing):
+        files = []
+        for i in range(3):
+            tree = closing(xd.open_datatree(cfradial2_file, sweep=i, first_dim="time"))
+            path = tmp_path / f"sweep_file_{i}.nc"
+            xd.io.to_cfradial2(tree.copy(), path, engine="netcdf4")
+            files.append(str(path))
+        return files
+
+    def test_sweeps_are_stacked_by_time(self, sweep_files, cfradial2_file, closing):
+        volume = closing(xd.open_datatree(sweep_files))
+        reference = closing(
+            xd.open_datatree(cfradial2_file, sweep=[0, 1, 2], first_dim="time")
+        )
+        assert [k for k in volume.children if k.startswith("sweep_")] == [
+            "sweep_0",
+            "sweep_1",
+            "sweep_2",
+        ]
+        np.testing.assert_array_equal(
+            volume.dataset.sweep_fixed_angle, reference.dataset.sweep_fixed_angle
+        )
+        for i in range(3):
+            assert volume[f"sweep_{i}"].sweep_number.item() == i
+            np.testing.assert_array_equal(
+                volume[f"sweep_{i}"].DBZ.values, reference[f"sweep_{i}"].DBZ.values
+            )
+
+    def test_files_in_any_order(self, sweep_files, closing):
+        # the sweeps are sorted by time, not by the order of the list
+        volume = closing(xd.open_datatree(sweep_files[::-1]))
+        starts = [volume[f"sweep_{i}"].time.min().values for i in range(3)]
+        assert starts == sorted(starts)
+        assert volume.dataset.sweep_fixed_angle.values.tolist() == [
+            volume[f"sweep_{i}"].sweep_fixed_angle.item() for i in range(3)
+        ]
+
+    def test_volume_kwargs(self, sweep_files, closing):
+        volume = closing(xd.open_datatree(sweep_files, max_angle=0.6))
+        assert len([k for k in volume.children if k.startswith("sweep_")]) < 3
+        with pytest.raises(ValueError, match="No sweeps remain"):
+            xd.open_datatree(sweep_files, min_angle=1000)
+
+    def test_volume_kwargs_single_file(self, sweep_files):
+        with pytest.raises(TypeError, match="only valid when opening multiple"):
+            xd.open_datatree(sweep_files[:1], engine="cfradial2", max_angle=1)
+
+    def test_closing_closes_every_file(self, sweep_files):
+        volume = xd.open_datatree(sweep_files)
+        volume.close()
+        for path in sweep_files:  # no file is left open
+            xr.open_datatree(path, engine="cfradial2").close()
+
+    def test_mixed_formats_raise(self, sweep_files, odim_file):
+        with pytest.raises(ValueError, match="different engines"):
+            xd.open_datatree([sweep_files[0], odim_file])
+
+    def test_single_file_list(self, sweep_files, closing):
+        volume = closing(xd.open_datatree(sweep_files[:1]))
+        single = closing(xd.open_datatree(sweep_files[0]))
+        xr.testing.assert_identical(volume, single)
+
+    def test_imd_volume(self, imd_volume_files, closing):
+        # IMD files are stacked by open_imd_datatree
+        volume = closing(xd.open_datatree(imd_volume_files))
+        xr.testing.assert_identical(
+            volume, closing(xd.io.open_imd_datatree(imd_volume_files))
+        )
+        assert len([k for k in volume.children if k.startswith("sweep_")]) == len(
+            imd_volume_files
+        )
+
+    def test_empty_list_raises(self):
+        with pytest.raises(ValueError, match="at least one file"):
+            xd.open_datatree([])
+
+
+_SWEEP_FILES = [
+    ("odim", "odim_file"),
+    ("cfradial1", "cfradial1_file"),
+    ("cfradial2", "cfradial2_file"),
+    ("nexradlevel2", "nexradlevel2_file"),
+    ("gamic", "gamic_file"),
+    ("iris", "iris0_file"),
+    ("furuno", "furuno_scn_file"),
+    ("rainbow", "rainbow_file"),
+    ("datamet", "datamet_file"),
+    ("uf", "uf_file_1"),
+    ("imd", "imd_file"),
+    ("hpl", "hpl_file1"),
+    ("metek", "metek_ave_gz_file"),
+]
+
+
+@pytest.mark.parametrize(
+    ("engine", "file_fixture"), _SWEEP_FILES, ids=[engine for engine, _ in _SWEEP_FILES]
+)
+def test_sweeps_are_fm301_sweeps(engine, file_fixture, request, closing):
+    # every reader returns sweeps which `is_sweep` accepts, with the mandatory
+    # FM301 sweep metadata (strict) (#537)
+    filename = request.getfixturevalue(file_fixture)
+    dtree = closing(xd.open_datatree(filename, engine=engine))
+    names = [name for name in dtree.children if name.startswith("sweep_")]
+    assert names
+    for name in names:
+        sweep = dtree[name].to_dataset(inherit="all_coords")
+        assert xd.util.is_sweep(sweep), (engine, name)
+        assert xd.util.is_sweep(sweep, strict=True), (engine, name)

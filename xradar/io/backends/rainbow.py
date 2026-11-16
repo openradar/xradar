@@ -33,6 +33,7 @@ __all__ = [
 __doc__ = __doc__.format("\n   ".join(__all__))
 
 import datetime as dt
+import math
 import sys
 import zlib
 
@@ -510,7 +511,7 @@ class RainbowFile(RainbowFileBase):
 
     @property
     def pargroup(self):
-        return self._header["scan"]["pargroup"]
+        return self._header["scan"].get("pargroup") or {}
 
     @property
     def sensorinfo(self):
@@ -600,6 +601,49 @@ class RainbowArrayWrapper(BackendArray):
             indexing.IndexingSupport.BASIC,
             self._getitem,
         )
+
+
+# Rainbow slice (or pargroup) values mapped to the CfRadial 2.1 names of
+# radar_parameters (Section 7.1) and radar_calibration (Section 7.3), without a
+# public format description: only what is clear from names and values.
+# rainbow name: xradar name; 0 is "not set" for these and left out.
+_RAINBOW_PARAMETERS = {
+    "spbhorbeam": "radar_beam_width_h",  # degrees
+    "spbverbeam": "radar_beam_width_v",
+    "spbantgain": "radar_antenna_gain_h",  # dB
+    "spbdpvantgain": "radar_antenna_gain_v",
+    "rxbandwidth": "radar_receiver_bandwidth",  # Hz (s-1)
+}
+# radar constants (dB), one per pulse width: the one of the slice's `pw_index`
+# RB5 format release 5.57.0, one value for each pulse mode (short, medium, long):
+# rspdphradconst: dual-pol (transmit H and V, receive H)
+# rspdpvradconst: dual-pol (transmit H and V, receive V)
+# rspradconst: single-pol (transmit H, receive H), only if there is no dual-pol one
+_RAINBOW_RADAR_CONSTANTS = {
+    "rspdphradconst": "radar_constant_h",
+    "rspdpvradconst": "radar_constant_v",
+}
+_RAINBOW_SINGLE_POL_RADAR_CONSTANT = {"rspradconst": "radar_constant_h"}
+# transmitter power in kW, as dBm
+_RAINBOW_TX_POWER = {"gdrx5txpowkwh": "xmit_power_h", "gdrx5txpowkwv": "xmit_power_v"}
+
+
+def _get_float(value, index=0):
+    """Float from a Rainbow header value, which may hold several values.
+
+    Returns ``None`` if the value is missing, no finite number or has no value
+    at ``index``.
+    """
+    try:
+        value = float(str(value).split()[index])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _kw_to_dbm(kw):
+    """Power in kW as dBm, ``None`` if it is not positive."""
+    return 10 * math.log10(kw) + 60 if kw > 0 else None
 
 
 class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
@@ -798,6 +842,60 @@ class RainbowStore(_ManagedStoreMixin, AbstractDataStore):
     def get_attrs(self):
         return FrozenDict()
 
+    def _slice_value(self, name):
+        """Value of the slice, or of the ``pargroup`` if the slice has none."""
+        return self.root._get_rbdict_value(self.root.slices[self._group], name)
+
+    def get_radar_parameters(self):
+        """Beam widths, antenna gains and receiver bandwidth of the slice, with
+        their xradar names. A beam width which is not set falls back on the
+        ``sensorinfo``."""
+        parameters = {}
+        for name, xradar_name in _RAINBOW_PARAMETERS.items():
+            value = _get_float(self._slice_value(name))
+            if (value is None or value <= 0) and "beam_width" in xradar_name:
+                sensorinfo = self.root.sensorinfo or {}
+                value = _get_float(
+                    sensorinfo.get("beamwidth", sensorinfo.get("@beamwidth"))
+                )
+            if value is not None and value > 0:
+                parameters[xradar_name] = value
+        return FrozenDict(parameters)
+
+    def get_calibration_parameters(self):
+        """Radar constants (of the pulse width of the slice) and transmitter
+        power of the slice, with their xradar names."""
+        calibration = {}
+        # the pulse width index is a non-negative whole number, if it is not (or
+        # no number) there is no radar constant, instead of one of another pulse
+        # width; without an index the constant is only used if it has one value
+        pw_value = self._slice_value("pw_index")
+        pw_index = None if pw_value is None else _get_float(pw_value)
+        if pw_value is None or (
+            pw_index is not None and pw_index >= 0 and pw_index == int(pw_index)
+        ):
+            for constants in (
+                _RAINBOW_RADAR_CONSTANTS,
+                _RAINBOW_SINGLE_POL_RADAR_CONSTANT,
+            ):
+                # the single-pol constant only without any dual-pol one
+                if calibration:
+                    break
+                for name, xradar_name in constants.items():
+                    constant = self._slice_value(name)
+                    if pw_index is None and len(str(constant).split()) != 1:
+                        continue
+                    index = 0 if pw_index is None else int(pw_index)
+                    value = _get_float(constant, index)
+                    if value is not None:
+                        calibration[xradar_name] = value
+        for name, xradar_name in _RAINBOW_TX_POWER.items():
+            value = _get_float(self._slice_value(name))
+            dbm = None if value is None else _kw_to_dbm(value)
+            if dbm is not None:
+                calibration[xradar_name] = dbm
+        return FrozenDict(calibration)
+
 
 class RainbowBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for Rainbow5 data."""
@@ -874,6 +972,8 @@ class RainbowBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_radar_parameters())
+        ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works
         ds._close = store.close

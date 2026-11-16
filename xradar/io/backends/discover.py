@@ -81,3 +81,16 @@ def discover_engine(filename_or_obj):
         f"None of the xradar engines ({', '.join(engines)}) can open "
         f"{filename_or_obj!r}."
     )
+
+
+def _discover_common_engine(files):
+    """The engine which can open all ``files`` (a volume is stacked from files of
+    one format)."""
+    engines = {discover_engine(file) for file in files}
+    if len(engines) > 1:
+        raise ValueError(
+            f"The files need different engines ({', '.join(sorted(engines))}), "
+            "a volume is stacked from files of one format."
+        )
+    (engine,) = engines
+    return engine

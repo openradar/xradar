@@ -65,8 +65,10 @@ from .common import (
     _compose_docstring,
     _deprecation_warning,
     _external_stacklevel,
+    _input_kind,
     _keep_close,
     _open_legacy_datatree,
+    _read_nc_header,
     _resolve_sweeps,
 )
 
@@ -185,8 +187,10 @@ def _available_sweeps(tree: DataTree) -> dict[str, str]:
     sweep numbers), the ``sweep_*`` groups are used.
     """
     raw_names = []
-    if "sweep_group_name" in tree.ds:
-        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
+    if "sweep_group_name" in tree.dataset:
+        listed = [
+            _decode_name(v) for v in np.ravel(tree.dataset["sweep_group_name"].values)
+        ]
         raw_names = [name for name in listed if name in tree.children]
         missing = [name for name in listed if name not in tree.children]
         if raw_names and missing:
@@ -583,9 +587,11 @@ def _normalize_cfradial2_tree(
     sweep_nodes = {name: tree[raw] for name, raw in available.items()}
     # fixed angles of the root group, indexed like sweep_group_name
     root_fixed = {}
-    if "sweep_fixed_angle" in tree.ds and "sweep_group_name" in tree.ds:
-        listed = [_decode_name(v) for v in np.ravel(tree.ds["sweep_group_name"].values)]
-        values = np.ravel(tree.ds["sweep_fixed_angle"].values)
+    if "sweep_fixed_angle" in tree.dataset and "sweep_group_name" in tree.dataset:
+        listed = [
+            _decode_name(v) for v in np.ravel(tree.dataset["sweep_group_name"].values)
+        ]
+        values = np.ravel(tree.dataset["sweep_fixed_angle"].values)
         root_fixed = {
             _normalize_sweep_name(name): value
             for name, value in zip(listed, values, strict=False)
@@ -680,6 +686,31 @@ class CfRadial2BackendEntrypoint(BackendEntrypoint):
     description = "Open CfRadial2/FM301 grouped datasets in Xarray"
     url = "https://xradar.rtfd.io/en/latest/io.html#cfradial2"
     supports_groups = True
+
+    def guess_can_open(self, filename_or_obj):
+        """CfRadial2 file (netCDF/HDF5 with sweep groups, whose ``Conventions``
+        mention CF/Radial and whose root has ``sweep_group_name`` and
+        ``time_coverage_start``).
+
+        Files with ``sweep_start_ray_index`` (CfRadial1) and vendor files which
+        use the CfRadial2 layout without the time coverage (e.g. WindCube) are
+        not claimed.
+        """
+        if _input_kind(filename_or_obj) not in ("path", "bytes"):
+            return False
+        header = _read_nc_header(filename_or_obj)
+        if header is None:
+            return False
+        attrs, variables, groups = header
+        convention = " ".join(
+            str(attrs.get(name, "")) for name in ["Conventions", "conventions"]
+        ).lower()
+        return (
+            "radial" in convention
+            and bool(groups)
+            and {"sweep_group_name", "time_coverage_start"} <= variables
+            and "sweep_start_ray_index" not in variables
+        )
 
     def open_dataset(
         self,

@@ -37,6 +37,7 @@ __all__ = [
     "get_nyquist_velocity_attrs",
     "get_range_attrs",
     "get_time_attrs",
+    "get_unambiguous_range_attrs",
     "moment_attrs",
     "sweep_vars_mapping",
     "get_azimuth_dataarray",
@@ -270,8 +271,8 @@ radar_calibration_subgroup = dict(
         ("receiver_mismatch_loss", None),
         ("receiver_mismatch_loss_h", None),
         ("receiver_mismatch_loss_v", None),
-        ("rx_loss_h", "receiver_mismatch_loss_h"),
-        ("rx_loss_v", "receiver_mismatch_loss_v"),
+        ("rx_loss_h", None),  # gamic, definition not known
+        ("rx_loss_v", None),
         ("radar_constant_h", None),
         ("radar_constant_v", None),
         ("probert_jones_correction", None),
@@ -300,8 +301,8 @@ radar_calibration_subgroup = dict(
         ("noise_source_power_v", None),
         ("noise_power_short_pulse_h", "noise_source_power_h"),
         ("noise_power_short_pulse_v", "noise_source_power_v"),
-        ("noise_power_h", "noise_source_power_h"),  # Gamic
-        ("noise_power_v", "noise_source_power_v"),
+        ("noise_power_h", None),  # gamic, in dB, not the dBm noise source power
+        ("noise_power_v", None),
         ("power_measure_loss_h", None),
         ("power_measure_loss_v", None),
         ("coupler_forward_loss_h", None),
@@ -384,8 +385,8 @@ frequency_attrs = {
 }
 
 
-#: required moment attributes
-moment_attrs = {"standard_name", "long_name", "units"}
+#: required moment attributes, keep order stable for readers.
+moment_attrs = ("standard_name", "long_name", "units")
 
 # todo: align this with sweep_dataset_vars
 #: CfRadial 2.1 / FM301 / ODIM_H5 mapping
@@ -757,17 +758,21 @@ def get_nyquist_velocity_attrs(units="m s-1"):
 #: The per-moment ``coordinates`` attribute every reader writes.
 MOMENT_COORDINATES = "elevation azimuth range latitude longitude altitude time"
 
-#: CF moment attrs copied from :data:`sweep_vars_mapping`, in a fixed order
-#: (``moment_attrs`` is a set, whose iteration order varies per process).
-_CF_MOMENT_ATTR_KEYS = ("units", "standard_name", "long_name")
-
 
 def _cf_moment_attrs(moment):
-    """``units``/``standard_name``/``long_name`` of a known moment, in a
-    fixed key order; ``{}`` for a name the model does not know. Shared by
-    the eager readers and the virtual parsers."""
+    """CF attrs of a known moment, in the fixed order of ``moment_attrs``;
+    ``{}`` for a name the model does not know. Shared by the eager readers and
+    the virtual parsers."""
     mapping = sweep_vars_mapping.get(moment) or {}
-    return {key: mapping[key] for key in _CF_MOMENT_ATTR_KEYS if key in mapping}
+    return {key: mapping[key] for key in moment_attrs if key in mapping}
+
+
+def get_unambiguous_range_attrs(units="meters"):
+    unambiguous_range_attrs = {
+        "long_name": "unambiguous_range",
+        "units": units,
+    }
+    return unambiguous_range_attrs
 
 
 def get_moment_attrs(moment):
@@ -1068,7 +1073,7 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
     return keep_vars
 
 
-def conform_cfradial2_sweep_group(obj, optional, dim0=None):
+def conform_cfradial2_sweep_group(obj, optional, dim0=None, sort=True):
     if dim0 is None:
         # handling first dimension
         dim0 = "elevation" if obj.sweep_mode.load().astype(str) == "rhi" else "azimuth"
@@ -1089,7 +1094,7 @@ def conform_cfradial2_sweep_group(obj, optional, dim0=None):
     # swap dims, if needed
     if dim0 != "time" and dim0 in obj.dims:
         out = out.swap_dims({dim0: "time"})
-    # sort in any case
-    out = out.sortby("time")
+    if sort:
+        out = out.sortby("time")
 
     return out

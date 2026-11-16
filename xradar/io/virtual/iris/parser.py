@@ -210,8 +210,9 @@ def _sweep_group(
     # Pure pointers: rows and per-ray coordinates stay in acquisition order.
     # Sorting is a store-builder decision; it sets ``sort_rays: true`` in the
     # codec config and writes the matching sorted coordinates itself.
-    # Moment names follow the eager reader: a second data type mapping to an
-    # already used CfRadial name (DB_DBZ + DB_DBZ2) keeps its Sigmet name.
+    # Moment names follow the eager reader: when two data types map to one
+    # CfRadial name (DB_DBZ + DB_DBZ2), the later, finer one keeps it and the
+    # earlier one keeps its Sigmet name.
     names = _moment_names([dth.type_name for dth in headers])
     arrays: dict[str, ManifestArray] = {}
     for ordinal, (dth, cf_name) in enumerate(zip(headers, names, strict=True)):

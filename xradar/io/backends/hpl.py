@@ -147,6 +147,8 @@ variable_attr_dict["sweep_mode"] = {"dims": ()}
 variable_attr_dict["sweep_fixed_angle"] = {"dims": ()}
 variable_attr_dict["sweep_group_name"] = {"dims": ()}
 variable_attr_dict["sweep_number"] = {"dims": ()}
+variable_attr_dict["follow_mode"] = {"dims": ()}
+variable_attr_dict["prt_mode"] = {"dims": ()}
 variable_attr_dict["time"] = dict(standard_name="time")
 variable_attr_dict["time"]["dims"] = ("time",)
 variable_attr_dict["azimuth"] = get_azimuth_attrs()
@@ -379,6 +381,9 @@ class HplFile:
         data_unsorted["sweep_mode"] = np.array(
             data_unsorted["sweep_mode"], dtype="|S32"
         )
+        # not in the .hpl file, "not_set" as for the other readers
+        data_unsorted["follow_mode"] = np.array("not_set")
+        data_unsorted["prt_mode"] = np.array("not_set")
         start_indicies = []
         end_indicies = []
         for i, t in enumerate(data_unsorted["fixed_angle"]):

@@ -194,8 +194,8 @@ projections — coastlines and gridlines make the projection distortion visible.
 import cartopy.feature as cfeature
 
 radar_geo = radar.xradar.georeference(target_crs=4326)
-lon0 = float(radar_geo.ds.coords["longitude"].values)
-lat0 = float(radar_geo.ds.coords["latitude"].values)
+lon0 = float(radar_geo.dataset.coords["longitude"].values)
+lat0 = float(radar_geo.dataset.coords["latitude"].values)
 
 projections = [
     ("PlateCarree", ccrs.PlateCarree()),

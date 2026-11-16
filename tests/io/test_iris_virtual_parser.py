@@ -458,9 +458,10 @@ def test_string_scalars_are_vlen_not_fixed_width(cor_tree):
 
 def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
     """Two Sigmet types mapping to one CfRadial name (DB_DBZ + DB_DBZ2 ->
-    DBZH) keep both moments: the first under the CfRadial name, the second
-    under its Sigmet name (the eager reader's ``_moment_names`` rule), each
-    pointing at its own interleave ordinal."""
+    DBZH) keep both moments: the later, finer one under the CfRadial name,
+    the earlier one under its Sigmet name (the eager reader's
+    ``_moment_names`` rule, #580), each pointing at its own interleave
+    ordinal."""
     import dataclasses
 
     from xradar.io.virtual.iris.format import range_centers
@@ -491,10 +492,11 @@ def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
         for name, arr in group.arrays.items()
         if arr.metadata.to_dict()["codecs"][0]["name"] == "xradar-iris-sweep"
     }
-    assert ordinal["DBZH"] == dbz
-    assert ordinal["DB_DBZ2"] == vel
-    attrs = group.arrays["DB_DBZ2"].metadata.attributes
-    assert attrs["sigmet_data_type"] == "DB_DBZ2"
+    assert dbz < vel
+    assert ordinal["DBZH"] == vel
+    assert ordinal["DB_DBZ"] == dbz
+    attrs = group.arrays["DB_DBZ"].metadata.attributes
+    assert attrs["sigmet_data_type"] == "DB_DBZ"
     assert attrs["units"] == "dBZ"  # still reflectivity under its Sigmet name
     assert "VRADH" not in group.arrays
 
@@ -757,10 +759,14 @@ def _with_header(monkeypatch, **changes):
     monkeypatch.setattr(iris_parser, "read_volume", patched)
 
 
-def test_sector_task_is_a_sector_sweep(iris0_file, local_registry, monkeypatch):
+def test_sector_task_sweep_mode_follows_the_eager_reader(
+    iris0_file, local_registry, monkeypatch
+):
+    from xradar.io.backends.iris import _sweep_mode
+
     _with_header(monkeypatch, antenna_scan_mode=1)
     tree = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
-    assert tree["sweep_0"]["sweep_mode"].values.item() == "sector"
+    assert tree["sweep_0"]["sweep_mode"].values.item() == _sweep_mode(1)
 
 
 def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):

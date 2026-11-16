@@ -11,6 +11,7 @@ fsspec
 ruff
 nbconvert
 notebook
+jupytext
 open_radar_data>=0.9.0
 boto3
 cartopy
@@ -18,7 +19,7 @@ s3fs
 zarr>=3.1.6
 virtualizarr>=2.7.1,<2.8; python_version >= "3.12"
 pytest-xdist
-pytest-cov
+pytest-cov>=7.1.0
 pre-commit
 diff-cover
 myst-nb

@@ -105,17 +105,20 @@ def remove_duplicate_rays(ds):
     Returns
     -------
     ds : xarray.Dataset
-        Dataset with duplicate rays removed
+        Dataset with duplicate rays removed. The first ray of each angle is kept
+        and the rays stay in their order. Rays with a NaN angle are kept.
     """
     first_angle = get_first_angle(ds)
 
-    _, idx = np.unique(ds[first_angle], return_index=True)
+    # np.unique counts all NaN angles as one value by default (equal_nan=True),
+    # which would drop every ray with a NaN angle but the first; keep them all
+    _, idx = np.unique(ds[first_angle], return_index=True, equal_nan=False)
     if len(idx) < len(ds[first_angle]):
         # todo:
         # if times have been calculated with wrong number of rays
         # (ODIM_H5, we would need to recalculate the times
         # how should we find out?
-        ds = ds.isel({first_angle: idx})
+        ds = ds.isel({first_angle: np.sort(idx)})
 
     return ds
 
@@ -166,6 +169,11 @@ def _reindex_dim(ds, dim, array, tolerance, method="nearest"):
     return ds
 
 
+def _angle_span(start_angle, stop_angle):
+    """Return the angle span of a sweep from its start and stop angle."""
+    return abs(stop_angle - start_angle)
+
+
 def reindex_angle(
     ds,
     start_angle=None,
@@ -177,6 +185,7 @@ def reindex_angle(
 ):
     """Reindex along first angle.
 
+    Duplicate rays are removed first, see :py:func:`remove_duplicate_rays`.
     Missing values will be filled by variable's ``_FillValue``.
 
     Parameters
@@ -191,7 +200,8 @@ def reindex_angle(
     stop_angle : float
         Stop angle of dataset.
     angle_res : float
-        Angle resolution of the dataset.
+        Angle resolution of the dataset, positive. The sign is ignored, the
+        sweep direction comes from ``direction``.
     direction : int
         Sweep direction, -1 -> CCW, 1 -> CW.
     method : str
@@ -205,6 +215,7 @@ def reindex_angle(
     ds : xarray.Dataset
         Reindexed dataset
     """
+    angle_res = abs(angle_res)
     if tolerance is None:
         tolerance = angle_res / 2.0
 
@@ -212,7 +223,7 @@ def reindex_angle(
     first_angle = get_first_angle(ds)
     second_angle = get_second_angle(ds)
 
-    expected_angle_span = abs(stop_angle - start_angle)
+    expected_angle_span = _angle_span(start_angle, stop_angle)
     expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
 
     # create reindexing angle
@@ -223,7 +234,7 @@ def reindex_angle(
         dtype=ds[first_angle].dtype,
     )
 
-    ds = ds.sortby(first_angle)
+    ds = remove_duplicate_rays(ds).sortby(first_angle)
     ds = _reindex_angle(ds, ang, tolerance, method=method)
 
     # check secondary angle coordinate (no nan)
@@ -314,7 +325,14 @@ def extract_angle_parameters(ds):
     Returns
     -------
     angle_dict : dict
-        Dictionary with parameters.
+        Dictionary with parameters. The angle and time ranges, ``a1gate`` and the
+        ``*_are_unique`` checks describe all rays of ``ds``. The angle parameters
+        from ``uniform_angle_spacing`` on are estimated without duplicate rays,
+        see :py:func:`remove_duplicate_rays`. ``angle_res`` is always positive,
+        the sweep direction is ``direction`` (1 for clockwise or ascending, -1
+        for counter-clockwise or descending). ``missing_rays`` and
+        ``excess_rays`` compare the number of rays without duplicates with
+        ``expected_number_rays``.
     """
     angle_dict = {}
 
@@ -336,7 +354,9 @@ def extract_angle_parameters(ds):
     )
 
     # 3. get unique angles
-    unique_angles = np.unique(ds[first_angle])
+    # as in remove_duplicate_rays, rays with a NaN angle are not duplicates
+    # (np.unique counts all NaN as one value unless equal_nan=False)
+    unique_angles = np.unique(ds[first_angle], equal_nan=False)
 
     # check if azimuth can be sorted
     # check if time can be sorted
@@ -351,12 +371,16 @@ def extract_angle_parameters(ds):
     a1gate_val = ds.time.idxmin(first_angle).values
     angle_dict.update(a1gate_idx=a1gate_idx, a1gate_val=a1gate_val)
 
+    # duplicate rays would skew the angle parameters below
+    if not angles_are_unique:
+        ds = remove_duplicate_rays(ds)
+
     # 5. angle differences
     fdim = ds[first_angle]
     diff = fdim.diff(first_angle)
 
     # this captures different angle spacing
-    # catches also missing rays and double rays
+    # catches also missing rays
     # and other erroneous ray alignments which result in different first_angle values
 
     # 6. this finds the median of those diff-values which are over some quantile
@@ -384,7 +408,8 @@ def extract_angle_parameters(ds):
     angle_dict.update(ascending=ascending.values, direction=direction)
 
     # 8. calculate angle resolution from median_diff and rounding
-    angle_res = np.round(median_diff, decimals=2)
+    # always positive, the sweep direction is in ``direction``
+    angle_res = np.round(abs(median_diff), decimals=2)
     angle_dict.update(angle_res=angle_res.values)
 
     # 9. start/stop angle
@@ -396,9 +421,8 @@ def extract_angle_parameters(ds):
     if mode == "azimuth_surveillance":
         start_ang = 0
         stop_ang = 360
-    else:
-        # rhi, sector and any other partial scan: start/stop angle from the
-        # data, rounded to the nearest multiple of angle_res
+    elif mode == "rhi":
+        # start/stop angle, round to nearest multiple of angle_res
         start_ang = int(np.round(min_angle / angle_res) * angle_res)
         stop_ang = int(np.round(max_angle / angle_res) * angle_res)
 
@@ -406,17 +430,17 @@ def extract_angle_parameters(ds):
     angle_dict.update(start_angle=start_ang, stop_angle=stop_ang)
 
     # 10. expected angle span
-    expected_angle_span = abs(stop_ang - start_ang)
+    expected_angle_span = _angle_span(start_ang, stop_ang)
     angle_dict.update(expected_angle_span=expected_angle_span)
 
-    # 11. incomplete sweep
-    missing_rays = (angle_res * fdim.size) < expected_angle_span
-    excess_rays = (angle_res * fdim.size) > expected_angle_span
-    angle_dict.update(missing_rays=missing_rays.values, excess_rays=excess_rays.values)
-
-    # 12. expected number of rays
+    # 11. expected number of rays
     expected_number_rays = int(np.round(expected_angle_span / angle_res, decimals=0))
     angle_dict.update(expected_number_rays=expected_number_rays)
+
+    # 12. incomplete sweep, compare ray counts
+    missing_rays = np.asarray(fdim.size < expected_number_rays)
+    excess_rays = np.asarray(fdim.size > expected_number_rays)
+    angle_dict.update(missing_rays=missing_rays, excess_rays=excess_rays)
 
     return angle_dict
 
@@ -733,10 +757,10 @@ def apply_to_sweeps(dtree, func, *args, **kwargs):
     inherit = kwargs.pop("inherit", "all_coords")
 
     # Create a new tree dictionary
-    tree = {"/": dtree.ds}  # Start with the root Dataset
+    tree = {"/": dtree.dataset}  # Start with the root Dataset
 
     # Add all nodes except the root
-    tree.update({node.path: node.ds for node in dtree.subtree if node.path != "/"})
+    tree.update({node.path: node.dataset for node in dtree.subtree if node.path != "/"})
 
     # Apply the function to all sweep nodes and update the tree dictionary
     tree.update(
@@ -937,7 +961,7 @@ def create_volume(
     sweep_entries = []
     for dt in sweeps:
         for key in get_sweep_keys(dt):
-            ds = xr.decode_cf(dt[key].ds)
+            ds = xr.decode_cf(dt[key].dataset)
             time = ds["time"].values.astype("datetime64[ns]")
             mask = time != np.datetime64("NaT", "ns")
             time = time[mask]
@@ -967,7 +991,7 @@ def create_volume(
     sweep_entries.sort(key=lambda x: x[1])
 
     # Step 5: Prepare root metadata
-    root_ds = sweeps[0].ds.copy()
+    root_ds = sweeps[0].dataset.copy()
     root_ds = root_ds.drop_vars(
         ["sweep_group_name", "sweep_fixed_angle"], errors="ignore"
     )

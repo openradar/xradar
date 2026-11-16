@@ -176,5 +176,5 @@ display(tree)
 ```
 
 ```{code-cell}
-tree["vcp_00/sweep_0"].ds["DBZH"]
+tree["vcp_00/sweep_0"].dataset["DBZH"]
 ```

@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  - python>=3.12
+  - python>=3.13
   - cartopy
   - cmweather
   - codecov
@@ -22,7 +22,7 @@ dependencies:
   - pip
   - pyproj
   - pytest
-  - pytest-cov
+  - pytest-cov>=7.1.0
   - pytest-doctestplus
   - pytest-sugar
   - pytest-xdist

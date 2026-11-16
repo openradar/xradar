@@ -74,6 +74,7 @@ from .common import (
     _build_groups_dict,
     _compose_docstring,
     _deprecation_warning,
+    _external_stacklevel,
     _fix_angle,
     _get_h5group_names,
     _get_reindex_coord,
@@ -224,6 +225,70 @@ _ODIM_SOURCE_TO_GLOBAL_ATTRS = {
     "ORG": "wmo__originating_centre",
     "WIGOS": "wmo__wsi",
 }
+
+
+# ODIM_H5 how-attributes with the same units in ODIM_H5 2.2, 2.3 and 2.4 (ODIM_H5
+# 2.4 Table 8), mapped to the CfRadial 2.1 names of radar_parameters (Section 7.1)
+# and radar_calibration (Section 7.3). ODIM `H`/`V` stand for the horizontal and
+# vertical (-3 dB) width, gain, constant ... of the antenna and give `h`/`v`.
+# stem: (name with the polarization, factor)
+_ODIM_HOW_TO_METADATA = {
+    "beamw": ("radar_beam_width_{}", 1),
+    "antgain": ("radar_antenna_gain_{}", 1),
+    "radconst": ("radar_constant_{}", 1),
+    # system noise as reflectivity at 1 km, co-polar
+    "NEZ": ("base_1km_{}c", 1),
+    # one-way radome loss in ODIM, two-way in CfRadial
+    "radomeloss": ("two_way_radome_loss_{}", 2),
+}
+
+
+def _get_odim_how_metadata(*how_attrs):
+    """Get radar_parameters and radar_calibration values from ODIM ``how`` attributes.
+
+    Parameters
+    ----------
+    *how_attrs : dict
+        Attributes of the ``how`` groups, from the top-level group to the
+        dataset: later ones win, as dataset-level attributes apply to that
+        dataset only. The deprecated ``beamwidth`` (ODIM_H5 2.2/2.3) applies
+        to both ``beamwH`` and ``beamwV`` of the group it is in.
+
+    Returns
+    -------
+    metadata : dict
+        xradar name -> float. Attributes which are no numbers are skipped
+        with a warning, and so are antenna gains of 0 dB or less, which are
+        placeholders.
+    """
+    how = {}
+    for attrs in how_attrs:
+        attrs = dict(attrs)
+        if "beamwidth" in attrs:
+            for pol in "HV":
+                attrs.setdefault(f"beamw{pol}", attrs["beamwidth"])
+        how.update(attrs)
+
+    metadata = {}
+    for stem, (pattern, factor) in _ODIM_HOW_TO_METADATA.items():
+        for odim_pol, pol in (("H", "h"), ("V", "v")):
+            key = f"{stem}{odim_pol}"
+            if key not in how:
+                continue
+            try:
+                value = float(np.asarray(how[key]).item())
+            except (TypeError, ValueError):
+                warnings.warn(
+                    f"xradar: ODIM how attribute {key}={how[key]!r} is no number, "
+                    "it is not used.",
+                    UserWarning,
+                    stacklevel=_external_stacklevel(),
+                )
+                continue
+            if stem == "antgain" and value <= 0:
+                continue
+            metadata[pattern.format(pol)] = value * factor
+    return metadata
 
 
 def _parse_odim_source(source):
@@ -867,6 +932,17 @@ class OdimStore(_ManagedStoreMixin, AbstractDataStore):
 
         return FrozenDict(attributes)
 
+    def get_calibration_parameters(self):
+        """Antenna and calibration values of the ``how`` groups of the file and
+        of the dataset, with their xradar names (see ``_get_odim_how_metadata``)."""
+        with self._manager.acquire_context(False) as root:
+            how_attrs = [
+                root[path].attrs
+                for path in ("how", f"{self._group.lstrip('/')}/how")
+                if path in root
+            ]
+            return FrozenDict(_get_odim_how_metadata(*how_attrs))
+
 
 class OdimBackendEntrypoint(BackendEntrypoint):
     """Xarray BackendEntrypoint for ODIM data.
@@ -985,6 +1061,7 @@ class OdimBackendEntrypoint(BackendEntrypoint):
 
         # assign geo-coords
         ds = _apply_site_as_coords(ds, site_as_coords)
+        ds.attrs.update(store.get_calibration_parameters())
 
         # ensure close works
         ds._close = store.close

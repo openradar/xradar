@@ -75,7 +75,7 @@ from ..model import (
 
 
 # to_cfradial1 function implementation
-def to_cfradial1(dtree=None, calibs=True):
+def to_cfradial1(dtree=None, calibs=True, range_geometry="common"):
     """
     Convert a radar xarray.DataTree to a CfRadial1 ``xarray.Dataset``.
 
@@ -85,13 +85,16 @@ def to_cfradial1(dtree=None, calibs=True):
         Radar xarray.DataTree object.
     calibs: bool, optional
         Whether to include calibration parameters.
+    range_geometry: {"common", "per_sweep"}, optional
+        ``"per_sweep"`` keeps different gate geometries of the sweeps in a 2-D
+        ``range(sweep, range)``, see :func:`xradar.io.to_cfradial1`.
 
     Returns
     -------
     xarray.Dataset
         The assembled CfRadial1 dataset.
     """
-    return _build_cfradial1_dataset(dtree, calibs=calibs)
+    return _build_cfradial1_dataset(dtree, calibs=calibs, range_geometry=range_geometry)
 
 
 # to_cfradial2 function implementation
