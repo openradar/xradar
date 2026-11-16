@@ -39,6 +39,7 @@ PUBLIC = {
         "IngestHeader",
         "read_volume",
         "range_centers",
+        "range_attrs",
         "azimuth_midpoints",
         "sweep_words",
         "walk_sweep",

@@ -46,8 +46,10 @@ from xradar.io.backends.iris import (
     SIGMET_DATA_TYPES,
     STRUCTURE_HEADER_IDENTIFIERS,
     IrisRawFile,
+    _azimuth_centers,
     _data_type_dict,
     _get_struct_dtype,
+    _range_attrs,
     _range_centers,
     _root_attrs,
     decode_bin_angle,
@@ -72,6 +74,7 @@ __all__ = [
     "IrisVolume",
     "read_volume",
     "range_centers",
+    "range_attrs",
     "azimuth_sort_order",
     "azimuth_midpoints",
     "sweep_words",
@@ -185,16 +188,26 @@ class IngestHeader:
         return self.wavelength / 100.0
 
 
+def _task_range_info(hdr: IngestHeader) -> dict[str, int | bool]:
+    """The header's ``task_range_info`` fields the eager range helpers read."""
+    return {
+        "range_first_bin": hdr.range_first_bin_cm,
+        "range_last_bin": hdr.range_last_bin_cm,
+        "step_output_bins": hdr.step_output_bins_cm,
+        "number_output_bins": hdr.number_output_bins,
+        "variable_range_bin_spacing_flag": hdr.variable_range_spacing,
+    }
+
+
 def range_centers(hdr: IngestHeader) -> np.ndarray:
     """Range gate centers in meters (the eager reader's ``_range_centers``)."""
-    return _range_centers(
-        {
-            "range_first_bin": hdr.range_first_bin_cm,
-            "range_last_bin": hdr.range_last_bin_cm,
-            "step_output_bins": hdr.step_output_bins_cm,
-            "number_output_bins": hdr.number_output_bins,
-        }
-    )
+    return _range_centers(_task_range_info(hdr))
+
+
+def range_attrs(hdr: IngestHeader) -> dict:
+    """CF ``range`` attributes from the header (the eager reader's
+    ``_range_attrs``): metres between gates and to the first gate center."""
+    return _range_attrs(_task_range_info(hdr))
 
 
 @dataclass(frozen=True)
@@ -359,19 +372,15 @@ def read_volume(buf) -> IrisVolume:
 
 
 def azimuth_midpoints(starts, stops) -> np.ndarray:
-    """Wrap-aware per-ray azimuth midpoints on [0, 360).
-
-    This is BOTH the azimuth coordinate value and the ``sort_rays``
-    permutation key — using the same quantity for both keeps a sorted
-    store's coordinate monotonic even for the ray that straddles north
-    (start 359.6, stop 0.5 -> midpoint 0.05, sorted first).
-    """
-    start = np.asarray(starts, dtype=np.float64)
-    stop = np.asarray(stops, dtype=np.float64)
-    mid = (start + stop) / 2.0
-    wrap = np.abs(stop - start) > 180.0
-    mid = np.where(wrap, (mid + 180.0) % 360.0, mid)
-    return mid
+    """The eager reader's beam centers (``_azimuth_centers``) as float32: the
+    azimuth coordinate and the ``sort_rays`` key alike, so a sorted store's
+    coordinate is monotonic (a ray from 359.6 to 0.5 is 0.05, sorted first).
+    The cast is exact for BIN2 angles."""
+    centers = _azimuth_centers(
+        np.atleast_1d(np.asarray(starts, dtype=np.float64)),
+        np.atleast_1d(np.asarray(stops, dtype=np.float64)),
+    )
+    return centers.astype(np.float32)
 
 
 def sweep_words(span, ndatatypes: int) -> np.ndarray:

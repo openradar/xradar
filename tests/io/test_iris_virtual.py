@@ -318,9 +318,7 @@ def test_range_centers_matches_eager(iris0_file, iris1_file):
     for path in (iris0_file, iris1_file):
         hdr = read_volume(Path(path).read_bytes()).header
         with xr.open_dataset(path, engine="iris", group="sweep_0") as ds:
-            np.testing.assert_allclose(
-                range_centers(hdr), ds["range"].values, atol=1e-3
-            )
+            np.testing.assert_array_equal(range_centers(hdr), ds["range"].values)
 
 
 def test_decode_flavors_and_shape_guard(iris1_file):

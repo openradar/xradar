@@ -50,6 +50,7 @@ from virtualizarr.manifests.utils import create_v3_array_metadata
 
 from xradar.io.backends.iris import (
     _dual_prf_factor,
+    _elevation_centers,
     _moment_cf_attrs,
     _moment_names,
     _nyquist,
@@ -68,6 +69,7 @@ from xradar.io.virtual.iris.format import (
     RayHeader,
     SweepIndex,
     check_aligned,
+    range_attrs,
     range_centers,
     read_volume,
     sweep_words,
@@ -89,7 +91,6 @@ from xradar.model import (
     get_latitude_attrs,
     get_longitude_attrs,
     get_nyquist_velocity_attrs,
-    get_range_attrs,
     get_time_attrs,
 )
 
@@ -104,14 +105,12 @@ _TIME_FILL = int(np.iinfo(np.int64).min)
 
 
 def _elevation_midpoints(headers: list[RayHeader]) -> np.ndarray:
-    """Per-ray elevation midpoint (start/stop mean) — the eager backend's
-    convention, folded to signed degrees (a ray slightly below the horizon
-    is -0.05, not 359.95). Azimuth is ``SweepRays.azimuth_key``."""
+    """Per-ray elevation, the eager reader's ``_elevation_centers`` as float32
+    (a ray slightly below the horizon is -0.05, not 359.95). Azimuth is
+    ``SweepRays.azimuth_key``."""
     start = np.array([h.elevation_start for h in headers], dtype=np.float64)
     stop = np.array([h.elevation_stop for h in headers], dtype=np.float64)
-    start = np.where(start > 180.0, start - 360.0, start)
-    stop = np.where(stop > 180.0, stop - 360.0, stop)
-    return (start + stop) / 2.0
+    return _elevation_centers(start, stop).astype(np.float32)
 
 
 def _sweep_group(
@@ -121,6 +120,7 @@ def _sweep_group(
     sweep: SweepIndex,
     sweep_idx: int,
     rng: np.ndarray,
+    rng_attrs: dict,
     nyquist: float,
     nyquist_vel: float,
     pad_missing_rays: bool,
@@ -271,7 +271,7 @@ def _sweep_group(
         # xarray masks the padded rays: NaT, or NaN with decode_times=False
         time_attrs["_FillValue"] = _TIME_FILL
     arrays["time"] = inline_variable(("azimuth",), time, time_attrs)
-    arrays["range"] = inline_variable(("range",), rng, get_range_attrs(rng))
+    arrays["range"] = inline_variable(("range",), rng, rng_attrs)
     arrays["sweep_mode"] = inline_scalar(_sweep_mode(hdr.antenna_scan_mode))
     arrays["prt_mode"] = inline_scalar(FM301_STRING_DEFAULTS["prt_mode"])
     arrays["follow_mode"] = inline_scalar(FM301_STRING_DEFAULTS["follow_mode"])
@@ -369,7 +369,7 @@ class IrisParser:
                 "supported by the virtual IRIS parser (gate positions are "
                 "unknown); read them with open_iris_datatree"
             )
-        rng = range_centers(hdr)
+        rng, rng_attrs = range_centers(hdr), range_attrs(hdr)
 
         # the eager reader's nyquist: the multi-PRF factor applies to DB_VEL
         nyquist = _nyquist(hdr.wavelength, hdr.prf)
@@ -387,6 +387,7 @@ class IrisParser:
                 sweep,
                 sweep.sweep_number - 1,
                 rng,
+                rng_attrs,
                 nyquist,
                 nyquist_vel,
                 self.pad_missing_rays,

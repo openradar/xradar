@@ -178,13 +178,15 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset):
     order = azimuth_sort_order(ds["azimuth"].values)
     xorder = np.argsort(xds["azimuth"].values, kind="stable")
 
-    np.testing.assert_allclose(
-        ds["azimuth"].values[order], xds["azimuth"].values[xorder], atol=1e-6
-    )
-    np.testing.assert_allclose(
-        ds["elevation"].values[order], xds["elevation"].values[xorder], atol=1e-6
-    )
-    np.testing.assert_allclose(ds["range"].values, xds["range"].values, atol=1e-3)
+    # the eager float32 beam centers (_azimuth_centers) and elevations
+    for coord in ("azimuth", "elevation"):
+        assert ds[coord].dtype == xds[coord].dtype == np.float32, coord
+        np.testing.assert_array_equal(
+            ds[coord].values[order], xds[coord].values[xorder], err_msg=coord
+        )
+    # the eager range: same float32 centers, attrs from the header (#529)
+    np.testing.assert_array_equal(ds["range"].values, xds["range"].values)
+    assert ds["range"].attrs == xds["range"].attrs
     # int64 ms, the DB_XHDR times where the sweep has them: exact
     ours_ms = ds["time"].values[order]
     theirs_ms = xds["time"].values[xorder].astype("datetime64[ms]").astype("int64")
@@ -459,7 +461,7 @@ def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
     ordinal."""
     import dataclasses
 
-    from xradar.io.virtual.iris.format import range_centers
+    from xradar.io.virtual.iris.format import range_attrs, range_centers
     from xradar.io.virtual.iris.parser import _sweep_group
 
     buf = memoryview(Path(iris0_file).read_bytes())
@@ -477,6 +479,7 @@ def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
         doctored,
         0,
         range_centers(cor_hdr),
+        range_attrs(cor_hdr),
         8.5,
         17.0,
         False,
@@ -538,6 +541,7 @@ def test_elevation_midpoint_folds_below_the_horizon():
     from xradar.io.virtual.iris.parser import _elevation_midpoints
 
     rays = [SimpleNamespace(elevation_start=359.9, elevation_stop=0.1)]
+    assert _elevation_midpoints(rays).dtype == np.float32  # like the eager reader
     np.testing.assert_allclose(_elevation_midpoints(rays), [0.0], atol=1e-9)
     rays = [SimpleNamespace(elevation_start=359.8, elevation_stop=359.9)]
     np.testing.assert_allclose(_elevation_midpoints(rays), [-0.15], atol=1e-9)
@@ -790,6 +794,22 @@ def _with_header(monkeypatch, **changes):
         return volume._replace(header=dataclasses.replace(volume.header, **changes))
 
     monkeypatch.setattr(iris_parser, "read_volume", patched)
+
+
+def test_range_attrs_come_from_the_header(cor_hdr):
+    """The range attrs are the header's metres, like the eager reader's
+    (#529), not values read back from the float32 range: a 123.45 m step is
+    123.45, not 123.45000457763672. (The parser writes these attrs; parity
+    checks them against the eager reader.)"""
+    import dataclasses
+
+    from xradar.io.virtual.iris.format import range_attrs
+
+    attrs = range_attrs(dataclasses.replace(cor_hdr, step_output_bins_cm=12345))
+    assert attrs["meters_between_gates"] == 123.45
+    # the first gate center is the header's first bin, 30000 cm
+    assert cor_hdr.range_first_bin_cm == 30000
+    assert attrs["meters_to_center_of_first_gate"] == 300.0
 
 
 def test_sector_task_is_a_sector_sweep(iris0_file, local_registry, monkeypatch):

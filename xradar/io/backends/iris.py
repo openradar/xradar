@@ -178,8 +178,21 @@ def decode_bin_angle(bin_angle, mode=None):
     return 360.0 * bin_angle / 2 ** (mode * 8)
 
 
+def _signed_elevation(angle):
+    """Elevation in signed degrees: BIN2 angles above 180 degrees are below
+    the horizon (-0.05, not 359.95, wradlib#560)."""
+    return np.where(angle > 180, angle - 360, angle)
+
+
+def _elevation_centers(start, stop):
+    """Beam center elevation of each ray from its start and stop elevation,
+    in signed degrees. Shared with the virtual parser."""
+    return (_signed_elevation(start) + _signed_elevation(stop)) / 2.0
+
+
 def _azimuth_centers(start, stop):
     """Beam center azimuth of each ray from its start and stop azimuth.
+    Shared with the virtual parser.
 
     Works for either rotation direction (sector sweeps alternate): a ray
     across north is unwrapped the shorter way round.
@@ -604,7 +617,7 @@ def _range_centers(task_range_info):
 
 def _range_attrs(task_range_info):
     """CF ``range`` attributes in metres from an IRIS ``task_range_info``,
-    whose range fields are in cm (#525)."""
+    whose range fields are in cm (#525). Shared with the virtual parser."""
     attrs = get_range_attrs()
     if task_range_info["variable_range_bin_spacing_flag"]:
         attrs["spacing_is_constant"] = "false"
@@ -3926,12 +3939,8 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
             dec_data = self.decode_data(raw_data[:, :4], BIN2)
             azi_start = dec_data[:, 0]
             azi_stop = dec_data[:, 2]
-            # correct elevation for negative angles
-            # see https://github.com/wradlib/wradlib/issues/560
-            ele_start = dec_data[:, 1]
-            ele_start[ele_start > 180] -= 360
-            ele_stop = dec_data[:, 3]
-            ele_stop[ele_stop > 180] -= 360
+            ele_start = _signed_elevation(dec_data[:, 1])
+            ele_stop = _signed_elevation(dec_data[:, 3])
 
             if self.rawdata:
                 # raw BIN2 counts, not degrees: keep the previous arithmetic
@@ -3943,7 +3952,7 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 az[az >= 360] -= 360
             else:
                 az = _azimuth_centers(azi_start, azi_stop)
-            el = (ele_start + ele_stop) / 2.0
+            el = _elevation_centers(ele_start, ele_stop)
 
             sweep_data["azi_start"] = azi_start
             sweep_data["azi_stop"] = azi_stop

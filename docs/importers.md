@@ -212,7 +212,8 @@ headers come from `IrisRawFile(..., loaddata=False)`, and the moment names
 (`iris_mapping`; a second type mapping to an already used name, e.g.
 `DB_DBZ` + `DB_DBZ2`, keeps its Sigmet name), CF scaling and no-data fill
 (`SIGMET_DATA_TYPES`), the FM301 `sweep_mode` (`sector` / `rhi` /
-`azimuth_surveillance`), nyquist velocity, range gates, CF attributes
+`azimuth_surveillance`), nyquist velocity, range gates and their attributes,
+beam-center azimuths and elevations, CF attributes
 ({mod}`xradar.model`) and the root group (source, stripped scan and site
 names, task description) are the eager reader's. The parser emits pure
 pointers: rays and per-ray coordinates keep the file's order (a sweep whose
@@ -245,9 +246,6 @@ differences from `open_iris_datatree`:
 - With `pad_missing_rays`, the padded rows of the signed types and of
   `FLIQUID2` read 0.0, a valid value of these types (every other type reads
   NaN there); the slot's NaN `azimuth` and NaT `time` mark them.
-- The `range` attributes `meters_between_gates` and
-  `meters_to_center_of_first_gate` are derived from the range values in
-  metres; `open_iris_datatree` still writes the raw header numbers there.
 
 See the {doc}`notebooks/IRIS_Virtual` notebook for a full walkthrough.
 
