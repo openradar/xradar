@@ -359,7 +359,9 @@ class HplFile:
             data_unsorted["azimuth"],
             data_unsorted["azimuth"] - 360.0,
         )
+        # the fixed angle of a sweep: the azimuth of an RHI, the elevation otherwise
         if data_unsorted["sweep_mode"] == "rhi":
+            angle, threshold = data_unsorted["azimuth"], transition_threshold_azi
             non_transitions = (
                 np.argwhere(np.abs(diff_azimuth) <= transition_threshold_azi) + 1
             )
@@ -371,6 +373,7 @@ class HplFile:
             data_unsorted["sweep_mode"] == "azimuth_surveillance"
             or data_unsorted["sweep_mode"] == "vertical_pointing"
         ):
+            angle, threshold = data_unsorted["elevation"], transition_threshold_el
             data_unsorted["fixed_angle"] = np.array(unique_elevations)
         data_unsorted["sweep_number"] = np.arange(0, n_sweeps)
 
@@ -384,11 +387,6 @@ class HplFile:
         # not in the .hpl file, "not_set" as for the other readers
         data_unsorted["follow_mode"] = np.array("not_set")
         data_unsorted["prt_mode"] = np.array("not_set")
-        # the fixed angle of a sweep: the azimuth of an RHI, the elevation otherwise
-        if data_unsorted["sweep_mode"] == b"rhi":
-            angle, threshold = data_unsorted["azimuth"], transition_threshold_azi
-        else:
-            angle, threshold = data_unsorted["elevation"], transition_threshold_el
         start_indicies = []
         end_indicies = []
         for t in data_unsorted["fixed_angle"]:
@@ -420,10 +418,10 @@ class HplFile:
                     sweep_dict[k] = data_unsorted[k][time_inds]
                 else:
                     sweep_dict[k] = data_unsorted[k]
-            # a ray of the sweep is a transition when it is off the fixed angle
-            sweep_dict["antenna_transition"] = (
-                np.abs(angle[time_inds] - data_unsorted["fixed_angle"][i]) > threshold
-            )
+            # a ray of the sweep is a transition when it is off the fixed angle,
+            # measured the shorter way round (an RHI may point north)
+            off = (angle[time_inds] - data_unsorted["fixed_angle"][i] + 180) % 360
+            sweep_dict["antenna_transition"] = np.abs(off - 180) > threshold
             self._data[f"sweep_{i}"] = sweep_dict
         self._data["sweep_number"] = data_unsorted["sweep_number"]
         self._data["fixed_angle"] = data_unsorted["fixed_angle"]
@@ -731,12 +729,15 @@ longitude : float, optional
 altitude : float, optional
     Override the site altitude above sea level (meters).
 transition_threshold_azi : float, optional
-    Azimuth-jump threshold (deg) for sweep boundary detection. An RHI ray
+    Azimuth change (deg) between rays above which the antenna counts as moving,
+    defaults to 0.01. A file with at most two such changes is an RHI. An RHI ray
     further than this off the fixed azimuth is flagged in ``antenna_transition``.
 transition_threshold_el : float, optional
-    Elevation-jump threshold (deg) for sweep boundary detection. A PPI ray
+    Elevation change (deg) between rays up to which the antenna counts as holding
+    its elevation, which gives the fixed elevations, defaults to 0.005. A ray
     further than this off the fixed elevation is flagged in
-    ``antenna_transition``.
+    ``antenna_transition``. Angles are rounded to 0.1 degrees first, so the
+    defaults flag any ray off the fixed angle.
 """
 
 HPLBackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
