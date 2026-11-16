@@ -121,7 +121,7 @@ def _sweep_group(
     sweep_idx: int,
     rng: np.ndarray,
     rng_attrs: dict,
-    nyquist: float,
+    volume: dict,
     nyquist_vel: float,
     pad_missing_rays: bool,
     drop_variables: set[str],
@@ -217,7 +217,7 @@ def _sweep_group(
             },
         }
         codecs, fill_value = [sweep_codec], 0
-        scaling = _cf_scaling(dth.type_code, nyquist, nyquist_vel)
+        scaling = _cf_scaling(dth.type_code)
         if scaling is not None:
             attrs["scale_factor"], attrs["add_offset"], fill = scaling
             if fill is not None:
@@ -225,11 +225,9 @@ def _sweep_group(
                 # mask_and_scale these bins decode to NaN instead of a
                 # plausible-looking physical value.
                 attrs["_FillValue"] = int(fill)
-        elif (
-            decode := decode_codec_config(dth.type_code, hdr.wavelength_cm)
-        ) is not None:
-            # nonlinear, signed or IRIS-float words: the eager decoder runs in
-            # the xradar-iris-decode codec, into float32 like the eager reader
+        elif (decode := decode_codec_config(dth.type_code, volume)) is not None:
+            # nonlinear, signed, IRIS-float or nyquist-scaled words: the eager
+            # decoder runs in xradar-iris-decode, into float32 like the eager reader
             codecs = [{"name": DECODE_CODEC_NAME, "configuration": decode}, *codecs]
             dtype, fill_value = np.dtype("float32"), np.nan
         elif "flag_meanings" not in attrs:
@@ -239,15 +237,20 @@ def _sweep_group(
                 "no decoder for this data type — decode per the IRIS "
                 "Programmer's Manual"
             )
-        metadata = create_v3_array_metadata(
-            shape=(nrays, nbins),
-            chunk_shape=(nrays, nbins),
-            data_type=dtype,
-            fill_value=fill_value,
-            codecs=codecs,
-            attributes=attrs,
-            dimension_names=("azimuth", "range"),
-        )
+        try:
+            metadata = create_v3_array_metadata(
+                shape=(nrays, nbins),
+                chunk_shape=(nrays, nbins),
+                data_type=dtype,
+                fill_value=fill_value,
+                codecs=codecs,
+                attributes=attrs,
+                dimension_names=("azimuth", "range"),
+            )
+        except ValueError as err:  # e.g. a header with no wavelength or PRF
+            raise ValueError(
+                f"sweep {sweep.sweep_number} {dth.type_name}: {err}"
+            ) from err
         manifest = ChunkManifest(
             entries={
                 "0.0": {
@@ -279,9 +282,8 @@ def _sweep_group(
     # rounded like the eager reader (BIN2 0.5 deg decodes as 0.49988)
     fixed_angle = float(np.round(headers[0].fixed_angle, 1))
     arrays["sweep_fixed_angle"] = inline_scalar(np.float64(fixed_angle))
-    # Per-file physics behind the VEL/WIDTH CF scaling — stored explicitly
-    # so downstream stores can carry a per-volume nyquist even though attrs
-    # are written once.
+    # the velocity's nyquist (multi-PRF factor included), as FM301 has it;
+    # the decode codec of DB_VEL/DB_WIDTH carries it in its configuration
     arrays["nyquist_velocity"] = inline_scalar(
         np.float64(nyquist_vel), get_nyquist_velocity_attrs()
     )
@@ -294,7 +296,6 @@ def _sweep_group(
     )
 
     group_attrs = {
-        "fixed_angle": fixed_angle,
         # the sweep scalars stay data variables, as in the eager reader
         "coordinates": "latitude longitude altitude",
     }
@@ -374,6 +375,12 @@ class IrisParser:
         # the eager reader's nyquist: the multi-PRF factor applies to DB_VEL
         nyquist = _nyquist(hdr.wavelength, hdr.prf)
         nyquist_vel = nyquist * _dual_prf_factor(hdr.multi_prf_mode_flag)
+        # what the decoders of KDP, velocity and width take (_VOLUME_KWARGS)
+        volume = {
+            "wavelength": hdr.wavelength_cm,
+            "nyquist": nyquist,
+            "multi_prf_mode_flag": hdr.multi_prf_mode_flag,
+        }
 
         groups: dict[str, ManifestGroup] = {}
         ray_times: list[np.ndarray] = []
@@ -388,7 +395,7 @@ class IrisParser:
                 sweep.sweep_number - 1,
                 rng,
                 rng_attrs,
-                nyquist,
+                volume,
                 nyquist_vel,
                 self.pad_missing_rays,
                 self.drop_variables,

@@ -7,7 +7,8 @@
 Most IRIS data types are linear and decode through CF ``scale_factor`` /
 ``add_offset``. The others cannot: signed words (the sweep codec gives
 unsigned words), square roots (``decode_sqi``: RHOHV, SQI), the logarithmic
-KDP, and the 16-bit IRIS floats (``tofloat``: RAINRATE2, FLIQUID2). This
+KDP, the 16-bit IRIS floats (``tofloat``: RAINRATE2, FLIQUID2), and the
+1-byte velocity and width, which scale by the volume's nyquist. This
 array-array codec decodes them with the eager reader's own decoder from
 ``SIGMET_DATA_TYPES``, so both readers give the same values. It runs after
 ``xradar-iris-sweep``, which demuxes the words::
@@ -20,12 +21,15 @@ array-array codec decodes them with the eager reader's own decoder from
                            "sort_rays": false, "pad_missing_rays": false}},
     ]
 
-``wavelength`` (cm, a positive number) is required for ``DB_KDP`` and only for
-it, so a KDP array of a volume with another wavelength does not concatenate
-with this one. No-data words decode to NaN. Rows ``pad_missing_rays`` adds
-hold word 0, which is no data for every type but the 6 signed ones and
-``DB_FLIQUID2``: there it is the value 0.0, and the slot's NaN azimuth and
-NaT time mark the padding. In ``codecs`` it is listed before
+The volume values a decoder takes (the eager ``_VOLUME_KWARGS``) are part of
+the configuration, so arrays of volumes that differ in them do not
+concatenate: ``wavelength`` (cm) for ``DB_KDP``, the single-PRF ``nyquist``
+(m/s) for ``DB_VEL`` and ``DB_WIDTH``, and ``multi_prf_mode_flag`` for
+``DB_VEL``. They are passed to the decoder as they are, so an undefined
+multi-PRF flag warns on read, like the eager reader. No-data words decode to
+NaN. Rows ``pad_missing_rays`` adds hold word 0, which is no data for every
+type but the 6 signed ones and ``DB_FLIQUID2``: there it is the value 0.0, and
+the slot's NaN azimuth and NaT time mark the padding. In ``codecs`` it is listed before
 ``xradar-iris-sweep``, so on read it runs after it. Decode-only, registered
 like ``xradar-iris-sweep``.
 """
@@ -39,14 +43,12 @@ import numpy as np
 from zarr.abc.codec import ArrayArrayCodec
 
 from xradar.io.backends.iris import (
+    _VOLUME_KWARGS,
     SIGMET_DATA_TYPES,
     _apply_decoder,
     decode_array,
-    decode_kdp,
     decode_phidp,
     decode_phidp2,
-    decode_vel,
-    decode_width,
 )
 from xradar.io.virtual._codec import (
     _DecodeOnly,
@@ -64,25 +66,31 @@ DECODE_CODEC_NAME = "xradar-iris-decode"
 __all__ = ["IrisDecodeCodec", "DECODE_CODEC_NAME", "decode_codec_config"]
 
 #: Frozen configuration contract (key -> type); order is the JSON order.
-_FIELDS = {"sigmet_data_type": str, "wavelength": float}
+_FIELDS = {
+    "sigmet_data_type": str,
+    "wavelength": float,
+    "nyquist": float,
+    "multi_prf_mode_flag": int,
+}
+
+#: the volume values; wavelength and nyquist must be positive
+_VOLUME = ("wavelength", "nyquist", "multi_prf_mode_flag")
+_POSITIVE = ("wavelength", "nyquist")
 
 
-def _cf_scaling(
-    type_code: int, nyquist: float, nyquist_vel: float
-) -> tuple[float, float, float | None] | None:
+def _cf_scaling(type_code: int) -> tuple[float, float, float | None] | None:
     """(scale_factor, add_offset, fill_or_None) turning raw words into
     physical values, derived from the eager backend's ``SIGMET_DATA_TYPES``
     entry for this type.
 
     The eager decoders are ``decode_array = (raw + offset)/scale + offset2``
-    plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by
-    the multi-PRF factor, ``decode_width`` by the single-PRF nyquist,
-    ``decode_phidp``/``_phidp2`` by 180/360 degrees); a ``mask`` value becomes
-    ``_FillValue`` so CF mask_and_scale reproduces the eager masking. ``None``
-    for the types a linear transform cannot decode: SIGNED types (the arrays
-    hold the unsigned wire words, words at or above half-range would wrap),
-    nonlinear decoders (sqrt SQI/RHOHV, log KDP) and float-word types
-    (``tofloat``) decode in the ``xradar-iris-decode`` codec instead; the
+    plus ``decode_phidp``/``_phidp2``, which multiply by 180/360 degrees; a
+    ``mask`` value becomes ``_FillValue`` so CF mask_and_scale reproduces the
+    eager masking. ``None`` for the types a fixed linear transform cannot
+    decode: SIGNED types (the arrays hold the unsigned wire words, words at or
+    above half-range would wrap), nonlinear decoders (sqrt SQI/RHOHV, log KDP),
+    float-word types (``tofloat``) and the velocity and width scaled by the
+    volume's nyquist decode in the ``xradar-iris-decode`` codec instead; the
     categorical types (HCLASS) stay raw.
     """
     entry = SIGMET_DATA_TYPES.get(type_code) or {}
@@ -97,10 +105,6 @@ def _cf_scaling(
         return None  # signed wire dtype: linear CF on our unsigned words wraps
     if func is decode_array and "tofloat" not in fkw:
         return 1.0 / scale, offset / scale + offset2, fkw.get("mask")
-    if func is decode_vel:
-        return nyquist_vel / scale, offset * nyquist_vel / scale, fkw.get("mask")
-    if func is decode_width:
-        return nyquist / scale, offset * nyquist / scale, fkw.get("mask")
     if func is decode_phidp:
         return 180.0 / scale, offset * 180.0 / scale, fkw.get("mask")
     if func is decode_phidp2:
@@ -108,26 +112,26 @@ def _cf_scaling(
     return None
 
 
-#: name -> entry of the types this codec decodes: a decoder, but no CF
-#: scaling (whether a type is linear does not depend on the nyquist)
+#: name -> entry of the types this codec decodes: a decoder, but no CF scaling
 _DECODED = {
     entry["name"]: entry
     for code, entry in SIGMET_DATA_TYPES.items()
-    if entry.get("func") is not None and _cf_scaling(code, 1.0, 1.0) is None
+    if entry.get("func") is not None and _cf_scaling(code) is None
 }
 
 
-def decode_codec_config(
-    type_code: int, wavelength_cm: float
-) -> dict[str, str | float] | None:
+def decode_codec_config(type_code: int, volume: dict) -> dict[str, Any] | None:
     """Configuration of the decode codec for the data type ``type_code``,
-    ``None`` when the type has CF scaling or no decoder."""
+    ``None`` when the type has CF scaling or no decoder. ``volume`` holds the
+    volume values (``wavelength`` in cm, the single-PRF ``nyquist``,
+    ``multi_prf_mode_flag``); the configuration takes those its decoder
+    takes."""
     entry = SIGMET_DATA_TYPES.get(type_code)
     if entry is None or entry["name"] not in _DECODED:
         return None
-    config: dict[str, str | float] = {"sigmet_data_type": entry["name"]}
-    if entry["func"] is decode_kdp:
-        config["wavelength"] = float(wavelength_cm)
+    config: dict[str, Any] = {"sigmet_data_type": entry["name"]}
+    for key in _VOLUME_KWARGS.get(entry["func"], ()):
+        config[key] = _FIELDS[key](volume[key])
     return config
 
 
@@ -137,12 +141,16 @@ class IrisDecodeCodec(_DecodeOnly, ArrayArrayCodec):
 
     sigmet_data_type: str = ""
     wavelength: float | None = None
+    nyquist: float | None = None
+    multi_prf_mode_flag: int | None = None
     _entry: dict = field(default=None, init=False, repr=False, compare=False)
 
+    def _volume(self) -> dict[str, Any]:
+        """The volume values set in this configuration."""
+        return {k: getattr(self, k) for k in _VOLUME if getattr(self, k) is not None}
+
     def __post_init__(self) -> None:
-        fields = dict(_FIELDS)
-        if self.wavelength is None:
-            del fields["wavelength"]
+        fields = {"sigmet_data_type": str} | {k: _FIELDS[k] for k in self._volume()}
         normalize_fields(self, DECODE_CODEC_NAME, fields)
         entry = _DECODED.get(self.sigmet_data_type)
         if entry is None:
@@ -150,18 +158,19 @@ class IrisDecodeCodec(_DecodeOnly, ArrayArrayCodec):
                 f"{DECODE_CODEC_NAME} cannot decode {self.sigmet_data_type!r}"
             )
         object.__setattr__(self, "_entry", entry)
-        is_kdp = entry["func"] is decode_kdp
-        if is_kdp != (self.wavelength is not None):
+        takes = set(_VOLUME_KWARGS.get(entry["func"], ()))
+        if set(self._volume()) != takes:
             raise ValueError(
-                f"{DECODE_CODEC_NAME}: 'wavelength' (cm) is required for "
-                f"DB_KDP and only for it, got {self.sigmet_data_type!r} with "
-                f"wavelength={self.wavelength!r}"
+                f"{DECODE_CODEC_NAME}: {self.sigmet_data_type!r} takes "
+                f"{sorted(takes) or 'no volume values'}, got {self._volume()}"
             )
-        if is_kdp and not (np.isfinite(self.wavelength) and self.wavelength > 0):
-            raise ValueError(
-                f"{DECODE_CODEC_NAME}: 'wavelength' must be a positive number "
-                f"of cm, got {self.wavelength!r}"
-            )
+        for key in _POSITIVE:
+            value = getattr(self, key)
+            if value is not None and not (np.isfinite(value) and value > 0):
+                raise ValueError(
+                    f"{DECODE_CODEC_NAME}: {key!r} must be a positive number, "
+                    f"got {value!r}"
+                )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> IrisDecodeCodec:
@@ -171,9 +180,7 @@ class IrisDecodeCodec(_DecodeOnly, ArrayArrayCodec):
         return cls(**config)
 
     def to_dict(self) -> dict[str, Any]:
-        config: dict[str, Any] = {"sigmet_data_type": self.sigmet_data_type}
-        if self.wavelength is not None:
-            config["wavelength"] = self.wavelength
+        config = {"sigmet_data_type": self.sigmet_data_type} | self._volume()
         return {"name": DECODE_CODEC_NAME, "configuration": config}
 
     def resolve_metadata(self, chunk_spec: ArraySpec) -> ArraySpec:
@@ -200,7 +207,7 @@ class IrisDecodeCodec(_DecodeOnly, ArrayArrayCodec):
         # the eager reader views the words through the table's dtype (signed
         # types) before decoding; the decoders put NaN under their mask
         words = chunk_array.as_numpy_array().view(self._entry.get("dtype", "uint8"))
-        values = _apply_decoder(self._entry, words, wavelength_cm=self.wavelength)
+        values = _apply_decoder(self._entry, words, **self._volume())
         values = np.ma.getdata(values).astype(out_dtype, copy=False)
         return chunk_spec.prototype.nd_buffer.from_ndarray_like(values)
 

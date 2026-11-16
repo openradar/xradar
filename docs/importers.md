@@ -199,13 +199,17 @@ one data type out of the span at read time. Its configuration is:
 
 Most data types are linear and decode through CF `scale_factor` /
 `add_offset`. The others (the signed types, square-root types such as
-`RHOHV`, the logarithmic `KDP`, and the 16-bit IRIS floats of `RAINRATE2` and
-`FLIQUID2`) also carry the decode-only codec `xradar-iris-decode`. It is
-listed before `xradar-iris-sweep`, so on read it runs on the words that codec
-gives, with this backend's own decoder: the values are `float32` and
-identical to `open_iris_datatree`. Its configuration is `sigmet_data_type`
-(the Sigmet type name) and, for `DB_KDP` only, `wavelength` in cm, so KDP
-arrays of volumes with different wavelengths do not concatenate.
+`RHOHV`, the logarithmic `KDP`, the 16-bit IRIS floats of `RAINRATE2` and
+`FLIQUID2`, and the 1-byte velocity and width, which scale by the volume's
+nyquist) also carry the decode-only codec `xradar-iris-decode`. It is listed
+before `xradar-iris-sweep`, so on read it runs on the words that codec gives,
+with this backend's own decoder: the values are `float32` and identical to
+`open_iris_datatree`. Its configuration is `sigmet_data_type` (the Sigmet
+type name), plus the volume values the decoder takes: `wavelength` in cm for
+`DB_KDP`, the single-PRF `nyquist` in m/s for `DB_VEL` and `DB_WIDTH`, and
+`multi_prf_mode_flag` for `DB_VEL`. Arrays of volumes that differ in these
+values do not concatenate, so a store builder cannot decode one volume with
+another's wavelength or nyquist.
 
 The parser runs this backend's own code wherever the job is the same: the
 headers come from `IrisRawFile(..., loaddata=False)`, and the moment names
@@ -241,6 +245,11 @@ differences from `open_iris_datatree`:
   gives `float32`: zarr attributes carry no dtype, so `scale_factor` and
   `add_offset` read back as Python floats and xarray decodes to their type.
   The values equal the eager ones to within float32 rounding.
+- Each sweep also holds `nyquist_velocity` (FM301; the velocity's nyquist,
+  multi-PRF factor included) and its own `latitude` / `longitude` /
+  `altitude`. Each moment names its Sigmet type in `sigmet_data_type`, and a
+  moment this backend has no decoder for (and no class flags, as HydroClass
+  without classifiers) says in `comment` that it holds raw Sigmet words.
 - The types decoded by `xradar-iris-decode` have no raw words to read:
   `mask_and_scale=False` still gives their physical values.
 - With `pad_missing_rays`, the padded rows of the signed types and of

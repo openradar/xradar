@@ -157,7 +157,8 @@ def test_codec_config_concat_safe(cor_vdt):
             "sort_rays",
             "pad_missing_rays",
         }
-    assert decoded == {"KDP", "RHOHV"}  # not linear
+    # not linear (KDP, RHOHV) or scaled by the volume's nyquist (VRADH)
+    assert decoded == {"KDP", "RHOHV", "VRADH"}
 
 
 def test_sweep_scalars_are_data_variables(cor_tree, cor_truth):
@@ -245,6 +246,25 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset):
     np.testing.assert_allclose(
         ds["sweep_fixed_angle"].values, xds["sweep_fixed_angle"].values, atol=1e-6
     )
+
+    # the sweeps differ only in what importers.md documents
+    assert ds.attrs == xds.attrs
+    assert set(xds.variables) <= set(ds.variables)
+    assert set(ds.variables) - set(xds.variables) <= {
+        "nyquist_velocity",
+        "latitude",
+        "longitude",
+        "altitude",
+    }
+    for var in _moments(xds):
+        assert set(xds[var].attrs) <= set(ds[var].attrs), var
+        assert set(ds[var].attrs) - set(xds[var].attrs) <= {
+            "sigmet_data_type",
+            "comment",
+            "scale_factor",
+            "add_offset",
+            "_FillValue",
+        }, var
 
     checked = 0
     for var in ds.data_vars:
@@ -351,8 +371,9 @@ def test_signed_types_decode_in_the_codec():
     ]
     assert signed  # the table does contain signed linear types
     for code in signed:
-        assert _cf_scaling(code, 8.5, 17.0) is None, code
-        assert decode_codec_config(code, 5.33) is not None, code
+        assert _cf_scaling(code) is None, code
+        volume = {"wavelength": 5.33, "nyquist": 8.5, "multi_prf_mode_flag": 0}
+        assert decode_codec_config(code, volume) is not None, code
 
 
 def test_velc_gets_scaling_and_fill():
@@ -362,7 +383,7 @@ def test_velc_gets_scaling_and_fill():
     from xradar.io.virtual.iris.decode import _cf_scaling
 
     code = _CODE_BY_NAME["DB_VELC"]
-    scaling = _cf_scaling(code, 8.5, 17.0)
+    scaling = _cf_scaling(code)
     assert scaling is not None
     scale_factor, add_offset, fill = scaling
     assert fill == 0
@@ -533,8 +554,8 @@ def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
         0,
         range_centers(cor_hdr),
         range_attrs(cor_hdr),
+        {"wavelength": 5.33, "nyquist": 8.5, "multi_prf_mode_flag": 0},
         8.5,
-        17.0,
         False,
         set(),
     )
@@ -575,17 +596,6 @@ def test_moment_name_mapping_follows_iris_mapping(iris0_file, cor_vdt):
         if h.type_name != "DB_XHDR"
     }
     assert set(_moments(cor_vdt["sweep_0"].to_dataset())) == expected
-
-
-def test_vel_scales_with_unfolded_nyquist_width_with_nyquist():
-    """DB_VEL uses the multi-PRF (unfolded) nyquist, DB_WIDTH the plain one;
-    the fixtures are single-PRF, where both are equal, so pin it here."""
-    from xradar.io.virtual.iris.decode import _cf_scaling
-
-    for name, nyquist in (("DB_VEL", 17.0), ("DB_WIDTH", 8.5)):
-        code = _CODE_BY_NAME[name]
-        scale = SIGMET_DATA_TYPES[code]["fkw"]["scale"]
-        assert _cf_scaling(code, 8.5, 17.0)[0] == pytest.approx(nyquist / scale), name
 
 
 def test_elevation_midpoint_folds_below_the_horizon():
@@ -1038,9 +1048,9 @@ def _assert_vradh_matches_eager(ds, iris_file):
     with open_iris_datatree(iris_file, sweep=[0]) as eager:
         theirs = eager["sweep_0"]["VRADH"].sortby("azimuth").values
     mine = ds["VRADH"].sortby("azimuth").values
-    both = np.isfinite(mine) & np.isfinite(theirs)
-    assert both.sum() > 1000
-    np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
+    assert np.isfinite(mine).sum() > 1000
+    # decoded by the eager decoder in xradar-iris-decode: exact
+    np.testing.assert_array_equal(mine, theirs)
 
 
 def test_nyquist_follows_product_end_like_eager(
@@ -1083,23 +1093,36 @@ def test_multi_prf_nyquist_like_eager(
     assert float(ds["nyquist_velocity"]) == pytest.approx(factor * 0.1066 * 1000 / 4)
 
 
+def test_volumes_with_another_prf_do_not_concatenate(
+    iris0_file, local_registry, monkeypatch
+):
+    """Velocity decodes with its volume's nyquist, which is in the decode
+    codec's configuration: volumes with another PRF do not concatenate,
+    instead of decoding with the first volume's nyquist. Fixed-scale moments
+    still do."""
+    first = IrisParser()(f"file://{iris0_file}", local_registry)
+    _with_product_end(monkeypatch, prf=665)
+    other = IrisParser()(f"file://{iris0_file}", local_registry)
+    one, two = (s.to_virtual_datatree()["sweep_0"].to_dataset() for s in (first, other))
+    with pytest.raises(NotImplementedError, match="different codecs"):
+        xr.concat([one["VRADH"], two["VRADH"]], dim="volume")
+    xr.concat([one["DBZH"], two["DBZH"]], dim="volume")
+
+
+def test_header_without_prf_names_the_sweep(iris0_file, local_registry, monkeypatch):
+    """A product_end with no PRF gives no velocity scale: the parser refuses,
+    naming the sweep and the data type."""
+    _with_product_end(monkeypatch, prf=0)
+    with pytest.raises(ValueError, match="sweep 1 DB_VEL: .*'nyquist'"):
+        IrisParser()(f"file://{iris0_file}", local_registry)
+
+
 def test_gate_count_mismatch_raises(iris0_file, local_registry, monkeypatch):
     """The data's gate count (product_end) must match the range bins of
     task_range_info; a mismatch raises instead of misaligning range."""
     _with_product_end(monkeypatch, number_bins=600)
     with pytest.raises(ValueError, match="product_end declares 600 gates"):
         IrisParser()(f"file://{iris0_file}", local_registry)
-
-
-def test_width_scaling_ignores_multi_prf():
-    """1-byte DB_WIDTH scales by the single-PRF nyquist and DB_VEL by the
-    multi-PRF one, as eager decode_width/decode_vel do (no fixture carries
-    1-byte width, so this pins the table-driven scaling directly)."""
-    from xradar.io.virtual.iris.decode import _cf_scaling
-
-    nyquist, nyquist_vel = 13.0, 26.0
-    assert _cf_scaling(4, nyquist, nyquist_vel)[0] == pytest.approx(nyquist / 256)
-    assert _cf_scaling(3, nyquist, nyquist_vel)[0] == pytest.approx(nyquist_vel / 127)
 
 
 def _file_offset(sweep, word_index):

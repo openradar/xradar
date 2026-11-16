@@ -370,19 +370,24 @@ def decode_sqi(data, **kwargs):
     return _masked(np.sqrt(values), no_data)
 
 
-def _apply_decoder(
-    prod, data, *, wavelength_cm=None, nyquist=None, multi_prf_mode_flag=None
-):
+#: decoder -> the volume values it takes as keyword arguments, besides its
+#: ``fkw``: the wavelength (cm), the single-PRF nyquist (m/s) and the
+#: multi-PRF mode flag. Shared with the virtual ``xradar-iris-decode`` codec.
+_VOLUME_KWARGS = {
+    decode_kdp: ("wavelength",),
+    decode_vel: ("nyquist", "multi_prf_mode_flag"),
+    decode_width: ("nyquist",),
+}
+
+
+def _apply_decoder(prod, data, **volume):
     """Decode ``data``, words already viewed through the type's ``dtype``, with
-    the type's decoder: its ``fkw``, plus the wavelength (cm) for ``DB_KDP``
-    and the nyquist and multi-PRF flag for velocity and width. Shared by the
-    readers and the virtual ``xradar-iris-decode`` codec."""
+    the type's decoder: its ``fkw``, plus the ``volume`` values it takes
+    (``_VOLUME_KWARGS``). Shared by the readers and the virtual
+    ``xradar-iris-decode`` codec."""
     func = prod["func"]
     kwargs = dict(prod.get("fkw") or {})
-    if func is decode_kdp:
-        kwargs["wavelength"] = wavelength_cm
-    elif func in (decode_vel, decode_width):
-        kwargs.update(nyquist=nyquist, multi_prf_mode_flag=multi_prf_mode_flag)
+    kwargs.update({key: volume[key] for key in _VOLUME_KWARGS.get(func, ())})
     return func(data, **kwargs)
 
 
@@ -3446,20 +3451,20 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
                 data = data.view(dtype).reshape(rays, -1)[:, :bins]
             except ValueError:
                 data = data.view(dtype)
-            runtime = {}
-            if prod["func"] in (decode_vel, decode_width, decode_kdp):
+            volume = {}
+            if prod["func"] in _VOLUME_KWARGS:
                 # ingest data files take wavelength and PRF from the task
                 # configuration (RAW products: product_end)
                 task = self.ingest_header["task_configuration"]
                 wavelength = task["task_misc_info"]["wavelength"]
-                runtime["wavelength_cm"] = wavelength / 100
+                volume["wavelength"] = wavelength / 100
                 if prod["func"] is not decode_kdp:
                     dsp_info = task["task_dsp_info"]
-                    runtime.update(
+                    volume.update(
                         nyquist=_nyquist(wavelength, dsp_info["prf"]),
                         multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
                     )
-            return _apply_decoder(prod, data, **runtime)
+            return _apply_decoder(prod, data, **volume)
         else:
             return data
 
@@ -4003,18 +4008,18 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 data = data.view(dtype).reshape(rays, -1)[:, :bins]
             except ValueError:
                 data = data.view(dtype)
-            runtime = {}
-            if prod["func"] in (decode_vel, decode_width, decode_kdp):
+            volume = {}
+            if prod["func"] in _VOLUME_KWARGS:
                 product_end = self.product_hdr["product_end"]
                 wavelength = product_end["wavelength"]
-                runtime["wavelength_cm"] = wavelength / 100
+                volume["wavelength"] = wavelength / 100
                 if prod["func"] is not decode_kdp:
                     dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
-                    runtime.update(
+                    volume.update(
                         nyquist=_nyquist(wavelength, product_end["prf"]),
                         multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
                     )
-            return _apply_decoder(prod, data, **runtime)
+            return _apply_decoder(prod, data, **volume)
         elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
             # 8-bit types without decoding function (e.g. DB_HCLASS): two
             # range bins per 16-bit word, like the scaled 8-bit types above
