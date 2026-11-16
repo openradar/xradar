@@ -28,6 +28,12 @@ def test_open_datatree_hpl(hpl_file2):
     assert dtree["sweep_0"]["sweep_number"].dtype.kind == "i"
     assert "units" not in dtree["sweep_0"]["time"].attrs
 
+    # every ray of these PPI sweeps is at the fixed elevation (#593)
+    for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
+        ds = dtree[sweep].to_dataset()
+        assert (ds.elevation == ds.sweep_fixed_angle).all()
+        assert not ds.antenna_transition.any()
+
 
 def test_open_dataset_hpl(hpl_file2):
     with xr.open_dataset(
@@ -59,6 +65,11 @@ def test_open_rhi(hpl_file1):
 
         assert ds["mean_doppler_velocity"].dims == ("azimuth", "range")
         assert ds["mean_doppler_velocity"].max() == 19.5306
+        # the elevation of an RHI changes from ray to ray, the azimuth stays and
+        # no ray is a transition (#593)
+        assert ds.sweep_mode.astype(str).item() == "rhi"
+        assert (ds.azimuth == ds.sweep_fixed_angle).all()
+        assert not ds.antenna_transition.any()
 
 
 def test_hpl_open_mfdataset_context_manager(hpl_file1):
@@ -269,40 +280,19 @@ def test_open_hpl_datatree_single_ray_sweeps(tmp_path):
     )
 
 
-def test_hpl_rhi_rays_are_not_transitions(hpl_file1):
-    # the elevation of an RHI changes from ray to ray, the azimuth stays (#593)
-    with xd.open_datatree(hpl_file1, engine="hpl") as dtree:
-        ds = dtree["sweep_0"].to_dataset()
-        assert ds.sweep_mode.astype(str).item() == "rhi"
-        assert (ds.azimuth == ds.sweep_fixed_angle).all()
-        assert not ds.antenna_transition.any()
-
-
-def test_hpl_ppi_rays_are_not_transitions(hpl_file2):
-    # every ray of these PPI sweeps is at the fixed elevation (#593)
-    with xd.open_datatree(hpl_file2, engine="hpl") as dtree:
-        for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
-            ds = dtree[sweep].to_dataset()
-            assert (ds.elevation == ds.sweep_fixed_angle).all()
-            assert not ds.antenna_transition.any()
-
-
-def _rhi(azimuth, off=None):
+def _rhi(azimuth, off):
     # RHI from 0 to 18 degrees elevation, the ray at 10 degrees at another azimuth
     rays = [(azimuth, el) for el in range(0, 20, 2)]
-    if off is not None:
-        rays[5] = (off, 10)
+    rays[5] = (off, 10)
     return rays
-
-
-_PPI = [(az, 2.0) for az in range(0, 100, 10)]
 
 
 @pytest.mark.parametrize(
     "rays, kwargs, fixed, coord, flagged",
     [
         pytest.param(
-            _PPI[:4] + [(40, 2.5)] + _PPI[5:] + [(az, 4.0) for az in range(10)],
+            [(az, 2.5 if az == 40 else 2.0) for az in range(0, 100, 10)]
+            + [(az, 4.0) for az in range(10)],
             {},
             2.0,
             "elevation",

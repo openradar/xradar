@@ -360,8 +360,10 @@ class HplFile:
             data_unsorted["azimuth"] - 360.0,
         )
         # the fixed angle of a sweep: the azimuth of an RHI, the elevation otherwise
-        if data_unsorted["sweep_mode"] == "rhi":
-            angle, threshold = data_unsorted["azimuth"], transition_threshold_azi
+        is_rhi = data_unsorted["sweep_mode"] == "rhi"
+        angle = data_unsorted["azimuth" if is_rhi else "elevation"]
+        threshold = transition_threshold_azi if is_rhi else transition_threshold_el
+        if is_rhi:
             non_transitions = (
                 np.argwhere(np.abs(diff_azimuth) <= transition_threshold_azi) + 1
             )
@@ -373,7 +375,6 @@ class HplFile:
             data_unsorted["sweep_mode"] == "azimuth_surveillance"
             or data_unsorted["sweep_mode"] == "vertical_pointing"
         ):
-            angle, threshold = data_unsorted["elevation"], transition_threshold_el
             data_unsorted["fixed_angle"] = np.array(unique_elevations)
         data_unsorted["sweep_number"] = np.arange(0, n_sweeps)
 
