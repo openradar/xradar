@@ -141,6 +141,19 @@ def test_sector_task_sweep_mode(iris1_file, monkeypatch):
         assert dtree["sweep_0"]["sweep_mode"].item() == "sector"
 
 
+def test_rawdata_elevation_is_the_mean_of_the_signed_counts(iris0_file):
+    """With ``rawdata=True`` the angles stay BIN2 counts: the elevation is the
+    mean of the signed start and stop counts, shifted by 360 once like the
+    decoded angles (sweep 5 at 5.0 degrees is count 911, so 551)."""
+    with iris.IrisRawFile(iris0_file, rawdata=True) as raw:
+        for sweep in raw.data.values():
+            data = sweep["sweep_data"]
+            np.testing.assert_array_equal(
+                data["elevation"], (data["ele_start"] + data["ele_stop"]) / 2.0
+            )
+        assert raw.data[5]["sweep_data"]["elevation"][0] == 551
+
+
 def test_decode_array():
     data = np.arange(0, 11)
     np.testing.assert_array_equal(

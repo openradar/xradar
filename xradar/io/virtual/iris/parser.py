@@ -295,10 +295,8 @@ def _sweep_group(
 
     group_attrs = {
         "fixed_angle": fixed_angle,
-        "coordinates": (
-            "sweep_mode prt_mode follow_mode sweep_number sweep_fixed_angle "
-            "nyquist_velocity latitude longitude altitude"
-        ),
+        # the sweep scalars stay data variables, as in the eager reader
+        "coordinates": "latitude longitude altitude",
     }
     return ManifestGroup(arrays=arrays, attributes=group_attrs), ray_ms
 

@@ -20,6 +20,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
+import xradar as xd
+
 pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only
 pytest.importorskip("virtualizarr")
 
@@ -114,16 +116,20 @@ def s16_truth(iris1_file) -> Iterator[xr.DataTree]:
 # ---------------------------------------------------------------------------
 
 
+def _moments(ds) -> list[str]:
+    """The sweep's moments; the sweep scalars are data variables too."""
+    return [var for var in ds.data_vars if ds[var].dims == ("azimuth", "range")]
+
+
 def test_single_ref_per_sweep_shared_across_moments(cor_vdt, iris0_file):
     buf_len = Path(iris0_file).stat().st_size
 
     for name, node in cor_vdt.children.items():
         ds = node.to_dataset()
         refs = []
-        for var in ds.data_vars:
+        for var in _moments(ds):
             marr = ds[var].data
             assert isinstance(marr, ManifestArray)
-            assert ds[var].dims == ("azimuth", "range")
             entries = marr.manifest.dict()
             assert len(entries) == 1, (name, var)
             (ref,) = entries.values()
@@ -137,7 +143,7 @@ def test_single_ref_per_sweep_shared_across_moments(cor_vdt, iris0_file):
 def test_codec_config_concat_safe(cor_vdt):
     ds = cor_vdt["sweep_0"].to_dataset()
     decoded = set()
-    for var in ds.data_vars:
+    for var in _moments(ds):
         codecs = [c.to_dict() for c in ds[var].data.metadata.codecs]
         names = [c["name"] for c in codecs]
         # the nonlinear types decode in xradar-iris-decode, before the sweep codec
@@ -152,6 +158,30 @@ def test_codec_config_concat_safe(cor_vdt):
             "pad_missing_rays",
         }
     assert decoded == {"KDP", "RHOHV"}  # not linear
+
+
+def test_sweep_scalars_are_data_variables(cor_tree, cor_truth):
+    """The sweep scalars are data variables and the own coordinates are the
+    eager ones (plus the site), so the volume exports like the eager one."""
+    for name in [n for n in cor_truth.children if n.startswith("sweep_")]:
+        ours = cor_tree[name].to_dataset(inherit=False)
+        theirs = cor_truth[name].to_dataset(inherit=False)
+        assert set(ours.coords) == set(theirs.coords) | {
+            "latitude",
+            "longitude",
+            "altitude",
+        }
+        for var in ("sweep_mode", "sweep_number", "sweep_fixed_angle"):
+            assert var in ours.data_vars and var in theirs.data_vars, var
+
+
+def test_virtual_volume_exports_to_cfradial1(cor_store, tmp_path):
+    """A multi-sweep virtual volume exports to CfRadial1 like the eager one
+    (sweep scalars as coordinates made the sweeps conflict)."""
+    tree = _open_tree(cor_store, mask_and_scale=True, decode_times=True)
+    path = tmp_path / "cor.nc"
+    xd.io.to_cfradial1(tree, path)
+    assert path.stat().st_size > 0
 
 
 def test_root_metadata(cor_tree, cor_truth):
@@ -544,7 +574,7 @@ def test_moment_name_mapping_follows_iris_mapping(iris0_file, cor_vdt):
         for h in sweeps[0].headers
         if h.type_name != "DB_XHDR"
     }
-    assert set(cor_vdt["sweep_0"].to_dataset().data_vars) == expected
+    assert set(_moments(cor_vdt["sweep_0"].to_dataset())) == expected
 
 
 def test_vel_scales_with_unfolded_nyquist_width_with_nyquist():
@@ -696,6 +726,7 @@ def test_padded_rays_never_reach_the_coverage_strings(s16_padded, s16_store, s16
         assert value == compact[key].values.item() == eager[key].values.item()
 
 
+@pytest.mark.file  # the stores come through request.getfixturevalue
 @pytest.mark.parametrize(
     "store, truth",
     [("cor_store", "cor_truth"), ("s16_store", "s16_truth")],

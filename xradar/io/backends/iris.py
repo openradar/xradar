@@ -3944,7 +3944,8 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 az[az >= 360] -= 360
             else:
                 az = _azimuth_centers(azi_start, azi_stop)
-            el = _elevation_centers(ele_start, ele_stop)
+            # from the unsigned values: signing twice would shift raw counts twice
+            el = _elevation_centers(dec_data[:, 1], dec_data[:, 3])
 
             sweep_data["azi_start"] = azi_start
             sweep_data["azi_stop"] = azi_stop
