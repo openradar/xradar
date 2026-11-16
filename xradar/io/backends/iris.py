@@ -247,9 +247,8 @@ def _decode_linear(data, scale=1.0, offset=0, offset2=0, tofloat=False, mask=Non
         no_data = caller_mask if no_data is None else no_data | caller_mask
     if tofloat:
         data = to_float(data)
-    # numpy 2 changed casting rules
-    # so we need to cast to float beforehand
-    values = np.asarray((data.astype(np.float64) + offset) / scale + offset2)
+    # numpy 2 changed casting rules: cast to float first, float32 as declared
+    values = np.asarray((data.astype(np.float32) + offset) / scale + offset2)
     if no_data is not None:
         values[no_data] = np.nan
     return values, no_data
@@ -323,7 +322,7 @@ def decode_kdp(data, **kwargs):
     wavelength = kwargs.pop("wavelength")
     zero = data == -128
     not_available = (data == 0) | (data == -1)
-    data = data.astype(np.float64)
+    data = data.astype(np.float32)
     data[not_available] = np.nan
     data = -0.25 * np.sign(data) * 600 ** ((127 - np.abs(data)) / 126.0)
     data /= wavelength
@@ -4095,7 +4094,12 @@ class IrisArrayWrapper(BackendArray):
             data = self.datastore.ds["sweep_data"][self.name][key]
         # decoders mask no-data bins with NaN under the mask (#467); filling
         # keeps them NaN even for a decoder that leaves something else (#462)
-        return np.ma.filled(data, np.nan)
+        data = np.ma.filled(data, np.nan)
+        # return the declared dtype, also where a decoder (decode_bin_angle for
+        # elevation) computes in float64
+        if self.dtype.kind == "f":
+            data = data.astype(self.dtype, copy=False)
+        return data
 
     def __getitem__(self, key):
         return indexing.explicit_indexing_adapter(
