@@ -24,8 +24,8 @@ array-array codec decodes them with the eager reader's own decoder from
 it, so a KDP array of a volume with another wavelength does not concatenate
 with this one. No-data words decode to NaN. Rows ``pad_missing_rays`` adds
 hold word 0, which is no data for every type but the 6 signed ones and
-``DB_FLIQUID2``: there it is the value 0.0, and the NaN azimuth and time of
-the slot mark the padding. In ``codecs`` it is listed before
+``DB_FLIQUID2``: there it is the value 0.0, and the slot's NaN azimuth and
+NaT time mark the padding. In ``codecs`` it is listed before
 ``xradar-iris-sweep``, so on read it runs after it. Decode-only, registered
 like ``xradar-iris-sweep``.
 """

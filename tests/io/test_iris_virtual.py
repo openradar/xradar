@@ -34,6 +34,8 @@ from xradar.io.virtual.iris.format import (
     PRODUCT_HDR_ID,
     RAY_HEADER_WORDS,
     RECORD_SIZE,
+    XHDR_TIME_WORDS,
+    SweepRays,
     azimuth_midpoints,
     azimuth_sort_order,
     decode_sweep_moment,
@@ -816,3 +818,27 @@ def test_cache_holds_the_largest_allowed_walk():
     from xradar.io.virtual.iris import format as fmt
 
     assert fmt._SPANS.max_bytes >= 2 * MAX_SPAN_CELLS  # int16 words
+
+
+def _xhdr_rays(words, nwords=XHDR_TIME_WORDS):
+    """One DB_XHDR ray with these first payload words."""
+    return SweepRays(
+        headers=np.zeros((1, RAY_HEADER_WORDS), np.int16),
+        payload=np.array([words], "<i2"),
+        nwords=np.array([nwords]),
+        missing=np.array([], np.int64),
+    )
+
+
+@pytest.mark.parametrize(
+    "words, ms",
+    [([0, 0], 0), ([1000, 0], 1000), ([-1, -1], -1), ([4464, 1], 70000)],
+)
+def test_xhdr_dtime_ms(words, ms):
+    """``dtime_ms`` is the signed 32-bit first field of the extended header."""
+    assert _xhdr_rays(words).dtime_ms().tolist() == [ms]
+
+
+def test_short_xhdr_ray_raises():
+    with pytest.raises(ValueError, match="shorter than its time"):
+        _xhdr_rays([0, 0], nwords=1).dtime_ms()

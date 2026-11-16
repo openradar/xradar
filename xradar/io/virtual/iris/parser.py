@@ -27,10 +27,9 @@ RHI tasks are refused: the eager reader lays them out as
 only. Tasks with variable range bin spacing are refused too: the range
 coordinate would need gate positions the header does not give.
 
-Known limitation: per-ray times come from the ray header's ``dtime`` field
-(1-second resolution). Files carrying DB_XHDR extended headers have
-millisecond times inside the XHDR payload which are NOT read yet, so ray
-times can differ from the eager decode by up to 999 ms on such files.
+Ray times are int64 milliseconds since the epoch, like the eager reader's:
+the ``DB_XHDR`` extended header's millisecond times where the sweep has one,
+the ray header's whole seconds otherwise.
 
 Requires the ``xradar[virtual]`` extra.
 """
@@ -65,6 +64,7 @@ from xradar.io.backends.iris import (
 from xradar.io.virtual.iris import codec as _codec  # noqa: F401  (registers)
 from xradar.io.virtual.iris.decode import DECODE_CODEC_NAME, decode_codec_config
 from xradar.io.virtual.iris.format import (
+    XHDR_TIME_WORDS,
     DataTypeHeader,
     IngestHeader,
     RayHeader,
@@ -99,6 +99,10 @@ if TYPE_CHECKING:
     from obspec_utils.registry import ObjectStoreRegistry
 
 __all__ = ["IrisParser"]
+
+
+#: the time of a padded ray (int64 ms), its ``_FillValue``: NaT once decoded
+_TIME_FILL = int(np.iinfo(np.int64).min)
 
 
 def _cf_scaling(
@@ -166,8 +170,11 @@ def _sweep_group(
     drop_variables: set[str],
     echo_class_identifiers: bytes = b"",
 ) -> tuple[ManifestGroup, np.ndarray]:
-    """One sweep's group, plus its per-ray epoch-ms times (NaN = padded)."""
+    """One sweep's group, plus its written rays' epoch-ms times (int64)."""
     headers: tuple[DataTypeHeader, ...] = sweep.headers
+    type_names = [dth.type_name for dth in headers]
+    # the extended headers' first two payload words are the ray's time in ms
+    xhdr = type_names.index("DB_XHDR") if "DB_XHDR" in type_names else None
     ndt = sweep.ndatatypes
     nbins = hdr.number_bins  # product_end, like the eager decode
 
@@ -176,7 +183,11 @@ def _sweep_group(
     # ONLY if missingness is group-consistent, so a sweep where data types
     # disagree on which rays are missing is rejected.
     span = buf[sweep.byte_offset : sweep.byte_offset + sweep.byte_length]
-    census = walk_sweep(sweep_words(span, ndt), ndt)
+    census = walk_sweep(
+        sweep_words(span, ndt),
+        ndt,
+        payload_words=0 if xhdr is None else XHDR_TIME_WORDS,
+    )
     check_aligned(census, f"sweep {sweep.sweep_number}")
     ray_headers = census[0].ray_headers()
     if len(ray_headers) == 0:
@@ -185,27 +196,32 @@ def _sweep_group(
     missing_slots = census[0].missing.tolist()
     azimuth = census[0].azimuth_key()  # the codec's sort_rays key too
     elevation = _elevation_midpoints(ray_headers)
-    sweep_start = headers[0].sweep_start
-    epoch_ms = sweep_start.astype("datetime64[ms]").astype(np.int64)
-    time = np.array(
-        [float(epoch_ms + h.dtime_s * 1000) for h in ray_headers],
-        dtype=np.float64,
-    )
+    epoch_ms = headers[0].sweep_start.astype("datetime64[ms]").astype(np.int64)
+    if xhdr is None:
+        offsets = np.array([h.dtime_s * 1000 for h in ray_headers], dtype=np.int64)
+    else:
+        try:
+            offsets = census[xhdr].dtime_ms()
+        except ValueError as err:
+            raise ValueError(f"sweep {sweep.sweep_number}: {err}") from None
+    ray_ms = time = epoch_ms + offsets
 
-    if pad_missing_rays and missing_slots:
-        # Every ray SLOT keeps its position; missing slots become NaN
-        # coords (the codec pads the data rows the same way, so row r is
-        # the same physical slot in every moment).
+    padded = bool(pad_missing_rays and missing_slots)
+    if padded:
+        # Every ray SLOT keeps its position; missing slots get NaN angles
+        # and the time fill (NaT once decoded); the codec pads the data rows
+        # the same way, so row r is the same physical slot in every moment.
         n_slots = len(ray_headers) + len(missing_slots)
         missing_set = set(missing_slots)
         written_slots = [g for g in range(n_slots) if g not in missing_set]
 
-        def _pad(values: np.ndarray) -> np.ndarray:
-            padded = np.full(n_slots, np.nan)
-            padded[written_slots] = values
-            return padded
+        def _pad(values: np.ndarray, fill: float = np.nan) -> np.ndarray:
+            out = np.full(n_slots, fill, dtype=values.dtype)
+            out[written_slots] = values
+            return out
 
-        azimuth, elevation, time = _pad(azimuth), _pad(elevation), _pad(time)
+        azimuth, elevation = _pad(azimuth), _pad(elevation)
+        time = _pad(time, _TIME_FILL)
     nrays = len(azimuth)
 
     # Pure pointers: rows and per-ray coordinates stay in acquisition order.
@@ -214,7 +230,7 @@ def _sweep_group(
     # Moment names follow the eager reader: when two data types map to one
     # CfRadial name (DB_DBZ + DB_DBZ2), the later, finer one keeps it and the
     # earlier one keeps its Sigmet name.
-    names = _moment_names([dth.type_name for dth in headers])
+    names = _moment_names(type_names)
     arrays: dict[str, ManifestArray] = {}
     for ordinal, (dth, cf_name) in enumerate(zip(headers, names, strict=True)):
         if dth.type_name == "DB_XHDR":
@@ -296,9 +312,11 @@ def _sweep_group(
     arrays["elevation"] = inline_variable(
         ("azimuth",), elevation, get_elevation_attrs()
     )
-    arrays["time"] = inline_variable(
-        ("azimuth",), time, get_time_attrs(date_unit="milliseconds")
-    )
+    time_attrs = get_time_attrs(date_unit="milliseconds")
+    if padded:
+        # xarray masks the padded rays: NaT, or NaN with decode_times=False
+        time_attrs["_FillValue"] = _TIME_FILL
+    arrays["time"] = inline_variable(("azimuth",), time, time_attrs)
     arrays["range"] = inline_variable(("range",), rng, get_range_attrs(rng))
     arrays["sweep_mode"] = inline_scalar(_sweep_mode(hdr.antenna_scan_mode))
     arrays["prt_mode"] = inline_scalar(FM301_STRING_DEFAULTS["prt_mode"])
@@ -328,7 +346,7 @@ def _sweep_group(
             "nyquist_velocity latitude longitude altitude"
         ),
     }
-    return ManifestGroup(arrays=arrays, attributes=group_attrs), time
+    return ManifestGroup(arrays=arrays, attributes=group_attrs), ray_ms
 
 
 class IrisParser:

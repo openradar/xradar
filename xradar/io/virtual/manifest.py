@@ -177,9 +177,9 @@ def inline_root(
 ) -> tuple[dict[str, ManifestArray], dict]:
     """Root arrays and attrs through the eager readers' ``_assign_root``.
 
-    ``ray_times_ms`` holds one array of per-ray epoch milliseconds per
-    stored sweep; non-finite entries (padded missing rays) are ignored, so
-    the coverage strings are the min/max over the real rays. The site
+    ``ray_times_ms`` holds one int64 array of the written rays' epoch
+    milliseconds per stored sweep, so the coverage strings are the min/max
+    over the real rays. The site
     values keep their dtype and get the :mod:`xradar.model` attrs.
     ``attrs`` (instrument name, scan name, format metadata) is laid over
     the fixed root attrs ``_assign_root`` writes; ``coordinates`` promotes
@@ -197,11 +197,9 @@ def inline_root(
     }
     sweeps = [xr.Dataset()]
     for times in ray_times_ms:
-        times = np.asarray(times, dtype=np.float64)
-        times = times[np.isfinite(times)]
-        if times.size == 0:
+        if len(times) == 0:
             continue
-        ms = times.astype(np.int64).astype("datetime64[ms]")
+        ms = np.asarray(times, dtype=np.int64).astype("datetime64[ms]")
         sweeps.append(xr.Dataset({"time": ("azimuth", ms), **site}))
     if len(sweeps) == 1:
         raise ValueError("no ray times: cannot build the root group")

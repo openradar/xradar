@@ -231,9 +231,6 @@ differences from `open_iris_datatree`:
 - Tasks with variable range bin spacing are refused (`NotImplementedError`):
   their gate positions are not a constant step, and the parser would
   otherwise invent an evenly spaced `range`.
-- Ray times have 1-second resolution (`DB_XHDR` millisecond times are not
-  read), so `time` and the coverage strings can differ by under a second
-  on files with `DB_XHDR`.
 - The root carries no `sweep_group_name` / `sweep_fixed_angle` (store
   builders assemble the volume-level index themselves).
 - HydroClass `flag_masks` / `flag_values` read back as integer lists, not
@@ -247,7 +244,7 @@ differences from `open_iris_datatree`:
   `mask_and_scale=False` still gives their physical values.
 - With `pad_missing_rays`, the padded rows of the signed types and of
   `FLIQUID2` read 0.0, a valid value of these types (every other type reads
-  NaN there); the NaN `azimuth` and `time` of the slot mark them.
+  NaN there); the slot's NaN `azimuth` and NaT `time` mark them.
 - The `range` attributes `meters_between_gates` and
   `meters_to_center_of_first_gate` are derived from the range values in
   metres; `open_iris_datatree` still writes the raw header numbers there.

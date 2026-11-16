@@ -55,14 +55,11 @@ def local_registry():
     return ObjectStoreRegistry({"file://": LocalStore()})
 
 
-def _open_tree(store) -> xr.DataTree:
+def _open_tree(store, **kwargs) -> xr.DataTree:
+    """The store's raw words and times; ``kwargs`` override the decoding."""
+    kwargs = {"mask_and_scale": False, "decode_times": False, **kwargs}
     return xr.open_datatree(
-        store,
-        engine="zarr",
-        consolidated=False,
-        zarr_format=3,
-        mask_and_scale=False,
-        decode_times=False,
+        store, engine="zarr", consolidated=False, zarr_format=3, **kwargs
     )
 
 
@@ -191,9 +188,10 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset):
         ds["elevation"].values[order], xds["elevation"].values[xorder], atol=1e-6
     )
     np.testing.assert_allclose(ds["range"].values, xds["range"].values, atol=1e-3)
+    # int64 ms, the DB_XHDR times where the sweep has them: exact
     ours_ms = ds["time"].values[order]
-    theirs_ms = xds["time"].values[xorder].astype("datetime64[ms]").astype("float64")
-    np.testing.assert_allclose(ours_ms, theirs_ms, atol=1000)  # dtime is 1 s
+    theirs_ms = xds["time"].values[xorder].astype("datetime64[ms]").astype("int64")
+    np.testing.assert_array_equal(ours_ms, theirs_ms)
     np.testing.assert_allclose(
         ds["sweep_fixed_angle"].values, xds["sweep_fixed_angle"].values, atol=1e-6
     )
@@ -342,7 +340,7 @@ def _sorted_like_builder(group: ManifestGroup) -> ManifestGroup:
 
         def values(ma):
             (data,) = ma.manifest._inlined.values()
-            return np.frombuffer(data, dtype="<f8")
+            return np.frombuffer(data, dtype=ma.metadata.data_type.to_native_dtype())
 
         order = azimuth_sort_order(values(arrays["azimuth"]))
         for name, ma in list(arrays.items()):
@@ -648,19 +646,57 @@ def test_malformed_files_raise_value_error(iris0_file, make, match):
 
 
 def test_padded_rays_never_reach_the_coverage_strings(iris1_file, local_registry):
-    """NaN times of padded missing rays are ignored (``_assign_root`` would
-    otherwise write "NaTZ"): padding never changes the coverage. (Against
-    the unpadded store, not the eager reader: this file's DB_XHDR
-    millisecond times are not read, row 6.4.)"""
+    """The times of padded missing rays are ignored (``_assign_root`` would
+    otherwise write "NaTZ"): padding never changes the coverage, which is the
+    eager reader's (this file has DB_XHDR millisecond times)."""
     padded = _open_tree(
         IrisParser(pad_missing_rays=True)(f"file://{iris1_file}", local_registry)
     )
     compact = _open_tree(IrisParser()(f"file://{iris1_file}", local_registry))
+    eager = open_iris_datatree(iris1_file)
     assert padded["sweep_0"].sizes["azimuth"] > compact["sweep_0"].sizes["azimuth"]
     for key in ("time_coverage_start", "time_coverage_end"):
         value = padded[key].values.item()
         assert "NaT" not in value
-        assert value == compact[key].values.item()
+        assert value == compact[key].values.item() == eager[key].values.item()
+
+
+@pytest.mark.parametrize("file_fixture", ["iris0_file", "iris1_file"])
+def test_decoded_times_equal_eager(file_fixture, local_registry, request):
+    """Decoded to datetime64[ns], the ray times are the eager ones to the
+    nanosecond: whole seconds (iris0), DB_XHDR milliseconds (iris1). Stored
+    as float ms since 1970 they were up to 128 ns off."""
+    path = request.getfixturevalue(file_fixture)
+    store = IrisParser()(f"file://{path}", local_registry)
+    tree = _open_tree(store, mask_and_scale=True, decode_times=True)
+    truth = open_iris_datatree(path)
+    for name in [n for n in truth.children if n.startswith("sweep_")]:
+        ours, theirs = tree[name].ds, truth[name].ds
+        order = azimuth_sort_order(ours["azimuth"].values)
+        xorder = np.argsort(theirs["azimuth"].values, kind="stable")
+        np.testing.assert_array_equal(
+            ours["time"].values[order], theirs["time"].values[xorder]
+        )
+
+
+def test_padded_ray_time_is_nat(iris1_file, local_registry):
+    """Ray times are int64 ms; a padded missing ray's time is NaT decoded and
+    NaN with ``decode_times=False``, like its NaN azimuth."""
+    store = IrisParser(pad_missing_rays=True)(f"file://{iris1_file}", local_registry)
+    raw = _open_tree(store)["sweep_0"]
+    assert raw["time"].dtype == np.int64
+    undecoded = _open_tree(store, mask_and_scale=True)["sweep_0"]
+    padded = np.isnan(undecoded["azimuth"].values)
+    assert padded.any()
+    np.testing.assert_array_equal(np.isnan(undecoded["time"].values), padded)
+    decoded = xr.decode_cf(undecoded.to_dataset())
+    np.testing.assert_array_equal(np.isnat(decoded["time"].values), padded)
+
+
+def test_unpadded_time_has_no_fill_value(iris1_file, local_registry):
+    """Without padding the time has no ``_FillValue``, like the eager one."""
+    store = IrisParser()(f"file://{iris1_file}", local_registry)
+    assert "_FillValue" not in _open_tree(store)["sweep_0"]["time"].attrs
 
 
 def _field_offset(struct_dict, path):

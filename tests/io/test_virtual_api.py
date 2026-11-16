@@ -76,9 +76,10 @@ def _inline_values(arr):
 def test_inline_root_is_the_eager_root():
     from xradar.io.virtual.manifest import inline_root
 
+    # int64 epoch ms of the written rays (padded rays are not passed)
     times = [
-        np.array([1_000.0, np.nan, 3_000.0]),  # NaN = a padded missing ray
-        np.array([2_000.0, 61_500.0]),
+        np.array([1_000, 3_000], dtype=np.int64),
+        np.array([2_000, 61_500], dtype=np.int64),
     ]
     arrays, attrs = inline_root(
         times, np.float64(10.5), np.float64(-75.0), np.float64(120.0), {"x": 1}
@@ -108,7 +109,7 @@ def test_inline_root_needs_ray_times():
     from xradar.io.virtual.manifest import inline_root
 
     with pytest.raises(ValueError, match="no ray times"):
-        inline_root([np.array([np.nan])], 0.0, 0.0, 0.0, {})
+        inline_root([np.array([], dtype=np.int64)], 0.0, 0.0, 0.0, {})
 
 
 def test_json_safe_and_endianness_helpers():

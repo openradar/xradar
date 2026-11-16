@@ -38,6 +38,7 @@ import numpy as np
 from xradar.io.backends.iris import (
     _NO_DATA_ZERO_TYPES,
     DSP_DATA_MASK,
+    EXTENDED_HEADER_V0,
     LEN_INGEST_DATA_HEADER,
     LEN_RAW_PROD_BHDR,
     LEN_RAY_HEADER,
@@ -46,6 +47,7 @@ from xradar.io.backends.iris import (
     STRUCTURE_HEADER_IDENTIFIERS,
     IrisRawFile,
     _data_type_dict,
+    _get_struct_dtype,
     _range_centers,
     _root_attrs,
     decode_bin_angle,
@@ -60,6 +62,7 @@ __all__ = [
     "BHDR_SIZE",
     "IDH_SIZE",
     "RAY_HEADER_WORDS",
+    "XHDR_TIME_WORDS",
     "SIGMET_TYPE_NAMES",
     "IngestHeader",
     "DataTypeHeader",
@@ -394,6 +397,13 @@ def _span_bytes(span) -> np.ndarray:
     return np.frombuffer(span, dtype=np.uint8)
 
 
+#: the ray time ``dtime_ms`` (ms after the sweep start), the first field of
+#: the ``DB_XHDR`` extended header in every version (eager reader's struct)
+_XHDR_TIME = _get_struct_dtype(dict([next(iter(EXTENDED_HEADER_V0.items()))]))
+#: payload words a walk reads to get ``dtime_ms``
+XHDR_TIME_WORDS = _XHDR_TIME.itemsize // 2
+
+
 @dataclass(frozen=True)
 class RayHeader:
     """The 6-word header embedded at the start of each decompressed ray."""
@@ -443,6 +453,14 @@ class SweepRays:
             )
             for words in self.headers.astype(np.int64)
         ]
+
+    def dtime_ms(self) -> np.ndarray:
+        """``DB_XHDR`` rays: each ray's time after the sweep start in ms, as
+        int64 (walk with ``payload_words=XHDR_TIME_WORDS`` at least)."""
+        if (self.nwords < XHDR_TIME_WORDS).any():
+            raise ValueError("a DB_XHDR ray is shorter than its time")
+        words = self.payload[:, :XHDR_TIME_WORDS].copy()
+        return words.view(_XHDR_TIME)["dtime_ms"][:, 0].astype(np.int64)
 
     def azimuth_key(self) -> np.ndarray:
         """Wrap-aware azimuth midpoints: the azimuth coordinate and the
