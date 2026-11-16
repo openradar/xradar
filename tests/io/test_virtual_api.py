@@ -34,7 +34,6 @@ PUBLIC = {
         "fetch_bytes",
     ),
     "xradar.io.virtual.iris.format": (
-        "NO_DATA_ZERO_TYPES",
         "RECORD_SIZE",
         "IngestHeader",
         "read_volume",

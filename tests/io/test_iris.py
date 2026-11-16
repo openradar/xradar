@@ -1275,12 +1275,6 @@ def test_hvel2_decodes_like_vvel2():
     )
 
 
-def test_no_data_zero_types_follow_the_manual():
-    """The table shared with the virtual parser lists exactly the types
-    whose raw 0 is no data."""
-    assert iris._NO_DATA_ZERO_TYPES == MANUAL_ZERO_IS_NO_DATA
-
-
 def test_no_data_masks_follow_the_manual():
     """The table masks raw 0 for exactly the no-data types above, and every
     type with a decoder is classified once."""

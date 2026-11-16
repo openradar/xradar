@@ -2747,14 +2747,6 @@ SIGMET_DATA_TYPES = OrderedDict(
     ]
 )
 
-#: Names of the data types whose raw word 0 means "no data" (the ``mask: 0``
-#: entries of ``SIGMET_DATA_TYPES``); shared with the virtual parser.
-_NO_DATA_ZERO_TYPES = frozenset(
-    entry["name"]
-    for entry in SIGMET_DATA_TYPES.values()
-    if (entry.get("fkw") or {}).get("mask") == 0
-)
-
 # HydroClass echo classifiers, keyed by the identifiers stored in
 # task_end_info "echo_class_identifiers": (IRIS method name, CF flag prefix,
 # {value: (IRIS class name as in sig_data_types.h, CF flag meaning)});

@@ -36,14 +36,12 @@ from typing import NamedTuple
 import numpy as np
 
 from xradar.io.backends.iris import (
-    _NO_DATA_ZERO_TYPES,
     DSP_DATA_MASK,
     EXTENDED_HEADER_V0,
     LEN_INGEST_DATA_HEADER,
     LEN_RAW_PROD_BHDR,
     LEN_RAY_HEADER,
     RECORD_BYTES,
-    SIGMET_DATA_TYPES,
     STRUCTURE_HEADER_IDENTIFIERS,
     IrisRawFile,
     _azimuth_centers,
@@ -59,13 +57,11 @@ from xradar.io.virtual._checks import MAX_SPAN_CELLS
 from xradar.io.virtual._sort import azimuth_sort_order
 
 __all__ = [
-    "NO_DATA_ZERO_TYPES",
     "RECORD_SIZE",
     "BHDR_SIZE",
     "IDH_SIZE",
     "RAY_HEADER_WORDS",
     "XHDR_TIME_WORDS",
-    "SIGMET_TYPE_NAMES",
     "IngestHeader",
     "DataTypeHeader",
     "SweepIndex",
@@ -101,14 +97,6 @@ _ID_BY_NAME = {v["name"]: k for k, v in STRUCTURE_HEADER_IDENTIFIERS.items()}
 PRODUCT_HDR_ID = _ID_BY_NAME["PRODUCT_HDR"]
 INGEST_HEADER_ID = _ID_BY_NAME["INGEST_HEADER"]
 INGEST_DATA_HEADER_ID = _ID_BY_NAME["INGEST_DATA_HEADER"]
-
-#: Data types whose raw word 0 means "no data", from the ``mask`` entries of
-#: the eager ``SIGMET_DATA_TYPES`` table (what the parser's ``_FillValue``
-#: and the eager decode both follow).
-NO_DATA_ZERO_TYPES = _NO_DATA_ZERO_TYPES
-
-#: Sigmet data-type code -> name, from the SIGMET_DATA_TYPES master table.
-SIGMET_TYPE_NAMES = {code: entry["name"] for code, entry in SIGMET_DATA_TYPES.items()}
 
 
 def _structure_id(buf, offset: int) -> int:
@@ -712,7 +700,7 @@ def decode_sweep_moment(
       count.
     - ``pad_missing_rays=True``: every ray slot keeps its position —
       missing slots are ``fill_value`` rows; ``out_shape[0]`` must equal
-      the EXPECTED slot count.
+      the slots the span records, written plus missing rays.
 
     With ``sort_rays`` the rows are reordered by ``azimuth_sort_order``
     over the azimuth midpoints of the sweep's first data type (the

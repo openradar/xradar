@@ -12,6 +12,8 @@ azimuth-derived index (a north-straddling sweep start differs by a cyclic
 roll — values identical).
 """
 
+import contextlib
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -79,13 +81,32 @@ def cor_hdr(iris0_file):
 
 
 @pytest.fixture(scope="module")
-def cor_tree(cor_store) -> xr.DataTree:
-    return _open_tree(cor_store)
+def cor_tree(cor_store) -> Iterator[xr.DataTree]:
+    with _open_tree(cor_store) as tree:
+        yield tree
 
 
 @pytest.fixture(scope="module")
-def cor_truth(iris0_file) -> xr.DataTree:
-    return open_iris_datatree(iris0_file)
+def cor_truth(iris0_file) -> Iterator[xr.DataTree]:
+    with open_iris_datatree(iris0_file) as tree:
+        yield tree
+
+
+# the all-16-bit volume with DB_XHDR and one missing ray (iris1)
+@pytest.fixture(scope="module")
+def s16_store(iris1_file, local_registry):
+    return IrisParser()(f"file://{iris1_file}", local_registry)
+
+
+@pytest.fixture(scope="module")
+def s16_padded(iris1_file, local_registry):
+    return IrisParser(pad_missing_rays=True)(f"file://{iris1_file}", local_registry)
+
+
+@pytest.fixture(scope="module")
+def s16_truth(iris1_file) -> Iterator[xr.DataTree]:
+    with open_iris_datatree(iris1_file) as tree:
+        yield tree
 
 
 # ---------------------------------------------------------------------------
@@ -202,16 +223,18 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset):
             continue
         if var not in xds.data_vars:
             continue
-        if attrs["sigmet_data_type"] == "DB_HCLASS":
-            # categorical, no decoder: the raw class byte per bin must match
-            # the eager reader exactly (it unpacks per range bin since #444)
+        if attrs["sigmet_data_type"] in ("DB_HCLASS", "DB_HCLASS2"):
+            # categorical, no decoder: the raw class word per bin must match
+            # the eager reader exactly (it unpacks 1-byte words per range bin
+            # since #444; it gives the 2-byte words as int16)
+            assert ds[var].dtype.kind == "u", var  # the table's unsigned words
             np.testing.assert_array_equal(
-                ds[var].values[order], xds[var].values[xorder], err_msg=var
+                ds[var].values[order].astype("int64"),
+                xds[var].values[xorder].astype("int64"),
+                err_msg=var,
             )
             checked += 1
             continue
-        if attrs["sigmet_data_type"] == "DB_HCLASS2":
-            continue  # no fixture carries it
         for attr in ("long_name", "standard_name", "units"):
             assert attrs.get(attr) == xds[var].attrs.get(attr), (var, attr)
         theirs = xds[var].values.astype("float64")[xorder]
@@ -244,13 +267,13 @@ def test_parity_all_sweeps_corozal(cor_tree, cor_truth):
         _assert_sweep_parity(cor_tree[name].dataset, cor_truth[name].ds)
 
 
-def test_parity_surgavere_16bit(iris1_file, local_registry):
+def test_parity_surgavere_16bit(s16_store, s16_truth):
     """All-16-bit volume with DB_XHDR and a missing ray: the full
     iris_mapping gives the *2 types their CfRadial names, XHDR is framing
     (not a variable), and the missing ray is compacted like the eager
     reader."""
-    tree = _open_tree(IrisParser()(f"file://{iris1_file}", local_registry))
-    truth = open_iris_datatree(iris1_file)
+    tree = _open_tree(s16_store)
+    truth = s16_truth
 
     ds = tree["sweep_0"].dataset
     assert "DB_XHDR" not in ds.data_vars
@@ -443,7 +466,7 @@ def test_string_scalars_are_vlen_not_fixed_width(cor_tree):
 
     # encoding preserves arbitrary lengths and non-ASCII; decoded with the
     # SAME numcodecs codec zarr's vlen-utf8 uses on the read side
-    values = np.asarray(["short", "x" * 500, "ñandú — 🌧"])
+    values = np.asarray(["short", "x" * 500, "ñandú — \U0002070e"])
     assert values.dtype.kind == "U"  # fixed-width exists on input only
     assert list(VLenUTF8().decode(encode_vlen_utf8(values))) == list(values)
 
@@ -614,27 +637,29 @@ def test_rhi_task_is_refused(iris0_file, local_registry, monkeypatch):
         IrisParser()(f"file://{iris0_file}", local_registry)
 
 
-@pytest.mark.parametrize(
-    "make, match",
-    [
-        (lambda buf: b"", "not a whole number"),
-        (lambda buf: buf[:RECORD_SIZE], "not a whole number"),
-        (lambda buf: buf[: 5 * RECORD_SIZE + 100], "not a whole number"),
-        (lambda buf: bytes(4 * RECORD_SIZE), "PRODUCT_HDR"),
-        (lambda buf: bytes(range(256)) * (RECORD_SIZE // 64), "PRODUCT_HDR"),
-        (lambda buf: buf[:RECORD_SIZE] + bytes(RECORD_SIZE), "INGEST_HEADER"),
-        (lambda buf: buf[: 300 * RECORD_SIZE], "truncated or not an IRIS"),
-    ],
-    ids=[
-        "empty",
-        "one-record",
-        "partial-record",
-        "zeros",
-        "foreign",
-        "no-ingest",
-        "truncated",
-    ],
-)
+#: malformed files: how to make one from cor-main, and the ValueError's reason
+_MALFORMED = [
+    pytest.param(lambda buf: b"", "not a whole number", id="empty"),
+    pytest.param(lambda buf: buf[:RECORD_SIZE], "not a whole number", id="one-record"),
+    pytest.param(
+        lambda buf: buf[: 5 * RECORD_SIZE + 100], "not a whole number", id="partial"
+    ),
+    pytest.param(lambda buf: bytes(4 * RECORD_SIZE), "PRODUCT_HDR", id="zeros"),
+    pytest.param(
+        lambda buf: bytes(range(256)) * (RECORD_SIZE // 64), "PRODUCT_HDR", id="foreign"
+    ),
+    pytest.param(
+        lambda buf: buf[:RECORD_SIZE] + bytes(RECORD_SIZE),
+        "INGEST_HEADER",
+        id="no-ingest",
+    ),
+    pytest.param(
+        lambda buf: buf[: 300 * RECORD_SIZE], "truncated or not an IRIS", id="truncated"
+    ),
+]
+
+
+@pytest.mark.parametrize("make, match", _MALFORMED)
 def test_malformed_files_raise_value_error(iris0_file, make, match):
     """Anything that is not a well-formed IRIS RAW file raises ValueError
     with a reason, never an unrelated KeyError/EOFError from deep inside."""
@@ -645,15 +670,25 @@ def test_malformed_files_raise_value_error(iris0_file, make, match):
         read_volume(make(buf))
 
 
-def test_padded_rays_never_reach_the_coverage_strings(iris1_file, local_registry):
+@pytest.mark.parametrize("make, match", _MALFORMED)
+def test_parser_refuses_malformed_files(
+    iris0_file, local_registry, tmp_path, make, match
+):
+    """End to end: the parser raises the format's ValueError for a malformed
+    file, before building any store."""
+    path = tmp_path / "bad.RAW"
+    path.write_bytes(make(Path(iris0_file).read_bytes()))
+    with pytest.raises(ValueError, match=match):
+        IrisParser()(f"file://{path}", local_registry)
+
+
+def test_padded_rays_never_reach_the_coverage_strings(s16_padded, s16_store, s16_truth):
     """The times of padded missing rays are ignored (``_assign_root`` would
     otherwise write "NaTZ"): padding never changes the coverage, which is the
     eager reader's (this file has DB_XHDR millisecond times)."""
-    padded = _open_tree(
-        IrisParser(pad_missing_rays=True)(f"file://{iris1_file}", local_registry)
-    )
-    compact = _open_tree(IrisParser()(f"file://{iris1_file}", local_registry))
-    eager = open_iris_datatree(iris1_file)
+    padded = _open_tree(s16_padded)
+    compact = _open_tree(s16_store)
+    eager = s16_truth
     assert padded["sweep_0"].sizes["azimuth"] > compact["sweep_0"].sizes["azimuth"]
     for key in ("time_coverage_start", "time_coverage_end"):
         value = padded[key].values.item()
@@ -661,15 +696,17 @@ def test_padded_rays_never_reach_the_coverage_strings(iris1_file, local_registry
         assert value == compact[key].values.item() == eager[key].values.item()
 
 
-@pytest.mark.parametrize("file_fixture", ["iris0_file", "iris1_file"])
-def test_decoded_times_equal_eager(file_fixture, local_registry, request):
+@pytest.mark.parametrize(
+    "store, truth",
+    [("cor_store", "cor_truth"), ("s16_store", "s16_truth")],
+    ids=["seconds", "xhdr-milliseconds"],
+)
+def test_decoded_times_equal_eager(store, truth, request):
     """Decoded to datetime64[ns], the ray times are the eager ones to the
     nanosecond: whole seconds (iris0), DB_XHDR milliseconds (iris1). Stored
     as float ms since 1970 they were up to 128 ns off."""
-    path = request.getfixturevalue(file_fixture)
-    store = IrisParser()(f"file://{path}", local_registry)
+    store, truth = request.getfixturevalue(store), request.getfixturevalue(truth)
     tree = _open_tree(store, mask_and_scale=True, decode_times=True)
-    truth = open_iris_datatree(path)
     for name in [n for n in truth.children if n.startswith("sweep_")]:
         ours, theirs = tree[name].ds, truth[name].ds
         order = azimuth_sort_order(ours["azimuth"].values)
@@ -679,10 +716,10 @@ def test_decoded_times_equal_eager(file_fixture, local_registry, request):
         )
 
 
-def test_padded_ray_time_is_nat(iris1_file, local_registry):
+def test_padded_ray_time_is_nat(s16_padded):
     """Ray times are int64 ms; a padded missing ray's time is NaT decoded and
     NaN with ``decode_times=False``, like its NaN azimuth."""
-    store = IrisParser(pad_missing_rays=True)(f"file://{iris1_file}", local_registry)
+    store = s16_padded
     raw = _open_tree(store)["sweep_0"]
     assert raw["time"].dtype == np.int64
     undecoded = _open_tree(store, mask_and_scale=True)["sweep_0"]
@@ -693,10 +730,34 @@ def test_padded_ray_time_is_nat(iris1_file, local_registry):
     np.testing.assert_array_equal(np.isnat(decoded["time"].values), padded)
 
 
-def test_unpadded_time_has_no_fill_value(iris1_file, local_registry):
+@pytest.mark.parametrize("volume", ["iris1", "iris0-rbins0"])
+def test_padded_rows_are_no_data(
+    volume, s16_padded, iris0_file, local_registry, tmp_path
+):
+    """The padded slot of a missing ray reads as no data in every moment:
+    NaN (CF-scaled float64 and the float32 decode-codec types such as KDP and
+    RHOHV), word 0 for the categorical HydroClass."""
+    if volume == "iris1":
+        store = s16_padded
+    else:  # ray 10 of the first sweep declares 0 bins
+        path = _rbins0_file(iris0_file, tmp_path)
+        store = IrisParser(pad_missing_rays=True)(f"file://{path}", local_registry)
+    node = _open_tree(store, mask_and_scale=True)["sweep_0"]
+    padded = np.isnan(node["azimuth"].values)
+    assert padded.sum() == 1
+    for var in node.data_vars:
+        if node[var].dims != ("azimuth", "range"):
+            continue
+        rows = node[var].values[padded]
+        if node[var].dtype.kind == "f":
+            assert np.isnan(rows).all(), var
+        else:
+            assert (rows == 0).all(), var
+
+
+def test_unpadded_time_has_no_fill_value(s16_store):
     """Without padding the time has no ``_FillValue``, like the eager one."""
-    store = IrisParser()(f"file://{iris1_file}", local_registry)
-    assert "_FillValue" not in _open_tree(store)["sweep_0"]["time"].attrs
+    assert "_FillValue" not in _open_tree(s16_store)["sweep_0"]["time"].attrs
 
 
 def _field_offset(struct_dict, path):
@@ -819,7 +880,7 @@ def test_sector_task_is_a_sector_sweep(iris0_file, local_registry, monkeypatch):
     assert tree["sweep_0"]["sweep_mode"].values.item() == "sector"
 
 
-def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):
+def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path, closing):
     """With a sweep missing from the file, groups are named by position and
     ``sweep_number`` is the file's own, exactly like the eager reader."""
     from xradar.io.virtual.iris.format import read_volume
@@ -833,7 +894,7 @@ def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):
     path = tmp_path / "gap.RAW"
     path.write_bytes(data)
     tree = _open_tree(IrisParser()(f"file://{path}", local_registry))
-    truth = open_iris_datatree(str(path))
+    truth = closing(open_iris_datatree(str(path)))
     for name in ("sweep_0", "sweep_1", "sweep_2"):
         assert int(tree[name]["sweep_number"]) == int(truth[name]["sweep_number"])
     assert int(tree["sweep_1"]["sweep_number"]) == 2
@@ -855,19 +916,19 @@ def _with_hclass_identifiers(monkeypatch, identifiers):
 
 
 @pytest.mark.parametrize(
-    "fixture, var, identifiers",
+    "file_fixture, var, identifiers",
     [
         ("iris0_file", "DB_HCLASS", [1, 2, 3, 0, 0, 0]),
         ("iris1_file", "DB_HCLASS2", [1, 2, 3, 1, 2, 3]),
     ],
 )
 def test_hclass_flag_attrs_match_eager(
-    fixture, var, identifiers, local_registry, monkeypatch, request
+    file_fixture, var, identifiers, local_registry, monkeypatch, request, closing
 ):
     """HydroClass flag attrs (#444) come from the file's task_end_info
     ``echo_class_identifiers`` through the eager helper, on both paths, for
     1- and 2-byte HydroClass."""
-    path = request.getfixturevalue(fixture)
+    path = request.getfixturevalue(file_fixture)
     # the files store no identifiers: no flags, the raw-words comment stays
     plain = _open_tree(IrisParser()(f"file://{path}", local_registry))
     assert "flag_meanings" not in plain["sweep_0"][var].attrs
@@ -877,7 +938,7 @@ def test_hclass_flag_attrs_match_eager(
     virt_attrs = _open_tree(IrisParser()(f"file://{path}", local_registry))["sweep_0"][
         var
     ].attrs
-    eager_attrs = open_iris_datatree(path)["sweep_0"][var].attrs
+    eager_attrs = closing(open_iris_datatree(path, sweep=[0]))["sweep_0"][var].attrs
     assert virt_attrs["flag_meanings"] == eager_attrs["flag_meanings"]
     for key in ("flag_masks", "flag_values"):
         np.testing.assert_array_equal(virt_attrs[key], eager_attrs[key])
@@ -943,9 +1004,9 @@ def _task(raw):
 
 def _assert_vradh_matches_eager(ds, iris_file):
     """Virtual VRADH equals the eager decode of the same (patched) file."""
-    eager = open_iris_datatree(iris_file)["sweep_0"].ds
+    with open_iris_datatree(iris_file, sweep=[0]) as eager:
+        theirs = eager["sweep_0"]["VRADH"].sortby("azimuth").values
     mine = ds["VRADH"].sortby("azimuth").values
-    theirs = eager["VRADH"].sortby("azimuth").values
     both = np.isfinite(mine) & np.isfinite(theirs)
     assert both.sum() > 1000
     np.testing.assert_allclose(mine[both], theirs[both], atol=1e-4)
@@ -966,20 +1027,29 @@ def test_nyquist_follows_product_end_like_eager(
     _assert_vradh_matches_eager(ds, iris0_file)
 
 
-def test_multi_prf_unfolds_velocity_like_eager(iris0_file, local_registry, monkeypatch):
-    """The multi-PRF factor doubles the 1-byte velocity's nyquist, on top
-    of the product_end prf and wavelength, exactly as in the eager decode."""
+@pytest.mark.parametrize("flag, factor", [(1, 2), (7, 1)], ids=["2-3", "undefined"])
+def test_multi_prf_nyquist_like_eager(
+    flag, factor, iris0_file, local_registry, monkeypatch
+):
+    """The multi-PRF factor multiplies the 1-byte velocity's nyquist, on top
+    of the product_end prf and wavelength; a flag the guide does not define
+    (only 0-3) warns and keeps the single-PRF nyquist (#480). Both exactly as
+    in the eager decode."""
     _with_product_end(monkeypatch, prf=1000, wavelength=1066)
     _patch_raw_file(
         monkeypatch,
-        lambda raw: _task(raw)["task_dsp_info"].update(multi_prf_mode_flag=1),
+        lambda raw: _task(raw)["task_dsp_info"].update(multi_prf_mode_flag=flag),
     )
-    store = IrisParser()(f"file://{iris0_file}", local_registry)
-    ds = xr.open_datatree(store, engine="zarr", consolidated=False, zarr_format=3)[
-        "sweep_0"
-    ].ds
-    assert float(ds["nyquist_velocity"]) == pytest.approx(2 * 0.1066 * 1000 / 4)
-    _assert_vradh_matches_eager(ds, iris0_file)
+    warns = (
+        pytest.warns(UserWarning, match=f"multi_prf_mode_flag={flag}")
+        if flag > 3
+        else contextlib.nullcontext()
+    )
+    with warns:
+        store = IrisParser()(f"file://{iris0_file}", local_registry)
+        ds = _open_tree(store, mask_and_scale=True, decode_times=True)["sweep_0"].ds
+        _assert_vradh_matches_eager(ds, iris0_file)
+    assert float(ds["nyquist_velocity"]) == pytest.approx(factor * 0.1066 * 1000 / 4)
 
 
 def test_gate_count_mismatch_raises(iris0_file, local_registry, monkeypatch):
@@ -1054,13 +1124,15 @@ def _rbins0_file(iris0_file, tmp_path, ordinals=None):
 
 
 @pytest.mark.filterwarnings("ignore:invalid value:RuntimeWarning")  # eager sqrt
-def test_ray_with_zero_rbins_is_missing(iris0_file, local_registry, tmp_path):
+def test_ray_with_zero_rbins_is_missing(
+    iris0_file, local_registry, tmp_path, closing, cor_truth
+):
     """A ray whose header declares 0 bins is dropped, as the eager reader
     drops every ray with rbins == 0."""
     path = _rbins0_file(iris0_file, tmp_path)
     ds = _open_tree(IrisParser()(f"file://{path}", local_registry))["sweep_0"].ds
-    eager = open_iris_datatree(str(path))["sweep_0"].ds
-    full = open_iris_datatree(iris0_file)["sweep_0"].ds
+    eager = closing(open_iris_datatree(str(path), sweep=[0]))["sweep_0"].ds
+    full = cor_truth["sweep_0"].ds
     assert ds.sizes["azimuth"] == full.sizes["azimuth"] - 1
     _assert_sweep_parity(ds, eager)
 
@@ -1121,7 +1193,7 @@ def test_read_volume_skips_the_gate_check_for_variable_spacing(iris0_file):
     "description", ["  padded task  ", "task\x00\x00", b"caf\xe9 radar "]
 )
 def test_root_comment_is_kept_like_eager(
-    iris0_file, local_registry, monkeypatch, description
+    iris0_file, local_registry, monkeypatch, description, closing
 ):
     """The task description reaches the root ``comment`` as the eager reader
     writes it: no stripping; bytes that are not UTF-8 decode as Latin-1."""
@@ -1130,7 +1202,7 @@ def test_root_comment_is_kept_like_eager(
         lambda raw: _task(raw)["task_end_info"].update(task_description=description),
     )
     tree = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
-    eager = open_iris_datatree(iris0_file).attrs["comment"]
+    eager = closing(open_iris_datatree(iris0_file, sweep=[0])).attrs["comment"]
     if isinstance(eager, bytes):
         eager = eager.decode("latin-1")
     assert tree.attrs["comment"] == eager

@@ -319,8 +319,10 @@ class IrisParser:
         hold only WRITTEN rays, mirroring the eager backend. ``True``:
         every ray slot keeps its position — missing slots read as no data
         (0.0 for the signed types and ``DB_FLIQUID2``, which have no
-        no-data word) with NaN per-ray coordinates, and the azimuth dim
-        equals the sweep's EXPECTED ray count.
+        no-data word) with NaN per-ray coordinates. The azimuth dim is
+        every ray slot the sweep records, written or missing: the expected
+        ray count of a complete sweep; rays a sweep cut short never wrote
+        are not padded.
     drop_variables : iterable of str, optional
         CfRadial moment names to exclude when building the store.
     """

@@ -532,6 +532,7 @@ def test_zarr_v2_is_refused_with_a_clear_error():
         text=True,
         check=True,
         cwd=Path(xradar.__file__).parents[1],
+        timeout=120,
     )
     assert "need zarr>=3.1.6 (zarr v3); found zarr 2.18.7" in result.stdout
 
@@ -572,6 +573,7 @@ def _run_with_old_zarr(body: str) -> str:
         text=True,
         check=True,
         cwd=Path(xradar.__file__).parents[1],
+        timeout=120,
     )
     return result.stdout
 
