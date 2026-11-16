@@ -759,14 +759,11 @@ def _with_header(monkeypatch, **changes):
     monkeypatch.setattr(iris_parser, "read_volume", patched)
 
 
-def test_sector_task_sweep_mode_follows_the_eager_reader(
-    iris0_file, local_registry, monkeypatch
-):
-    from xradar.io.backends.iris import _sweep_mode
-
+def test_sector_task_is_a_sector_sweep(iris0_file, local_registry, monkeypatch):
+    # as the eager reader (#574)
     _with_header(monkeypatch, antenna_scan_mode=1)
     tree = _open_tree(IrisParser()(f"file://{iris0_file}", local_registry))
-    assert tree["sweep_0"]["sweep_mode"].values.item() == _sweep_mode(1)
+    assert tree["sweep_0"]["sweep_mode"].values.item() == "sector"
 
 
 def test_sweep_number_is_the_files_own(iris0_file, local_registry, tmp_path):

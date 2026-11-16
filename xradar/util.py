@@ -314,6 +314,43 @@ def reindex_range(
     return ds.assign_coords(range=new_range)
 
 
+def _sector_limits(ds, first_angle, angle_res):
+    """Return the edges and the direction of a sector from its rays in time order.
+
+    The edges hold every measured ray and are multiples of ``angle_res``. A sector
+    that covers the full circle (a ray at either end may miss) goes from 0 to 360.
+    The direction is the net travel from the first to the last measured ray, so
+    the antenna may turn around within the sweep. Rays without time and rays
+    flagged in ``antenna_transition`` are not part of the scan and are left out.
+    """
+    measured = ds.time.notnull().values & np.isfinite(ds[first_angle].values)
+    if "antenna_transition" in ds.variables:
+        measured &= ds["antenna_transition"].values != 1
+    order = np.argsort(ds.time.values[measured], kind="stable")
+    path = ds[first_angle].values[measured][order].astype("float64")
+    if first_angle == "azimuth":
+        # rays more than 180 degrees apart are taken as crossing north
+        path = np.unwrap(path, period=360)
+    if path.size < 2 or path.min() == path.max() or not angle_res > 0:
+        raise ValueError(
+            "Can't get start and stop angle of a sector: it needs at least two "
+            "measured rays at different angles, not flagged in antenna_transition."
+        )
+    direction = 1 if path[-1] >= path[0] else -1
+    if first_angle == "azimuth":
+        if path.max() - path.min() + 2 * angle_res >= 360:
+            return 0, 360, direction
+        if path.min() < 0 or path.max() >= 360:
+            raise ValueError(
+                "Can't get start and stop angle of a sector across north or "
+                "outside 0 to 360 degrees: not supported yet."
+            )
+    # rounded first, so that a ray on a multiple of angle_res stays in its cell
+    low = np.floor(np.round(path.min() / angle_res, 6)) * angle_res
+    high = (np.floor(np.round(path.max() / angle_res, 6)) + 1) * angle_res
+    return round(float(low), 6), round(float(high), 6), direction
+
+
 def extract_angle_parameters(ds):
     """Extract sweep angle parameters from dataset.
 
@@ -332,7 +369,18 @@ def extract_angle_parameters(ds):
         the sweep direction is ``direction`` (1 for clockwise or ascending, -1
         for counter-clockwise or descending). ``missing_rays`` and
         ``excess_rays`` compare the number of rays without duplicates with
-        ``expected_number_rays``.
+        ``expected_number_rays``. For ``sector``, ``manual_ppi`` and
+        ``manual_rhi`` sweeps the start and stop angle hold every measured ray
+        and ``direction`` is the net travel of the rays in time order, rays
+        without time or flagged in ``antenna_transition`` left out.
+
+    Raises
+    ------
+    ValueError
+        If ``sweep_mode`` has no start and stop angle, a sector has fewer than
+        two measured rays (with time, not flagged in ``antenna_transition``)
+        at different angles or crosses north, or a ``manual_rhi`` sweep has
+        azimuth as its first dimension.
     """
     angle_dict = {}
 
@@ -371,7 +419,9 @@ def extract_angle_parameters(ds):
     a1gate_val = ds.time.idxmin(first_angle).values
     angle_dict.update(a1gate_idx=a1gate_idx, a1gate_val=a1gate_val)
 
-    # duplicate rays would skew the angle parameters below
+    # duplicate rays would skew the angle parameters below; sector edges take all
+    # rays, the first stored copy of an angle may be an antenna transition ray
+    rays = ds
     if not angles_are_unique:
         ds = remove_duplicate_rays(ds)
 
@@ -417,7 +467,8 @@ def extract_angle_parameters(ds):
     # unfortunately this doesn't work if rays are missing at start or end of the sweep
     # so we need to have the possibility to override
     # also accounts for direction of sweep (CW/CCW, up/down)
-    mode = ds.sweep_mode
+    # a plain value, so that it can be compared and named in the error below
+    mode = np.asarray(ds.sweep_mode).item()
     if mode == "azimuth_surveillance":
         start_ang = 0
         stop_ang = 360
@@ -425,6 +476,22 @@ def extract_angle_parameters(ds):
         # start/stop angle, round to nearest multiple of angle_res
         start_ang = int(np.round(min_angle / angle_res) * angle_res)
         stop_ang = int(np.round(max_angle / angle_res) * angle_res)
+    elif mode in ("sector", "manual_ppi", "manual_rhi"):
+        if mode == "manual_rhi" and first_angle == "azimuth":
+            raise ValueError(
+                "Can't get start and stop angle of a 'manual_rhi' sweep with "
+                "azimuth as its first dimension: use "
+                "`ds.swap_dims(azimuth='elevation')`."
+            )
+        start_ang, stop_ang, direction = _sector_limits(
+            rays, first_angle, float(angle_res)
+        )
+        angle_dict.update(ascending=np.asarray(direction > 0), direction=direction)
+    else:
+        raise ValueError(
+            f"Can't get start and stop angle for sweep_mode {mode!r}: expected "
+            "azimuth_surveillance, rhi, sector, manual_ppi or manual_rhi."
+        )
 
     start_ang, stop_ang = (start_ang, stop_ang)[::direction]
     angle_dict.update(start_angle=start_ang, stop_angle=stop_ang)
