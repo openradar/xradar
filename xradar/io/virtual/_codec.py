@@ -29,14 +29,13 @@ if not zarr_supported(_zarr_version):
         name="zarr",
     )
 
-from zarr.abc.codec import ArrayArrayCodec, ArrayBytesCodec  # noqa: E402
+from zarr.abc.codec import ArrayBytesCodec  # noqa: E402
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec
     from zarr.core.buffer import Buffer, NDBuffer
 
 __all__ = [
-    "DecodeOnlyArrayCodec",
     "DecodeOnlyCodec",
     "register_codec_name",
     "check_chunk_shape",
@@ -48,6 +47,9 @@ __all__ = [
 def _check_field(codec_name: str, key: str, value, kind: type) -> None:
     if kind is bool:
         ok = isinstance(value, bool)
+    elif kind is float:
+        # a JSON writer may drop the ".0" of an integral number
+        ok = isinstance(value, int | float) and not isinstance(value, bool)
     else:
         ok = isinstance(value, kind) and not isinstance(value, bool)
     if not ok:
@@ -95,6 +97,8 @@ def normalize_fields(codec, codec_name: str, fields: dict[str, type]) -> None:
     for key, kind in fields.items():
         value = plain(getattr(codec, key))
         _check_field(codec_name, key, value, kind)
+        if kind is float:
+            value = float(value)
         object.__setattr__(codec, key, value)
 
 
@@ -110,8 +114,9 @@ def check_chunk_shape(codec_name: str, shape: tuple[int, ...]) -> None:
 
 
 class _DecodeOnly:
-    """zarr plumbing shared by the virtual codecs: the decode runs in a
-    worker thread (it is CPU-bound), and there is no encode path."""
+    """zarr plumbing shared by the virtual codecs (array-bytes and
+    array-array): the decode runs in a worker thread (it is CPU-bound), and
+    there is no encode path."""
 
     is_fixed_size = False
 
@@ -137,16 +142,6 @@ class DecodeOnlyCodec(_DecodeOnly, ArrayBytesCodec):
 
     def resolve_metadata(self, chunk_spec: ArraySpec) -> ArraySpec:
         return chunk_spec
-
-
-class DecodeOnlyArrayCodec(_DecodeOnly, ArrayArrayCodec):
-    """Decode-only array-array codec: raw words to physical values."""
-
-    def resolve_metadata(self, chunk_spec: ArraySpec) -> ArraySpec:
-        """The spec of the words this codec decodes; every subclass sets it."""
-        raise NotImplementedError(
-            f"{type(self).__name__} must give the spec of the words it decodes"
-        )
 
 
 def register_codec_name(codec_cls, codec_name: str) -> None:

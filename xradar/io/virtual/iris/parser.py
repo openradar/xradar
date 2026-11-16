@@ -49,20 +49,18 @@ from virtualizarr.manifests import (
 from virtualizarr.manifests.utils import create_v3_array_metadata
 
 from xradar.io.backends.iris import (
-    SIGMET_DATA_TYPES,
     _dual_prf_factor,
     _moment_cf_attrs,
     _moment_names,
     _nyquist,
     _sweep_mode,
-    decode_array,
-    decode_phidp,
-    decode_phidp2,
-    decode_vel,
-    decode_width,
 )
 from xradar.io.virtual.iris import codec as _codec  # noqa: F401  (registers)
-from xradar.io.virtual.iris.decode import DECODE_CODEC_NAME, decode_codec_config
+from xradar.io.virtual.iris.decode import (
+    DECODE_CODEC_NAME,
+    _cf_scaling,
+    decode_codec_config,
+)
 from xradar.io.virtual.iris.format import (
     XHDR_TIME_WORDS,
     DataTypeHeader,
@@ -103,47 +101,6 @@ __all__ = ["IrisParser"]
 
 #: the time of a padded ray (int64 ms), its ``_FillValue``: NaT once decoded
 _TIME_FILL = int(np.iinfo(np.int64).min)
-
-
-def _cf_scaling(
-    type_code: int, nyquist: float, nyquist_vel: float
-) -> tuple[float, float, float | None] | None:
-    """(scale_factor, add_offset, fill_or_None) turning raw words into
-    physical values, derived from the eager backend's ``SIGMET_DATA_TYPES``
-    entry for this type.
-
-    The eager decoders are ``decode_array = (raw + offset)/scale + offset2``
-    plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by
-    the multi-PRF factor, ``decode_width`` by the single-PRF nyquist,
-    ``decode_phidp``/``_phidp2`` by 180/360 degrees); a ``mask`` value becomes
-    ``_FillValue`` so CF mask_and_scale reproduces the eager masking. ``None``
-    for the types a linear transform cannot decode: SIGNED types (the arrays
-    hold the unsigned wire words, words at or above half-range would wrap),
-    nonlinear decoders (sqrt SQI/RHOHV, log KDP) and float-word types
-    (``tofloat``) decode in the ``xradar-iris-decode`` codec instead; the
-    categorical types (HCLASS) stay raw.
-    """
-    entry = SIGMET_DATA_TYPES.get(type_code) or {}
-    func = entry.get("func")
-    fkw = entry.get("fkw") or {}
-    scale = fkw.get("scale")
-    offset = fkw.get("offset", 0.0)
-    offset2 = fkw.get("offset2", 0.0)
-    if not scale:
-        return None
-    if np.dtype(entry.get("dtype", "uint8")).kind != "u":
-        return None  # signed wire dtype: linear CF on our unsigned words wraps
-    if func is decode_array and "tofloat" not in fkw:
-        return 1.0 / scale, offset / scale + offset2, fkw.get("mask")
-    if func is decode_vel:
-        return nyquist_vel / scale, offset * nyquist_vel / scale, fkw.get("mask")
-    if func is decode_width:
-        return nyquist / scale, offset * nyquist / scale, fkw.get("mask")
-    if func is decode_phidp:
-        return 180.0 / scale, offset * 180.0 / scale, fkw.get("mask")
-    if func is decode_phidp2:
-        return 360.0 / scale, offset * 360.0 / scale, fkw.get("mask")
-    return None
 
 
 def _elevation_midpoints(headers: list[RayHeader]) -> np.ndarray:
@@ -261,23 +218,20 @@ def _sweep_group(
         }
         codecs, fill_value = [sweep_codec], 0
         scaling = _cf_scaling(dth.type_code, nyquist, nyquist_vel)
-        decode = (
-            decode_codec_config(dth.type_name, hdr.wavelength_cm)
-            if scaling is None
-            else None
-        )
-        if decode is not None:
-            # nonlinear, signed or IRIS-float words: the eager decoder runs in
-            # the xradar-iris-decode codec, into float32 like the eager reader
-            codecs = [{"name": DECODE_CODEC_NAME, "configuration": decode}, *codecs]
-            dtype, fill_value = np.dtype("float32"), np.nan
-        elif scaling is not None:
+        if scaling is not None:
             attrs["scale_factor"], attrs["add_offset"], fill = scaling
             if fill is not None:
                 # Sigmet raw ``mask`` (e.g. 0 for velocity) = no data; with
                 # mask_and_scale these bins decode to NaN instead of a
                 # plausible-looking physical value.
                 attrs["_FillValue"] = int(fill)
+        elif (
+            decode := decode_codec_config(dth.type_code, hdr.wavelength_cm)
+        ) is not None:
+            # nonlinear, signed or IRIS-float words: the eager decoder runs in
+            # the xradar-iris-decode codec, into float32 like the eager reader
+            codecs = [{"name": DECODE_CODEC_NAME, "configuration": decode}, *codecs]
+            dtype, fill_value = np.dtype("float32"), np.nan
         elif "flag_meanings" not in attrs:
             # (HydroClass words with CF flag attrs are described by them)
             attrs["comment"] = (

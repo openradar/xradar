@@ -115,22 +115,22 @@ def test_single_ref_per_sweep_shared_across_moments(cor_vdt, iris0_file):
 
 def test_codec_config_concat_safe(cor_vdt):
     ds = cor_vdt["sweep_0"].to_dataset()
-    first = {
-        var: ds[var].data.metadata.codecs[0].to_dict()["name"] for var in ds.data_vars
-    }
-    # KDP and RHOHV are not linear: they decode in xradar-iris-decode
-    assert first["KDP"] == first["RHOHV"] == "xradar-iris-decode"
+    decoded = set()
     for var in ds.data_vars:
         codecs = [c.to_dict() for c in ds[var].data.metadata.codecs]
+        names = [c["name"] for c in codecs]
         # the nonlinear types decode in xradar-iris-decode, before the sweep codec
-        assert [c["name"] for c in codecs][-1] == "xradar-iris-sweep"
-        assert [c["name"] for c in codecs][:-1] in ([], ["xradar-iris-decode"])
+        assert names[-1] == "xradar-iris-sweep"
+        assert names[:-1] in ([], ["xradar-iris-decode"])
+        if names[0] == "xradar-iris-decode":
+            decoded.add(var)
         assert set(codecs[-1]["configuration"]) == {
             "moment_index",
             "ndatatypes",
             "sort_rays",
             "pad_missing_rays",
         }
+    assert decoded == {"KDP", "RHOHV"}  # not linear
 
 
 def test_root_metadata(cor_tree, cor_truth):
@@ -153,12 +153,9 @@ def test_root_metadata(cor_tree, cor_truth):
 
 
 def _decoded_like_eager(ds: xr.Dataset, var: str):
-    """Physical values: CF-scaled words decoded with their attrs, the other
-    types as the xradar-iris-decode codec gives them, ``None`` for the
-    categorical ones."""
+    """CF-scaled words decoded with their attrs, ``None`` for the categorical
+    ones (the types xradar-iris-decode decodes arrive as float32)."""
     values = ds[var].values
-    if values.dtype.kind == "f":
-        return values.astype("float64")
     attrs = ds[var].attrs
     if "scale_factor" not in attrs:
         return None  # categorical: no value gate
@@ -215,17 +212,18 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset):
             continue  # no fixture carries it
         for attr in ("long_name", "standard_name", "units"):
             assert attrs.get(attr) == xds[var].attrs.get(attr), (var, attr)
+        theirs = xds[var].values.astype("float64")[xorder]
+        if ds[var].dtype == np.float32:
+            # decoded by the eager decoder in xradar-iris-decode: exact
+            np.testing.assert_array_equal(
+                ds[var].values[order].astype("float64"), theirs, err_msg=var
+            )
+            checked += 1
+            continue
         mine = _decoded_like_eager(ds, var)
         if mine is None:
             continue
-        theirs = xds[var].values.astype("float64")
         mine = mine[order]
-        theirs = theirs[xorder]
-        if ds[var].dtype == np.float32:
-            # decoded by the eager decoder in xradar-iris-decode: exact
-            np.testing.assert_array_equal(mine, theirs, err_msg=var)
-            checked += 1
-            continue
         _assert_same_mask(var, mine, theirs)
         both = np.isfinite(mine) & np.isfinite(theirs)
         assert both.any(), var
@@ -287,8 +285,7 @@ def test_signed_types_decode_in_the_codec():
     CF scaling — the stored unsigned words would decode sign-wrapped
     (DB_VVEL2 word 65535 is -0.01, not +655.35). They decode in
     xradar-iris-decode instead."""
-    from xradar.io.virtual.iris.decode import decode_codec_config
-    from xradar.io.virtual.iris.parser import _cf_scaling
+    from xradar.io.virtual.iris.decode import _cf_scaling, decode_codec_config
 
     signed = [
         code
@@ -300,15 +297,14 @@ def test_signed_types_decode_in_the_codec():
     assert signed  # the table does contain signed linear types
     for code in signed:
         assert _cf_scaling(code, 8.5, 17.0) is None, code
-        name = SIGMET_DATA_TYPES[code]["name"]
-        assert decode_codec_config(name, 5.33) is not None, name
+        assert decode_codec_config(code, 5.33) is not None, code
 
 
 def test_velc_gets_scaling_and_fill():
     """DB_VELC is linear-with-mask like DB_VEL: it must carry CF scaling
     AND ``_FillValue`` so masked bins decode to NaN, matching the eager
     decoder on the full uint8 ramp."""
-    from xradar.io.virtual.iris.parser import _cf_scaling
+    from xradar.io.virtual.iris.decode import _cf_scaling
 
     code = _CODE_BY_NAME["DB_VELC"]
     scaling = _cf_scaling(code, 8.5, 17.0)
@@ -528,7 +524,7 @@ def test_moment_name_mapping_follows_iris_mapping(iris0_file, cor_vdt):
 def test_vel_scales_with_unfolded_nyquist_width_with_nyquist():
     """DB_VEL uses the multi-PRF (unfolded) nyquist, DB_WIDTH the plain one;
     the fixtures are single-PRF, where both are equal, so pin it here."""
-    from xradar.io.virtual.iris.parser import _cf_scaling
+    from xradar.io.virtual.iris.decode import _cf_scaling
 
     for name, nyquist in (("DB_VEL", 17.0), ("DB_WIDTH", 8.5)):
         code = _CODE_BY_NAME[name]
@@ -978,7 +974,7 @@ def test_width_scaling_ignores_multi_prf():
     """1-byte DB_WIDTH scales by the single-PRF nyquist and DB_VEL by the
     multi-PRF one, as eager decode_width/decode_vel do (no fixture carries
     1-byte width, so this pins the table-driven scaling directly)."""
-    from xradar.io.virtual.iris.parser import _cf_scaling
+    from xradar.io.virtual.iris.decode import _cf_scaling
 
     nyquist, nyquist_vel = 13.0, 26.0
     assert _cf_scaling(4, nyquist, nyquist_vel)[0] == pytest.approx(nyquist / 256)

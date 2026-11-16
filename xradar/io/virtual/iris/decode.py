@@ -32,19 +32,24 @@ like ``xradar-iris-sweep``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from zarr.abc.codec import ArrayArrayCodec
 
 from xradar.io.backends.iris import (
     SIGMET_DATA_TYPES,
+    _apply_decoder,
+    decode_array,
     decode_kdp,
+    decode_phidp,
+    decode_phidp2,
     decode_vel,
     decode_width,
 )
 from xradar.io.virtual._codec import (
-    DecodeOnlyArrayCodec,
+    _DecodeOnly,
     normalize_fields,
     parse_config,
     register_codec_name,
@@ -61,63 +66,91 @@ __all__ = ["IrisDecodeCodec", "DECODE_CODEC_NAME", "decode_codec_config"]
 #: Frozen configuration contract (key -> type); order is the JSON order.
 _FIELDS = {"sigmet_data_type": str, "wavelength": float}
 
-_BY_NAME = {
+
+def _cf_scaling(
+    type_code: int, nyquist: float, nyquist_vel: float
+) -> tuple[float, float, float | None] | None:
+    """(scale_factor, add_offset, fill_or_None) turning raw words into
+    physical values, derived from the eager backend's ``SIGMET_DATA_TYPES``
+    entry for this type.
+
+    The eager decoders are ``decode_array = (raw + offset)/scale + offset2``
+    plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by
+    the multi-PRF factor, ``decode_width`` by the single-PRF nyquist,
+    ``decode_phidp``/``_phidp2`` by 180/360 degrees); a ``mask`` value becomes
+    ``_FillValue`` so CF mask_and_scale reproduces the eager masking. ``None``
+    for the types a linear transform cannot decode: SIGNED types (the arrays
+    hold the unsigned wire words, words at or above half-range would wrap),
+    nonlinear decoders (sqrt SQI/RHOHV, log KDP) and float-word types
+    (``tofloat``) decode in the ``xradar-iris-decode`` codec instead; the
+    categorical types (HCLASS) stay raw.
+    """
+    entry = SIGMET_DATA_TYPES.get(type_code) or {}
+    func = entry.get("func")
+    fkw = entry.get("fkw") or {}
+    scale = fkw.get("scale")
+    offset = fkw.get("offset", 0.0)
+    offset2 = fkw.get("offset2", 0.0)
+    if not scale:
+        return None
+    if np.dtype(entry.get("dtype", "uint8")).kind != "u":
+        return None  # signed wire dtype: linear CF on our unsigned words wraps
+    if func is decode_array and "tofloat" not in fkw:
+        return 1.0 / scale, offset / scale + offset2, fkw.get("mask")
+    if func is decode_vel:
+        return nyquist_vel / scale, offset * nyquist_vel / scale, fkw.get("mask")
+    if func is decode_width:
+        return nyquist / scale, offset * nyquist / scale, fkw.get("mask")
+    if func is decode_phidp:
+        return 180.0 / scale, offset * 180.0 / scale, fkw.get("mask")
+    if func is decode_phidp2:
+        return 360.0 / scale, offset * 360.0 / scale, fkw.get("mask")
+    return None
+
+
+#: name -> entry of the types this codec decodes: a decoder, but no CF
+#: scaling (whether a type is linear does not depend on the nyquist)
+_DECODED = {
     entry["name"]: entry
-    for entry in SIGMET_DATA_TYPES.values()
-    if isinstance(entry, dict)
+    for code, entry in SIGMET_DATA_TYPES.items()
+    if entry.get("func") is not None and _cf_scaling(code, 1.0, 1.0) is None
 }
 
 
-def _decodable(entry: dict[str, Any] | None) -> bool:
-    """Whether this codec decodes the type: it has a decoder, and it is not
-    velocity or width, which need the sweep's nyquist and stay CF-scaled."""
-    return entry is not None and entry.get("func") not in (
-        None,
-        decode_vel,
-        decode_width,
-    )
-
-
-def _entry(type_name: str) -> dict[str, Any]:
-    """The ``SIGMET_DATA_TYPES`` entry this codec decodes, or ``ValueError``."""
-    entry = _BY_NAME.get(type_name)
-    if not _decodable(entry):
-        raise ValueError(f"{DECODE_CODEC_NAME} cannot decode {type_name!r}")
-    return entry
-
-
 def decode_codec_config(
-    type_name: str, wavelength_cm: float
+    type_code: int, wavelength_cm: float
 ) -> dict[str, str | float] | None:
-    """Configuration of the decode codec for ``type_name``, ``None`` when the
-    type has no decoder this codec runs."""
-    entry = _BY_NAME.get(type_name)
-    if not _decodable(entry):
+    """Configuration of the decode codec for the data type ``type_code``,
+    ``None`` when the type has CF scaling or no decoder."""
+    entry = SIGMET_DATA_TYPES.get(type_code)
+    if entry is None or entry["name"] not in _DECODED:
         return None
-    config: dict[str, str | float] = {"sigmet_data_type": type_name}
+    config: dict[str, str | float] = {"sigmet_data_type": entry["name"]}
     if entry["func"] is decode_kdp:
         config["wavelength"] = float(wavelength_cm)
     return config
 
 
 @dataclass(frozen=True)
-class IrisDecodeCodec(DecodeOnlyArrayCodec):
+class IrisDecodeCodec(_DecodeOnly, ArrayArrayCodec):
     """Decode raw Sigmet words with the eager reader's decoder."""
 
     sigmet_data_type: str = ""
     wavelength: float | None = None
-
-    def _config(self) -> dict[str, str | float]:
-        """The set configuration keys, in the contract's order."""
-        return {
-            key: getattr(self, key) for key in _FIELDS if getattr(self, key) is not None
-        }
+    _entry: dict = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        normalize_fields(
-            self, DECODE_CODEC_NAME, {key: _FIELDS[key] for key in self._config()}
-        )
-        is_kdp = _entry(self.sigmet_data_type)["func"] is decode_kdp
+        fields = dict(_FIELDS)
+        if self.wavelength is None:
+            del fields["wavelength"]
+        normalize_fields(self, DECODE_CODEC_NAME, fields)
+        entry = _DECODED.get(self.sigmet_data_type)
+        if entry is None:
+            raise ValueError(
+                f"{DECODE_CODEC_NAME} cannot decode {self.sigmet_data_type!r}"
+            )
+        object.__setattr__(self, "_entry", entry)
+        is_kdp = entry["func"] is decode_kdp
         if is_kdp != (self.wavelength is not None):
             raise ValueError(
                 f"{DECODE_CODEC_NAME}: 'wavelength' (cm) is required for "
@@ -132,33 +165,24 @@ class IrisDecodeCodec(DecodeOnlyArrayCodec):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> IrisDecodeCodec:
-        config = dict(
-            (data.get("configuration") or {}) if isinstance(data, dict) else {}
-        )
-        wavelength = config.get("wavelength")
-        if isinstance(wavelength, int) and not isinstance(wavelength, bool):
-            # a JSON writer may drop the ".0" of an integral wavelength
-            config["wavelength"] = float(wavelength)
-            data = {**data, "configuration": config}
         config = parse_config(
             data, DECODE_CODEC_NAME, _FIELDS, required=("sigmet_data_type",)
         )
         return cls(**config)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": DECODE_CODEC_NAME, "configuration": self._config()}
-
-    @property
-    def _word_dtype(self) -> np.dtype:
-        """The unsigned words ``xradar-iris-sweep`` gives for this type."""
-        entry_dtype = np.dtype(_entry(self.sigmet_data_type).get("dtype", "uint8"))
-        return np.dtype(f"u{entry_dtype.itemsize}")
+        config: dict[str, Any] = {"sigmet_data_type": self.sigmet_data_type}
+        if self.wavelength is not None:
+            config["wavelength"] = self.wavelength
+        return {"name": DECODE_CODEC_NAME, "configuration": config}
 
     def resolve_metadata(self, chunk_spec: ArraySpec) -> ArraySpec:
+        """The unsigned words ``xradar-iris-sweep`` gives for this type."""
         from zarr.core.array_spec import ArraySpec
         from zarr.core.dtype import get_data_type_from_native_dtype
 
-        words = self._word_dtype
+        size = np.dtype(self._entry.get("dtype", "uint8")).itemsize
+        words = np.dtype(f"u{size}")
         return ArraySpec(
             shape=chunk_spec.shape,
             dtype=get_data_type_from_native_dtype(words),
@@ -173,15 +197,11 @@ class IrisDecodeCodec(DecodeOnlyArrayCodec):
             raise ValueError(
                 f"{DECODE_CODEC_NAME} decodes into a float array, not {out_dtype}"
             )
-        entry = _entry(self.sigmet_data_type)
         # the eager reader views the words through the table's dtype (signed
-        # types) before decoding
-        words = chunk_array.as_numpy_array().view(entry.get("dtype", "uint8"))
-        kwargs = dict(entry.get("fkw") or {})
-        if self.wavelength is not None:
-            kwargs["wavelength"] = self.wavelength
-        values = np.ma.filled(entry["func"](words, **kwargs), np.nan)
-        values = np.asarray(values, dtype=out_dtype)
+        # types) before decoding; the decoders put NaN under their mask
+        words = chunk_array.as_numpy_array().view(self._entry.get("dtype", "uint8"))
+        values = _apply_decoder(self._entry, words, wavelength_cm=self.wavelength)
+        values = np.ma.getdata(values).astype(out_dtype, copy=False)
         return chunk_spec.prototype.nd_buffer.from_ndarray_like(values)
 
 
