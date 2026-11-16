@@ -118,10 +118,17 @@ def test_single_ref_per_sweep_shared_across_moments(cor_vdt, iris0_file):
 
 def test_codec_config_concat_safe(cor_vdt):
     ds = cor_vdt["sweep_0"].to_dataset()
+    first = {
+        var: ds[var].data.metadata.codecs[0].to_dict()["name"] for var in ds.data_vars
+    }
+    # KDP and RHOHV are not linear: they decode in xradar-iris-decode
+    assert first["KDP"] == first["RHOHV"] == "xradar-iris-decode"
     for var in ds.data_vars:
         codecs = [c.to_dict() for c in ds[var].data.metadata.codecs]
-        assert [c["name"] for c in codecs] == ["xradar-iris-sweep"]
-        assert set(codecs[0]["configuration"]) == {
+        # the nonlinear types decode in xradar-iris-decode, before the sweep codec
+        assert [c["name"] for c in codecs][-1] == "xradar-iris-sweep"
+        assert [c["name"] for c in codecs][:-1] in ([], ["xradar-iris-decode"])
+        assert set(codecs[-1]["configuration"]) == {
             "moment_index",
             "ndatatypes",
             "sort_rays",
@@ -148,34 +155,21 @@ def test_root_metadata(cor_tree, cor_truth):
 # ---------------------------------------------------------------------------
 
 
-def _decoded_like_eager(ds: xr.Dataset, var: str, wavelength_cm: float):
-    """Stored raw words -> physical values via the eager per-type decoders."""
-    from xradar.io.backends.iris import decode_kdp, decode_sqi
-
-    raw = ds[var].values.astype("float64")
+def _decoded_like_eager(ds: xr.Dataset, var: str):
+    """Physical values: CF-scaled words decoded with their attrs, the other
+    types as the xradar-iris-decode codec gives them, ``None`` for the
+    categorical ones."""
+    values = ds[var].values
+    if values.dtype.kind == "f":
+        return values.astype("float64")
     attrs = ds[var].attrs
-    if "scale_factor" in attrs:
-        vals = raw * attrs["scale_factor"] + attrs["add_offset"]
-        if "_FillValue" in attrs:
-            vals = np.where(raw == attrs["_FillValue"], np.nan, vals)
-        return vals
-    entry = SIGMET_DATA_TYPES.get(_CODE_BY_NAME.get(attrs["sigmet_data_type"], -1))
-    func = (entry or {}).get("func")
-    # the eager decode views the wire words through the entry's declared
-    # dtype (e.g. DB_KDP is int8) before applying the decoder
-    wire = ds[var].values
-    entry_dtype = np.dtype((entry or {}).get("dtype", "uint8"))
-    if entry_dtype.kind == "i" and wire.dtype.itemsize == entry_dtype.itemsize:
-        wire = wire.view(entry_dtype)
-    typed = wire.astype("float64")
-    if func is decode_sqi:
-        with np.errstate(invalid="ignore"):
-            out = decode_sqi(typed, **entry.get("fkw", {}))
-        return np.ma.filled(out, np.nan)
-    if func is decode_kdp:
-        out = decode_kdp(typed, wavelength=wavelength_cm, **entry.get("fkw", {}))
-        return np.ma.filled(out, np.nan)
-    return None  # categorical / unmapped: no value gate
+    if "scale_factor" not in attrs:
+        return None  # categorical: no value gate
+    raw = values.astype("float64")
+    vals = raw * attrs["scale_factor"] + attrs["add_offset"]
+    if "_FillValue" in attrs:
+        vals = np.where(raw == attrs["_FillValue"], np.nan, vals)
+    return vals
 
 
 def _assert_same_mask(var, mine, theirs):
@@ -185,7 +179,7 @@ def _assert_same_mask(var, mine, theirs):
     assert not (mine_nan & ~eager_nan).any(), f"{var}: virtual masks more bins"
 
 
-def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset, wavelength_cm: float):
+def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset):
     assert dict(ds.sizes) == dict(xds.sizes)
     order = azimuth_sort_order(ds["azimuth"].values)
     xorder = np.argsort(xds["azimuth"].values, kind="stable")
@@ -223,12 +217,17 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset, wavelength_cm: float):
             continue  # no fixture carries it
         for attr in ("long_name", "standard_name", "units"):
             assert attrs.get(attr) == xds[var].attrs.get(attr), (var, attr)
-        mine = _decoded_like_eager(ds, var, wavelength_cm)
+        mine = _decoded_like_eager(ds, var)
         if mine is None:
             continue
         theirs = xds[var].values.astype("float64")
         mine = mine[order]
         theirs = theirs[xorder]
+        if ds[var].dtype == np.float32:
+            # decoded by the eager decoder in xradar-iris-decode: exact
+            np.testing.assert_array_equal(mine, theirs, err_msg=var)
+            checked += 1
+            continue
         _assert_same_mask(var, mine, theirs)
         both = np.isfinite(mine) & np.isfinite(theirs)
         assert both.any(), var
@@ -237,16 +236,14 @@ def _assert_sweep_parity(ds: xr.Dataset, xds: xr.Dataset, wavelength_cm: float):
     assert checked >= 5
 
 
-def test_parity_all_sweeps_corozal(cor_tree, cor_truth, cor_hdr):
+def test_parity_all_sweeps_corozal(cor_tree, cor_truth):
     """All 10 sweeps of the 8-bit IDEAM volume — includes the north-
     straddling sweep_9 that requires az-aligned comparison."""
     assert set(cor_tree.children) == {
         n for n in cor_truth.children if n.startswith("sweep_")
     }
     for name in cor_tree.children:
-        _assert_sweep_parity(
-            cor_tree[name].dataset, cor_truth[name].ds, cor_hdr.wavelength_cm
-        )
+        _assert_sweep_parity(cor_tree[name].dataset, cor_truth[name].ds)
 
 
 def test_parity_surgavere_16bit(iris1_file, local_registry):
@@ -256,14 +253,13 @@ def test_parity_surgavere_16bit(iris1_file, local_registry):
     reader."""
     tree = _open_tree(IrisParser()(f"file://{iris1_file}", local_registry))
     truth = open_iris_datatree(iris1_file)
-    wavelength_cm = read_volume(Path(iris1_file).read_bytes()).header.wavelength_cm
 
     ds = tree["sweep_0"].dataset
     assert "DB_XHDR" not in ds.data_vars
     assert "DBZH" in ds.data_vars  # DB_DBZ2 under iris_mapping
     assert ds["DBZH"].attrs["sigmet_data_type"] == "DB_DBZ2"
     assert ds.sizes["azimuth"] == 360 - 1  # one missing ray, compacted
-    _assert_sweep_parity(ds, truth["sweep_0"].ds, wavelength_cm)
+    _assert_sweep_parity(ds, truth["sweep_0"].ds)
 
 
 def test_cf_scaling_matches_eager_decoders(iris1_file, local_registry):
@@ -288,10 +284,12 @@ def test_cf_scaling_matches_eager_decoders(iris1_file, local_registry):
     assert checked >= 5
 
 
-def test_signed_wire_types_stay_raw():
+def test_signed_types_decode_in_the_codec():
     """Types whose table entry declares a signed dtype must NOT get linear
     CF scaling — the stored unsigned words would decode sign-wrapped
-    (e.g. DB_SHEAR raw 255 is -25.8, not +25.4)."""
+    (DB_VVEL2 word 65535 is -0.01, not +655.35). They decode in
+    xradar-iris-decode instead."""
+    from xradar.io.virtual.iris.decode import decode_codec_config
     from xradar.io.virtual.iris.parser import _cf_scaling
 
     signed = [
@@ -304,6 +302,8 @@ def test_signed_wire_types_stay_raw():
     assert signed  # the table does contain signed linear types
     for code in signed:
         assert _cf_scaling(code, 8.5, 17.0) is None, code
+        name = SIGMET_DATA_TYPES[code]["name"]
+        assert decode_codec_config(name, 5.33) is not None, name
 
 
 def test_velc_gets_scaling_and_fill():
@@ -347,8 +347,9 @@ def _sorted_like_builder(group: ManifestGroup) -> ManifestGroup:
         order = azimuth_sort_order(values(arrays["azimuth"]))
         for name, ma in list(arrays.items()):
             meta = ma.metadata.to_dict()
-            if meta["codecs"][0]["name"] == "xradar-iris-sweep":
-                codec = meta["codecs"][0]
+            # the sweep codec is the last one (xradar-iris-decode may precede it)
+            if meta["codecs"][-1]["name"] == "xradar-iris-sweep":
+                codec = meta["codecs"][-1]
                 codec = {**codec, "configuration": {**codec["configuration"]}}
                 codec["configuration"]["sort_rays"] = True
                 arrays[name] = ManifestArray(
@@ -357,7 +358,7 @@ def _sorted_like_builder(group: ManifestGroup) -> ManifestGroup:
                         chunk_shape=ma.metadata.chunks,
                         data_type=ma.metadata.data_type.to_native_dtype(),
                         fill_value=ma.metadata.fill_value,
-                        codecs=[codec],
+                        codecs=[*meta["codecs"][:-1], codec],
                         attributes=meta.get("attributes", {}),
                         dimension_names=ma.metadata.dimension_names,
                     ),
@@ -380,7 +381,7 @@ def test_parser_emits_pure_pointers(cor_store, cor_tree):
     unsorted = 0
     for name, node in cor_store._group.groups.items():
         for var, ma in node.arrays.items():
-            codec = ma.metadata.to_dict()["codecs"][0]
+            codec = ma.metadata.to_dict()["codecs"][-1]
             if codec["name"] == "xradar-iris-sweep":
                 assert codec["configuration"]["sort_rays"] is False, (name, var)
         unsorted += bool(np.any(np.diff(cor_tree[name]["azimuth"].values) < 0))
@@ -488,9 +489,9 @@ def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):
         set(),
     )
     ordinal = {
-        name: arr.metadata.to_dict()["codecs"][0]["configuration"]["moment_index"]
+        name: arr.metadata.to_dict()["codecs"][-1]["configuration"]["moment_index"]
         for name, arr in group.arrays.items()
-        if arr.metadata.to_dict()["codecs"][0]["name"] == "xradar-iris-sweep"
+        if arr.metadata.to_dict()["codecs"][-1]["name"] == "xradar-iris-sweep"
     }
     assert dbz < vel
     assert ordinal["DBZH"] == vel
@@ -1009,7 +1010,7 @@ def test_ray_with_zero_rbins_is_missing(iris0_file, local_registry, tmp_path):
     eager = open_iris_datatree(str(path))["sweep_0"].ds
     full = open_iris_datatree(iris0_file)["sweep_0"].ds
     assert ds.sizes["azimuth"] == full.sizes["azimuth"] - 1
-    _assert_sweep_parity(ds, eager, read_volume(path.read_bytes()).header.wavelength_cm)
+    _assert_sweep_parity(ds, eager)
 
 
 def test_zero_rbins_ray_keeps_its_slot_when_padded(

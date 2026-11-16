@@ -53,6 +53,7 @@ imd = "xradar.io.backends:IMDBackendEntrypoint"
 # globally so any zarr v3 reader with xradar installed resolves them by
 # name — reading a virtual store needs only xradar + zarr.
 xradar-iris-sweep = "xradar.io.virtual.iris.codec:IrisSweepCodec"
+xradar-iris-decode = "xradar.io.virtual.iris.decode:IrisDecodeCodec"
 
 [build-system]
 requires = [

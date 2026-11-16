@@ -29,13 +29,14 @@ if not zarr_supported(_zarr_version):
         name="zarr",
     )
 
-from zarr.abc.codec import ArrayBytesCodec  # noqa: E402
+from zarr.abc.codec import ArrayArrayCodec, ArrayBytesCodec  # noqa: E402
 
 if TYPE_CHECKING:
     from zarr.core.array_spec import ArraySpec
     from zarr.core.buffer import Buffer, NDBuffer
 
 __all__ = [
+    "DecodeOnlyArrayCodec",
     "DecodeOnlyCodec",
     "register_codec_name",
     "check_chunk_shape",
@@ -108,16 +109,16 @@ def check_chunk_shape(codec_name: str, shape: tuple[int, ...]) -> None:
         )
 
 
-class DecodeOnlyCodec(ArrayBytesCodec):
+class _DecodeOnly:
     """zarr plumbing shared by the virtual codecs: the decode runs in a
     worker thread (it is CPU-bound), and there is no encode path."""
 
     is_fixed_size = False
 
     async def _decode_single(
-        self, chunk_bytes: Buffer, chunk_spec: ArraySpec
+        self, chunk_data: Buffer | NDBuffer, chunk_spec: ArraySpec
     ) -> NDBuffer:
-        return await asyncio.to_thread(self._decode_sync, chunk_bytes, chunk_spec)
+        return await asyncio.to_thread(self._decode_sync, chunk_data, chunk_spec)
 
     def _encode_sync(self, chunk_array: NDBuffer, chunk_spec: ArraySpec):
         raise NotImplementedError(f"{type(self).__name__} is decode-only")
@@ -130,8 +131,22 @@ class DecodeOnlyCodec(ArrayBytesCodec):
     ) -> int:
         raise NotImplementedError
 
+
+class DecodeOnlyCodec(_DecodeOnly, ArrayBytesCodec):
+    """Decode-only array-bytes codec: a byte span to one moment's words."""
+
     def resolve_metadata(self, chunk_spec: ArraySpec) -> ArraySpec:
         return chunk_spec
+
+
+class DecodeOnlyArrayCodec(_DecodeOnly, ArrayArrayCodec):
+    """Decode-only array-array codec: raw words to physical values."""
+
+    def resolve_metadata(self, chunk_spec: ArraySpec) -> ArraySpec:
+        """The spec of the words this codec decodes; every subclass sets it."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must give the spec of the words it decodes"
+        )
 
 
 def register_codec_name(codec_cls, codec_name: str) -> None:

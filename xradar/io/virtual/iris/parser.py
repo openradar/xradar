@@ -63,6 +63,7 @@ from xradar.io.backends.iris import (
     decode_width,
 )
 from xradar.io.virtual.iris import codec as _codec  # noqa: F401  (registers)
+from xradar.io.virtual.iris.decode import DECODE_CODEC_NAME, decode_codec_config
 from xradar.io.virtual.iris.format import (
     DataTypeHeader,
     IngestHeader,
@@ -111,12 +112,12 @@ def _cf_scaling(
     plus thin wrappers (``decode_vel`` multiplies by the nyquist extended by
     the multi-PRF factor, ``decode_width`` by the single-PRF nyquist,
     ``decode_phidp``/``_phidp2`` by 180/360 degrees); a ``mask`` value becomes
-    ``_FillValue`` so CF mask_and_scale reproduces the eager masking. Types
-    whose table entry declares a SIGNED dtype stay raw: the virtual arrays hold
-    the unsigned wire words, and a linear transform cannot reproduce the signed
-    reinterpretation (words at or above half-range would wrap). Nonlinear
-    decoders (sqrt SQI/RHOHV, log KDP), categorical types (HCLASS), and
-    float-word types (``tofloat``) stay raw too.
+    ``_FillValue`` so CF mask_and_scale reproduces the eager masking. ``None``
+    for the types a linear transform cannot decode: SIGNED types (the arrays
+    hold the unsigned wire words, words at or above half-range would wrap),
+    nonlinear decoders (sqrt SQI/RHOHV, log KDP) and float-word types
+    (``tofloat``) decode in the ``xradar-iris-decode`` codec instead; the
+    categorical types (HCLASS) stay raw.
     """
     entry = SIGMET_DATA_TYPES.get(type_code) or {}
     func = entry.get("func")
@@ -233,8 +234,28 @@ def _sweep_group(
             "coordinates": MOMENT_COORDINATES,
             "sigmet_data_type": dth.type_name,
         }
+        sweep_codec = {
+            "name": _codec.CODEC_NAME,
+            "configuration": {
+                "moment_index": ordinal,
+                "ndatatypes": ndt,
+                "sort_rays": False,  # frozen config key; see above
+                "pad_missing_rays": pad_missing_rays,
+            },
+        }
+        codecs, fill_value = [sweep_codec], 0
         scaling = _cf_scaling(dth.type_code, nyquist, nyquist_vel)
-        if scaling is not None:
+        decode = (
+            decode_codec_config(dth.type_name, hdr.wavelength_cm)
+            if scaling is None
+            else None
+        )
+        if decode is not None:
+            # nonlinear, signed or IRIS-float words: the eager decoder runs in
+            # the xradar-iris-decode codec, into float32 like the eager reader
+            codecs = [{"name": DECODE_CODEC_NAME, "configuration": decode}, *codecs]
+            dtype, fill_value = np.dtype("float32"), np.nan
+        elif scaling is not None:
             attrs["scale_factor"], attrs["add_offset"], fill = scaling
             if fill is not None:
                 # Sigmet raw ``mask`` (e.g. 0 for velocity) = no data; with
@@ -244,27 +265,16 @@ def _sweep_group(
         elif "flag_meanings" not in attrs:
             # (HydroClass words with CF flag attrs are described by them)
             attrs["comment"] = (
-                "raw Sigmet words with no CF scaling attached (nonlinear/"
-                "categorical encoding per the eager backend's "
-                "SIGMET_DATA_TYPES) — decode per the IRIS Programmer's "
-                "Manual for this data type"
+                "raw Sigmet words: the eager backend's SIGMET_DATA_TYPES has "
+                "no decoder for this data type — decode per the IRIS "
+                "Programmer's Manual"
             )
         metadata = create_v3_array_metadata(
             shape=(nrays, nbins),
             chunk_shape=(nrays, nbins),
             data_type=dtype,
-            fill_value=0,
-            codecs=[
-                {
-                    "name": _codec.CODEC_NAME,
-                    "configuration": {
-                        "moment_index": ordinal,
-                        "ndatatypes": ndt,
-                        "sort_rays": False,  # frozen config key; see above
-                        "pad_missing_rays": pad_missing_rays,
-                    },
-                }
-            ],
+            fill_value=fill_value,
+            codecs=codecs,
             attributes=attrs,
             dimension_names=("azimuth", "range"),
         )
@@ -335,9 +345,10 @@ class IrisParser:
     pad_missing_rays : bool
         ``False`` (default): missing rays are compacted away and arrays
         hold only WRITTEN rays, mirroring the eager backend. ``True``:
-        every ray slot keeps its position — missing slots read as fill with
-        NaN per-ray coordinates, and the azimuth dim equals the sweep's
-        EXPECTED ray count.
+        every ray slot keeps its position — missing slots read as no data
+        (0.0 for the signed types and ``DB_FLIQUID2``, which have no
+        no-data word) with NaN per-ray coordinates, and the azimuth dim
+        equals the sweep's EXPECTED ray count.
     drop_variables : iterable of str, optional
         CfRadial moment names to exclude when building the store.
     """

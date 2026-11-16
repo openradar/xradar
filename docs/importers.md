@@ -197,6 +197,16 @@ one data type out of the span at read time. Its configuration is:
 | `sort_rays`        | reorder rows to azimuth order at decode (store-builder flag; the parser always writes `false`) |
 | `pad_missing_rays` | keep canonical slots for dropped rays (fill rows)    |
 
+Most data types are linear and decode through CF `scale_factor` /
+`add_offset`. The others (the signed types, square-root types such as
+`RHOHV`, the logarithmic `KDP`, and the 16-bit IRIS floats of `RAINRATE2` and
+`FLIQUID2`) also carry the decode-only codec `xradar-iris-decode`. It is
+listed before `xradar-iris-sweep`, so on read it runs on the words that codec
+gives, with this backend's own decoder: the values are `float32` and
+identical to `open_iris_datatree`. Its configuration is `sigmet_data_type`
+(the Sigmet type name) and, for `DB_KDP` only, `wavelength` in cm, so KDP
+arrays of volumes with different wavelengths do not concatenate.
+
 The parser runs this backend's own code wherever the job is the same: the
 headers come from `IrisRawFile(..., loaddata=False)`, and the moment names
 (`iris_mapping`; a second type mapping to an already used name, e.g.
@@ -229,6 +239,15 @@ differences from `open_iris_datatree`:
 - HydroClass `flag_masks` / `flag_values` read back as integer lists, not
   `uint8`/`uint16` arrays: zarr attributes carry no dtype. Cast them to the
   variable's dtype before writing CF-strict netCDF.
+- Moments with CF scaling decode to `float64`, where `open_iris_datatree`
+  gives `float32`: zarr attributes carry no dtype, so `scale_factor` and
+  `add_offset` read back as Python floats and xarray decodes to their type.
+  The values equal the eager ones to within float32 rounding.
+- The types decoded by `xradar-iris-decode` have no raw words to read:
+  `mask_and_scale=False` still gives their physical values.
+- With `pad_missing_rays`, the padded rows of the signed types and of
+  `FLIQUID2` read 0.0, a valid value of these types (every other type reads
+  NaN there); the NaN `azimuth` and `time` of the slot mark them.
 - The `range` attributes `meters_between_gates` and
   `meters_to_center_of_first_gate` are derived from the range values in
   metres; `open_iris_datatree` still writes the raw header numbers there.

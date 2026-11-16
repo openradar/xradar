@@ -25,6 +25,7 @@ pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only; numpy-1 cells s
 import xradar  # resolves the package location for the subprocess test
 from xradar.io.backends.iris import SIGMET_DATA_TYPES, decode_array
 from xradar.io.virtual.iris.codec import CODEC_NAME, IrisSweepCodec
+from xradar.io.virtual.iris.decode import DECODE_CODEC_NAME
 from xradar.io.virtual.iris.format import (
     BHDR_SIZE,
     IDH_SIZE,
@@ -272,6 +273,7 @@ def test_codec_import_does_not_pull_virtualizarr():
     code = (
         "import sys\n"
         "import xradar.io.virtual.iris.codec\n"
+        "import xradar.io.virtual.iris.decode\n"
         "assert 'virtualizarr' not in sys.modules\n"
         "print('CODEC_IMPORT_OK')\n"
     )
@@ -430,8 +432,9 @@ def test_output_contract_is_shared(dtype, fill, shape, match):
 
 
 def test_only_the_prefixed_codec_name_is_registered():
-    """xradar registers ``xradar-iris-sweep`` only: the unprefixed
-    ``sigmet-sweep`` is neither accepted by ``from_dict`` nor an entry point."""
+    """xradar registers the ``xradar-`` prefixed codec names only: the
+    unprefixed ``sigmet-sweep`` is neither accepted by ``from_dict`` nor an
+    entry point."""
     from importlib.metadata import entry_points
 
     config = {"moment_index": 3, "ndatatypes": 12}
@@ -442,7 +445,7 @@ def test_only_the_prefixed_codec_name_is_registered():
         for ep in entry_points(group="zarr.codecs")
         if ep.value.startswith("xradar.")
     }
-    assert names == {CODEC_NAME}
+    assert names == {CODEC_NAME, DECODE_CODEC_NAME}
 
 
 def test_azimuth_sort_order_is_stable():
