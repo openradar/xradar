@@ -176,12 +176,13 @@ def test_sweep_scalars_are_data_variables(cor_tree, cor_truth):
             assert var in ours.data_vars and var in theirs.data_vars, var
 
 
-def test_virtual_volume_exports_to_cfradial1(cor_store, tmp_path):
-    """A multi-sweep virtual volume exports to CfRadial1 like the eager one
-    (sweep scalars as coordinates made the sweeps conflict)."""
-    tree = _open_tree(cor_store, mask_and_scale=True, decode_times=True)
+@pytest.mark.parametrize("export", [xd.io.to_cfradial1, xd.io.to_cfradial2])
+def test_virtual_volume_exports(cor_store, tmp_path, export):
+    """A multi-sweep virtual volume exports like the eager one (sweep scalars
+    as coordinates broke CfRadial1, StringDType strings broke CfRadial2)."""
     path = tmp_path / "cor.nc"
-    xd.io.to_cfradial1(tree, path)
+    with _open_tree(cor_store, mask_and_scale=True, decode_times=True) as tree:
+        export(tree, path)
     assert path.stat().st_size > 0
 
 
@@ -501,30 +502,32 @@ def test_pad_missing_rays_keeps_slots(iris1_file, local_registry):
     assert (srt["DBZH"].values[-1] == 0).all()
 
 
-def test_string_scalars_are_vlen_not_fixed_width(cor_tree):
-    """String scalars are stored as zarr's VARIABLE-LENGTH ``string`` dtype
-    (vlen-utf8), never a fixed ``<U*`` width — numpy's transient input dtype
-    (e.g. ``<U20`` from ``np.asarray("azimuth_surveillance")``) is discarded
-    at encode time, so no width can ever be wrong or truncate."""
-    from numcodecs import VLenUTF8
+def test_strings_read_back_like_eager(cor_tree, cor_truth):
+    """Every string variable reads back as ``<U`` with the eager value."""
+    strings = [
+        (node.path, name)
+        for node in cor_truth.subtree
+        for name, var in node.variables.items()
+        if var.dtype.kind == "U"
+    ]
+    assert len(strings) > 10
+    for path, name in strings:
+        ours, theirs = cor_tree[path][name], cor_truth[path][name]
+        assert ours.dtype.kind == "U", (path, name)
+        np.testing.assert_array_equal(ours.values, theirs.values)
 
-    from xradar.io.virtual.manifest import encode_vlen_utf8, inline_scalar
 
-    # the stored declaration is variable-length regardless of input width
-    marr = inline_scalar("azimuth_surveillance")  # np.asarray gives <U20
-    assert marr.metadata.data_type.to_native_dtype().kind == "T"  # StringDType
-    assert [c.to_dict()["name"] for c in marr.metadata.codecs] == ["vlen-utf8"]
-
-    # encoding preserves arbitrary lengths and non-ASCII; decoded with the
-    # SAME numcodecs codec zarr's vlen-utf8 uses on the read side
-    values = np.asarray(["short", "x" * 500, "ñandú — \U0002070e"])
-    assert values.dtype.kind == "U"  # fixed-width exists on input only
-    assert list(VLenUTF8().decode(encode_vlen_utf8(values))) == list(values)
-
-    # end to end: scalars read back full-length through a real store
-    assert cor_tree["sweep_0"]["sweep_mode"].values.item() == "azimuth_surveillance"
-    tcs = cor_tree["time_coverage_start"].values.item()
-    assert len(tcs) == 20 and tcs.endswith("Z")
+def test_virtual_sweep_where_and_fillna(cor_store, cor_truth):
+    """``where`` and ``fillna`` work on a virtual sweep as on an eager one
+    (StringDType sweep strings made both raise)."""
+    with xr.open_dataset(
+        cor_store, group="sweep_0", engine="zarr", consolidated=False, zarr_format=3
+    ) as ds:
+        eager = cor_truth["sweep_0"].to_dataset()
+        assert int(ds.where(ds.DBZH > 10).DBZH.count()) == int(
+            eager.where(eager.DBZH > 10).DBZH.count()
+        )
+        assert int(ds.fillna(0).DBZH.isnull().sum()) == 0
 
 
 def test_colliding_moment_names_keep_both(iris0_file, cor_hdr):

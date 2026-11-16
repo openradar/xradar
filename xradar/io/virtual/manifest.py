@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
-from numcodecs import VLenUTF8
 from virtualizarr.manifests import ChunkManifest, ManifestArray
 from virtualizarr.manifests.utils import create_v3_array_metadata
 
@@ -54,7 +53,6 @@ __all__ = [
     "FM301_STRING_DEFAULTS",
     "to_json_safe",
     "native_endian_bytes",
-    "encode_vlen_utf8",
     "variable_to_inline_manifest_array",
     "inline_variable",
     "inline_scalar",
@@ -87,6 +85,11 @@ def to_json_safe(value):
     return value
 
 
+#: width of the stored strings, wider when a value is longer; it holds every
+#: FM301 ``sweep_mode`` value
+STRING_WIDTH = 32
+
+
 def native_endian_bytes(arr: np.ndarray) -> tuple[np.ndarray, str | None]:
     """Contiguous little-endian view of ``arr`` plus the endian tag for the
     zarr ``bytes`` codec (``None`` for 1-byte itemsizes)."""
@@ -98,17 +101,6 @@ def native_endian_bytes(arr: np.ndarray) -> tuple[np.ndarray, str | None]:
     return arr, "little"
 
 
-def encode_vlen_utf8(values: np.ndarray) -> bytes:
-    """Encode strings as the chunk layout zarr's ``vlen-utf8`` codec reads.
-
-    Delegates to :class:`numcodecs.VLenUTF8` — the exact codec on the
-    decode side — so the layout matches by construction. Note
-    ``StringDType.tobytes()`` dumps internal pointers and must never be
-    used for string payloads.
-    """
-    return bytes(VLenUTF8().encode(values.ravel().astype(object)))
-
-
 def variable_to_inline_manifest_array(var: xr.Variable) -> ManifestArray:
     """Materialize an ``xr.Variable`` as a single inlined-chunk ManifestArray."""
     values = np.asarray(var.values)
@@ -117,23 +109,32 @@ def variable_to_inline_manifest_array(var: xr.Variable) -> ManifestArray:
     chunk_key = "c" if values.ndim == 0 else ".".join(["0"] * values.ndim)
     attrs = {k: to_json_safe(v) for k, v in var.attrs.items()}
 
-    if values.dtype.kind in ("U", "T", "O"):
-        # variable-length UTF-8 strings (zarr v3 stable "string" dtype)
-        data = encode_vlen_utf8(values)
-        data_type: np.dtype = np.dtypes.StringDType()
-        codecs: list[dict] = [{"name": "vlen-utf8", "configuration": {}}]
+    # Strings are stored fixed-width (zarr's ``fixed_length_utf32``) and read
+    # back as ``<U`` like the eager readers' strings: numpy's variable-length
+    # StringDType breaks Dataset.where/fillna and the CfRadial2 export.
+    # StringDType and object input are converted first, never dumped with
+    # ``tobytes()`` (which writes pointers).
+    if values.dtype.kind in ("T", "O"):
+        items = values.ravel().tolist()
+        if not all(isinstance(item, str) for item in items):
+            raise TypeError(f"inline object arrays must hold str, got {values!r}")
+        values = np.asarray(items, dtype=str).reshape(values.shape)
+    if values.dtype.kind == "U":
+        # one width for short strings, so volumes whose sweep_mode differs
+        # ("sector", "azimuth_surveillance") still concatenate
+        width = max(STRING_WIDTH, values.dtype.itemsize // 4)
+        values = values.astype(f"<U{width}")
+    raw, endian = native_endian_bytes(values)
+    data = raw.tobytes()
+    data_type = raw.dtype
+    if endian is None:
+        codecs = [{"name": "bytes"}]
     else:
-        raw, endian = native_endian_bytes(values)
-        data = raw.tobytes()
-        data_type = raw.dtype
-        if endian is None:
-            codecs = [{"name": "bytes"}]
-        else:
-            codecs = [{"name": "bytes", "configuration": {"endian": endian}}]
-        if raw.dtype.kind == "M":
-            unit = np.datetime_data(raw.dtype)[0]
-            attrs.setdefault("units", f"{unit} since 1970-01-01T00:00:00")
-            attrs.setdefault("calendar", "proleptic_gregorian")
+        codecs = [{"name": "bytes", "configuration": {"endian": endian}}]
+    if raw.dtype.kind == "M":
+        unit = np.datetime_data(raw.dtype)[0]
+        attrs.setdefault("units", f"{unit} since 1970-01-01T00:00:00")
+        attrs.setdefault("calendar", "proleptic_gregorian")
 
     manifest = ChunkManifest(
         entries={

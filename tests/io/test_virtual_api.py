@@ -69,8 +69,10 @@ def test_one_sort_rule_everywhere():
 
 
 def _inline_values(arr):
+    """The inline chunk's values, read through the array's dtype."""
     (data,) = arr.manifest._inlined.values()
-    return data
+    dtype = arr.metadata.data_type.to_native_dtype()
+    return np.frombuffer(data, dtype=dtype).reshape(arr.shape)
 
 
 def test_inline_root_is_the_eager_root():
@@ -96,8 +98,9 @@ def test_inline_root_is_the_eager_root():
             "altitude",
         ]
     )
-    assert b"1970-01-01T00:00:01Z" in _inline_values(arrays["time_coverage_start"])
-    assert b"1970-01-01T00:01:01Z" in _inline_values(arrays["time_coverage_end"])
+    start = _inline_values(arrays["time_coverage_start"]).item()
+    assert start == "1970-01-01T00:00:01Z"
+    assert _inline_values(arrays["time_coverage_end"]).item() == "1970-01-01T00:01:01Z"
     assert attrs["coordinates"] == "latitude longitude altitude"
     assert attrs["comment"] == "im/exported using xradar"
     assert attrs["x"] == 1
@@ -153,3 +156,58 @@ def test_inline_variables_round_trip_through_zarr():
     )
     np.testing.assert_array_equal(ds["small"].values, small)
     np.testing.assert_array_equal(ds["times"].values, times.astype("datetime64[ns]"))
+
+
+#: any length, non-ASCII and a 4-byte character
+_STRINGS = ["short", "x" * 500, "ñandú — \U0002070e"]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.asarray(_STRINGS),
+        np.asarray(_STRINGS, dtype=object),
+        np.asarray(_STRINGS, dtype=np.dtypes.StringDType()),
+    ],
+    ids=["fixed", "object", "StringDType"],
+)
+def test_inline_strings_read_back_fixed_width(values):
+    """Strings are stored fixed-width and read back as ``<U``, whatever the
+    input dtype; StringDType (which breaks ``where``/``fillna`` and the
+    CfRadial2 export) never reaches the reader."""
+    import xarray as xr
+    from virtualizarr.manifests import ManifestGroup, ManifestStore
+
+    from xradar.io.virtual.manifest import inline_variable
+
+    group = ManifestGroup(arrays={"s": inline_variable(("n",), values, {})})
+    with xr.open_dataset(
+        ManifestStore(group=group), engine="zarr", consolidated=False, zarr_format=3
+    ) as ds:
+        assert ds["s"].dtype.kind == "U"
+        assert ds["s"].values.tolist() == _STRINGS
+
+
+def test_short_strings_share_one_width():
+    """Short strings share one stored width, so virtual arrays whose
+    sweep_mode differs ("sector", "azimuth_surveillance") still
+    concatenate."""
+    import xarray as xr
+
+    from xradar.io.virtual.manifest import inline_variable
+
+    ppi, sector = (
+        xr.DataArray(inline_variable(("n",), np.asarray([mode]), {}), dims="n")
+        for mode in ("azimuth_surveillance", "sector")
+    )
+    assert xr.concat([ppi, sector], dim="n").shape == (2,)
+
+
+@pytest.mark.parametrize("values", [[1, 2], ["a", None]], ids=["int", "None"])
+def test_inline_object_arrays_must_hold_strings(values):
+    """An object array of non-strings raises instead of turning into text
+    ("None", "nan")."""
+    from xradar.io.virtual.manifest import inline_variable
+
+    with pytest.raises(TypeError, match="must hold str"):
+        inline_variable(("n",), np.asarray(values, dtype=object), {})

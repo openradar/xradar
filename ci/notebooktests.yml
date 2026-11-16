@@ -33,7 +33,7 @@ dependencies:
   - arm_pyart
   - wradlib
   - ffmpeg
-  - zarr>=3.1.6
+  - zarr>=3.3
   - xarray>=2026.9.0
   - pip:
     # pip, not conda: obspec-utils (a virtualizarr dep) has no conda-forge pkg
