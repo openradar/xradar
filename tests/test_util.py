@@ -336,6 +336,182 @@ def test_reindex_angle_removes_duplicate_rays(gamic_file, closing, direction):
     )
 
 
+def _sector(azimuth, mode="sector"):
+    # rays in time order as given
+    ds = _ppi(azimuth=np.asarray(azimuth, dtype="float64"))
+    return ds.assign_coords(sweep_mode=mode)
+
+
+def _limits(angle_dict):
+    keys = ["start_angle", "stop_angle", "angle_res", "direction"]
+    return [angle_dict[k] for k in keys]
+
+
+@pytest.mark.parametrize("mode", ["sector", "manual_ppi"])
+@pytest.mark.parametrize("direction", [1, -1])
+def test_extract_angle_parameters_sector(mode, direction):
+    # 90 rays from 30 to 120 degrees
+    ds = _sector(np.arange(30.5, 120, 1.0)[::direction], mode)
+    angle_dict = util.extract_angle_parameters(ds)
+    assert angle_dict["direction"] == direction
+    assert angle_dict["angle_res"] == 1.0
+    assert [angle_dict["start_angle"], angle_dict["stop_angle"]] == [30, 120][
+        ::direction
+    ]
+    assert angle_dict["expected_number_rays"] == 90
+    assert not angle_dict["missing_rays"]
+    assert not angle_dict["excess_rays"]
+
+    out = util.reindex_angle(ds, *_limits(angle_dict))
+    np.testing.assert_array_equal(out.azimuth.values, ds.azimuth.values)
+    np.testing.assert_array_equal(out.time.values, ds.time.values)
+
+
+@pytest.mark.parametrize("stored", ["reversed", "rolled", "sorted"])
+def test_extract_angle_parameters_sector_follows_time(stored):
+    # counter-clockwise in time, whatever the order of the rays in the dataset
+    ds = _sector(np.arange(119.5, 30, -1.0))
+    other = {
+        "reversed": ds.isel(azimuth=slice(None, None, -1)),
+        "rolled": ds.roll(azimuth=40, roll_coords=True),
+        "sorted": ds.sortby("azimuth"),
+    }[stored]
+    expected = util.extract_angle_parameters(ds)
+    assert _limits(expected) == [120, 30, 1.0, -1]
+    assert _limits(util.extract_angle_parameters(other)) == _limits(expected)
+
+
+def test_extract_angle_parameters_sector_antenna_turns_around():
+    # the antenna moves back from 60 to 30 degrees, then scans the sector to 120
+    azimuth = np.r_[np.arange(59.5, 30, -1.0), np.arange(30.5, 120, 1.0)]
+    angle_dict = util.extract_angle_parameters(_sector(azimuth))
+    assert _limits(angle_dict) == [30, 120, 1.0, 1]
+    assert angle_dict["ascending"]
+    assert angle_dict["expected_number_rays"] == 90
+
+
+def test_extract_angle_parameters_sector_leaves_out_antenna_transition():
+    # the antenna moves from 200 down to 30 degrees, then scans the sector to 60,
+    # stored first, the transition rays are kept as duplicates of the scan rays
+    azimuth = np.r_[np.arange(199.5, 30, -1.0), np.arange(30.5, 60, 1.0)]
+    ds = _sector(azimuth)
+    transition = (np.arange(azimuth.size) < 170).astype("int8")
+    ds = ds.assign(antenna_transition=("azimuth", transition))
+    angle_dict = util.extract_angle_parameters(ds)
+    assert _limits(angle_dict) == [30, 60, 1.0, 1]
+    assert angle_dict["expected_number_rays"] == 30
+
+
+@pytest.mark.parametrize("dropped", [None, 100, 0])
+def test_extract_angle_parameters_full_circle_sector(dropped):
+    # the antenna starts at 180 degrees, ray 0 is the first measured one
+    ds = _ppi(azimuth=np.r_[np.arange(180.5, 360), np.arange(0.5, 180)])
+    if dropped is not None:
+        ds = ds.drop_isel(azimuth=dropped)
+    sector = util.extract_angle_parameters(ds.assign_coords(sweep_mode="sector"))
+    assert sector == util.extract_angle_parameters(ds)
+    assert _limits(sector) == [0, 360, 1.0, 1]
+    assert sector["missing_rays"] == (dropped is not None)
+
+
+def test_extract_angle_parameters_sector_edges():
+    # rays on multiples of angle_res
+    angle_dict = util.extract_angle_parameters(_sector(np.arange(7, 107) / 10))
+    assert _limits(angle_dict) == [0.7, 10.7, 0.1, 1]
+    assert angle_dict["expected_number_rays"] == 100
+
+
+@pytest.mark.parametrize(
+    "timed",
+    [np.arange(300) > 0, np.arange(300) < 2, np.arange(300) < 100],
+    ids=["first-untimed", "two-timed", "first-100-timed"],
+)
+def test_extract_angle_parameters_sector_leaves_out_rays_without_time(timed):
+    ds = _sector(np.arange(0.5, 300, 1.0))
+    ds = ds.assign_coords(time=ds.time.where(timed))
+    angle_dict = util.extract_angle_parameters(ds)
+    edges = np.flatnonzero(timed)[[0, -1]]
+    assert _limits(angle_dict) == [float(edges[0]), float(edges[1] + 1), 1.0, 1]
+
+
+@pytest.mark.parametrize("stop", [330, 360])
+def test_extract_angle_parameters_sector_after_reindex_angle(stop):
+    # the cells reindex_angle adds have no time and don't move the limits, also
+    # when they fill the circle
+    ds = _sector(np.arange(30.5, 300, 1.0))
+    out = util.reindex_angle(ds, 0, stop, 1.0, 1)
+    assert out.time.isnull().sum() == stop - 270
+    assert _limits(util.extract_angle_parameters(out)) == [30, 300, 1.0, 1]
+
+
+def test_extract_angle_parameters_sector_needs_two_measured_rays():
+    ds = _sector(np.arange(30.5, 120, 1.0))
+    ds = ds.assign_coords(time=ds.time.where(np.arange(90) == 0))
+    with pytest.raises(ValueError, match="two measured rays"):
+        util.extract_angle_parameters(ds)
+
+
+def test_extract_angle_parameters_manual_rhi():
+    elevation = np.arange(2.25, 20, 0.5)
+    rhi = model.create_sweep_dataset(sweep="RHI", elevation=elevation)
+    rhi = rhi.swap_dims({"time": "elevation"}).assign_coords(sweep_mode="manual_rhi")
+    angle_dict = util.extract_angle_parameters(rhi)
+    assert _limits(angle_dict) == [2.0, 20.0, 0.5, 1]
+    assert angle_dict["expected_number_rays"] == 36
+
+    with pytest.raises(ValueError, match="swap_dims"):
+        util.extract_angle_parameters(_sector(elevation, mode="manual_rhi"))
+
+
+@pytest.mark.parametrize(
+    "azimuth, match",
+    [
+        (np.r_[np.arange(330.5, 360), np.arange(0.5, 30)], "across north"),
+        (np.arange(-169.5, -100), "outside 0 to 360"),
+        (np.full(10, 45.0), "two measured rays"),
+    ],
+    ids=["across-north", "negative", "one-angle"],
+)
+def test_extract_angle_parameters_sector_raises(azimuth, match):
+    with pytest.raises(ValueError, match=match):
+        util.extract_angle_parameters(_sector(azimuth))
+
+
+@pytest.mark.parametrize("mode", ["vertical_pointing", b"azimuth_surveillance"])
+def test_extract_angle_parameters_unknown_sweep_mode(mode):
+    # bytes are not decoded (#554)
+    ds = _ppi().assign_coords(sweep_mode=mode)
+    with pytest.raises(ValueError, match="sweep_mode"):
+        util.extract_angle_parameters(ds)
+
+
+@pytest.mark.parametrize(
+    "name, start, stop",
+    [
+        ("cfrad.20211011_201557.188_to_20211011_201617.720_DOW8_PPI.nc", 34.0, 326.5),
+        ("cfrad.20211011_201711.345_to_20211011_201732.860_DOW8_PPI.nc", 33.5, 326.5),
+        ("cfrad.20211011_202304.515_to_20211011_202326.412_DOW8_PPI.nc", 33.5, 326.5),
+    ],
+    ids=["across-north-transition", "turning-transition", "elevation-transition"],
+)
+def test_extract_angle_parameters_real_sector(file_store, closing, name, start, stop):
+    # DOW8 sector scans from 34 to 326 degrees, clockwise; the antenna_transition
+    # rays before them move across north, back from 146 degrees, or down from 62
+    # degrees elevation
+    ds = closing(
+        xr.open_dataset(file_store.fetch(name), engine="cfradial1", group="sweep_0")
+    )
+    assert ds.sweep_mode == "sector"
+    angle_dict = util.extract_angle_parameters(ds)
+    assert _limits(angle_dict) == [start, stop, 0.5, 1]
+    expected = round((stop - start) / 0.5)
+    assert angle_dict["expected_number_rays"] == expected
+
+    out = util.reindex_angle(ds, *_limits(angle_dict))
+    assert out.sizes["azimuth"] == expected
+    assert out.time.notnull().all()
+
+
 @pytest.mark.parametrize("low", [-0.25, -0.1, 0])
 @pytest.mark.parametrize("high", [0.25, 0.1, 0])
 def test_extract_angle_parameters2(low, high):
