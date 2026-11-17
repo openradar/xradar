@@ -92,8 +92,8 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     ```bash
     sudo apt install build-essential ffmpeg libhdf5-dev libnetcdf-dev pandoc
     sudo snap install astral-uv --classic
-    uv python install 3.13
-    uv venv --python 3.13
+    uv python install 3.14
+    uv venv --python 3.14
     source .venv/bin/activate
     uv pip install -e .[dev] --no-binary=netcdf4 --no-binary=h5py
     ```
@@ -103,8 +103,8 @@ Ready to contribute? Here's how to set up `xradar` for local development.
     ```powershell
     winget install ffmpeg
     winget install uv
-    uv python install 3.13
-    uv venv --python 3.13
+    uv python install 3.14
+    uv venv --python 3.14
     .venv\Scripts\Activate.ps1
     uv pip install -e .[dev]
     ```

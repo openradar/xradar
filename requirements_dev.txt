@@ -11,6 +11,7 @@ fsspec
 ruff
 nbconvert
 notebook
+jupytext
 open_radar_data>=0.9.0
 boto3
 cartopy

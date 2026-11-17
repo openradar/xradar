@@ -107,7 +107,6 @@ def _apply_reindex_coord(ds, reindex_coord):
     if not reindex_coord:
         return ds
     if (angle := reindex_coord.get("angle")) is not None:
-        ds = ds.pipe(util.remove_duplicate_rays)
         ds = ds.pipe(util.reindex_angle, **angle)
         ds = ds.pipe(util.ipol_time, **angle)
     if (rng := reindex_coord.get("range")) is not None:
