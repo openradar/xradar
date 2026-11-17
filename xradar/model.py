@@ -755,6 +755,18 @@ def get_nyquist_velocity_attrs(units="m s-1"):
     return nyquist_attrs
 
 
+#: The per-moment ``coordinates`` attribute every reader writes.
+MOMENT_COORDINATES = "elevation azimuth range latitude longitude altitude time"
+
+
+def _cf_moment_attrs(moment):
+    """CF attrs of a known moment, in the fixed order of ``moment_attrs``;
+    ``{}`` for a name the model does not know. Shared by the eager readers and
+    the virtual parsers."""
+    mapping = sweep_vars_mapping.get(moment) or {}
+    return {key: mapping[key] for key in moment_attrs if key in mapping}
+
+
 def get_unambiguous_range_attrs(units="meters"):
     unambiguous_range_attrs = {
         "long_name": "unambiguous_range",

@@ -210,6 +210,12 @@ def test_get_sweep_dataarray():
     assert attrs["units"] == "dBZ"
 
 
+def test_cf_moment_attrs_follow_moment_attrs():
+    # eager readers and virtual parsers share this order
+    assert tuple(model._cf_moment_attrs("DBZH")) == model.moment_attrs
+    assert model._cf_moment_attrs("NOT_A_MOMENT") == {}
+
+
 def test_moment_attr_keys_keep_the_same_order_across_hash_seeds():
     code = (
         "from xradar.model import moment_attrs, sweep_vars_mapping\n"

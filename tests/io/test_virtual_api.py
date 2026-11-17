@@ -1,0 +1,215 @@
+#!/usr/bin/env python
+# Copyright (c) 2026, openradar developers.
+# Distributed under the MIT License. See LICENSE for more info.
+
+"""The public surface store builders rely on.
+
+raw2zarr deletes its own ``parsers/`` package once xradar ships these, so
+every name below is a contract: renaming or removing one breaks a
+downstream builder. Requires the ``xradar[virtual]`` extra.
+"""
+
+import importlib
+
+import numpy as np
+import pytest
+
+from xradar.io.virtual._checks import MIN_ZARR_BUILD  # numpy only
+
+pytest.importorskip("zarr", minversion=MIN_ZARR_BUILD)  # builds stores
+pytest.importorskip("virtualizarr")
+
+#: module -> public names a store builder imports from it
+PUBLIC = {
+    "xradar.io.virtual": (
+        "IrisParser",
+        "IrisSweepCodec",
+        "azimuth_sort_order",
+    ),
+    "xradar.io.virtual.manifest": (
+        "MOMENT_COORDINATES",
+        "FM301_STRING_DEFAULTS",
+        "variable_to_inline_manifest_array",
+        "inline_variable",
+        "inline_scalar",
+        "inline_root",
+        "fetch_bytes",
+    ),
+    "xradar.io.virtual.iris.format": (
+        "RECORD_SIZE",
+        "IngestHeader",
+        "read_volume",
+        "range_centers",
+        "range_attrs",
+        "azimuth_midpoints",
+        "sweep_words",
+        "walk_sweep",
+        "decode_sweep_moment",
+    ),
+    "xradar.io.backends.iris": ("iris_mapping",),
+}
+
+
+@pytest.mark.parametrize("module", sorted(PUBLIC))
+def test_public_names_importable(module):
+    mod = importlib.import_module(module)
+    missing = [name for name in PUBLIC[module] if not hasattr(mod, name)]
+    assert not missing, f"{module} lost public names {missing}"
+    exported = getattr(mod, "__all__", None)
+    if exported is not None and module != "xradar.io.backends.iris":
+        unlisted = [n for n in PUBLIC[module] if n not in exported]
+        assert not unlisted, f"{module}.__all__ misses {unlisted}"
+
+
+def test_one_sort_rule_everywhere():
+    """Builders and both codecs share ONE permutation function."""
+    from xradar.io.virtual import azimuth_sort_order
+    from xradar.io.virtual.iris import format as iris_format
+
+    assert iris_format.azimuth_sort_order is azimuth_sort_order
+    assert azimuth_sort_order([1.0, 0.0, 1.0, np.nan, 0.0]).tolist() == [1, 4, 0, 2, 3]
+
+
+def _inline_values(arr):
+    """The inline chunk's values, read through the array's dtype."""
+    (data,) = arr.manifest._inlined.values()
+    dtype = arr.metadata.data_type.to_native_dtype()
+    return np.frombuffer(data, dtype=dtype).reshape(arr.shape)
+
+
+def test_inline_root_is_the_eager_root():
+    from xradar.io.virtual.manifest import inline_root
+
+    # int64 epoch ms of the written rays (padded rays are not passed)
+    times = [
+        np.array([1_000, 3_000], dtype=np.int64),
+        np.array([2_000, 61_500], dtype=np.int64),
+    ]
+    arrays, attrs = inline_root(
+        times, np.float64(10.5), np.float64(-75.0), np.float64(120.0), {"x": 1}
+    )
+    assert sorted(arrays) == sorted(
+        [
+            "volume_number",
+            "platform_type",
+            "instrument_type",
+            "time_coverage_start",
+            "time_coverage_end",
+            "latitude",
+            "longitude",
+            "altitude",
+        ]
+    )
+    start = _inline_values(arrays["time_coverage_start"]).item()
+    assert start == "1970-01-01T00:00:01Z"
+    assert _inline_values(arrays["time_coverage_end"]).item() == "1970-01-01T00:01:01Z"
+    assert attrs["coordinates"] == "latitude longitude altitude"
+    assert attrs["comment"] == "im/exported using xradar"
+    assert attrs["x"] == 1
+    lat = arrays["latitude"].metadata.attributes
+    assert lat["standard_name"] == "latitude" and lat["units"] == "degrees_north"
+
+
+def test_inline_root_needs_ray_times():
+    from xradar.io.virtual.manifest import inline_root
+
+    with pytest.raises(ValueError, match="no ray times"):
+        inline_root([np.array([], dtype=np.int64)], 0.0, 0.0, 0.0, {})
+
+
+def test_json_safe_and_endianness_helpers():
+    """Attrs reach zarr.json as plain JSON; inline chunks are little-endian."""
+    from xradar.io.virtual.manifest import native_endian_bytes, to_json_safe
+
+    value = {"a": np.float32(1.5), "b": [np.int64(2), (np.bool_(True),)]}
+    assert to_json_safe(value) == {"a": 1.5, "b": [2, [True]]}
+    assert to_json_safe(np.arange(3, dtype="uint8")) == [0, 1, 2]
+    one_byte, endian = native_endian_bytes(np.arange(3, dtype="uint8"))
+    assert endian is None and one_byte.dtype == np.uint8
+    big = np.arange(3, dtype=">u2")
+    little, endian = native_endian_bytes(big)
+    assert endian == "little" and little.dtype.byteorder in ("<", "=")
+    np.testing.assert_array_equal(little, big)
+
+
+def test_inline_variables_round_trip_through_zarr():
+    """Inline uint8 and datetime64 variables read back exactly; datetimes
+    carry CF units so xarray decodes them."""
+    import xarray as xr
+    from virtualizarr.manifests import ManifestGroup, ManifestStore
+
+    from xradar.io.virtual.manifest import inline_variable
+
+    small = np.array([1, 2, 3], dtype="uint8")
+    times = np.array(["2026-01-15T00:01:09", "2026-01-15T00:01:10"], "datetime64[ms]")
+    group = ManifestGroup(
+        arrays={
+            "small": inline_variable(("x",), small, {}),
+            "times": inline_variable(("t",), times, {}),
+        },
+        attributes={},
+    )
+    times_attrs = group.arrays["times"].metadata.attributes
+    assert times_attrs["units"] == "ms since 1970-01-01T00:00:00"
+    assert times_attrs["calendar"] == "proleptic_gregorian"
+    assert group.arrays["small"].metadata.to_dict()["codecs"][0] == {"name": "bytes"}
+    ds = xr.open_dataset(
+        ManifestStore(group=group), engine="zarr", consolidated=False, zarr_format=3
+    )
+    np.testing.assert_array_equal(ds["small"].values, small)
+    np.testing.assert_array_equal(ds["times"].values, times.astype("datetime64[ns]"))
+
+
+#: any length, non-ASCII and a 4-byte character
+_STRINGS = ["short", "x" * 500, "ñandú — \U0002070e"]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.asarray(_STRINGS),
+        np.asarray(_STRINGS, dtype=object),
+        np.asarray(_STRINGS, dtype=np.dtypes.StringDType()),
+    ],
+    ids=["fixed", "object", "StringDType"],
+)
+def test_inline_strings_read_back_fixed_width(values):
+    """Strings are stored fixed-width and read back as ``<U``, whatever the
+    input dtype; StringDType (which breaks ``where``/``fillna`` and the
+    CfRadial2 export) never reaches the reader."""
+    import xarray as xr
+    from virtualizarr.manifests import ManifestGroup, ManifestStore
+
+    from xradar.io.virtual.manifest import inline_variable
+
+    group = ManifestGroup(arrays={"s": inline_variable(("n",), values, {})})
+    with xr.open_dataset(
+        ManifestStore(group=group), engine="zarr", consolidated=False, zarr_format=3
+    ) as ds:
+        assert ds["s"].dtype.kind == "U"
+        assert ds["s"].values.tolist() == _STRINGS
+
+
+def test_short_strings_share_one_width():
+    """Short strings share one stored width, so virtual arrays whose
+    sweep_mode differs ("sector", "azimuth_surveillance") still
+    concatenate."""
+    import xarray as xr
+
+    from xradar.io.virtual.manifest import inline_variable
+
+    ppi, sector = (
+        xr.DataArray(inline_variable(("n",), np.asarray([mode]), {}), dims="n")
+        for mode in ("azimuth_surveillance", "sector")
+    )
+    assert xr.concat([ppi, sector], dim="n").shape == (2,)
+
+
+@pytest.mark.parametrize("values", [[1, 2], ["a", None]], ids=["int", "None"])
+def test_inline_object_arrays_must_hold_strings(values):
+    """An object array of non-strings raises instead of turning into text
+    ("None", "nan")."""
+    from xradar.io.virtual.manifest import inline_variable
+
+    with pytest.raises(TypeError, match="must hold str"):
+        inline_variable(("n",), np.asarray(values, dtype=object), {})

@@ -178,6 +178,92 @@ With {func}`~xradar.io.backends.iris.open_iris_datatree` all groups (eg. ``1``)
 are extracted. From that the ``root`` group is processed. Everything is finally added as
 ParentNodes and ChildNodes to a {py:class}`xarray:xarray.DataTree`.
 
+### Virtual byte-range access
+
+{class}`~xradar.io.virtual.IrisParser` (requires the ``xradar[virtual]``
+extra, Python 3.12+) indexes a RAW volume into a VirtualiZarr ``ManifestStore`` of
+byte-range references instead of decoding it: one zarr chunk = one whole
+sweep (rays are RLE-compressed with all data types interleaved ray-major, so
+no smaller unit is both contiguous and independently decodable). Every
+moment of a sweep references the same byte span; the decode-only zarr v3
+codec ``xradar-iris-sweep`` — registered as a ``zarr.codecs`` entry point, so
+**reading** a virtual store needs only ``xradar`` + ``zarr>=3.1.6`` (building
+one needs ``zarr>=3.3``) — demultiplexes one data type out of the span at
+read time. Its configuration is:
+
+| key                | meaning                                              |
+|--------------------|------------------------------------------------------|
+| `moment_index`     | this data type's slot in the ray-major interleave    |
+| `ndatatypes`       | interleave stride (counts every type incl. `DB_XHDR`)|
+| `sort_rays`        | reorder rows to azimuth order at decode (store-builder flag; the parser always writes `false`) |
+| `pad_missing_rays` | keep canonical slots for dropped rays (fill rows)    |
+
+Most data types are linear and decode through CF `scale_factor` /
+`add_offset`. The others (the signed types, square-root types such as
+`RHOHV`, the logarithmic `KDP`, the 16-bit IRIS floats of `RAINRATE2` and
+`FLIQUID2`, and the 1-byte velocity and width, which scale by the volume's
+nyquist) also carry the decode-only codec `xradar-iris-decode`. It is listed
+before `xradar-iris-sweep`, so on read it runs on the words that codec gives,
+with this backend's own decoder: the values are `float32` and identical to
+`open_iris_datatree`. Its configuration is `sigmet_data_type` (the Sigmet
+type name), plus the volume values the decoder takes: `wavelength` in cm for
+`DB_KDP`, the single-PRF `nyquist` in m/s for `DB_VEL` and `DB_WIDTH`, and
+`multi_prf_mode_flag` for `DB_VEL`. Arrays of volumes that differ in these
+values do not concatenate, so a store builder cannot decode one volume with
+another's wavelength or nyquist.
+
+The parser runs this backend's own code wherever the job is the same: the
+headers come from `IrisRawFile(..., loaddata=False)`, and the moment names
+(`iris_mapping`; a second type mapping to an already used name, e.g.
+`DB_DBZ` + `DB_DBZ2`, keeps its Sigmet name), CF scaling and no-data fill
+(`SIGMET_DATA_TYPES`), the FM301 `sweep_mode` (`sector` / `rhi` /
+`azimuth_surveillance`), nyquist velocity, range gates and their attributes,
+beam-center azimuths and elevations, CF attributes
+({mod}`xradar.model`) and the root group (source, stripped scan and site
+names, task description) are the eager reader's. The parser emits pure
+pointers: rays and per-ray coordinates keep the file's order (a sweep whose
+first ray straddles north differs from the eager reader by a cyclic roll,
+values identical). Ordering rays by azimuth is a store-builder decision: it
+writes sorted coordinates with {func}`xradar.io.virtual.azimuth_sort_order`
+and sets `sort_rays: true`, which the codec honors with the same
+permutation.
+
+Anything that is not a well-formed RAW file (partial records, wrong
+structure identifiers, a truncated volume) raises `ValueError`. Documented
+differences from `open_iris_datatree`:
+
+- RHI tasks are refused (`NotImplementedError`): the eager reader lays them
+  out as `(elevation, range)`, the parser builds `(azimuth, range)` sweeps.
+- Tasks with variable range bin spacing are refused (`NotImplementedError`):
+  their gate positions are not a constant step, and the parser would
+  otherwise invent an evenly spaced `range`.
+- The root carries no `sweep_group_name` / `sweep_fixed_angle` (store
+  builders assemble the volume-level index themselves).
+- HydroClass `flag_masks` / `flag_values` read back as integer lists, not
+  `uint8`/`uint16` arrays: zarr attributes carry no dtype. Cast them to the
+  variable's dtype before writing CF-strict netCDF.
+- Moments with CF scaling decode to `float64`, where `open_iris_datatree`
+  gives `float32`: zarr attributes carry no dtype, so `scale_factor` and
+  `add_offset` read back as Python floats and xarray decodes to their type.
+  The values equal the eager ones to within float32 rounding.
+- Each sweep also holds `nyquist_velocity` (FM301; the velocity's nyquist,
+  multi-PRF factor included) and its own `latitude` / `longitude` /
+  `altitude`. Each moment names its Sigmet type in `sigmet_data_type`, and a
+  moment this backend has no decoder for (and no class flags, as HydroClass
+  without classifiers) says in `comment` that it holds raw Sigmet words.
+- String variables (`sweep_mode`, `time_coverage_start`, ...) are stored
+  fixed-width, at least 32 characters, so volumes whose `sweep_mode`
+  differs still concatenate. Lazily they show `<U32`; loaded, each value has
+  its own width as in `open_iris_datatree` (`<U20` for
+  `azimuth_surveillance`).
+- The types decoded by `xradar-iris-decode` have no raw words to read:
+  `mask_and_scale=False` still gives their physical values.
+- With `pad_missing_rays`, the padded rows of the signed types and of
+  `FLIQUID2` read 0.0, a valid value of these types (every other type reads
+  NaN there); the slot's NaN `azimuth` and NaT `time` mark them.
+
+See the {doc}`notebooks/IRIS_Virtual` notebook for a full walkthrough.
+
 
 ## NexradLevel2
 

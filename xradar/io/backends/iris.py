@@ -60,16 +60,16 @@ from xarray.core.utils import FrozenDict
 from xarray.core.variable import Variable
 
 from ...model import (
+    MOMENT_COORDINATES,
+    _cf_moment_attrs,
     get_altitude_attrs,
     get_azimuth_attrs,
     get_elevation_attrs,
     get_latitude_attrs,
     get_longitude_attrs,
     get_range_attrs,
-    moment_attrs,
     radar_calibration_subgroup,
     radar_parameters_subgroup,
-    sweep_vars_mapping,
 )
 from .common import (
     LOCK_PARAM_DOC,
@@ -178,8 +178,21 @@ def decode_bin_angle(bin_angle, mode=None):
     return 360.0 * bin_angle / 2 ** (mode * 8)
 
 
+def _signed_elevation(angle):
+    """Elevation in signed degrees: BIN2 angles above 180 degrees are below
+    the horizon (-0.05, not 359.95, wradlib#560)."""
+    return np.where(angle > 180, angle - 360, angle)
+
+
+def _elevation_centers(start, stop):
+    """Beam center elevation of each ray from its start and stop elevation,
+    in signed degrees. Shared with the virtual parser."""
+    return (_signed_elevation(start) + _signed_elevation(stop)) / 2.0
+
+
 def _azimuth_centers(start, stop):
     """Beam center azimuth of each ray from its start and stop azimuth.
+    Shared with the virtual parser.
 
     Works for either rotation direction (sector sweeps alternate): a ray
     across north is unwrapped the shorter way round.
@@ -357,6 +370,27 @@ def decode_sqi(data, **kwargs):
     return _masked(np.sqrt(values), no_data)
 
 
+#: decoder -> the volume values it takes as keyword arguments, besides its
+#: ``fkw``: the wavelength (cm), the single-PRF nyquist (m/s) and the
+#: multi-PRF mode flag. Shared with the virtual ``xradar-iris-decode`` codec.
+_VOLUME_KWARGS = {
+    decode_kdp: ("wavelength",),
+    decode_vel: ("nyquist", "multi_prf_mode_flag"),
+    decode_width: ("nyquist",),
+}
+
+
+def _apply_decoder(prod, data, **volume):
+    """Decode ``data``, words already viewed through the type's ``dtype``, with
+    the type's decoder: its ``fkw``, plus the ``volume`` values it takes
+    (``_VOLUME_KWARGS``). Shared by the readers and the virtual
+    ``xradar-iris-decode`` codec."""
+    func = prod["func"]
+    kwargs = dict(prod.get("fkw") or {})
+    kwargs.update({key: volume[key] for key in _VOLUME_KWARGS.get(func, ())})
+    return func(data, **kwargs)
+
+
 def decode_time(data):
     """Decode `YMDS_TIME` into datetime object."""
     time = _unpack_dictionary(data, YMDS_TIME)
@@ -530,6 +564,13 @@ def _unpack_dictionary(buffer, dictionary, rawdata=False, byte_order="<"):
     return data
 
 
+def _data_type_dict(code):
+    """``SIGMET_DATA_TYPES`` entry for ``code``; unknown codes get the
+    ``DB_UNKNOWN_{code}`` name and no decoder (shared with the virtual
+    parser)."""
+    return SIGMET_DATA_TYPES.get(code, {"name": f"DB_UNKNOWN_{code}", "func": None})
+
+
 def _moment_names(type_names):
     """CfRadial moment name per Sigmet data type, in order.
 
@@ -581,7 +622,7 @@ def _range_centers(task_range_info):
 
 def _range_attrs(task_range_info):
     """CF ``range`` attributes in metres from an IRIS ``task_range_info``,
-    whose range fields are in cm (#525)."""
+    whose range fields are in cm (#525). Shared with the virtual parser."""
     attrs = get_range_attrs()
     if task_range_info["variable_range_bin_spacing_flag"]:
         attrs["spacing_is_constant"] = "false"
@@ -590,6 +631,30 @@ def _range_attrs(task_range_info):
         attrs["spacing_is_constant"] = "true"
     attrs["meters_to_center_of_first_gate"] = _first_bin_cm(task_range_info) / 1e2
     return attrs
+
+
+def _root_attrs(product_hdr, ingest_header):
+    """Volume attrs from the IRIS product and ingest headers (shared with
+    the virtual parser): source, stripped scan/instrument names, the task
+    description as comment, and the RHI elevation limits."""
+    task_conf = ingest_header["task_configuration"]
+    scan_info = task_conf["task_scan_info"]
+    attributes = {}
+    if scan_info["antenna_scan_mode"] == 2:
+        tsi = scan_info["task_type_scan_info"]
+        attributes.update(
+            {
+                "elevation_lower_limit": tsi["lower_elevation_limit"],
+                "elevation_upper_limit": tsi["upper_elevation_limit"],
+            }
+        )
+    attributes["source"] = "Sigmet"
+    attributes["scan_name"] = product_hdr["product_configuration"]["task_name"].strip()
+    attributes["instrument_name"] = ingest_header["ingest_configuration"][
+        "site_name"
+    ].strip()
+    attributes["comment"] = task_conf["task_end_info"]["task_description"]
+    return attributes
 
 
 def _data_types_from_dsp_mask(words):
@@ -2784,6 +2849,23 @@ def hclass_flag_attrs(identifiers, nbytes=1):
     }
 
 
+def _moment_cf_attrs(type_name, echo_class_identifiers):
+    """CF attrs of one IRIS data type, shared by the eager and the virtual
+    reader: the attrs of its mapped moment (also when a colliding type keeps
+    its Sigmet name: DB_DBZ2 next to DB_DBZ is still reflectivity), plus the
+    HydroClass flag attrs for ``DB_HCLASS``/``DB_HCLASS2``, built from the
+    task_end_info ``echo_class_identifiers``."""
+    attrs = _cf_moment_attrs(iris_mapping.get(type_name, type_name))
+    if type_name in ("DB_HCLASS", "DB_HCLASS2"):
+        attrs.update(
+            hclass_flag_attrs(
+                bytearray(echo_class_identifiers),
+                nbytes=1 if type_name == "DB_HCLASS" else 2,
+            )
+        )
+    return attrs
+
+
 PRODUCT_DATA_TYPE_CODES = OrderedDict(
     [
         (0, {"name": "NULL", "struct": SPARE_PSI_STRUCT}),
@@ -2973,10 +3055,7 @@ class IrisIngestHeader(IrisHeaderBase):
     @property
     def data_types_dict(self):
         """Returns list of data type dictionaries."""
-        return [
-            SIGMET_DATA_TYPES.get(i, {"name": f"DB_UNKNOWN_{i}", "func": None})
-            for i in self._data_types_numbers
-        ]
+        return [_data_type_dict(i) for i in self._data_types_numbers]
 
     @property
     def data_types_count(self):
@@ -3123,9 +3202,7 @@ class IrisIngestDataHeader(IrisHeaderBase):
     @property
     def data_types_dict(self):
         """Returns list of data type dictionaries."""
-        i = self._data_types_numbers
-
-        return SIGMET_DATA_TYPES.get(i, {"name": f"DB_UNKNOWN_{i}", "func": None})
+        return _data_type_dict(self._data_types_numbers)
 
     @property
     def data_types(self):
@@ -3362,12 +3439,7 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
         """
         if self._rawdata:
             return data
-        kw = {}
         if prod["func"]:
-            try:
-                kw.update(prod["fkw"])
-            except KeyError:
-                pass
             # this doesn't work for ingest data files
             # if get_dtype_size(prod['dtype']) == 1:
             #    dtype = '(2,) {0}'.format(prod['dtype'])
@@ -3379,22 +3451,20 @@ class IrisIngestDataFile(IrisFile, IrisIngestDataHeader):
                 data = data.view(dtype).reshape(rays, -1)[:, :bins]
             except ValueError:
                 data = data.view(dtype)
-            if prod["func"] in [decode_vel, decode_width, decode_kdp]:
+            volume = {}
+            if prod["func"] in _VOLUME_KWARGS:
                 # ingest data files take wavelength and PRF from the task
                 # configuration (RAW products: product_end)
                 task = self.ingest_header["task_configuration"]
                 wavelength = task["task_misc_info"]["wavelength"]
-                if prod["func"] == decode_kdp:
-                    # get wavelength in cm
-                    kw.update({"wavelength": wavelength / 100})
-                    return prod["func"](data, **kw)
-                dsp_info = task["task_dsp_info"]
-                kw.update(
-                    nyquist=_nyquist(wavelength, dsp_info["prf"]),
-                    multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
-                )
-
-            return prod["func"](data, **kw)
+                volume["wavelength"] = wavelength / 100
+                if prod["func"] is not decode_kdp:
+                    dsp_info = task["task_dsp_info"]
+                    volume.update(
+                        nyquist=_nyquist(wavelength, dsp_info["prf"]),
+                        multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
+                    )
+            return _apply_decoder(prod, data, **volume)
         else:
             return data
 
@@ -3866,12 +3936,8 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
             dec_data = self.decode_data(raw_data[:, :4], BIN2)
             azi_start = dec_data[:, 0]
             azi_stop = dec_data[:, 2]
-            # correct elevation for negative angles
-            # see https://github.com/wradlib/wradlib/issues/560
-            ele_start = dec_data[:, 1]
-            ele_start[ele_start > 180] -= 360
-            ele_stop = dec_data[:, 3]
-            ele_stop[ele_stop > 180] -= 360
+            ele_start = _signed_elevation(dec_data[:, 1])
+            ele_stop = _signed_elevation(dec_data[:, 3])
 
             if self.rawdata:
                 # raw BIN2 counts, not degrees: keep the previous arithmetic
@@ -3883,7 +3949,8 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 az[az >= 360] -= 360
             else:
                 az = _azimuth_centers(azi_start, azi_stop)
-            el = (ele_start + ele_stop) / 2.0
+            # from the unsigned values: signing twice would shift raw counts twice
+            el = _elevation_centers(dec_data[:, 1], dec_data[:, 3])
 
             sweep_data["azi_start"] = azi_start
             sweep_data["azi_stop"] = azi_stop
@@ -3931,12 +3998,7 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
         """
         if self._rawdata:
             return data
-        kw = {}
         if prod["func"]:
-            try:
-                kw.update(prod["fkw"])
-            except KeyError:
-                pass
             if get_dtype_size(prod["dtype"]) == 1:
                 dtype = f"(2,) {prod['dtype']}"
             else:
@@ -3946,21 +4008,18 @@ class IrisRawFile(IrisRecordFile, IrisIngestHeader):
                 data = data.view(dtype).reshape(rays, -1)[:, :bins]
             except ValueError:
                 data = data.view(dtype)
-            if prod["func"] in [decode_vel, decode_width, decode_kdp]:
-                wavelength = self.product_hdr["product_end"]["wavelength"]
-                if prod["func"] == decode_kdp:
-                    kw.update({"wavelength": wavelength / 100})
-                    return prod["func"](data, **kw)
-
-                dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
-                kw.update(
-                    nyquist=_nyquist(
-                        wavelength, self.product_hdr["product_end"]["prf"]
-                    ),
-                    multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
-                )
-
-            return prod["func"](data, **kw)
+            volume = {}
+            if prod["func"] in _VOLUME_KWARGS:
+                product_end = self.product_hdr["product_end"]
+                wavelength = product_end["wavelength"]
+                volume["wavelength"] = wavelength / 100
+                if prod["func"] is not decode_kdp:
+                    dsp_info = self.ingest_header["task_configuration"]["task_dsp_info"]
+                    volume.update(
+                        nyquist=_nyquist(wavelength, product_end["prf"]),
+                        multi_prf_mode_flag=dsp_info["multi_prf_mode_flag"],
+                    )
+            return _apply_decoder(prod, data, **volume)
         elif data.dtype == np.int16 and get_dtype_size(prod.get("dtype", "int16")) == 1:
             # 8-bit types without decoding function (e.g. DB_HCLASS): two
             # range bins per 16-bit word, like the scaled 8-bit types above
@@ -4200,23 +4259,9 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
 
         if mname is None:
             mname = iris_mapping.get(name, name)
-        # CF attrs of the mapped moment, also when a colliding type keeps its
-        # Sigmet name (DB_DBZ next to DB_DBZ2 is still reflectivity)
-        mapping = sweep_vars_mapping.get(iris_mapping.get(name, name), {})
-        attrs = {key: mapping[key] for key in moment_attrs if key in mapping}
-        if name in ["DB_HCLASS", "DB_HCLASS2"]:
-            task_end_info = self.root.ingest_header["task_configuration"][
-                "task_end_info"
-            ]
-            attrs.update(
-                hclass_flag_attrs(
-                    bytearray(task_end_info["echo_class_identifiers"]),
-                    nbytes=1 if name == "DB_HCLASS" else 2,
-                )
-            )
-        attrs["coordinates"] = (
-            "elevation azimuth range latitude longitude altitude time"
-        )
+        task_end_info = self.root.ingest_header["task_configuration"]["task_end_info"]
+        attrs = _moment_cf_attrs(name, task_end_info["echo_class_identifiers"])
+        attrs["coordinates"] = MOMENT_COORDINATES
         return mname, Variable((dim, "range"), data, attrs, encoding)
 
     def open_store_coordinates(self, var):
@@ -4296,28 +4341,7 @@ class IrisStore(_ManagedStoreMixin, AbstractDataStore):
         )
 
     def get_attrs(self):
-        attributes = {}
-        # RHI limits
-        if self.root.scan_mode == 2:
-            tsi = self.root.ingest_header["task_configuration"]["task_scan_info"][
-                "task_type_scan_info"
-            ]
-            ll = tsi["lower_elevation_limit"]
-            ul = tsi["upper_elevation_limit"]
-            attributes.update(
-                {"elevation_lower_limit": ll, "elevation_upper_limit": ul}
-            )
-        attributes["source"] = "Sigmet"
-        attributes["scan_name"] = self.root.product_hdr["product_configuration"][
-            "task_name"
-        ].strip()
-        attributes["instrument_name"] = self.root.ingest_header["ingest_configuration"][
-            "site_name"
-        ].strip()
-        attributes["comment"] = self.root.ingest_header["task_configuration"][
-            "task_end_info"
-        ]["task_description"]
-        return FrozenDict(attributes)
+        return FrozenDict(_root_attrs(self.root.product_hdr, self.root.ingest_header))
 
     def _task_metadata(self):
         """Values of the task configuration with their xradar names; 0 is an
