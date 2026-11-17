@@ -20,8 +20,10 @@ __all__ = [
     "MAX_CELLS",
     "MAX_SPAN_CELLS",
     "MIN_ZARR",
+    "MIN_ZARR_BUILD",
     "check_output",
     "plain",
+    "require_zarr",
     "zarr_supported",
 ]
 
@@ -29,15 +31,28 @@ __all__ = [
 #: (3.1.6 is also virtualizarr's floor). zarr v2 has no ``zarr.abc`` codecs.
 MIN_ZARR = "3.1.6"
 
+#: The oldest zarr that builds virtual stores: zarr 3.1.6 to 3.2 warn, each
+#: time a store's metadata is written, that the stores' fixed-width strings
+#: (``fixed_length_utf32``) have no zarr v3 specification.
+MIN_ZARR_BUILD = "3.3"
 
-def zarr_supported(version: str) -> bool:
-    """Whether a zarr version can run the virtual codecs (same rules as
-    ``pytest.importorskip(minversion=...)``: pre-releases of 3.1.6 are
-    older than 3.1.6)."""
+
+def zarr_supported(version: str, minimum: str = MIN_ZARR) -> bool:
+    """Whether zarr ``version`` is at least ``minimum``; a pre-release sorts
+    before its release, as in ``pytest.importorskip(minversion=...)``."""
     try:
-        return Version(version) >= Version(MIN_ZARR)
+        return Version(version) >= Version(minimum)
     except InvalidVersion:
         return False
+
+
+def require_zarr(found: str, minimum: str, purpose: str) -> None:
+    """Raise ImportError (naming zarr) unless zarr ``found`` is at least
+    ``minimum``; ``purpose`` says what needs it."""
+    if not zarr_supported(found, minimum):
+        raise ImportError(
+            f"{purpose} need zarr>={minimum}; found zarr {found}", name="zarr"
+        )
 
 
 #: Upper bound on one decoded chunk (rays x gates). Real sweeps stay below

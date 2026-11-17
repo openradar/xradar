@@ -14,7 +14,9 @@ import importlib
 import numpy as np
 import pytest
 
-pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only
+from xradar.io.virtual._checks import MIN_ZARR_BUILD  # numpy only
+
+pytest.importorskip("zarr", minversion=MIN_ZARR_BUILD)  # builds stores
 pytest.importorskip("virtualizarr")
 
 #: module -> public names a store builder imports from it

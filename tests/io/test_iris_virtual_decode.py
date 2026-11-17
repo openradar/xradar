@@ -13,7 +13,9 @@ SQI end to end, in the parity tests of ``test_iris_virtual_parser.py``.
 import numpy as np
 import pytest
 
-zarr = pytest.importorskip("zarr", minversion="3.1.6")
+from xradar.io.virtual._checks import MIN_ZARR  # numpy only
+
+zarr = pytest.importorskip("zarr", minversion=MIN_ZARR)
 
 from zarr.core.buffer import default_buffer_prototype  # noqa: E402
 

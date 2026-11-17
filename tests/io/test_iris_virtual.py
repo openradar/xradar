@@ -20,7 +20,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
-pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only; numpy-1 cells skip
+from xradar.io.virtual._checks import MIN_ZARR, MIN_ZARR_BUILD  # numpy only
+
+pytest.importorskip("zarr", minversion=MIN_ZARR)  # zarr v3 only; numpy-1 cells skip
 
 import xradar  # resolves the package location for the subprocess test
 from xradar.io.backends.iris import SIGMET_DATA_TYPES, decode_array
@@ -534,38 +536,44 @@ def test_zarr_v2_is_refused_with_a_clear_error():
         cwd=Path(xradar.__file__).parents[1],
         timeout=120,
     )
-    assert "need zarr>=3.1.6 (zarr v3); found zarr 2.18.7" in result.stdout
+    assert "xradar's codecs need zarr>=3.1.6; found zarr 2.18.7" in result.stdout
 
 
 @pytest.mark.parametrize(
-    "version, supported",
+    "version, minimum, supported",
     [
-        ("3.1.6", True),
-        ("3.1.10", True),
-        ("3.10.0", True),
-        ("3.2.1.dev3+g1a2b", True),
-        ("4.0.0", True),
-        ("3.1.6rc1", False),  # a pre-release is older, as for importorskip
-        ("3.1.5", False),
-        ("2.18.7", False),
-        ("not-a-version", False),
+        ("3.1.6", MIN_ZARR, True),
+        ("3.1.10", MIN_ZARR, True),
+        ("3.10.0", MIN_ZARR, True),
+        ("3.2.1.dev3+g1a2b", MIN_ZARR, True),
+        ("4.0.0", MIN_ZARR, True),
+        ("3.1.6rc1", MIN_ZARR, False),  # a pre-release is older, as importorskip
+        ("3.1.5", MIN_ZARR, False),
+        ("2.18.7", MIN_ZARR, False),
+        ("not-a-version", MIN_ZARR, False),
+        ("3.2.1", MIN_ZARR_BUILD, False),  # building needs a newer zarr
+        ("3.3.0.dev1", MIN_ZARR_BUILD, False),
+        ("3.3.0", MIN_ZARR_BUILD, True),
     ],
 )
-def test_zarr_version_rule(version, supported):
-    """One version rule for the codec guard and the lazy exports, with the
-    same pre-release ordering as ``pytest.importorskip(minversion=...)``."""
+def test_zarr_version_rule(version, minimum, supported):
+    """One version rule for the codec and builder guards and the lazy
+    exports, with the pre-release ordering of
+    ``pytest.importorskip(minversion=...)``."""
     from xradar.io.virtual._checks import zarr_supported
 
-    assert zarr_supported(version) is supported
+    assert zarr_supported(version, minimum) is supported
 
 
-def _run_with_old_zarr(body: str) -> str:
-    """Run ``body`` in a fresh interpreter where zarr reports 3.1.5."""
+def _run_with_zarr(body: str, zarr_version: str) -> str:
+    """Run ``body`` in a fresh interpreter where zarr reports
+    ``zarr_version``."""
     code = (
         "import importlib.metadata as md, zarr\n"
-        "zarr.__version__ = '3.1.5'\n"
+        f"zarr.__version__ = {zarr_version!r}\n"
         "real = md.version\n"
-        "md.version = lambda name: '3.1.5' if name == 'zarr' else real(name)\n" + body
+        f"md.version = lambda name: {zarr_version!r} if name == 'zarr' "
+        "else real(name)\n" + body
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -582,7 +590,7 @@ def test_old_zarr_message_and_star_import():
     """On a too-old zarr the lazy export says what is found and needed
     (never that zarr "is not importable"), and a star import, which only
     lists installed exports, still works."""
-    out = _run_with_old_zarr(
+    out = _run_with_zarr(
         "import xradar.io.virtual as v\n"
         "try:\n"
         "    v.IrisSweepCodec\n"
@@ -590,11 +598,29 @@ def test_old_zarr_message_and_star_import():
         "    print(err)\n"
         "print('IrisSweepCodec' in v.__all__)\n"
         "exec('from xradar.io.virtual import *')\n"
-        "print('star ok')\n"
+        "print('star ok')\n",
+        zarr_version="3.1.5",
     )
-    assert "need zarr>=3.1.6 (zarr v3); found zarr 3.1.5" in out
+    assert "xradar's codecs need zarr>=3.1.6; found zarr 3.1.5" in out
     assert "not importable" not in out
     assert "False\nstar ok" in out
+
+
+def test_zarr_too_old_to_build_still_reads():
+    """On a zarr too old to build stores (``MIN_ZARR_BUILD``) the codecs are
+    exported but the parser is not, and building says what it needs."""
+    pytest.importorskip("virtualizarr")  # else manifest fails on that first
+    out = _run_with_zarr(
+        "import xradar.io.virtual as v\n"
+        "print(sorted(set(v.__all__) & {'IrisParser', 'IrisSweepCodec'}))\n"
+        "try:\n"
+        "    import xradar.io.virtual.manifest\n"
+        "except ImportError as err:\n"
+        "    print(err)\n",
+        zarr_version="3.2.1",
+    )
+    assert "['IrisSweepCodec']" in out
+    assert "xradar's store builders need zarr>=3.3; found zarr 3.2.1" in out
 
 
 @pytest.fixture

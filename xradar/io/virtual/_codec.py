@@ -19,15 +19,9 @@ from typing import TYPE_CHECKING
 
 import zarr
 
-from xradar.io.virtual._checks import MIN_ZARR, plain, zarr_supported
+from xradar.io.virtual._checks import MIN_ZARR, plain, require_zarr
 
-_zarr_version = getattr(zarr, "__version__", "unknown")
-if not zarr_supported(_zarr_version):
-    raise ImportError(
-        f"xradar's virtual codecs need zarr>={MIN_ZARR} (zarr v3); "
-        f"found zarr {_zarr_version}",
-        name="zarr",
-    )
+require_zarr(getattr(zarr, "__version__", "unknown"), MIN_ZARR, "xradar's codecs")
 
 from zarr.abc.codec import ArrayBytesCodec  # noqa: E402
 

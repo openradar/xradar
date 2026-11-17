@@ -21,8 +21,9 @@ import pytest
 import xarray as xr
 
 import xradar as xd
+from xradar.io.virtual._checks import MIN_ZARR_BUILD  # numpy only
 
-pytest.importorskip("zarr", minversion="3.1.6")  # zarr v3 only
+pytest.importorskip("zarr", minversion=MIN_ZARR_BUILD)  # builds stores
 pytest.importorskip("virtualizarr")
 
 from obspec_utils.registry import ObjectStoreRegistry  # noqa: E402

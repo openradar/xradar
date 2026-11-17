@@ -187,8 +187,9 @@ sweep (rays are RLE-compressed with all data types interleaved ray-major, so
 no smaller unit is both contiguous and independently decodable). Every
 moment of a sweep references the same byte span; the decode-only zarr v3
 codec ``xradar-iris-sweep`` — registered as a ``zarr.codecs`` entry point, so
-**reading** a virtual store needs only ``xradar`` + ``zarr`` — demultiplexes
-one data type out of the span at read time. Its configuration is:
+**reading** a virtual store needs only ``xradar`` + ``zarr>=3.1.6`` (building
+one needs ``zarr>=3.3``) — demultiplexes one data type out of the span at
+read time. Its configuration is:
 
 | key                | meaning                                              |
 |--------------------|------------------------------------------------------|
@@ -250,6 +251,11 @@ differences from `open_iris_datatree`:
   `altitude`. Each moment names its Sigmet type in `sigmet_data_type`, and a
   moment this backend has no decoder for (and no class flags, as HydroClass
   without classifiers) says in `comment` that it holds raw Sigmet words.
+- String variables (`sweep_mode`, `time_coverage_start`, ...) are stored
+  fixed-width, at least 32 characters, so volumes whose `sweep_mode`
+  differs still concatenate. Lazily they show `<U32`; loaded, each value has
+  its own width as in `open_iris_datatree` (`<U20` for
+  `azimuth_surveillance`).
 - The types decoded by `xradar-iris-decode` have no raw words to read:
   `mask_and_scale=False` still gives their physical values.
 - With `pad_missing_rays`, the padded rows of the signed types and of

@@ -33,11 +33,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
+import zarr
 from virtualizarr.manifests import ChunkManifest, ManifestArray
 from virtualizarr.manifests.utils import create_v3_array_metadata
 
 from xradar.io.backends.common import _assign_root
-from xradar.io.virtual._checks import plain
+from xradar.io.virtual._checks import MIN_ZARR_BUILD, plain, require_zarr
 from xradar.model import (
     MOMENT_COORDINATES,
     get_altitude_attrs,
@@ -47,6 +48,10 @@ from xradar.model import (
 
 if TYPE_CHECKING:
     from obspec_utils.registry import ObjectStoreRegistry
+
+require_zarr(
+    getattr(zarr, "__version__", "unknown"), MIN_ZARR_BUILD, "xradar's store builders"
+)
 
 __all__ = [
     "MOMENT_COORDINATES",
