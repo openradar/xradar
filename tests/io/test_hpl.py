@@ -28,6 +28,12 @@ def test_open_datatree_hpl(hpl_file2):
     assert dtree["sweep_0"]["sweep_number"].dtype.kind == "i"
     assert "units" not in dtree["sweep_0"]["time"].attrs
 
+    # every ray of these PPI sweeps is at the fixed elevation (#593)
+    for sweep in [k for k in dtree.children if k.startswith("sweep_")]:
+        ds = dtree[sweep].to_dataset()
+        assert (ds.elevation == ds.sweep_fixed_angle).all()
+        assert not ds.antenna_transition.any()
+
 
 def test_open_dataset_hpl(hpl_file2):
     with xr.open_dataset(
@@ -59,6 +65,11 @@ def test_open_rhi(hpl_file1):
 
         assert ds["mean_doppler_velocity"].dims == ("azimuth", "range")
         assert ds["mean_doppler_velocity"].max() == 19.5306
+        # the elevation of an RHI changes from ray to ray, the azimuth stays and
+        # no ray is a transition (#593)
+        assert ds.sweep_mode.astype(str).item() == "rhi"
+        assert (ds.azimuth == ds.sweep_fixed_angle).all()
+        assert not ds.antenna_transition.any()
 
 
 def test_hpl_open_mfdataset_context_manager(hpl_file1):
@@ -267,3 +278,71 @@ def test_open_hpl_datatree_single_ray_sweeps(tmp_path):
     assert [int(dtree[k].dataset.sweep_number) for k in sweeps] == list(
         range(len(sweeps))
     )
+
+
+def _rhi(azimuth, off):
+    # RHI from 0 to 18 degrees elevation, the ray at 10 degrees at another azimuth
+    rays = [(azimuth, el) for el in range(0, 20, 2)]
+    rays[5] = (off, 10)
+    return rays
+
+
+@pytest.mark.parametrize(
+    "rays, kwargs, fixed, coord, flagged",
+    [
+        pytest.param(
+            [(az, 2.5 if az == 40 else 2.0) for az in range(0, 100, 10)]
+            + [(az, 4.0) for az in range(10)],
+            {},
+            2.0,
+            "elevation",
+            [2.5],
+            id="ppi-off-the-fixed-elevation",
+        ),
+        # the 2 degree sweep also holds the rays at 4 degrees in between,
+        # which are sweep_1 as well (#596); only the flag is checked here
+        pytest.param(
+            [(az, el) for el in (2.0, 4.0, 2.0) for az in range(0, 50, 10)],
+            {},
+            2.0,
+            "elevation",
+            [4.0],
+            id="ppi-elevation-comes-back",
+        ),
+        pytest.param(_rhi(90.0, 95.0), {}, 90.0, "azimuth", [95.0], id="rhi-off"),
+        pytest.param(
+            _rhi(90.0, 90.5),
+            {"transition_threshold_azi": 0.4},
+            90.0,
+            "azimuth",
+            [90.5],
+            id="rhi-off-by-more-than-the-threshold",
+        ),
+        pytest.param(
+            _rhi(90.0, 90.5),
+            {"transition_threshold_azi": 1.0},
+            90.0,
+            "azimuth",
+            [],
+            id="rhi-off-within-the-threshold",
+        ),
+        pytest.param(
+            _rhi(0.0, 359.9),
+            {"transition_threshold_azi": 0.5},
+            0.0,
+            "azimuth",
+            [],
+            id="rhi-north-within-the-threshold",
+        ),
+    ],
+)
+def test_hpl_antenna_transition(tmp_path, rays, kwargs, fixed, coord, flagged):
+    # a ray is flagged when it is off the fixed angle of its sweep (#593)
+    path = _write_hpl(tmp_path / "scan.hpl", rays)
+    with xd.open_datatree(path, engine="hpl", **kwargs) as dtree:
+        ds = dtree["sweep_0"].to_dataset()
+        assert float(ds.sweep_fixed_angle) == fixed
+        # by angle: the sweep comes sorted along its first dimension
+        np.testing.assert_array_equal(
+            ds.antenna_transition.values, np.isin(ds[coord].values, flagged)
+        )
