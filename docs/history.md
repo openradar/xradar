@@ -2,6 +2,8 @@
 
 ## Development (unreleased)
 
+* FIX: NEXRAD Level II cuts with different moment gate spacings or origins now expose each native range grid in its own sweep group. Legacy Message 1 preserves signed gate origins and reads spectrum width when present ({issue}`263`).
+
 * CI: Updating python as additional security features were added for SSL (:pull:`566`) by [@zssherman](https://github.com/zssherman)
 * CI: Update python to safe version 3.13.17 (:pull:`547`) by [@zssherman](https://github.com/zssherman)
 * CI: Update workflows to use security patched versions of packages (:pull:`545) by [@zssherman](https://github.com/zssherman)
