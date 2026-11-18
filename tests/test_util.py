@@ -93,8 +93,11 @@ def test_get_first_angle_errors():
     # an angle dimension without a coordinate
     no_coord = xr.Dataset({"DBZH": (("azimuth", "range"), np.zeros((3, 3)))})
     no_coord = no_coord.assign_coords(range=rng)
-    with pytest.raises(ValueError, match="without a coordinate"):
+    with pytest.raises(ValueError, match="without a coordinate") as err:
         util.get_first_angle(no_coord)
+    # the message names the dimensions of the dataset
+    assert "'azimuth': 3" in str(err.value)
+    assert "'range': 3" in str(err.value)
 
 
 def test_get_second_angle(sweep):

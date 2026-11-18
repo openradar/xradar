@@ -78,14 +78,20 @@ def get_first_angle(ds):
     # the ray dimension is picked from the angles in a fixed order, other
     # dimensions (e.g. ``frequency``) are never a candidate
     ray_dim = get_ray_dim(ds)
+    dims = dict(ds.sizes)
     if ray_dim is None:
-        raise ValueError("no ``range`` dimension, not a radar sweep")
+        raise ValueError(
+            f"no ``range`` dimension, not a radar sweep (dimensions: {dims})"
+        )
     if ray_dim == "time":
         raise ValueError(
-            "first dimension is ``time``, but needed ``azimuth`` or ``elevation``"
+            "first dimension is ``time``, but needed ``azimuth`` or ``elevation`` "
+            f"(dimensions: {dims})"
         )
     if ray_dim not in ds.coords:
-        raise ValueError(f"``{ray_dim}`` is a dimension without a coordinate")
+        raise ValueError(
+            f"``{ray_dim}`` is a dimension without a coordinate (dimensions: {dims})"
+        )
     return ray_dim
 
 
