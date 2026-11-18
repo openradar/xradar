@@ -8,6 +8,7 @@ Ported from wradlib.
 """
 
 import copy
+import gc
 import io
 import struct
 import warnings
@@ -122,6 +123,25 @@ def test_scan_name_is_stripped(file_fixture, scan_name, request):
         assert dtree.attrs["scan_name"] == scan_name
 
 
+@pytest.mark.parametrize(
+    "scan_mode, sweep_mode",
+    [
+        pytest.param(1, "sector", id="ppi-sector"),
+        pytest.param(2, "rhi", id="rhi"),
+        pytest.param(4, "azimuth_surveillance", id="ppi-full"),
+    ],
+)
+def test_sweep_mode(scan_mode, sweep_mode):
+    assert iris._sweep_mode(scan_mode) == sweep_mode
+
+
+def test_sector_task_sweep_mode(iris1_file, monkeypatch):
+    # no fixture holds a sector task (#574): report the header value of one
+    monkeypatch.setattr(iris.IrisRawFile, "scan_mode", 1)
+    with xd.open_datatree(iris1_file, engine="iris") as dtree:
+        assert dtree["sweep_0"]["sweep_mode"].item() == "sector"
+
+
 def test_decode_array():
     data = np.arange(0, 11)
     np.testing.assert_array_equal(
@@ -147,10 +167,46 @@ def test_decode_array():
     data = np.array(
         [0, 1, 255, 1000, 9096, 22634, 34922, 50000, 65534], dtype=np.uint16
     )
-    np.testing.assert_array_equal(
-        iris.decode_array(data, scale=1000, tofloat=True),
+    decoded = iris.decode_array(data, scale=1000, tofloat=True)
+    assert decoded.dtype == np.float32
+    np.testing.assert_allclose(
+        decoded,
         [0.0, 0.001, 0.255, 1.0, 10.0, 100.0, 800.0, 10125.312, 134184.96],
+        rtol=1e-7,
     )
+
+
+@pytest.mark.parametrize("file_fixture", ["iris0_file", "iris1_file"])
+def test_decoded_data_keeps_declared_dtype(file_fixture, request):
+    # decoders computed float64 behind a float32 declaration (#585)
+    path = request.getfixturevalue(file_fixture)
+    with open_dataset(path, engine="iris", group="sweep_0") as ds:
+        declared = {name: var.dtype for name, var in ds.variables.items()}
+        loaded = ds.load()
+    for name, dtype in declared.items():
+        assert loaded[name].dtype == dtype, name
+    assert loaded["DBZH"].dtype == loaded["elevation"].dtype == np.float32
+
+
+@pytest.mark.parametrize(
+    "decoder, kwargs",
+    [
+        (iris.decode_array, {"scale": 2.0, "offset": -64.0, "mask": 0.0}),
+        (iris.decode_vel, {"scale": 127.0, "offset": -128.0, "nyquist": 26.7}),
+        (iris.decode_width, {"scale": 256.0, "offset": 0.0, "nyquist": 26.7}),
+        (iris.decode_phidp, {"scale": 254.0, "offset": -1.0}),
+        (iris.decode_phidp2, {"scale": 65534.0, "offset": -1.0}),
+        (iris.decode_sqi, {"scale": 253.0, "offset": -1.0}),
+        (iris.decode_kdp, {"wavelength": 10.0}),
+    ],
+    ids=["array", "vel", "width", "phidp", "phidp2", "sqi", "kdp"],
+)
+def test_moment_decoders_return_float32(decoder, kwargs):
+    # the moments are declared float32 (#585); raw 0 is no data
+    raw = np.arange(1, 256, dtype="uint8")
+    if decoder is iris.decode_kdp:
+        raw = raw.astype("int8")
+    assert decoder(raw, **kwargs).dtype == np.float32
 
 
 def test_decode_velc():
@@ -166,25 +222,14 @@ def test_decode_velc():
 
 
 def test_decode_kdp():
-    np.testing.assert_array_almost_equal(
-        iris.decode_kdp(
-            np.array(
-                [
-                    0,
-                    1,
-                    2,
-                    127,
-                    -128,  # 128 uint8
-                    -127,  # 129 uint8
-                    -126,  # 130 uint8
-                    -2,  # 254 uint8
-                    -1,  # 255 uint8
-                ],
-                dtype="int8",
-            ),
-            wavelength=10.0,
-        ),
+    # raw values as int8: -128 is 128, -1 is 255 as uint8
+    raw = np.array([0, 1, 2, 127, -128, -127, -126, -2, -1], dtype="int8")
+    decoded = iris.decode_kdp(raw, wavelength=10.0)
+    assert decoded.dtype == np.float32
+    np.testing.assert_allclose(
+        decoded,
         [np.nan, -15.0, -14.257469, -0.025, 0.0, 0.025, 0.026302, 14.257469, np.nan],
+        rtol=1e-6,
     )
 
 
@@ -248,10 +293,11 @@ def test_decode_rainrate2():
         dtype="uint16",
     )
     prod = iris.SIGMET_DATA_TYPES[13]
-    np.testing.assert_array_almost_equal(
-        iris.decode_array(vals.copy(), **prod["fkw"]),
+    # raw 0 is no data
+    np.testing.assert_allclose(
+        iris.decode_array(vals.copy(), **prod["fkw"]).filled(np.nan),
         [
-            -1.00000000e-04,
+            np.nan,
             0.00000000e00,
             1.00000000e-04,
             2.54000000e-02,
@@ -263,6 +309,7 @@ def test_decode_rainrate2():
             1.34184959e04,
             1.34201343e04,
         ],
+        rtol=1e-7,
     )
 
 
@@ -313,10 +360,7 @@ def test_decode_data(iris0_file, file_or_filelike):
 
     # Check that the decoded data is as expected
     assert isinstance(decoded_data, np.ndarray), "Decoded data should be a numpy array"
-    assert decoded_data.dtype in [
-        np.float32,
-        np.float64,
-    ], "Decoded data should have float32 or float64 type"
+    assert decoded_data.dtype == np.float32
 
     # Expected decoded values
     expected_data = [-13.325, 13.325, 26.65, 1692.275, 3384.55]
@@ -1270,3 +1314,14 @@ def test_snr8_matches_reflectivity_on_arouca(iris_arouca_file):
     assert resid.size > 5000
     assert np.abs(np.median(resid)) < 0.05
     assert np.mean(np.abs(resid) <= 0.5) > 0.95
+
+
+@pytest.mark.parametrize("engine", ["iris", None], ids=["engine", "discovered"])
+def test_open_datatree_does_not_leave_the_file_open(iris0_file, engine):
+    # the sweeps are listed (and the engine guessed) by reading the header,
+    # which must not leave a file object behind (#548)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always", ResourceWarning)
+        xd.open_datatree(iris0_file, engine=engine).close()
+        gc.collect()
+    assert not [w for w in record if w.category is ResourceWarning]
