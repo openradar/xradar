@@ -66,14 +66,33 @@ def get_first_angle(ds):
     Returns
     -------
     first_angle : str
-        Name of first angle dimension.
+        Name of first angle dimension, ``azimuth`` or ``elevation``.
+
+    Raises
+    ------
+    ValueError
+        If the dataset has no ``range`` dimension, none or both of ``azimuth``
+        and ``elevation`` as dimension, ``time`` as ray dimension (swap it for
+        the angle first), or the angle has no coordinate.
     """
-    first_angle = list(set(ds.dims) & set(ds.coords) ^ {"range"})[0]
-    if first_angle == "time":
+    # the ray dimension is picked from the angles in a fixed order, other
+    # dimensions (e.g. ``frequency``) are never a candidate
+    ray_dim = get_ray_dim(ds)
+    dims = dict(ds.sizes)
+    if ray_dim is None:
         raise ValueError(
-            "first dimension is ``time``, but needed ``azimuth`` or ``elevation``"
+            f"no ``range`` dimension, not a radar sweep (dimensions: {dims})"
         )
-    return first_angle
+    if ray_dim == "time":
+        raise ValueError(
+            "first dimension is ``time``, but needed ``azimuth`` or ``elevation`` "
+            f"(dimensions: {dims})"
+        )
+    if ray_dim not in ds.coords:
+        raise ValueError(
+            f"``{ray_dim}`` is a dimension without a coordinate (dimensions: {dims})"
+        )
+    return ray_dim
 
 
 def get_second_angle(ds):
