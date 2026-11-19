@@ -38,6 +38,7 @@
 * FIX: IRIS PPI sector tasks get the FM301 ``sweep_mode`` ``sector`` (was ``azimuth_surveillance``) ({issue}`574`, {pull}`577`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader closes the file it reads the header from: opening a file without ``sweep=`` (and engine discovery) left a file object open until garbage collection and gave a ``ResourceWarning`` ({issue}`548`, {pull}`587`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``util.get_first_angle`` only returns ``azimuth`` or ``elevation``: it took the first item of a set of the dimensions with a coordinate, so a sweep with another such dimension (e.g. ``frequency``) got ``frequency`` or the angle depending on the hash seed, and a dataset without or with both angles as dimensions raises a ``ValueError`` ({issue}`581`, {pull}`589`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: ``to_cfradial2`` no longer fails when ``sweep_mode`` is a numpy ``StringDType`` (what zarr v3 gives back for strings): ``conform_cfradial2_sweep_group`` cast it with ``astype(str)``, which numpy cannot do for ``StringDType``; a sized cast works for fixed-width strings, bytes and ``StringDType`` ({issue}`600`, {pull}`603`) by [@syedhamidali](https://github.com/syedhamidali)
 
 ## 0.13.0 (2026-10-21)
 

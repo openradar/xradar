@@ -1064,7 +1064,9 @@ def determine_cfradial2_sweep_variables(obj, optional, dim0):
 def conform_cfradial2_sweep_group(obj, optional, dim0=None, sort=True):
     if dim0 is None:
         # handling first dimension
-        dim0 = "elevation" if obj.sweep_mode.load().astype(str) == "rhi" else "azimuth"
+        # sized cast: ``astype(str)`` fails for numpy 2 ``StringDType`` (zarr v3)
+        sweep_mode = obj.sweep_mode.load().astype("U32")
+        dim0 = "elevation" if sweep_mode == "rhi" else "azimuth"
         if dim0 not in obj.dims:
             dim0 = "time"
             assert dim0 in obj.dims

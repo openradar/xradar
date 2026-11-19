@@ -232,3 +232,26 @@ def test_moment_attr_keys_keep_the_same_order_across_hash_seeds():
         )
         orders.append(completed.stdout.strip())
     assert orders == ["standard_name,long_name,units"] * 3
+
+
+@pytest.mark.parametrize(
+    "mode, expected", [("azimuth_surveillance", "azimuth"), ("rhi", "elevation")]
+)
+@pytest.mark.parametrize("kind", ["str", "bytes", "StringDType"])
+def test_conform_cfradial2_sweep_group_sweep_mode_dtype(kind, mode, expected):
+    # zarr v3 gives strings back as numpy 2 ``StringDType``, HPL has bytes
+    if mode == "rhi":
+        ds = model.create_sweep_dataset(shape=(90, 10), azimuth=10.0, sweep="RHI")
+    else:
+        ds = model.create_sweep_dataset(shape=(90, 10), elevation=1.0)
+    if kind == "bytes":
+        values = np.array(mode.encode())
+    elif kind == "StringDType":
+        if not hasattr(np.dtypes, "StringDType"):
+            pytest.skip("needs numpy 2")
+        values = np.array(mode, dtype=np.dtypes.StringDType())
+    else:
+        values = np.array(mode)
+    ds = ds.swap_dims(time=expected).assign(sweep_mode=((), values))
+    out = model.conform_cfradial2_sweep_group(ds, optional=True)
+    assert "time" in out.dims and expected in out.coords
