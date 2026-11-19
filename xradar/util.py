@@ -20,6 +20,7 @@ __all__ = [
     "remove_duplicate_rays",
     "reindex_angle",
     "reindex_range",
+    "resample_coords",
     "extract_angle_parameters",
     "ipol_time",
     "rolling_dim",
@@ -1008,6 +1009,136 @@ def select_sweep_dataset_vars(sweep, select, ancillary=False, optional_metadata=
     sweep_out = sweep[select]
 
     return sweep_out
+
+
+def _resample_factors(values, scale):
+    """Integer factor to average over and target grid for *values*.
+
+    Centres half a step apart (``scale/2, 3*scale/2, ...``) within *values*;
+    at most half of *values* is averaged over.
+    """
+    if not scale > 0:
+        raise ValueError(f"target resolution must be positive, got {scale}")
+    values = np.asarray(values, dtype="float64")  # input may be float32
+    step = np.median(np.abs(np.diff(values)))
+    lo, hi = values.min(), values.max()
+    # first centre at or after the first value
+    first = np.ceil((lo - scale / 2) / scale - 1e-6) * scale + scale / 2
+    # keep a centre at hi
+    grid = np.arange(min(first, hi), hi + scale * 1e-9, scale)
+    factor = max(round(scale / step), 1)  # nearest integer, at least one
+    factor = min(factor, max(values.size // 2, 1))  # keep two blocks
+    return factor, grid
+
+
+#: reflectivity moments, block-averaged in linear space
+_db_vars = frozenset({"DBZH", "DBZV", "DBTH", "DBTV", "DBZ"})
+
+#: reflectivity moments accepted by resample_coords
+_refl_vars = _db_vars | frozenset({"ZH", "ZV", "TH", "TV"})
+
+
+def resample_coords(sweep, angle_res, range_res):
+    """Resample the angle and range coordinates of a reflectivity sweep
+    onto a coarser grid.
+
+    Range is resampled first, then azimuth/elevation; both dimensions are
+    averaged over an integer number of gates or samples and interpolated
+    onto the target grid, the dB forms in linear space. The input sweep is
+    left unchanged and the packing of the input is kept.
+
+    Parameters
+    ----------
+    sweep : xarray.Dataset
+        Radar sweep dataset following WMO conventions, with at least two
+        gates and two azimuth/elevation samples and reflectivity moments
+        only.
+
+    angle_res : float
+        Target azimuth (PPI) or elevation (RHI) resolution in degrees,
+        positive, rounded to the nearest multiple of the current resolution
+        when averaging.
+
+    range_res : float
+        Target gate spacing in meters, positive, rounded to the nearest
+        multiple of the current gate spacing when averaging.
+
+    Returns
+    -------
+    sweep_out : xarray.Dataset
+        Resampled sweep with the metadata variables of *sweep* unchanged.
+
+    Raises
+    ------
+    ValueError
+        If a resolution is not positive or if the sweep holds a moment
+        other than reflectivity.
+
+    Notes
+    -----
+    Incomplete last blocks are dropped (``boundary="trim"``) and the
+    extrapolated ends are clipped to the measured values.
+    """
+    moments = get_sweep_dataset_vars(sweep, non_standard=True)
+    extra = set(moments) - _refl_vars
+    if extra:
+        raise ValueError(f"only reflectivity is supported, got {sorted(extra)}")
+
+    ray_dim = get_ray_dim(sweep)
+    nrange, target_range = _resample_factors(sweep.range.values, range_res)
+    nray, target_ray = _resample_factors(sweep[ray_dim].values, angle_res)
+
+    sweep_new = []
+    for var in moments:
+        sweep_var_ds = sweep[[var]]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            if var in _db_vars:
+                sweep_var_ds[var] = 10 ** (sweep_var_ds[var] / 10)
+
+            # range first, then azimuth/elevation
+            if nrange > 1:
+                sweep_var_ds = sweep_var_ds.coarsen(
+                    {"range": nrange}, boundary="trim"
+                ).mean()
+            limits = float(sweep_var_ds[var].min()), float(sweep_var_ds[var].max())
+            sweep_var_ds = sweep_var_ds.interp(
+                range=target_range, kwargs={"fill_value": "extrapolate"}
+            )
+            if nray > 1:
+                sweep_var_ds = sweep_var_ds.coarsen(
+                    {ray_dim: nray}, boundary="trim"
+                ).mean()
+            sweep_var_ds = sweep_var_ds.interp(
+                {ray_dim: target_ray}, kwargs={"fill_value": "extrapolate"}
+            )
+            # clip to the measured values
+            sweep_var_ds[var] = sweep_var_ds[var].clip(*limits)
+            if var in _db_vars:
+                sweep_var_ds[var] = 10 * np.log10(sweep_var_ds[var])
+        # keep the input dtype
+        if np.issubdtype(sweep[var].dtype, np.floating):
+            sweep_var_ds[var] = sweep_var_ds[var].astype(sweep[var].dtype)
+        sweep_var_ds[var].attrs = sweep[var].attrs
+        # keep the packing of the input, drop the keys of the old grid
+        enc = dict(sweep[var].encoding)
+        for key in (
+            "chunksizes",
+            "preferred_chunks",
+            "original_shape",
+            "source",
+            "group",
+        ):
+            enc.pop(key, None)
+        sweep_var_ds[var].encoding = enc
+        sweep_new.append(sweep_var_ds)
+
+    sweep_new = xr.merge(sweep_new, compat="override")
+
+    for var in get_sweep_metadata_vars(sweep, optional=True):
+        sweep_new[var] = sweep[var]
+
+    return sweep_new
 
 
 def round_datetime64_to_second(dt):
