@@ -3115,11 +3115,20 @@ def test_root_attrs_from_real_file(nexradlevel2_file):
 
 def test_sweep_attrs_from_real_file(nexradlevel2_file):
     """Per-sweep attrs include waveform and supplemental data from MSG_5_ELEV."""
-    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0])
-    attrs = dtree["sweep_0"].dataset.attrs
+    dtree = open_nexradlevel2_datatree(nexradlevel2_file, sweep=[0, 1, 4, 9])
 
-    # Known values for KATX VCP-11 sweep_0
-    assert attrs["waveform_type"] == "contiguous_surveillance"
+    # KATX VCP-11, MSG_5 waveform codes 1, 2, 4 and 3 (ICD 2620002AA, Table XI)
+    waveform_types = {
+        name: dtree[name].dataset.attrs["waveform_type"] for name in dtree.children
+    }
+    assert waveform_types == {
+        "sweep_0": "contiguous_surveillance",
+        "sweep_1": "contiguous_doppler_with_ambiguity_resolution",
+        "sweep_4": "batch",
+        "sweep_9": "contiguous_doppler_without_ambiguity_resolution",
+    }
+
+    attrs = dtree["sweep_0"].dataset.attrs
     assert attrs["channel_config"] == "constant_phase"
     assert isinstance(attrs["super_resolution"], int)
     # Standard VCP-11: no dynamic scan cuts on sweep_0
@@ -3129,6 +3138,22 @@ def test_sweep_attrs_from_real_file(nexradlevel2_file):
     assert attrs["base_tilt_cut"] is False
     assert attrs["sails_sequence_number"] == 0
     assert attrs["mrle_sequence_number"] == 0
+
+
+@pytest.mark.parametrize(
+    "code, expected",
+    [
+        (0, "not_applicable"),
+        (5, "staggered_pulse_pair"),
+        (9, "9"),  # unknown codes are kept as their number
+    ],
+)
+def test_sweep_attrs_waveform_type(code, expected):
+    """Waveform codes the KATX file does not contain."""
+    from xradar.io.backends.nexrad_level2 import _sweep_attrs_from_msg5_elev
+
+    attrs = _sweep_attrs_from_msg5_elev({"waveform_type": code})
+    assert attrs["waveform_type"] == expected
 
 
 def test_get_dynamic_scan_type():
