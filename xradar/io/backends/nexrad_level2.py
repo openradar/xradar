@@ -1258,12 +1258,14 @@ MSG_5_ELEV = OrderedDict(
 LEN_MSG_5_ELEV = struct.calcsize(_get_fmt_string(MSG_5_ELEV, byte_order=">"))
 
 
+# MSG_5 elevation cut waveform type (ICD 2620002AA, Table XI)
 _WAVEFORM_TYPES = {
     0: "not_applicable",
     1: "contiguous_surveillance",
-    2: "contiguous_doppler",
-    3: "batch",
-    4: "staggered_pulse_pair",
+    2: "contiguous_doppler_with_ambiguity_resolution",
+    3: "contiguous_doppler_without_ambiguity_resolution",
+    4: "batch",
+    5: "staggered_pulse_pair",
 }
 
 _CHANNEL_CONFIGS = {
