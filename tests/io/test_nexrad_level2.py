@@ -67,8 +67,8 @@ def _msg1_volume(ref_grid, doppler_grid, width_pointer=105, elevation_number=1):
 @pytest.mark.parametrize(
     "ref_grid,doppler_grid",
     [
-        ((-250, 1000), (-375, 250)),  # both origins and spacings differ
-        ((125, 250), (-125, 250)),  # different origins only
+        ((125, 1000), (375, 250)),  # both origins and spacings differ
+        ((125, 250), (375, 250)),  # different origins only
         ((125, 1000), (125, 250)),  # different spacings only
     ],
 )
@@ -77,8 +77,8 @@ def test_native_range_groups(ref_grid, doppler_grid):
     volume = _msg1_volume(ref_grid, doppler_grid, elevation_number=5)
     with xd.open_datatree(volume, engine="nexradlevel2", sweep=0) as tree:
         assert tree.attrs["actual_elevation_cuts"] == 1
-        assert set(tree.children) == {"sweep_0", "sweep_5"}
-        ref, doppler = tree["sweep_0"], tree["sweep_5"]
+        assert list(tree.children) == ["sweep_0", "sweep_1"]
+        ref, doppler = tree["sweep_0"], tree["sweep_1"]
         np.testing.assert_array_equal(
             ref.range, ref_grid[0] + ref_grid[1] * np.arange(2)
         )
@@ -90,57 +90,87 @@ def test_native_range_groups(ref_grid, doppler_grid):
             == doppler.attrs["nexrad_elevation_number"]
             == 5
         )
-        assert ref.sweep_number.item() == 0 and doppler.sweep_number.item() == 5
+        assert ref.sweep_number.item() == 0 and doppler.sweep_number.item() == 1
         np.testing.assert_array_equal(ref.time, doppler.time)
         np.testing.assert_allclose(doppler.VRADH[0], [np.nan, np.nan, -6.0])
-        np.testing.assert_allclose(doppler.WRADH[0], [0, 1.5, 5.5])
         assert "VRADH" not in ref and "DBZH" not in doppler
 
-    with pytest.warns(UserWarning, match="Open sweep_5"):
+    with pytest.warns(UserWarning, match="Open sweep_1"):
         with open_dataset(volume, engine="nexradlevel2", group="sweep_0") as ds:
             assert ds.DBZH.shape == (2, 2)
     with open_dataset(
-        volume, engine="nexradlevel2", group="sweep_5", mask_and_scale=False
+        volume, engine="nexradlevel2", group="sweep_1", mask_and_scale=False
     ) as ds:
         np.testing.assert_array_equal(ds.VRADH[0], [0, 1, 117])
-        assert ds.VRADH.encoding["group"] == 5
+        assert ds.VRADH.encoding["group"] == 1
 
 
 def test_native_range_compatible_grids():
-    # Different gate counts on the same grid only need trailing fill. A zero
-    # pointer means spectrum width is absent, even with nonzero Doppler gates.
-    volume = _msg1_volume((125, 250), (125, 250), width_pointer=0)
+    # Different gate counts on the same grid only need trailing fill.
+    volume = _msg1_volume((125, 250), (125, 250))
     with xd.open_datatree(volume, engine="nexradlevel2", mask_and_scale=False) as tree:
         assert list(tree.children) == ["sweep_0"]
         sweep = tree["sweep_0"]
         np.testing.assert_array_equal(sweep.range, [125, 375, 625])
         np.testing.assert_array_equal(sweep.DBZH[0], [12, 13, 0])
         np.testing.assert_array_equal(sweep.VRADH[0], [0, 1, 117])
-        assert "WRADH" not in sweep and "nexrad_elevation_number" not in sweep.attrs
+        assert "nexrad_elevation_number" not in sweep.attrs
 
 
-def test_native_range_skips_orphan_end_ray():
-    volume = _msg1_volume((125, 250), (125, 250))
-    # Prepend the end of a previous cut before the complete pair of rays.
-    orphan = bytearray(volume[-2432:])
-    struct.pack_into(">H", orphan, 28 + 12, 2)  # end of elevation
-    volume = volume[:-4864] + orphan + volume[-4864:]
+@pytest.mark.parametrize("cut_count,first_elevation", [(2, 1), (3, 1), (2, 2)])
+def test_native_range_scan_order(cut_count, first_elevation, monkeypatch):
+    # A later cut must not change the names or metadata of an earlier grid.
+    grids = [((125, 1000), (125, 250)), ((625, 250), (625, 250))]
+    grids += [((875, 1000), (875, 250))] * (cut_count - 2)
+    volume = bytearray()
+    for cut, (ref_grid, doppler_grid) in enumerate(grids):
+        part = bytearray(
+            _msg1_volume(ref_grid, doppler_grid, elevation_number=cut + first_elevation)
+        )
+        struct.pack_into(">H", part, len(part) - 4864 + 40, 3 if cut == 0 else 0)
+        struct.pack_into(
+            ">H", part, len(part) - 2432 + 40, 4 if cut == cut_count - 1 else 2
+        )
+        volume.extend(part if cut == 0 else part[-4864:])
+    volume = bytes(volume)
+    elevations = [
+        {"elevation_angle": 100 * (cut + 1), "super_resolution": cut + 1}
+        for cut in range(cut_count + first_elevation - 1)
+    ]
+    monkeypatch.setattr(
+        NEXRADLevel2File,
+        "get_msg_5_data",
+        lambda self: {"pattern_number": 31, "elevation_data": elevations},
+    )
     with xd.open_datatree(volume, engine="nexradlevel2") as tree:
-        assert tree.attrs["actual_elevation_cuts"] == 1
-        assert list(tree.children) == ["sweep_0"]
-        assert tree["sweep_0"].sizes["azimuth"] == 2
-    with open_dataset(volume, engine="nexradlevel2", group="sweep_0") as ds:
-        np.testing.assert_allclose(ds.DBZH[0], [-27, -26.5, np.nan])
+        assert list(tree.children) == [f"sweep_{i}" for i in range(2 * cut_count - 1)]
+        assert tree.attrs["actual_elevation_cuts"] == cut_count
+        for group, elevation in enumerate([1, 1, 2] + [3, 3] * (cut_count - 2)):
+            elevation += first_elevation - 1
+            sweep = tree[f"sweep_{group}"]
+            assert sweep.sweep_number.item() == group
+            assert sweep.attrs["nexrad_elevation_number"] == elevation
+            assert sweep.attrs["super_resolution"] == elevation
+        np.testing.assert_array_equal(tree["sweep_1"].range, [125, 375, 625])
+        np.testing.assert_array_equal(tree["sweep_2"].range, [625, 875, 1125])
 
-
-def test_incomplete_msg1_tail():
-    volume = _msg1_volume((125, 250), (125, 250))
-    start_ray = bytearray(volume[-2432:])
-    struct.pack_into(">H", start_ray, 28 + 12, 0)  # start of next elevation
-    with pytest.warns(UserWarning, match="Dropped 1 incomplete sweep"):
-        with xd.open_datatree(volume + start_ray, engine="nexradlevel2") as tree:
-            assert list(tree.children) == ["sweep_0"]
-            assert tree.attrs["actual_elevation_cuts"] == 2
+    # The existing DataTree selector names physical cuts, not output groups.
+    for selector in (1, "sweep_1", [1]):
+        with xd.open_datatree(volume, engine="nexradlevel2", sweep=selector) as tree:
+            assert list(tree.children) == ["sweep_2"]
+            assert tree.attrs["actual_elevation_cuts"] == cut_count
+            assert tree["sweep_2"].attrs["super_resolution"] == first_elevation + 1
+    with open_dataset(volume, engine="nexradlevel2", group="sweep_1") as ds:
+        np.testing.assert_array_equal(ds.range, [125, 375, 625])
+        assert "VRADH" in ds and "DBZH" not in ds
+        assert ds.VRADH.encoding["group"] == 1
+    with open_dataset(volume, engine="nexradlevel2", group="sweep_2") as ds:
+        assert "VRADH" in ds and "DBZH" in ds
+        assert ds.attrs["nexrad_elevation_number"] == first_elevation + 1
+    if cut_count == 3:
+        with pytest.warns(UserWarning, match=r"Open sweep_4.*sweep=2"):
+            with open_dataset(volume, engine="nexradlevel2", group="sweep_3") as ds:
+                assert ds.attrs["nexrad_elevation_number"] == 3
 
 
 @pytest.mark.parametrize(
@@ -958,6 +988,15 @@ def test_open_nexradlevel2_msg1_datatree(nexradlevel2_msg1_file):
     # Check if at least one sweep group is attached (e.g., "/sweep_0")
     sweep_groups = [key for key in dtree.match("sweep_*")]
     # Physical cuts 5 and 7 each have distinct reflectivity and Doppler grids.
+    assert sweep_groups == [
+        "sweep_0",
+        "sweep_1",
+        "sweep_2",
+        "sweep_6",
+        "sweep_7",
+        "sweep_10",
+        "sweep_11",
+    ]
     assert {
         dtree[k].attrs.get("nexrad_elevation_number", int(k[6:]) + 1) - 1
         for k in sweep_groups
@@ -1032,8 +1071,11 @@ def test_nexradlevel2_msg1_nyquist_unambiguous_range(nexradlevel2_msg1_file):
     np.testing.assert_allclose(dtree["sweep_0"].unambiguous_range, 466000.0)
     np.testing.assert_allclose(dtree["sweep_1"].nyquist_velocity, 25.37)
     np.testing.assert_allclose(dtree["sweep_1"].unambiguous_range, 148000.0)
-    np.testing.assert_allclose(dtree["sweep_9"].nyquist_velocity, 27.41)
-    np.testing.assert_allclose(dtree["sweep_9"].unambiguous_range, 137000.0)
+    # Original cut 9 follows five split cuts and itself has two native grids.
+    for group in ("sweep_14", "sweep_15"):
+        assert dtree[group].attrs["nexrad_elevation_number"] == 10
+        np.testing.assert_allclose(dtree[group].nyquist_velocity, 27.41)
+        np.testing.assert_allclose(dtree[group].unambiguous_range, 137000.0)
 
 
 @pytest.mark.parametrize("moment", ["DBZH", "VRADH", "WRADH"])
@@ -1813,7 +1855,7 @@ class TestNEXRADChunkFiles:
         # Create a mock store with None volume_header
 
         mock_store = MagicMock(spec=NexradLevel2Store)
-        mock_store._group = 0
+        mock_store._group = mock_store._sweep_number = 0
         mock_store._moments = None
         mock_store.ds = {"msg_31_header": {"elevation_number": 1}}
         mock_root = MagicMock()

@@ -196,16 +196,38 @@ digital radar data header (MSG_1).
 
 One NEXRAD elevation cut can record reflectivity, radial velocity and spectrum
 width on different range grids. The reader puts moments with the same first
-gate center and spacing in one sweep group. The first grid keeps the usual
-``sweep_N`` name, and additional grids receive numbers after the last recorded
-cut. Each group of a split cut carries the original one-based
+gate center and spacing in one sweep group without interpolating the data.
+Groups are numbered in scan order: additional grids immediately follow their
+physical cut's first group, shifting the numbers of later groups. For example,
+if cut 4 is the first split cut, its grids are ``sweep_4`` and ``sweep_5``.
+Appending later cuts does not change these names. Groups with no preceding
+split keep their original cut indices, including gaps in a partial recording.
+Each split or renumbered group carries the original one-based
 ``nexrad_elevation_number`` attribute. The root's ``actual_elevation_cuts``
-counts physical cuts.
+counts physical cuts, rather than output groups.
 
 For example, ``xd.open_datatree(filename, engine="nexradlevel2", sweep=4)``
-opens every grid belonging to the original ``sweep_4``. To read one grid, pass its group
-name to ``xr.open_dataset``. A single-dataset read of a split cut's primary
-group reports the names of its other groups.
+opens every grid belonging to the zero-based recorded cut 4. The ``sweep``
+selector, including its ``"sweep_N"`` string form, refers to recorded cuts;
+the returned output group numbers can differ after earlier cuts split. To read
+one output grid, pass its group name to ``xr.open_dataset`` using ``group``.
+A single-dataset read of a split cut's primary group warns with the names of
+its other groups and the recorded cut to select for a complete read.
+If you intentionally want just that grid, suppress this warning for the read
+with a scoped Python warning filter:
+
+```python
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message=r"The recorded cut for .* contains moments on different range grids\.",
+        category=UserWarning,
+    )
+    with xr.open_dataset(filename, engine="nexradlevel2", group="sweep_4") as ds:
+        data = ds.load()
+```
 
 The special moment codes below threshold (``0``) and range folded (``1``) are
 decoded to ``NaN`` with ``mask_and_scale=True`` (default). To tell them apart,
