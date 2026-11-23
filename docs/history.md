@@ -40,6 +40,7 @@
 * FIX: IRIS PPI sector tasks get the FM301 ``sweep_mode`` ``sector`` (was ``azimuth_surveillance``) ({issue}`574`, {pull}`577`) by [@aladinor](https://github.com/aladinor)
 * FIX: IRIS reader closes the file it reads the header from: opening a file without ``sweep=`` (and engine discovery) left a file object open until garbage collection and gave a ``ResourceWarning`` ({issue}`548`, {pull}`587`) by [@syedhamidali](https://github.com/syedhamidali)
 * FIX: ``util.get_first_angle`` only returns ``azimuth`` or ``elevation``: it took the first item of a set of the dimensions with a coordinate, so a sweep with another such dimension (e.g. ``frequency``) got ``frequency`` or the angle depending on the hash seed, and a dataset without or with both angles as dimensions raises a ``ValueError`` ({issue}`581`, {pull}`589`) by [@syedhamidali](https://github.com/syedhamidali)
+* FIX: NEXRAD Level II ``waveform_type`` sweep attribute follows ICD 2620002AA Table XI: codes 3, 4 and 5 were named ``batch``, ``staggered_pulse_pair`` and ``"5"`` instead of ``contiguous_doppler_without_ambiguity_resolution``, ``batch`` and ``staggered_pulse_pair``; code 2 is now ``contiguous_doppler_with_ambiguity_resolution`` (was ``contiguous_doppler``) ({issue}`601`) by [@aladinor](https://github.com/aladinor)
 
 ## 0.13.0 (2026-10-21)
 
