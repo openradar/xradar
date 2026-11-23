@@ -105,6 +105,39 @@ def test_native_range_groups(ref_grid, doppler_grid):
         assert ds.VRADH.encoding["group"] == 1
 
 
+@pytest.mark.parametrize(
+    "group,error,message",
+    [
+        ("invalid", ValueError, "Expected a NEXRAD sweep group"),
+        ("sweep_99", KeyError, "No sweep_99"),
+    ],
+)
+def test_native_range_invalid_output_group(group, error, message):
+    from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+    volume = _msg1_volume((125, 1000), (125, 250))
+    with pytest.raises(error, match=message):
+        NexradLevel2Store.open(volume, group=group)
+
+
+def test_native_range_missing_recorded_cut():
+    from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+    volume = _msg1_volume((125, 1000), (125, 250))
+    with pytest.raises(KeyError, match="No recorded cut 99"):
+        NexradLevel2Store.open_groups(volume, ["sweep_99"])
+
+
+def test_native_range_empty_recorded_cut(monkeypatch):
+    from xradar.io.backends.nexrad_level2 import NexradLevel2Store
+
+    volume = _msg1_volume((125, 1000), (125, 250))
+    monkeypatch.setattr(NEXRADLevel2File, "range_groups", lambda self: {0: {}})
+    with pytest.warns(UserWarning, match="Recorded cut 0 contains no radar moments"):
+        stores = NexradLevel2Store.open_groups(volume, ["sweep_0"])
+    assert stores == {}
+
+
 def test_native_range_compatible_grids():
     # Different gate counts on the same grid only need trailing fill.
     volume = _msg1_volume((125, 250), (125, 250))
