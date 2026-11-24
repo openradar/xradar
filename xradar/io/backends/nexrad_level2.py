@@ -38,6 +38,7 @@ __doc__ = __doc__.format("\n   ".join(__all__))
 
 import bz2
 import os
+import re
 import struct
 import warnings
 from collections import OrderedDict, defaultdict
@@ -750,6 +751,30 @@ class NEXRADLevel2File(NEXRADRecordFile):
         selected = [k for k in DATA_BLOCK_VARIABLE_IDENTIFIERS.keys() if k in moments]
         for moment in selected:
             self.get_moment(sweep_number, moment, "sweep_data")
+
+    def range_groups(self):
+        """Map each physical cut to its sweep groups using moment headers only."""
+        _ = self.data_header
+        # Insert extra grids beside their physical cut, shifting later groups.
+        # Preserve existing cut labels when no earlier cut has been split.
+        extra_groups = 0
+        groups = {}
+        for cut in sorted(self.data):
+            sweep = self.data[cut]
+            # get_sweep moves selected headers into sweep_data. Use the same
+            # moment order regardless of which headers have already moved.
+            headers = {**sweep["msg_31_data_header"], **sweep.get("sweep_data", {})}
+            grids = defaultdict(list)
+            for name in DATA_BLOCK_VARIABLE_IDENTIFIERS:
+                if name in headers:
+                    moment = headers[name]
+                    grids[moment["first_gate"], moment["gate_spacing"]].append(name)
+            groups[cut] = {}
+            for i, moments in enumerate(grids.values()):
+                if i:
+                    extra_groups += 1
+                groups[cut][cut + extra_groups] = moments
+        return groups
 
     def get_moment(self, sweep_number, moment, mtype):
         """Retrieve Moment according sweep_number and moment."""
@@ -1827,9 +1852,11 @@ class NexradLevel2ArrayWrapper(BackendArray):
 
 
 class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
-    def __init__(self, manager, group=None, lock=NEXRADL2_LOCK, mask_and_scale=True):
+    def __init__(self, manager, cut, group, moments, lock, mask_and_scale):
         self._manager = manager
-        self._group = int(group[6:])
+        self._group = cut
+        self._sweep_number = group
+        self._moments = moments
         self._filename = self.filename
         self.lock = ensure_lock(lock)
         self.mask_and_scale = mask_and_scale
@@ -1838,26 +1865,86 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
     def open(
         cls, filename, mode="r", group=None, lock=None, mask_and_scale=True, **kwargs
     ):
-        if lock is None:
-            lock = NEXRADL2_LOCK
-        manager = CachingFileManager(
-            NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
+        stores = cls.open_groups(
+            filename, [group], mode, lock, mask_and_scale, single=True, **kwargs
         )
-        return cls(manager, group=group, lock=lock, mask_and_scale=mask_and_scale)
+        return next(iter(stores.values()))
 
     @classmethod
     def open_groups(
-        cls, filename, groups, mode="r", lock=None, mask_and_scale=True, **kwargs
+        cls,
+        filename,
+        groups,
+        mode="r",
+        lock=None,
+        mask_and_scale=True,
+        *,
+        single=False,
+        **kwargs,
     ):
         if lock is None:
             lock = NEXRADL2_LOCK
         manager = CachingFileManager(
             NEXRADLevel2File, filename, mode=mode, kwargs=kwargs
         )
-        return {
-            group: cls(manager, group=group, lock=lock, mask_and_scale=mask_and_scale)
-            for group in groups
-        }
+        with manager.acquire_context() as root:
+            by_cut = root.range_groups()
+            lookup = {
+                group: (cut, moments if len(parts) > 1 else None)
+                for cut, parts in by_cut.items()
+                for group, moments in parts.items()
+            }
+            stores = {}
+            for path in groups:
+                match = (
+                    re.fullmatch(r"/?sweep_([0-9]+)", path)
+                    if isinstance(path, str)
+                    else None
+                )
+                if not match:
+                    raise ValueError(
+                        f"Expected a NEXRAD sweep group like 'sweep_0', got {path!r}"
+                    )
+                number = int(match[1])
+                if single:
+                    if number not in lookup:
+                        raise KeyError(f"No sweep_{number} in this NEXRAD volume")
+                    cut, _ = lookup[number]
+                    siblings = [n for n in by_cut[cut] if n != number]
+                    if siblings and number == next(iter(by_cut[cut])):
+                        names = ", ".join(f"sweep_{n}" for n in siblings)
+                        warnings.warn(
+                            f"The recorded cut for {path} contains moments "
+                            "on different range grids. "
+                            f"Open {names} for the other moments, or use "
+                            f"open_datatree(..., sweep={cut}) for the whole cut.",
+                            UserWarning,
+                            stacklevel=_external_stacklevel(),
+                        )
+                    selected = [number]
+                else:
+                    if number not in by_cut:
+                        raise KeyError(
+                            f"No recorded cut {number} in this NEXRAD volume"
+                        )
+                    selected = by_cut[number]
+                    if not selected:
+                        warnings.warn(
+                            f"Recorded cut {number} contains no radar moments",
+                            UserWarning,
+                            stacklevel=_external_stacklevel(),
+                        )
+                        continue
+                for group in selected:
+                    if group not in lookup:
+                        raise KeyError(f"No sweep_{group} in this NEXRAD volume")
+                    cut, moments = lookup[group]
+                    stores[f"sweep_{group}"] = cls(
+                        manager, cut, group, moments, lock, mask_and_scale
+                    )
+        if not stores:
+            manager.close()
+        return stores
 
     @property
     def filename(self):
@@ -1873,6 +1960,10 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         with self._manager.acquire_context(needs_lock) as root:
             root.get_sweep(self._group)
             ds = root.data[self._group]
+            if self._moments is not None:
+                ds = dict(
+                    ds, sweep_data={k: ds["sweep_data"][k] for k in self._moments}
+                )
         return ds
 
     @property
@@ -1885,7 +1976,7 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         data = indexing.LazilyOuterIndexedArray(
             NexradLevel2ArrayWrapper(self, name, var)
         )
-        encoding = {"group": self._group, "source": self._filename}
+        encoding = {"group": self._sweep_number, "source": self._filename}
 
         mname = nexrad_mapping.get(name, name)
         mapping = sweep_vars_mapping.get(mname, {})
@@ -1928,19 +2019,21 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         vol = self.ds["sweep_constant_data"]["VOL"]
         lon, lat, alt = vol["lon"], vol["lat"], vol["height"] + vol["feedhorn_height"]
 
-        # range
-        sweep_data = list(self.ds["sweep_data"].values())[0]
+        # All moments in this output group share the same native gate centers.
+        sweep_data = next(iter(self.ds["sweep_data"].values()))
         first_gate = sweep_data["first_gate"]
         gate_spacing = sweep_data["gate_spacing"]
         ngates = max([v["ngates"] for k, v in self.ds["sweep_data"].items()])
-        last_gate = first_gate + gate_spacing * (ngates - 0.5)
-        rng = np.arange(first_gate, last_gate, gate_spacing, "float32")
-        range_attrs = get_range_attrs(rng)
+        rng = first_gate + gate_spacing * np.arange(ngates, dtype="float32")
+        # Even a one-gate moment has a declared spacing in the header.
+        range_attrs = get_range_attrs(
+            first_gate + gate_spacing * np.arange(2, dtype="float32")
+        )
 
-        encoding = {"group": self._group}
+        encoding = {"group": self._sweep_number}
         dim = "azimuth"
         sweep_mode = "azimuth_surveillance"
-        sweep_number = self._group
+        sweep_number = self._sweep_number
         prt_mode = "not_set"
         follow_mode = "not_set"
 
@@ -1950,10 +2043,9 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
             elev_data = False
         # in some cases msg_5 doesn't contain meaningful data
         # we extract the needed values from the data header instead
-        if elev_data:
-            fixed_angle = self.root.msg_5["elevation_data"][self._group][
-                "elevation_angle"
-            ]
+        elevation_idx = msg_31_header[0].get("elevation_number", self._group + 1) - 1
+        if elev_data and 0 <= elevation_idx < len(elev_data):
+            fixed_angle = elev_data[elevation_idx]["elevation_angle"]
         else:
             fixed_angle = self.root.msg_31_header[header_idx][0]["elevation_angle"]
         fixed_angle *= angle_scale
@@ -2051,6 +2143,15 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
         if msg_2:
             attrs.update(self._attrs_from_msg_2(msg_2))
 
+        # Preserve the wire elevation number on split grids and whenever
+        # skipped or split cuts make it differ from the output group number.
+        elevation_number = self.ds["msg_31_header"]["elevation_number"]
+        if (
+            self._moments is not None
+            or self._sweep_number != self._group
+            or elevation_number != self._group + 1
+        ):
+            attrs["nexrad_elevation_number"] = elevation_number
         return FrozenDict(attrs)
 
     @staticmethod
@@ -2284,7 +2385,10 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             **kwargs,
         )
 
-        ls_ds = [sweep_dict[s] for s in sweep_dict]
+        if not sweep_dict:
+            return {"/": xr.Dataset(attrs={"actual_elevation_cuts": act_sweeps})}
+
+        ls_ds = list(sweep_dict.values())
         # the calibration values come as attributes of the sweeps; the root
         # takes all attributes of the first sweep, so they are taken out first
         # (the group is only built, with its warning, for optional_groups)
@@ -2300,6 +2404,7 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
         root, ls_ds_with_root = _assign_root(ls_ds_with_root)
         # Per ICD, total cuts actually recorded in the file (MSG_31 headers),
         # not user selection. Used downstream to detect AVSET truncation.
+        root.attrs.pop("nexrad_elevation_number", None)
         root.attrs["actual_elevation_cuts"] = act_sweeps
         groups_dict = {
             "/": root,
@@ -2312,11 +2417,17 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                 ls_ds_with_root, georeferencing_correction_subgroup
             )
             groups_dict["/radar_calibration"] = calibration
-        # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI). The elev_data
-        # index aligns with sweep_{i} because both order by VCP cut index.
+        # Inject MSG_5_ELEV attrs using the original elevation number, since
+        # output group numbers shift after a cut with multiple range grids.
         for sweep_path, ds in sweep_dict.items():
             sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
-            sweep_idx = int(sweep_path.split("_")[-1])
+            if "nexrad_elevation_number" in ds.attrs:
+                sw.attrs["nexrad_elevation_number"] = ds.attrs[
+                    "nexrad_elevation_number"
+                ]
+                sweep_idx = ds.attrs["nexrad_elevation_number"] - 1
+            else:
+                sweep_idx = int(sweep_path.split("_")[-1])
             if 0 <= sweep_idx < len(elev_data):
                 sw.attrs.update(_sweep_attrs_from_msg5_elev(elev_data[sweep_idx]))
             groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
@@ -2342,7 +2453,10 @@ incomplete_sweep : {"drop", "pad"}, optional
 NexradLevel2BackendEntrypoint.open_groups_as_dict.__doc__ = _compose_docstring(
     "Open a NEXRAD Level II file as a CfRadial2-shaped dict of group datasets.\n"
     "    Accepts a single file path, a bytes buffer, or a list/tuple of LDM\n"
-    "    chunk paths (the first chunk must hold the AR2V volume header).",
+    "    chunk paths (the first chunk must hold the AR2V volume header).\n"
+    "    For NEXRAD, sweep selection refers to recorded cuts and includes all\n"
+    "    their native grids. Output groups are numbered in scan order and can\n"
+    "    differ from the selected cut numbers after a split.",
     REINDEX_PARAMS_DOC,
     SITE_COORDS_PARAM_DOC,
     _NEXRAD_PARAMS_DOC,
@@ -2423,9 +2537,10 @@ def open_nexradlevel2_datatree(
         If True, decodes variables with units of time (e.g., seconds, minutes) into
         timedelta objects. If False, leaves them as numeric values. Default is None.
 
-    sweep : int or list of int, optional
-        Sweep numbers to extract from the dataset. If None, extracts all sweeps into
-        a list. Default is the first sweep.
+    sweep : int, str, or list of int/str, optional
+        Zero-based recorded cuts to select, including every native range grid
+        of each cut. Strings such as ``"sweep_4"`` also select recorded cuts.
+        Output group numbers shift after split cuts. Default is None (all cuts).
 
     first_dim : {"time", "auto"}, optional
         Defines the first dimension for each sweep. If "time," uses time as the
@@ -2530,8 +2645,8 @@ def open_sweeps_as_dict(
     )
     groups_dict = {}
     for path_group, store in stores.items():
-        # Extract sweep index from group name (e.g. "sweep_3" -> 3)
-        sweep_idx = int(path_group.split("_")[-1])
+        # Completion and angular resolution belong to the physical cut.
+        sweep_idx = store._group
 
         store_entrypoint = StoreBackendEntrypoint()
         with close_on_error(store):
