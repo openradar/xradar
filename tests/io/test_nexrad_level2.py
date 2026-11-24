@@ -138,6 +138,19 @@ def test_native_range_empty_recorded_cut(monkeypatch):
     assert stores == {}
 
 
+def test_native_range_groups_after_selective_read():
+    volume = _msg1_volume((125, 1000), (125, 250))
+    with NEXRADLevel2File(volume) as nex:
+        _ = nex.data_header
+        nex.get_sweep(0, ["VEL"])
+        nex.get_data(0, "VEL")
+        expected = {0: {0: ["REF"], 1: ["VEL"]}}
+        assert nex.range_groups() == expected
+        assert list(nex.data[0]["sweep_data"]) == ["VEL"]
+        nex.get_sweep(0)
+        assert nex.range_groups() == expected
+
+
 def test_native_range_compatible_grids():
     # Different gate counts on the same grid only need trailing fill.
     volume = _msg1_volume((125, 250), (125, 250))

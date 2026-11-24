@@ -760,10 +760,15 @@ class NEXRADLevel2File(NEXRADRecordFile):
         extra_groups = 0
         groups = {}
         for cut in sorted(self.data):
-            self.get_sweep(cut)
+            sweep = self.data[cut]
+            # get_sweep moves selected headers into sweep_data. Use the same
+            # moment order regardless of which headers have already moved.
+            headers = {**sweep["msg_31_data_header"], **sweep.get("sweep_data", {})}
             grids = defaultdict(list)
-            for name, moment in self.data[cut].get("sweep_data", {}).items():
-                grids[moment["first_gate"], moment["gate_spacing"]].append(name)
+            for name in DATA_BLOCK_VARIABLE_IDENTIFIERS:
+                if name in headers:
+                    moment = headers[name]
+                    grids[moment["first_gate"], moment["gate_spacing"]].append(name)
             groups[cut] = {}
             for i, moments in enumerate(grids.values()):
                 if i:
