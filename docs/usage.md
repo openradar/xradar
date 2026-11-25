@@ -56,6 +56,7 @@ notebooks/angle_reindexing
 notebooks/NDPointIndex
 notebooks/Multi-Volume-Concatenation
 notebooks/Gridding
+notebooks/resample_coords
 notebooks/multiple-sweeps-into-volume-scan
 notebooks/Transform
 ```
