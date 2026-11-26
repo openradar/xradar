@@ -235,9 +235,12 @@ def test_moment_attr_keys_keep_the_same_order_across_hash_seeds():
 
 
 def test_validate_global_attrs_valid_and_invalid_cases():
-    # both calls should pass without exceptions
+    # Both calls should pass without exceptions
     model.validate_global_attrs({"platform_is_mobile": "true"})
     model.validate_global_attrs({"wmo__data_policy": "recommended"})
+    # Test valid cases for scan_id with different integer types
+    model.validate_global_attrs({"scan_id": 0})
+    model.validate_global_attrs({"scan_id": np.int64(0)})
 
     # test whether you get a warning for an unknown global attribute
     with pytest.warns(

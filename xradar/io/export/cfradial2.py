@@ -73,8 +73,9 @@ def to_cfradial2(
     filename,
     engine=None,
     timestep=None,
+    deepcopy=False,
+    *,
     global_attrs: dict[str, object] | None = None,
-    deepcopy=False
 ):
     """Save DataTree to CfRadial2 compliant file.
 
@@ -161,13 +162,14 @@ def to_cfradial2(
     # fix Conventions
     root.attrs["Conventions"] = "Cf/Radial"
     root.attrs["version"] = "2.0"
-    # add xradar version to history
-    xradar_version = version("xradar")
-    root.attrs["history"] += f": xradar v{xradar_version} CfRadial2 export"
 
     # apply user-supplied global attributes last, so they take precedence
     if global_attrs is not None:
         root.attrs.update(global_attrs)
+
+    # add xradar version to history
+    xradar_version = version("xradar")
+    root.attrs["history"] += f": xradar v{xradar_version} CfRadial2 export"
 
     # write DataTree
     dtree.to_netcdf(filename, engine=engine)

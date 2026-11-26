@@ -61,6 +61,7 @@ __all__ = [
 
 __doc__ = __doc__.format("\n   ".join(__all__))
 
+import numbers
 import warnings
 from types import MappingProxyType
 from typing import NotRequired, TypedDict
@@ -126,6 +127,19 @@ required_global_attrs: GlobalAttrSchema = MappingProxyType(
             "description": "institution publishing the data",
             "type": str,
         },
+        "wmo__id": {
+            "description": "the traditional WMO identifier for the observing station/platform",
+            "type": str,
+        },
+        "node": {"description": "node identifier of the radar site", "type": str},
+        "wmo__originating_centre": {
+            "description": "the originator of the data according to Common Code Table C–11",
+            "type": str,
+        },
+        "wmo__wsi": {
+            "description": "the WIGOS station identifier (WSI) for the observing station/platform",
+            "type": str,
+        },
     }
 )
 
@@ -143,7 +157,7 @@ optional_root_attrs: GlobalAttrSchema = MappingProxyType(
         },
         "scan_id": {
             "description": "scan strategy id, if applicable. assumed 0 if missing",
-            "type": int,
+            "type": numbers.Integral,
         },
         "ray_times_increase": {
             "description": (
@@ -177,19 +191,6 @@ optional_root_attrs: GlobalAttrSchema = MappingProxyType(
         },
         "license": {
             "description": "URL to license, 'Freely Distributed', 'None', or restrictions description",
-            "type": str,
-        },
-        "wmo__id": {
-            "description": "the traditional WMO identifier for the observing station/platform",
-            "type": str,
-        },
-        "node": {"description": "node identifier of the radar site", "type": str},
-        "wmo__originating_centre": {
-            "description": "the originator of the data according to Common Code Table C–11",
-            "type": str,
-        },
-        "wmo__wsi": {
-            "description": "the WIGOS station identifier (WSI) for the observing station/platform",
             "type": str,
         },
     }
