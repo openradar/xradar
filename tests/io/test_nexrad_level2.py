@@ -2681,7 +2681,9 @@ class TestInteriorGapCoordinates:
     PRESENT_KEYS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11)
 
     @staticmethod
-    def _make_store(present_keys, group_label, msg_5_has_elev_data=True):
+    def _make_store(
+        present_keys, group_label, msg_5_has_elev_data=True, elevation_numbers=None
+    ):
         from types import SimpleNamespace
 
         from xradar.io.backends.nexrad_level2 import NexradLevel2Store
@@ -2714,7 +2716,14 @@ class TestInteriorGapCoordinates:
                 "REF": {"first_gate": 0.0, "gate_spacing": 250.0, "ngates": 4}
             },
         }
-        data = {k: sweep_ds for k in present_keys}
+        # first radial of each sweep: one-based VCP cut number (key + 1 unless
+        # a restarted cut made the key run ahead, see #605)
+        if elevation_numbers is None:
+            elevation_numbers = {k: k + 1 for k in present_keys}
+        data = {
+            k: sweep_ds | {"msg_31_header": {"elevation_number": elevation_numbers[k]}}
+            for k in present_keys
+        }
         root = SimpleNamespace(
             data=data,
             msg_31_header=msg_31_header,
@@ -2746,6 +2755,131 @@ class TestInteriorGapCoordinates:
         # label->compact-index translation (not just absence of IndexError).
         expected_position = sorted(self.PRESENT_KEYS).index(group_label)
         assert coords["elevation"].values[0] == expected_position
+
+
+class TestRestartedCut:
+    """Regression for openradar/xradar#605: MSG_5 is looked up by the
+    elevation number of the radials, not by the sweep key, which runs one
+    ahead of the cut once the RDA restarts a cut.
+    """
+
+    @pytest.mark.parametrize(
+        "elevation_number, expected",
+        [(1, "a"), (3, "c"), (0, None), (4, None)],
+        ids=["first", "last", "zero", "beyond-msg5"],
+    )
+    def test_msg_5_cut(self, elevation_number, expected):
+        from xradar.io.backends.nexrad_level2 import _msg_5_cut
+
+        first_radial = {"elevation_number": elevation_number}
+        assert _msg_5_cut(first_radial, ["a", "b", "c"]) == expected
+
+    @pytest.mark.parametrize("elev_data", [[], False])
+    def test_msg_5_cut_without_elevation_data(self, elev_data):
+        from xradar.io.backends.nexrad_level2 import _msg_5_cut
+
+        assert _msg_5_cut({"elevation_number": 1}, elev_data) is None
+
+    def test_msg_5_cut_without_first_radial(self):
+        from xradar.io.backends.nexrad_level2 import _msg_5_cut
+
+        assert _msg_5_cut(None, ["a", "b", "c"]) is None
+
+    def test_chunks_starting_mid_sweep(self, nexrad_chunks_klot):
+        """A hole after the S chunk leaves a fragment without a start radial."""
+        chunks = [f.read_bytes() for f in nexrad_chunks_klot]
+        with xarray.open_datatree(
+            [chunks[0]] + chunks[4:], engine="nexradlevel2", sweep=[1]
+        ) as dtree:
+            sweep = dtree["sweep_1"]
+            # the rays of sweep_1 belong to the third cut of the VCP
+            assert sweep["elevation"].median().item() == pytest.approx(0.92, abs=0.05)
+            assert sweep["sweep_fixed_angle"].item() == pytest.approx(0.88, abs=0.01)
+
+    # KLOT 2025-04-25 09:35 shape: cut 4 restarted, so key 3 is missing and
+    # keys 4.. hold cuts 4.. (elevation numbers are one-based).
+    ELEVATION_NUMBERS = {0: 1, 1: 2, 2: 3, 4: 4, 5: 5, 6: 6}
+
+    @pytest.mark.parametrize("group_label", ELEVATION_NUMBERS)
+    def test_fixed_angle_follows_elevation_number(self, group_label):
+        store = TestInteriorGapCoordinates._make_store(
+            tuple(self.ELEVATION_NUMBERS),
+            group_label=group_label,
+            elevation_numbers=self.ELEVATION_NUMBERS,
+        )
+        coords = store.open_store_coordinates()
+        # synthetic MSG_5: cut i has elevation_angle 0.5 * i
+        cut = self.ELEVATION_NUMBERS[group_label] - 1
+        assert coords["sweep_fixed_angle"].item() == 0.5 * cut
+        assert coords["sweep_number"].item() == group_label
+
+    def test_fixed_angle_falls_back_to_radial(self):
+        """An elevation number outside MSG_5 uses the first radial's angle."""
+        store = TestInteriorGapCoordinates._make_store(
+            (0, 1), group_label=1, elevation_numbers={0: 1, 1: 99}
+        )
+        coords = store.open_store_coordinates()
+        # synthetic radials: elevation_angle is the sweep's position
+        assert coords["sweep_fixed_angle"].item() == 1
+
+    @staticmethod
+    def _restart_cut(monkeypatch, restarted):
+        """Parse as if cut ``restarted`` (zero-based) was aborted and restarted.
+
+        The restart takes a new key and the aborted fragment is never stored,
+        so the sweeps from ``restarted`` on move up by one key.
+        """
+        get_data_header = NEXRADLevel2File.get_data_header
+
+        def get_data_header_with_restart(self):
+            data_header, msg_31_header, msg_31_data_header = get_data_header(self)
+            shifted = {k + (k >= restarted): v for k, v in self._data.items()}
+            self._data.clear()
+            self._data.update(shifted)
+            # every start-of-elevation has an entry here, also the fragment
+            msg_31_data_header.insert(restarted, msg_31_data_header[restarted])
+            return data_header, msg_31_header, msg_31_data_header
+
+        monkeypatch.setattr(
+            NEXRADLevel2File, "get_data_header", get_data_header_with_restart
+        )
+
+    def test_datatree_labels_follow_the_cut(self, nexradlevel2_file, monkeypatch):
+        """sweep_fixed_angle and the MSG_5 attrs stay with the rays."""
+        restarted = 3
+        with xarray.open_datatree(nexradlevel2_file, engine="nexradlevel2") as ref:
+            expected = {
+                int(name[6:]): (sweep["sweep_fixed_angle"].item(), dict(sweep.attrs))
+                for name, sweep in ref.match("sweep_*").children.items()
+            }
+        # the fixture's neighbouring cuts differ, so a shifted label would fail
+        assert expected[restarted][0] != expected[restarted + 1][0]
+        assert expected[restarted][1] != expected[restarted - 1][1]
+
+        self._restart_cut(monkeypatch, restarted)
+        with xarray.open_datatree(nexradlevel2_file, engine="nexradlevel2") as dtree:
+            sweeps = dtree.match("sweep_*").children
+            assert f"sweep_{restarted}" not in sweeps
+            assert len(sweeps) == len(expected)
+            for name, sweep in sweeps.items():
+                key = int(name[6:])
+                fixed_angle, attrs = expected[key - (key > restarted)]
+                assert sweep["sweep_fixed_angle"].item() == fixed_angle
+                assert dict(sweep.attrs) == attrs
+                assert sweep["sweep_number"].item() == key
+
+    def test_dataset_label_follows_the_cut(self, nexradlevel2_file, monkeypatch):
+        restarted = 3
+        with open_dataset(
+            nexradlevel2_file, engine="nexradlevel2", group=f"sweep_{restarted}"
+        ) as ref:
+            expected = ref["sweep_fixed_angle"].item()
+
+        self._restart_cut(monkeypatch, restarted)
+        with open_dataset(
+            nexradlevel2_file, engine="nexradlevel2", group=f"sweep_{restarted + 1}"
+        ) as ds:
+            assert ds["sweep_fixed_angle"].item() == expected
 
 
 class TestRealChunkFiles:

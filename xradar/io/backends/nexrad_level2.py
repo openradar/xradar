@@ -1297,19 +1297,22 @@ def _sweep_attrs_from_msg5_elev(elev):
 _AZIMUTH_RESOLUTION = {1: 0.5, 2: 1.0}
 
 
-def _assign_sweep_attrs(dtree, elev_data):
-    """Inject per-sweep attrs from MSG_5_ELEV data onto sweep nodes.
+def _msg_5_cut(first_radial, elev_data):
+    """Return the MSG_5 elevation cut a sweep belongs to, or None.
 
-    The elev_data list index aligns with sweep_{i} naming because both
-    are ordered by elevation cut index in the VCP definition.
+    The radials carry the one-based number of their VCP cut
+    (``elevation_number``, ICD 2620002 Table XVII-A) and MSG_5 lists the cuts
+    in that order (Table XI). The sweep key cannot be used instead: it counts
+    start-of-elevation radials, so it runs ahead of the cut once the RDA
+    restarts one (#605). ``first_radial`` is None for a sweep fragment stored
+    without its start-of-elevation radial (chunk list with a hole).
     """
-    if not elev_data:
-        return
-    for i, elev in enumerate(elev_data):
-        sweep_key = f"sweep_{i}"
-        if sweep_key not in dtree.children:
-            continue
-        dtree[sweep_key].dataset.attrs.update(_sweep_attrs_from_msg5_elev(elev))
+    if not elev_data or first_radial is None:
+        return None
+    elevation_number = first_radial["elevation_number"]
+    if not 0 < elevation_number <= len(elev_data):
+        return None
+    return elev_data[elevation_number - 1]
 
 
 def _get_dynamic_scan_type(supplemental):
@@ -1950,10 +1953,9 @@ class NexradLevel2Store(_ManagedStoreMixin, AbstractDataStore):
             elev_data = False
         # in some cases msg_5 doesn't contain meaningful data
         # we extract the needed values from the data header instead
-        if elev_data:
-            fixed_angle = self.root.msg_5["elevation_data"][self._group][
-                "elevation_angle"
-            ]
+        cut = _msg_5_cut(self.ds.get("msg_31_header"), elev_data)
+        if cut is not None:
+            fixed_angle = cut["elevation_angle"]
         else:
             fixed_angle = self.root.msg_31_header[header_idx][0]["elevation_angle"]
         fixed_angle *= angle_scale
@@ -2219,6 +2221,12 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
             present_keys = sorted(nex.data)
             act_sweeps = len(present_keys)
             elev_data = nex.msg_5.get("elevation_data", []) if nex.msg_5 else []
+            # MSG_5 cut of every sweep, by the elevation number of its radials
+            cuts = {
+                sw: _msg_5_cut(nex.data[sw].get("msg_31_header"), elev_data)
+                for sw in present_keys
+                if elev_data
+            }
             # nominal azimuth spacing of the incomplete sweeps, used for
             # padding; msg_31_header is compacted past interior gaps:
             # label -> position
@@ -2312,13 +2320,12 @@ class NexradLevel2BackendEntrypoint(BackendEntrypoint):
                 ls_ds_with_root, georeferencing_correction_subgroup
             )
             groups_dict["/radar_calibration"] = calibration
-        # Inject per-sweep attrs from MSG_5_ELEV (ICD Table XI). The elev_data
-        # index aligns with sweep_{i} because both order by VCP cut index.
+        # Inject per-sweep attrs from the sweep's MSG_5_ELEV cut (ICD Table XI).
         for sweep_path, ds in sweep_dict.items():
             sw = ds.drop_vars(_STATION_VARS, errors="ignore").drop_attrs(deep=False)
-            sweep_idx = int(sweep_path.split("_")[-1])
-            if 0 <= sweep_idx < len(elev_data):
-                sw.attrs.update(_sweep_attrs_from_msg5_elev(elev_data[sweep_idx]))
+            cut = cuts.get(int(sweep_path.split("_")[-1]))
+            if cut is not None:
+                sw.attrs.update(_sweep_attrs_from_msg5_elev(cut))
             groups_dict[f"/{sweep_path}"] = _keep_close(sw, ds)
         return groups_dict
 
