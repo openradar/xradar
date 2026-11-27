@@ -2682,7 +2682,11 @@ class TestInteriorGapCoordinates:
 
     @staticmethod
     def _make_store(
-        present_keys, group_label, msg_5_has_elev_data=True, elevation_numbers=None
+        present_keys,
+        group_label,
+        msg_5_has_elev_data=True,
+        elevation_numbers=None,
+        declared=None,
     ):
         from types import SimpleNamespace
 
@@ -2701,7 +2705,8 @@ class TestInteriorGapCoordinates:
             ]
             for pos in range(len(present_keys))
         ]
-        declared = max(present_keys) + 1
+        if declared is None:
+            declared = max(present_keys) + 1
         elev_data = [{"elevation_angle": 0.5 * i} for i in range(declared)]
         sweep_ds = {
             "sweep_constant_data": {
@@ -2796,20 +2801,28 @@ class TestRestartedCut:
             assert sweep["elevation"].median().item() == pytest.approx(0.92, abs=0.05)
             assert sweep["sweep_fixed_angle"].item() == pytest.approx(0.88, abs=0.01)
 
-    # KLOT 2025-04-25 09:35 shape: cut 4 restarted, so key 3 is missing and
-    # keys 4.. hold cuts 4.. (elevation numbers are one-based).
-    ELEVATION_NUMBERS = {0: 1, 1: 2, 2: 3, 4: 4, 5: 5, 6: 6}
+    # sweep key -> one-based elevation number of its radials
+    # KLOT 2025-04-25 09:35: cut 4 restarted, key 3 is missing and the keys
+    # from 4 on run one ahead of the cut.
+    RESTARTED = {0: 1, 1: 2, 2: 3, 4: 4, 5: 5, 6: 6}
+    # KLOT 2025-04-25 03:48: start-of-elevation radials missing, the keys run
+    # behind the cut by a varying offset (neither key nor position fits).
+    MISSING_STARTS = {2: 4, 3: 5, 4: 6, 5: 8, 6: 9, 7: 10, 8: 11, 9: 12}
 
-    @pytest.mark.parametrize("group_label", ELEVATION_NUMBERS)
-    def test_fixed_angle_follows_elevation_number(self, group_label):
+    @pytest.mark.parametrize(
+        "elevation_numbers, group_label",
+        [(shape, key) for shape in (RESTARTED, MISSING_STARTS) for key in shape],
+    )
+    def test_fixed_angle_follows_elevation_number(self, elevation_numbers, group_label):
         store = TestInteriorGapCoordinates._make_store(
-            tuple(self.ELEVATION_NUMBERS),
+            tuple(elevation_numbers),
             group_label=group_label,
-            elevation_numbers=self.ELEVATION_NUMBERS,
+            elevation_numbers=elevation_numbers,
+            declared=12,
         )
         coords = store.open_store_coordinates()
         # synthetic MSG_5: cut i has elevation_angle 0.5 * i
-        cut = self.ELEVATION_NUMBERS[group_label] - 1
+        cut = elevation_numbers[group_label] - 1
         assert coords["sweep_fixed_angle"].item() == 0.5 * cut
         assert coords["sweep_number"].item() == group_label
 
